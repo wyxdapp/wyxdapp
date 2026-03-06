@@ -35,3 +35,6 @@ export * from './operator.uts'
 
 // 通知相关
 export * from './notification.uts'
+
+// 保险相关
+export * from './insurance.uts'

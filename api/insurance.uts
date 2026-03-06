@@ -1,0 +1,121 @@
+/**
+ * 保险相关 API
+ * 对应后端: InsuranceAppController
+ */
+
+import request from '@/utils/request'
+import {
+	GetInsuranceProductsParams,
+	TrialPriceParams,
+	SubmitInsuranceOrderParams,
+	GetInsuranceOrderDetailParams,
+	GetInsuranceByTripOrderParams,
+	InsuredItemParams,
+	PolicyHolderParams
+} from './types/insuranceTypes.uts'
+
+// Re-export types for consumers that import from this file
+export {
+	GetInsuranceProductsParams,
+	TrialPriceParams,
+	SubmitInsuranceOrderParams,
+	GetInsuranceOrderDetailParams,
+	GetInsuranceByTripOrderParams,
+	InsuredItemParams,
+	PolicyHolderParams
+} from './types/insuranceTypes.uts'
+
+/**
+ * 获取可购买保险产品列表（按用户角色过滤）
+ * GET /insurance/products
+ */
+export const getInsuranceProducts = (): Promise<UTSJSONObject> => {
+	return request.get('/insurance/products', null, true)
+}
+
+/**
+ * 价格试算
+ * POST /insurance/trial-price
+ */
+export const trialInsurancePrice = (params: TrialPriceParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const insuredList: Array<UTSJSONObject> = []
+	for (let i = 0; i < params.insureds.length; i++) {
+		const item = params.insureds[i]
+		const insuredObj = {
+			cName: item.cName,
+			cardType: item.cardType,
+			cardNo: item.cardNo,
+			sex: item.sex,
+			birthDay: item.birthDay
+		} as UTSJSONObject
+		insuredList.push(insuredObj)
+	}
+
+	const payload = {
+		productGuid: params.productGuid,
+		planGuid: params.planGuid,
+		rateCode: params.rateCode,
+		startTime: params.startTime,
+		endTime: params.endTime,
+		insureds: insuredList
+	} as UTSJSONObject
+	return request.post('/insurance/trial-price', payload, true)
+}
+
+/**
+ * 提交保险订单
+ * POST /insurance/submit
+ */
+export const submitInsuranceOrder = (params: SubmitInsuranceOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const policyHolderObj = {
+		cName: params.policyHolder.cName,
+		cardType: params.policyHolder.cardType,
+		cardNo: params.policyHolder.cardNo,
+		sex: params.policyHolder.sex,
+		birthDay: params.policyHolder.birthDay,
+		mobile: params.policyHolder.mobile
+	} as UTSJSONObject
+
+	const insuredList: Array<UTSJSONObject> = []
+	for (let i = 0; i < params.insureds.length; i++) {
+		const item = params.insureds[i]
+		const insuredObj = {
+			cName: item.cName,
+			cardType: item.cardType,
+			cardNo: item.cardNo,
+			sex: item.sex,
+			birthDay: item.birthDay
+		} as UTSJSONObject
+		insuredList.push(insuredObj)
+	}
+
+	const payload = {
+		tripOrderKid: params.tripOrderKid,
+		productGuid: params.productGuid,
+		planGuid: params.planGuid,
+		rateCode: params.rateCode,
+		policyHolder: policyHolderObj,
+		insureds: insuredList,
+		startTime: params.startTime,
+		endTime: params.endTime
+	} as UTSJSONObject
+	return request.post('/insurance/submit', payload, true)
+}
+
+/**
+ * 获取保单详情
+ * GET /insurance/order/detail?orderKid={kid}
+ */
+export const getInsuranceOrderDetail = (params: GetInsuranceOrderDetailParams): Promise<UTSJSONObject> => {
+	return request.get('/insurance/order/detail?orderKid=' + params.orderKid, null, true)
+}
+
+/**
+ * 根据行程订单查保单
+ * GET /insurance/order/by-trip-order?tripOrderKid={kid}
+ */
+export const getInsuranceByTripOrder = (params: GetInsuranceByTripOrderParams): Promise<UTSJSONObject> => {
+	return request.get('/insurance/order/by-trip-order?tripOrderKid=' + params.tripOrderKid, null, true)
+}

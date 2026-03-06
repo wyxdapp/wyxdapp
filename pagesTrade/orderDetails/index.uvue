@@ -240,6 +240,9 @@
 				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_IN_PROGRESS || orderStatu == 6 || (orderStatu == ORDER_STATUS_CONFIRMED && isSpecialOrderType == false)) && refundStatu != REFUND_STATUS_PENDING" @click="handleApplyRefund">
 					<text class="footer-btn-text">申请退款</text>
 				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_COMPLETED && refundStatu != REFUND_STATUS_PENDING" @click="handleInsuranceClick">
+					<text class="footer-btn-text">{{ insuranceBtnText }}</text>
+				</view>
 				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_COMPLETED && refundStatu != REFUND_STATUS_PENDING" @click="handleApplyRefund">
 					<text class="footer-btn-text">申请退款</text>
 				</view>
@@ -334,6 +337,7 @@ import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
 import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+import { getInsuranceByTripOrder, GetInsuranceByTripOrderParams } from '@/api/insurance.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -470,6 +474,10 @@ const shareChatList = ref<Array<UTSJSONObject>>([])
 
 // 判断是否为特殊订单（会员/礼物/抽奖）
 const isSpecialOrderType = ref<boolean>(false)
+
+// 保险相关状态
+const insuranceOrderKid = ref<string>('')
+const insuranceBtnText = ref<string>('保险')
 
 // 更新特殊订单类型判断
 const updateIsSpecialOrderType = () => {
@@ -868,6 +876,11 @@ const getOrderInfo = async (id: string) => {
 			
 			// 标记相关通知为已读
 			await markOrderNotificationsRead(id, shortKid.value)
+			
+			// 进行中订单检查保险状态
+			if (orderStatu.value == ORDER_STATUS_COMPLETED && refundStatu.value != REFUND_STATUS_PENDING) {
+				checkInsuranceStatus()
+			}
 		} else {
 			const msg = getObjString(resObj, 'msg')
 			let errMsg = '获取订单信息失败'
@@ -1213,6 +1226,50 @@ const doCancelOrder = async () => {
 		}
 	} finally {
 		loading.value = false
+	}
+}
+
+// ========== 保险相关 ==========
+// 检查订单的保险状态
+const checkInsuranceStatus = () => {
+	const kid = orderKid.value
+	if (kid == '') return
+	const params = new GetInsuranceByTripOrderParams()
+	params.tripOrderKid = kid
+	getInsuranceByTripOrder(params).then((res: UTSJSONObject | null) => {
+		if (res != null) {
+			const code = getObjNumber(res, 'code')
+			if (code == 200) {
+				const dataVal = res.get('data')
+				if (dataVal != null) {
+					const dataObj = toJsonObj(dataVal)
+					if (dataObj != null) {
+						const insKid = getObjString(dataObj, 'kid')
+						if (insKid != '') {
+							insuranceOrderKid.value = insKid
+							insuranceBtnText.value = '已投保'
+						}
+					}
+				}
+			}
+		}
+	}).catch((_e: any | null) => {
+		// 查询失败静默处理
+	})
+}
+
+// 点击保险按钮
+const handleInsuranceClick = () => {
+	if (insuranceOrderKid.value != '') {
+		// 已投保，跳转保单详情
+		uni.navigateTo({
+			url: '/pagesTrade/insurance/InsuranceDetail?orderKid=' + insuranceOrderKid.value
+		})
+	} else {
+		// 未投保，跳转保险信息填写页面
+		uni.navigateTo({
+			url: '/pagesTrade/insurance/InsuranceEntry?tripOrderKid=' + orderKid.value + '&travelDate=' + travelDate.value
+		})
 	}
 }
 

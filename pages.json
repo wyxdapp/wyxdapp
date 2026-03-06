@@ -519,6 +519,20 @@
                                                             "navigationBarTitleText":  "选择赠送对象",
                                                             "navigationStyle":  "custom"
                                                         }
+                                          },
+                                          {
+                                              "path":  "insurance/InsuranceEntry",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "保险投保",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "insurance/InsuranceDetail",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "保单详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
                                           }
                                       ]
                         }

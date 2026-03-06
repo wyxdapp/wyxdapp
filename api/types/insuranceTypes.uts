@@ -1,0 +1,93 @@
+/**
+ * 保险模块类型定义
+ * 对应 API 文件: api/insurance.uts
+ */
+
+// ============ 产品查询相关 ============
+
+// 获取可购买产品列表请求参数（GET请求，通过query传参）
+export class GetInsuranceProductsParams {
+	userRole: string = ''
+}
+
+// ============ 价格试算相关 ============
+
+// 被保人简要信息（用于价格试算和提交订单）
+export class InsuredItemParams {
+	/** 被保人中文名 */
+	cName: string = ''
+	/** 证件类型（1身份证 2护照） */
+	cardType: number = 1
+	/** 证件号码 */
+	cardNo: string = ''
+	/** 性别（0女 1男） */
+	sex: string = ''
+	/** 出生日期，格式yyyy-MM-dd */
+	birthDay: string = ''
+}
+
+// 价格试算请求参数
+export class TrialPriceParams {
+	/** 产品Guid */
+	productGuid: string = ''
+	/** 计划Guid */
+	planGuid: string = ''
+	/** 费率代码（BY开头） */
+	rateCode: string = ''
+	/** 保险开始时间，格式yyyy-MM-dd */
+	startTime: string = ''
+	/** 保险结束时间，格式yyyy-MM-dd */
+	endTime: string = ''
+	/** 被保人信息列表 */
+	insureds: Array<InsuredItemParams> = []
+}
+
+// ============ 提交订单相关 ============
+
+// 投保人信息
+export class PolicyHolderParams {
+	/** 投保人中文名 */
+	cName: string = ''
+	/** 证件类型（1身份证 2护照） */
+	cardType: number = 1
+	/** 证件号码 */
+	cardNo: string = ''
+	/** 性别（0女 1男） */
+	sex: string = ''
+	/** 出生日期，格式yyyy-MM-dd */
+	birthDay: string = ''
+	/** 手机号码 */
+	mobile: string = ''
+}
+
+// 提交保险订单请求参数
+export class SubmitInsuranceOrderParams {
+	/** 关联行程订单kid */
+	tripOrderKid: string = ''
+	/** 产品Guid */
+	productGuid: string = ''
+	/** 计划Guid */
+	planGuid: string = ''
+	/** 费率代码（BY开头） */
+	rateCode: string = ''
+	/** 投保人信息 */
+	policyHolder: PolicyHolderParams = new PolicyHolderParams()
+	/** 被保人信息列表 */
+	insureds: Array<InsuredItemParams> = []
+	/** 保险开始时间，格式yyyy-MM-dd */
+	startTime: string = ''
+	/** 保险结束时间，格式yyyy-MM-dd */
+	endTime: string = ''
+}
+
+// ============ 保单查询相关 ============
+
+// 保单详情请求参数
+export class GetInsuranceOrderDetailParams {
+	orderKid: string = ''
+}
+
+// 根据行程订单查保单请求参数
+export class GetInsuranceByTripOrderParams {
+	tripOrderKid: string = ''
+}
