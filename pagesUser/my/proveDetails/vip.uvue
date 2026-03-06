@@ -1,0 +1,2030 @@
+<template>
+	<view class="vip-auth-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">会员认证</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 背景图片 - 使用 absolute 定位 -->
+		<image class="hear-bg" src="https://www.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill" />
+
+		<!-- 🎯 用户信息卡片 -->
+		<view class="user-info-card">
+			<!-- 用户头像 -->
+			<view class="user-avatar-section">
+				<Avatar 
+					:url="userAvatar"
+					size="large"
+					:customSize="120"
+					clickMode="none"
+				/>
+			</view>
+			
+			<!-- 用户信息 - 昵称和会员状态 -->
+			<view class="user-info-section">
+				<!-- 🎯 修复：使用 NicknameWithBadges 组件显示昵称+会员图标 -->
+				<NicknameWithBadges
+					:nickname="userNickname"
+					:vipType="userVipTypeForBadge"
+					:giftLevel="0"
+					size="large"
+				/>
+				<text class="user-vip-status">{{ getFormattedVipStatus() }}</text>
+			</view>
+			
+			<!-- 🎯 抽奖按钮（根据开关状态显示） -->
+			<view class="lottery-btn-section" v-if="lotteryEnabled == true">
+				<view class="lottery-btn" @click="handleLottery">
+					<text class="lottery-text">抽奖</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 会员套餐选择 -->
+		<view class="package-section">
+			<text class="section-title">选择会员套餐</text>
+			<text class="section-subtitle">立即开通，尊享专属特权</text>
+			
+			<view class="package-grid">
+				<!-- 月卡会员 -->
+				<view class="package-card" :class="{ 'selected': selectedPackage === 'month' }" @click="selectPackage('month')">
+					<view class="package-ribbon experience" v-if="selectedPackage === 'month'">
+						<text class="ribbon-text">体验</text>
+					</view>
+					<view class="package-header">
+						<text class="package-name">月卡会员</text>
+						<text class="package-period">1个月</text>
+					</view>
+					<view class="package-price-section">
+						<view class="price-row">
+							<text class="currency">¥</text>
+							<text class="price-main">30</text>
+							<text class="price-unit">/月</text>
+						</view>
+						<text class="original-price">原价¥59</text>
+					</view>
+						<view class="package-features">
+							<text class="feature-item">• 联系方式查看</text>
+							<text class="feature-item">• 会员认证标识</text>
+							<text class="feature-item">• 专属客服服务</text>
+					</view>
+				</view>
+
+				<!-- 年卡会员 -->
+				<view class="package-card yearly" :class="{ 'selected': selectedPackage === 'year' }" @click="selectPackage('year')">
+					<view class="package-ribbon recommended">
+						<text class="ribbon-text">推荐</text>
+					</view>
+					<view class="package-header">
+						<text class="package-name">年卡会员</text>
+						<text class="package-period">12个月</text>
+					</view>
+					<view class="package-price-section">
+						<view class="price-row">
+							<text class="currency">¥</text>
+							<text class="price-main">298</text>
+							<text class="price-unit">/年</text>
+						</view>
+						<text class="original-price">原价¥708</text>
+						<view class="discount-tag">
+							<text class="discount-text">省410元</text>
+						</view>
+					</view>
+					<view class="package-features">
+						<text class="feature-item">• 包含月卡所有权益</text>
+						<text class="feature-item">• 向导 官方精选认证</text>
+						<text class="feature-item">• 运营 签约抽佣特权</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 用户反馈轮播区域 -->
+		<view class="feedback-section">
+			<view class="feedback-carousel">
+				<view class="feedback-wrapper">
+					<view 
+						class="feedback-item" 
+						v-for="(feedback, index) in feedbackList" 
+						:key="index"
+						:class="{ 'active': index === currentFeedbackIndex }"
+					>
+						<view class="feedback-content">
+							<UniIcons type="chatbubble" :size="60" color="#CCCCCC" />
+							<text class="feedback-text">{{ feedback }}</text>
+						</view>
+					</view>
+				</view>
+				<view class="feedback-dots">
+					<view 
+						v-for="(item, index) in feedbackList" 
+						:key="index"
+						class="dot" 
+						:class="{ 'active': index === currentFeedbackIndex }"
+						@click="switchFeedback(index)"
+					></view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 底部固定区域 -->
+		<view class="footer-section">
+			<view class="price-summary">
+				<view class="price-info">
+					<text class="total-label">会员价格: </text>
+					<text class="total-price">¥{{ getCurrentPrice }}</text>
+					<text class="price-note">{{ selectedPackage === 'year' ? '平均¥25/月' : '首月特惠' }}</text>
+				</view>
+			</view>
+		<view class="pay-btn" @click="confirmPurchase" :class="{ 'disabled': isPackageDisabled }">
+				<text class="btn-text">立即开通</text>
+			</view>
+		</view>
+		
+		<!-- 抽奖弹窗 -->
+			<LotteryModal
+			:show="showLotteryModal"
+			:userKid="userKid"
+			:freeCount="lotteryFreeCount"
+			:maxFreeCount="lotteryMaxFreeCount"
+			:luckyPoints="lotteryLuckyPoints"
+			@close="showLotteryModal = false"
+			@lotterySuccess="handleLotterySuccess"
+		/>
+		
+		<!-- 抽奖结果弹窗 -->
+		<LotteryResult
+			:show="showLotteryResult"
+			:userKid="userKid"
+			:reward="lotteryReward"
+			:canDirectWithdraw="true"
+			@close="showLotteryResult = false"
+			@useGift="handleUseGift"
+			@withdraw="handleWithdraw"
+			@deposit="handleDeposit"
+			@viewGiftBox="handleViewGiftBox"
+		/>
+		
+		<!-- 礼物盒弹窗 -->
+		<GiftBox
+			:show="showGiftBox"
+			:userKid="userKid"
+			@close="showGiftBox = false"
+			@sendGift="handleSendGiftFromBox"
+		/>
+	</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { useUserStore, initUserInfoAction, getUserAvatar, getUserNickname, getUserVipStatus, getUserVipExpireTime, getUserNumberProp, updateUserInfoAction } from '@/stores/user.uts'
+import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import LotteryModal from '@/components/lottery/LotteryModal.uvue'
+import LotteryResult from '@/components/lottery/LotteryResult.uvue'
+import GiftBox from '@/components/lottery/GiftBox.uvue'
+import request from '@/utils/request'
+import { post } from '@/utils/request'
+import { getLotteryInfo } from '@/common/services/lotteryService'
+import { useGift, handleCashReward } from '@/common/services/lotteryService'
+import { getLotterySwitchStatus } from '@/api/lottery.uts'
+import { requestUserHomePage, type QueryUserHomePageParams } from '@/common/services/userProfileApi.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable,
+	waitForLoginStatus
+} from '@/common/utils/loginHelper.uts'
+// 🎯 导入统一的用户信息缓存
+import { 
+	getCurrentUserProfile, 
+	getCurrentUserVipStatus, 
+	refreshCurrentUserProfile,
+	hasValidCache
+} from '@/common/composables/useCurrentUserProfile.uts'
+
+const userStore = useUserStore()
+
+// 辅助函数 - 获取用户ID（使用 loginHelper 可靠版本）
+const getUserKidFromStoreVip = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 辅助函数 - 检查登录状态（使用 loginHelper 可靠版本）
+const checkIsLoginVip = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// 🎯 用户信息响应式状态（从 API 获取最新数据）
+const userAvatarValue = ref<string>(DEFAULT_AVATAR_LOCAL)
+const userNicknameValue = ref<string>('用户')
+const userVipValue = ref<number>(10)
+const userGiftLevelValue = ref<number>(0)
+
+// 🎯 抽奖开关状态
+const lotteryEnabled = ref<boolean>(false)
+const userVipExpireTimeValue = ref<string>('')
+const userVipTypeValue = ref<number>(0)
+
+// 类型：userInfo 中我们需要的字段（局部，不导出，避免与其他文件冲突）
+interface VipUserInfoData {
+	vip?: number | string | null
+	vipExpireTime?: string | null
+	vipType?: string | null
+	avatar?: string | null
+	nickname?: string | null
+	image?: string | null
+}
+
+// 类型：VIP 状态对象（避免直接访问 any 类型的属性）
+interface VipStatusData {
+	vip?: number | null
+	vipExpireTime?: string | null
+	vipType?: number | null
+	isVip?: boolean | null
+}
+
+// 本文件局部类型：storage 中可能的 userInfo 结构（避免匿名对象字面量）
+interface LocalUserKid {
+	kid?: string | null
+}
+
+// 本文件局部类型：通用解析对象（避免直接对 any 使用动态访问）
+interface LocalParsedCommon {
+	rewards?: Array<any> | null
+	kid?: string | null
+	data?: any | null
+}
+
+// 本地订单类型
+interface LocalOrder {
+	kid?: string | null
+}
+
+// 安全读取对象字段，返回空字符串作为默认值（避免 null 给 Any）
+const getInfoProp = (obj: any, key: string): any => {
+	try {
+		const json = JSON.stringify(obj)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as VipUserInfoData
+		if (parsed == null) return ''
+		if (key === 'vip') {
+			return (parsed.vip != null) ? (parsed.vip as any) : ''
+		}
+		if (key === 'vipExpireTime') {
+			return (parsed.vipExpireTime != null) ? (parsed.vipExpireTime as any) : ''
+		}
+		if (key === 'vipType') {
+			return (parsed.vipType != null) ? (parsed.vipType as any) : ''
+		}
+		if (key === 'avatar') {
+			// 优先使用 avatar，其次使用 image
+			if (parsed.avatar != null && parsed.avatar != '') {
+				return (parsed.avatar as any)
+			}
+			if (parsed.image != null && parsed.image != '') {
+				return (parsed.image as any)
+			}
+			return ''
+		}
+		if (key === 'nickname') {
+			return (parsed.nickname != null) ? (parsed.nickname as any) : ''
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 通用安全读取属性，避免直接点访问触发 error18
+const safeGetProp = (obj: any, key: string): any => {
+	try {
+		const json = JSON.stringify(obj)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as LocalParsedCommon
+		if (parsed == null) return ''
+		// 明确列出常用字段（使用接口类型的点访问，避免 String.get 问题）
+		if (key === 'rewards') {
+			// 使用序列化/反序列化将具体值转换为 Any，避免类型不匹配
+			try {
+				const r = (parsed.rewards != null) ? parsed.rewards : []
+				const rJson = JSON.stringify(r)
+				if (rJson != null && rJson != '') {
+					let parsedRTemp: any = ''
+					try {
+						parsedRTemp = JSON.parse(rJson) as any
+					} catch (e) {}
+					if (parsedRTemp != null && parsedRTemp != '') return parsedRTemp
+				}
+				return (JSON.parse('[]') as any)
+			} catch (e) {
+				return (JSON.parse('[]') as any)
+			}
+		}
+		if (key === 'kid') {
+			try {
+				const k = (parsed.kid != null) ? parsed.kid : ''
+				const kStr = (k != null) ? k.toString() : ''
+				return (kStr != null) ? (kStr as any) : ('' as any)
+			} catch (e) {
+				return ('' as any)
+			}
+		}
+		// 回退：尝试 data 字段中查找（通过序列化/解析再点访问，避免 String.get）
+		if (parsed.data != null) {
+			try {
+				const dataJson = JSON.stringify(parsed.data)
+				if (dataJson != null && dataJson != '') {
+					const dataParsed = JSON.parse(dataJson) as LocalParsedCommon
+					if (key === 'rewards' && dataParsed.rewards != null) return dataParsed.rewards as any
+					if (key === 'kid' && dataParsed.kid != null) return dataParsed.kid as any
+				}
+			} catch (e) {}
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 安全获取 userInfo.kid（使用统一的 store 导出函数）
+const getUserKid = (): string => {
+	return getUserKidFromStoreVip()
+}
+
+// 响应式数据
+const selectedPackage = ref('year') // 默认选择年卡
+const currentFeedbackIndex = ref(0)
+let feedbackTimer: any | null = null
+
+// 是否禁用购买按钮（模板中使用，避免使用 !selectedPackage）
+const isPackageDisabled = computed((): boolean => {
+	try {
+		return (selectedPackage.value == null || selectedPackage.value.toString() === '')
+	} catch (e) {}
+	return true
+})
+
+// 抽奖相关
+const showLotteryModal = ref(false)
+const showLotteryResult = ref(false)
+const showGiftBox = ref(false)
+// 明确指定可空 any 类型，避免 ref 泛型推断歧义
+const lotteryInfo = ref<any | null>(null)
+const lotteryReward = ref<any | null>(null)
+
+// 反馈列表
+const feedbackList = ref([
+	'开通会员后，能直接联系向导，安排行程更方便了！服务质量大幅提升，出行体验更好！',
+	'专属客服很贴心，有问题马上就能解决，体验很棒！24小时在线，响应迅速！',
+	'开通年卡会员后，向导通过官方认证更权威，更有信任感，咨询联系更多了！',
+	'很棒！开通年卡运营权限后，经常可以派单赚介绍佣金！收入增加了不少！',
+	'会员认证标识让我在平台上更显专业，客户更信任，订单量明显增加！',
+	'精选推荐功能真的很实用，我的向导服务获得了更多曝光机会！'
+])
+
+// 计算属性
+// 使用统一的 store 导出函数获取用户信息
+const userInfo = computed((): any => {
+	try {
+		const userId = getUserKidFromStoreVip()
+		if (userId == '') return {} as any
+		
+		// 从 storage 读取完整用户信息（用于获取 vip 等字段）
+		const storage = uni.getStorageSync('userInfo')
+		const storageJson = (storage != null && storage != '') ? JSON.stringify(storage) : ''
+		if (storageJson == null || storageJson == '') return {} as any
+		const parsed = JSON.parse(storageJson) as any
+		if (parsed != null) return parsed
+	} catch (e) {}
+	return {} as any
+})
+
+// 模板友好的字段（使用响应式 ref，从 API 获取最新数据）
+const userAvatar = computed((): string => {
+	return userAvatarValue.value
+})
+
+const userNickname = computed((): string => {
+	return userNicknameValue.value
+})
+
+// 模板友好：userKid 与 lottery info 显示字段
+const userKid = computed((): string => {
+	try {
+		return getUserKid()
+	} catch (e) {}
+	return ''
+})
+
+const lotteryFreeCount = computed((): number => {
+	try {
+		const v = safeGetProp((lotteryInfo.value != null) ? (lotteryInfo.value as any) : ('' as any), 'freeCount')
+		if (v != null && v != '') return parseInt(v.toString())
+	} catch (e) {}
+	return 0
+})
+
+const lotteryMaxFreeCount = computed((): number => {
+	try {
+		const v = safeGetProp((lotteryInfo.value != null) ? (lotteryInfo.value as any) : ('' as any), 'maxFreeCount')
+		if (v != null && v != '') return parseInt(v.toString())
+	} catch (e) {}
+	return 1
+})
+
+const lotteryLuckyPoints = computed((): number => {
+	try {
+		const v = safeGetProp((lotteryInfo.value != null) ? (lotteryInfo.value as any) : ('' as any), 'luckyPoints')
+		if (v != null && v != '') return parseInt(v.toString())
+	} catch (e) {}
+	return 0
+})
+
+// 统一 VIP 状态：10 未开通, 20 已开通, 30 已过期
+const vipStatus = computed((): number => {
+	try {
+		// 🎯 使用从 API 获取的响应式数据
+		const vipVal = userVipValue.value
+		const expireVal = userVipExpireTimeValue.value
+
+		let resolved = vipVal
+		if (expireVal != null && expireVal != '') {
+			try {
+				const expireDate: Date = new Date(expireVal)
+				const now: Date = new Date()
+				if (expireDate.getTime() <= now.getTime()) {
+					resolved = 30
+				} else if (resolved != 10) {
+					resolved = 20
+				}
+			} catch (e) {}
+		}
+		return resolved
+	} catch (e) {}
+	return 10
+})
+
+// 🎯 新增：用于 NicknameWithBadges 组件的 VIP 类型
+// 返回 'year' | 'normal' | ''
+const userVipTypeForBadge = computed((): string => {
+	// 只有 VIP 状态为已开通(20)时才显示图标
+	if (vipStatus.value != 20) return ''
+	
+	// 🔧 修复：后端 vipType 只有两种：10=月卡，20=年卡
+	const vipTypeNum = userVipTypeValue.value
+	if (vipTypeNum == 20) return 'year'
+	if (vipTypeNum == 10) return 'normal'
+	// 如果 vipType 未知但 VIP 已开通，默认显示普通会员图标
+	return 'normal'
+})
+
+const getCurrentPrice = computed(() => {
+	return selectedPackage.value === 'month' ? 30 : 298
+})
+
+const getVipType = computed(() => {
+	return selectedPackage.value === 'month' ? '10' : '20'
+})
+
+const getVipStatusBarText = (): string => {
+	const status = vipStatus.value
+	// 🎯 使用从 API 获取的响应式数据
+	const expireTime = userVipExpireTimeValue.value
+	if (status == 20) {
+		const dateStr = (expireTime != null && expireTime != '') ? formatDate(expireTime) : ''
+		return dateStr != ''
+			? `当前会员状态：已开通，有效期至：${dateStr}`
+			: '当前会员状态：已开通'
+	}
+	if (status == 30) {
+		return '当前会员状态：已过期，请尽快续费'
+	}
+	// 🎯 按照用户要求，未开通状态显示固定文本
+	return '当前会员状态：未开通'
+}
+
+// 生命周期（实际 onMounted/onUnmounted 将在文件末尾，确保函数定义在前）
+
+// 方法
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.navigateTo({ url: '/packageA/my/proveDetails/index' })
+		}
+	})
+}
+
+// 🎯 加载抽奖开关状态
+const loadLotterySwitchStatus = () => {
+	getLotterySwitchStatus().then((res: any) => {
+		console.log('[VIP] 抽奖开关状态响应:', res)
+		
+		if (res == null) {
+			// 默认显示按钮（降级策略）
+			lotteryEnabled.value = true
+			return
+		}
+		
+		// 安全解析响应
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(res)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {
+			console.error('[VIP] 解析抽奖开关响应失败:', e)
+			lotteryEnabled.value = true
+			return
+		}
+		
+		if (resObj == null) {
+			lotteryEnabled.value = true
+			return
+		}
+		
+		// 获取响应码
+		let codeAny: any | null = ''
+		try { codeAny = resObj.get('code') } catch (e) {}
+		
+		// 兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeAny != null) {
+			if (typeof codeAny == 'number') {
+				const codeNum = codeAny as number
+				isSuccess = (codeNum == 200)
+			} else {
+				const codeStr = codeAny.toString()
+				isSuccess = (codeStr == '200')
+			}
+		}
+		
+		if (isSuccess == true) {
+			let dataAny: any | null = ''
+			try { dataAny = resObj.get('data') } catch (e) {}
+			
+			if (dataAny != null) {
+				let dataObj: UTSJSONObject | null = null
+				try {
+					const dataJson = JSON.stringify(dataAny)
+					if (dataJson != null && dataJson != '' && dataJson != 'null') {
+						dataObj = JSON.parse(dataJson) as UTSJSONObject
+					}
+				} catch (e) {}
+				
+				if (dataObj != null) {
+					let enabledAny: any | null = ''
+					try { enabledAny = dataObj.get('enabled') } catch (e) {}
+					
+					if (enabledAny != null) {
+						// 兼容布尔值和字符串
+						if (typeof enabledAny == 'boolean') {
+							lotteryEnabled.value = (enabledAny as boolean)
+						} else {
+							const enabledStr = enabledAny.toString().toLowerCase()
+							lotteryEnabled.value = (enabledStr == 'true')
+						}
+					} else {
+						lotteryEnabled.value = true
+					}
+				} else {
+					lotteryEnabled.value = true
+				}
+			} else {
+				lotteryEnabled.value = true
+			}
+		} else {
+			// API 失败时默认显示按钮
+			lotteryEnabled.value = true
+		}
+		
+		console.log('[VIP] 抽奖开关状态:', lotteryEnabled.value)
+	}).catch((error: any | null): void => {
+		console.error('[VIP] 加载抽奖开关状态失败:', error)
+		// 失败时默认显示按钮（降级策略）
+		lotteryEnabled.value = true
+	})
+}
+
+// 🎯 抽奖功能 - 跳转到抽奖页面
+const handleLottery = () => {
+	const kid = getUserKid()
+	if (kid == null || kid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 跳转到抽奖页面
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/lottery'
+	})
+}
+
+// 🎯 修复：直接从 profile 对象更新 VIP 响应式数据
+// 这样可以确保支付成功后返回时，页面立即显示最新的 VIP 状态
+const updateVipDataFromProfile = (profile: any) => {
+	if (profile == null) return
+	
+	let profileObj: UTSJSONObject | null = null
+	try {
+		const profileJson = JSON.stringify(profile)
+		if (profileJson != null && profileJson != '' && profileJson != 'null') {
+			profileObj = JSON.parse(profileJson) as UTSJSONObject
+		}
+	} catch (e) {
+		console.error('[VIP] updateVipDataFromProfile - 解析 profile 失败:', e)
+		return
+	}
+	
+	if (profileObj == null) return
+	
+	// 更新头像
+	let imageVal: any | null = null
+	try { imageVal = profileObj.get('image') } catch (e) {}
+	let avatarVal: any | null = null
+	try { avatarVal = profileObj.get('avatar') } catch (e) {}
+	
+	const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : ''
+	const avatarStr = (avatarVal != null && avatarVal.toString() != '') ? avatarVal.toString() : ''
+	
+	if (imageStr != '') {
+		userAvatarValue.value = imageStr
+	} else if (avatarStr != '') {
+		userAvatarValue.value = avatarStr
+	}
+	
+	// 更新昵称
+	let nicknameVal: any | null = null
+	try { nicknameVal = profileObj.get('nickname') } catch (e) {}
+	if (nicknameVal != null && nicknameVal.toString() != '') {
+		userNicknameValue.value = nicknameVal.toString()
+	}
+	
+	// 更新 VIP 状态
+	let vipVal: any | null = null
+	try { vipVal = profileObj.get('vip') } catch (e) {}
+	if (vipVal != null) {
+		const vipNum = parseInt(vipVal.toString())
+		if (isNaN(vipNum) == false) {
+			userVipValue.value = vipNum
+			console.log('[VIP] updateVipDataFromProfile - VIP状态更新为:', vipNum)
+		}
+	}
+	
+	// 更新 VIP 到期时间
+	let vipExpireVal: any | null = null
+	try { vipExpireVal = profileObj.get('vipExpireTime') } catch (e) {}
+	if (vipExpireVal != null && vipExpireVal.toString() != '') {
+		userVipExpireTimeValue.value = vipExpireVal.toString()
+		console.log('[VIP] updateVipDataFromProfile - VIP到期时间更新为:', userVipExpireTimeValue.value)
+	}
+	
+	// 更新 VIP 类型
+	let vipTypeVal: any | null = null
+	try { vipTypeVal = profileObj.get('vipType') } catch (e) {}
+	if (vipTypeVal != null) {
+		const vipTypeNum = parseInt(vipTypeVal.toString())
+		if (isNaN(vipTypeNum) == false) {
+			userVipTypeValue.value = vipTypeNum
+			console.log('[VIP] updateVipDataFromProfile - VIP类型更新为:', vipTypeNum)
+		}
+	}
+	
+	console.log('[VIP] updateVipDataFromProfile - 完成，VIP状态:', userVipValue.value, '到期时间:', userVipExpireTimeValue.value, '类型:', userVipTypeValue.value)
+}
+
+// 🎯 从 Storage 加载用户基本信息（作为降级方案）
+// 注意：此函数必须在 loadUserInfo 之前定义，因为 UTS 没有函数提升
+// 🔧 修复 APP 端问题：优先从 store 导出函数获取数据（与"我的"页面保持一致）
+const loadUserInfoFromStorage = () => {
+	try {
+		// 🔧 修复 APP 端问题：优先从 store 的导出函数获取（更可靠）
+		// 这与"我的"页面的实现保持一致
+		const storeUserId = getUserKidFromStoreVip()
+		const storeNickname = getUserNickname()
+		const storeAvatar = getUserAvatar()
+		const storeVipStatus = getUserVipStatus()
+		const storeVipExpireTime = getUserVipExpireTime()
+		const storeVipType = getUserNumberProp('vipType')
+		
+		// 如果 store 中有有效数据，直接使用
+		if (storeUserId != null && storeUserId != '') {
+			// 设置昵称
+			if (storeNickname != null && storeNickname != '') {
+				userNicknameValue.value = storeNickname
+			}
+			
+			// 设置头像
+			if (storeAvatar != null && storeAvatar != '') {
+				userAvatarValue.value = storeAvatar
+			}
+			
+			// 设置 VIP 状态
+			userVipValue.value = storeVipStatus
+			
+			// 设置 VIP 到期时间
+			if (storeVipExpireTime != null && storeVipExpireTime != '') {
+				userVipExpireTimeValue.value = storeVipExpireTime
+			}
+			
+			// 设置 VIP 类型
+			userVipTypeValue.value = storeVipType
+			
+			return
+		}
+		
+		// 备用方案：直接从 storage 读取
+		const storage = uni.getStorageSync('userInfo')
+		
+		if (storage == null) {
+			return
+		}
+		
+		// 🔧 修复：处理不同类型的 storage 数据
+		let storageJson = ''
+		if (typeof storage === 'string') {
+			storageJson = storage as string
+		} else {
+			try {
+				storageJson = JSON.stringify(storage)
+			} catch (e) {
+				console.error('[VIP] Storage 数据序列化失败:', e)
+				return
+			}
+		}
+		
+		if (storageJson == '' || storageJson == 'null' || storageJson == '{}') {
+			return
+		}
+		
+		let storageObj: UTSJSONObject | null = null
+		try {
+			storageObj = JSON.parse(storageJson) as UTSJSONObject
+			
+			// 🔧 修复 APP 端问题：如果解析结果是字符串，说明存储的是双重序列化的数据，需要再次解析
+			if (typeof storageObj === 'string') {
+				console.log('[VIP] Storage 数据是双重序列化，进行二次解析')
+				const innerJson = storageObj as string
+				if (innerJson != '' && innerJson != 'null') {
+					storageObj = JSON.parse(innerJson) as UTSJSONObject
+				}
+			}
+		} catch (e) {
+			console.error('[VIP] Storage JSON 解析失败:', e)
+			return
+		}
+		
+		if (storageObj == null) {
+			console.log('[VIP] Storage 对象为空')
+			return
+		}
+		
+		// 获取头像 - 🔧 修复：优先使用 image 字段（与后端 UserHomePageVO 一致）
+		let imageVal: any | null = null
+		try { imageVal = storageObj.get('image') } catch (e) {}
+		let avatarVal: any | null = null
+		try { avatarVal = storageObj.get('avatar') } catch (e) {}
+		
+		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : ''
+		const avatarStr = (avatarVal != null && avatarVal.toString() != '') ? avatarVal.toString() : ''
+		
+		// 🔧 修复：优先使用 image 字段（后端返回的是 image）
+		if (imageStr != '') {
+			userAvatarValue.value = imageStr
+			console.log('[VIP] Storage 设置头像(image):', imageStr)
+		} else if (avatarStr != '') {
+			userAvatarValue.value = avatarStr
+			console.log('[VIP] Storage 设置头像(avatar):', avatarStr)
+		}
+		console.log('[VIP] Storage 用户头像:', userAvatarValue.value)
+		
+		// 获取昵称
+		let nicknameVal: any | null = null
+		try { nicknameVal = storageObj.get('nickname') } catch (e) {}
+		let nickNameVal: any | null = null
+		try { nickNameVal = storageObj.get('nickName') } catch (e) {}
+		
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : ''
+		const nickNameStr = (nickNameVal != null && nickNameVal.toString() != '') ? nickNameVal.toString() : ''
+		
+		if (nicknameStr != '') {
+			userNicknameValue.value = nicknameStr
+		} else if (nickNameStr != '') {
+			userNicknameValue.value = nickNameStr
+		}
+		console.log('[VIP] Storage 用户昵称:', userNicknameValue.value)
+		
+		// 获取 VIP 状态
+		let vipVal: any | null = null
+		try { vipVal = storageObj.get('vip') } catch (e) {}
+		const vipNum = (vipVal != null && vipVal.toString() != '') ? parseInt(vipVal.toString()) : 10
+		userVipValue.value = isNaN(vipNum) == false ? vipNum : 10
+		console.log('[VIP] Storage VIP状态:', userVipValue.value)
+		
+		// 获取 VIP 到期时间
+		let vipExpireVal: any | null = null
+		try { vipExpireVal = storageObj.get('vipExpireTime') } catch (e) {}
+		const vipExpireStr = (vipExpireVal != null && vipExpireVal.toString() != '') ? vipExpireVal.toString() : ''
+		userVipExpireTimeValue.value = vipExpireStr
+		console.log('[VIP] Storage VIP到期时间:', userVipExpireTimeValue.value)
+		
+		// 获取 VIP 类型
+		let vipTypeVal: any | null = null
+		try { vipTypeVal = storageObj.get('vipType') } catch (e) {}
+		const vipTypeNum = (vipTypeVal != null && vipTypeVal.toString() != '') ? parseInt(vipTypeVal.toString()) : 0
+		userVipTypeValue.value = isNaN(vipTypeNum) == false ? vipTypeNum : 0
+		console.log('[VIP] Storage VIP类型:', userVipTypeValue.value)
+		
+		console.log('[VIP] Storage 加载完成')
+	} catch (e) {
+		console.error('[VIP] 从 Storage 加载用户信息失败:', e)
+	}
+}
+
+// 🎯 加载用户信息（从统一缓存获取，复用登录时预加载的数据）
+// 🔧 修复 APP 端问题：使用回调模式处理 API 响应，避免 async/await 在 APP 端的问题
+const loadUserInfo = () => {
+	const kid = getUserKid()
+	if (kid == null || kid == '') {
+		console.log('[VIP] 用户未登录，无法加载用户信息')
+		return
+	}
+	
+	console.log('[VIP] 开始加载用户信息, kid:', kid)
+	
+	// 🎯 使用统一的用户信息缓存（复用登录时预加载的数据）
+	getCurrentUserProfile(false).then((profile: any) => {
+		console.log('[VIP] 缓存响应:', profile)
+		
+		if (profile == null) {
+			console.error('[VIP] 缓存响应为空')
+			loadUserInfoFromStorage()
+			return
+		}
+		
+		// 安全转换为 UTSJSONObject
+		let infoObj: UTSJSONObject | null = null
+		try {
+			const infoJson = JSON.stringify(profile)
+			if (infoJson != null && infoJson != '' && infoJson != 'null') {
+				infoObj = JSON.parse(infoJson) as UTSJSONObject
+			}
+		} catch (e) {
+			console.error('[VIP] 响应解析失败:', e)
+		}
+		
+		if (infoObj == null) {
+			console.error('[VIP] 响应对象为空')
+			loadUserInfoFromStorage()
+			return
+		}
+		
+		// 获取头像（优先 image，其次 avatar）
+		let imageVal: any | null = null
+		try { imageVal = infoObj.get('image') } catch (e) {}
+		let avatarVal: any | null = null
+		try { avatarVal = infoObj.get('avatar') } catch (e) {}
+		
+		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : ''
+		const avatarStr = (avatarVal != null && avatarVal.toString() != '') ? avatarVal.toString() : ''
+		
+		if (imageStr != '') {
+			userAvatarValue.value = imageStr
+			console.log('[VIP] 设置头像(image):', imageStr)
+		} else if (avatarStr != '') {
+			userAvatarValue.value = avatarStr
+			console.log('[VIP] 设置头像(avatar):', avatarStr)
+		}
+		console.log('[VIP] 用户头像:', userAvatarValue.value)
+		
+		// 获取昵称
+		let nicknameVal: any | null = null
+		try { nicknameVal = infoObj.get('nickname') } catch (e) {}
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : ''
+		if (nicknameStr != '') {
+			userNicknameValue.value = nicknameStr
+		}
+		console.log('[VIP] 用户昵称:', userNicknameValue.value)
+		
+		// 🎯 使用统一的 VIP 状态获取函数
+		const vipStatus = getCurrentUserVipStatus()
+		try {
+			const vipStatusJson = JSON.stringify(vipStatus)
+			if (vipStatusJson != null && vipStatusJson != '') {
+				const vipStatusParsed = JSON.parse(vipStatusJson) as any
+				if (vipStatusParsed != null) {
+					const vipStatusData = vipStatusParsed as VipStatusData
+					userVipValue.value = (vipStatusData.vip != null) ? (vipStatusData.vip as number) : 10
+					userVipExpireTimeValue.value = (vipStatusData.vipExpireTime != null) ? vipStatusData.vipExpireTime.toString() : ''
+					userVipTypeValue.value = (vipStatusData.vipType != null) ? (vipStatusData.vipType as number) : 0
+				}
+			}
+		} catch (e) {
+			console.error('[VIP] 解析VIP状态失败:', e)
+			userVipValue.value = 10
+			userVipExpireTimeValue.value = ''
+			userVipTypeValue.value = 0
+		}
+		
+		console.log('[VIP] VIP状态:', userVipValue.value)
+		console.log('[VIP] VIP到期时间:', userVipExpireTimeValue.value)
+		console.log('[VIP] VIP类型:', userVipTypeValue.value)
+		
+		console.log('[VIP] ✅ 用户信息加载成功（使用统一缓存）')
+	}).catch((error: any | null): void => {
+		console.error('[VIP] 加载用户信息异常:', error)
+		// 🎯 异常时，尝试从 Storage 加载作为降级方案
+		loadUserInfoFromStorage()
+	})
+}
+
+// 加载抽奖信息（先定义，避免在文件中被调用时未声明）
+// 🔧 修复 APP 端问题：使用 .then() 处理 Promise
+const loadLotteryInfo = () => {
+	const kid = getUserKid()
+	if (kid == null || kid == '') {
+		return
+	}
+	
+	// 构造参数安全传递
+	const paramsJson = JSON.stringify({ userKid: kid })
+	let paramsParsed: any = ''
+	try {
+		paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as any : ''
+	} catch (e) {
+		console.error('[VIP] 抽奖参数解析失败:', e)
+		return
+	}
+	if (paramsParsed == null || paramsParsed == '') return
+	const params = paramsParsed as UTSJSONObject
+	
+	getLotteryInfo(params).then((resultRaw: any) => {
+		// 安全读取返回值 (使用 UTSJSONObject .get)
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(resultRaw)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {}
+		
+		if (resObj == null) return
+		
+		let codeAny: any | null = null
+		try { codeAny = resObj.get('code') } catch (e) {}
+		
+		// 🔧 修复：兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeAny != null) {
+			// 🔧 修复：同时支持数字和字符串比较
+			if (typeof codeAny == 'number') {
+				const codeNum = codeAny as number
+				isSuccess = (codeNum == 200)
+			} else {
+				const codeStr = codeAny.toString()
+				isSuccess = (codeStr == '200')
+			}
+		}
+		
+		if (isSuccess == true) {
+			let dataAny: any | null = null
+			try { dataAny = resObj.get('data') } catch (e) {}
+			lotteryInfo.value = (dataAny != null) ? dataAny : null
+		}
+	}).catch((error: any | null): void => {
+		console.error('加载抽奖信息失败:', error)
+	})
+}
+
+// 抽奖成功回调
+const handleLotterySuccess = (result: any) => {
+	showLotteryModal.value = false
+	try {
+		if (result != null) {
+			const rewardsAny = safeGetProp(result, 'rewards')
+			if (rewardsAny != null && Array.isArray(rewardsAny) && rewardsAny.length > 0) {
+				lotteryReward.value = rewardsAny[0]
+				showLotteryResult.value = true
+				// 刷新抽奖信息
+				loadLotteryInfo()
+			}
+		}
+	} catch (e) {}
+}
+
+// 使用/赠送礼物（已废弃，礼物只能赠送）
+const handleUseGift = async (recordKid: string, actionType: number, receiveKid?: string) => {
+	// 礼物只能赠送，不能自己使用
+	uni.showToast({
+		title: '礼物只能赠送，不能自己使用',
+		icon: 'none'
+	})
+}
+
+// 查看礼物盒
+const handleViewGiftBox = () => {
+	showGiftBox.value = true
+}
+
+// 从礼物盒赠送礼物
+const handleSendGiftFromBox = (gift: any) => {
+	// 跳转到聊天页面或打开用户选择弹窗
+	// TODO: 实现用户选择功能
+	uni.showToast({
+		title: '请选择接收用户',
+		icon: 'none'
+	})
+}
+
+// 提现
+// 🔧 修复 APP 端问题：使用 .then() 处理 Promise
+const handleWithdraw = (recordKid: string, method: number) => {
+	// #ifdef MP-WEIXIN
+	// 微信小程序端不支持提现功能
+	uni.showToast({
+		title: '微信小程序暂不支持提现功能',
+		icon: 'none'
+	})
+	return
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	// 使用安全方法读取 userKid
+	const userKidSafe = getUserKid()
+	if (userKidSafe == null || userKidSafe == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	// 构造参数并显式断言为 HandleCashRewardParams，避免匿名对象类型
+	const paramsJson = JSON.stringify({
+		userKid: userKidSafe,
+		lotteryRecordKid: recordKid,
+		actionType: 10,
+		withdrawMethod: method
+	})
+	let paramsParsed: any = ''
+	try {
+		paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as any : ''
+	} catch (e) {
+		console.error('提现参数解析失败:', e)
+		uni.showToast({ title: '提现失败，请重试', icon: 'none' })
+		return
+	}
+	if (paramsParsed == null || paramsParsed == '') {
+		uni.showToast({ title: '提现失败，请重试', icon: 'none' })
+		return
+	}
+	const params = paramsParsed as UTSJSONObject
+	
+	handleCashReward(params).then((resultRaw: any) => {
+		// 使用 UTSJSONObject 安全读取返回值
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(resultRaw)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {}
+		
+		if (resObj == null) {
+			uni.showToast({ title: '提现失败', icon: 'none' })
+			return
+		}
+		
+		let codeAny: any | null = null
+		try { codeAny = resObj.get('code') } catch (e) {}
+		
+		// 🔧 修复：兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeAny != null) {
+			const codeStr = codeAny.toString()
+			isSuccess = (codeStr == '200')
+		}
+		
+		if (isSuccess == true) {
+			uni.showToast({ title: '提现申请已提交', icon: 'success' })
+			loadLotteryInfo()
+		} else {
+			let msgAny: any | null = null
+			try { msgAny = resObj.get('msg') } catch (e) {}
+			let messageAny: any | null = null
+			try { messageAny = resObj.get('message') } catch (e) {}
+			const msgVal = (msgAny != null && msgAny.toString() != '') ? msgAny.toString() : ((messageAny != null && messageAny.toString() != '') ? messageAny.toString() : '提现失败')
+			uni.showToast({ title: msgVal, icon: 'none' })
+		}
+	}).then((ignore: any) => {}, (error: any) => {
+		console.error('提现失败:', error)
+		uni.showToast({ title: '提现失败，请重试', icon: 'none' })
+	})
+	// #endif
+}
+
+// 存入余额
+// 🔧 修复 APP 端问题：使用 .then() 处理 Promise
+const handleDeposit = (recordKid: string) => {
+	// 安全读取 userKid
+	const userKidSafe2 = getUserKid()
+	if (userKidSafe2 == null || userKidSafe2 == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+
+	// 构造参数并断言类型
+	const paramsJson = JSON.stringify({
+		userKid: userKidSafe2,
+		lotteryRecordKid: recordKid,
+		actionType: 20
+	})
+	let paramsParsed: any = ''
+	try {
+		paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as any : ''
+	} catch (e) {
+		console.error('存入余额参数解析失败:', e)
+		uni.showToast({ title: '存入余额失败，请重试', icon: 'none' })
+		return
+	}
+	if (paramsParsed == null || paramsParsed == '') {
+		uni.showToast({ title: '存入余额失败，请重试', icon: 'none' })
+		return
+	}
+	const params = paramsParsed as UTSJSONObject
+
+	handleCashReward(params).then((resultRaw: any) => {
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(resultRaw)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {}
+		
+		if (resObj == null) {
+			uni.showToast({ title: '存入失败', icon: 'none' })
+			return
+		}
+		
+		let codeAny: any | null = null
+		try { codeAny = resObj.get('code') } catch (e) {}
+		
+		// 🔧 修复：兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeAny != null) {
+			const codeStr = codeAny.toString()
+			isSuccess = (codeStr == '200')
+		}
+
+		if (isSuccess == true) {
+			uni.showToast({ title: '已存入余额', icon: 'success' })
+			loadLotteryInfo()
+		} else {
+			let msgAny: any | null = null
+			try { msgAny = resObj.get('msg') } catch (e) {}
+			let messageAny: any | null = null
+			try { messageAny = resObj.get('message') } catch (e) {}
+			const msgVal = (msgAny != null && msgAny.toString() != '') ? msgAny.toString() : ((messageAny != null && messageAny.toString() != '') ? messageAny.toString() : '存入失败')
+			uni.showToast({ title: msgVal, icon: 'none' })
+		}
+	}).then((ignore: any) => {}, (error: any) => {
+		console.error('存入余额失败:', error)
+		uni.showToast({
+			title: '存入余额失败，请重试',
+			icon: 'none'
+		})
+	})
+}
+
+// 🎯 格式化VIP状态显示
+// 本地日期格式化（在文件顶部或被调用处之前可用，避免函数声明顺序问题）
+const formatDateLocal = (dateStr: string | Date): string => {
+	try {
+		if (dateStr == null) return ''
+		const date = (typeof dateStr === 'string') ? new Date(dateStr) : dateStr
+		const year = date.getFullYear()
+		const month = (date.getMonth() + 1).toString().padStart(2, '0')
+		const day = (date.getDate()).toString().padStart(2, '0')
+		return `${year}-${month}-${day}`
+	} catch (e) {}
+	return ''
+}
+
+const getFormattedVipStatus = (): string => {
+	try {
+		// 🎯 使用从 API 获取的响应式数据
+		const vipVal = userVipValue.value
+		const vipExpireTime = userVipExpireTimeValue.value
+		const vipType = userVipTypeValue.value
+		
+		// 🔧 修复：后端 vipType 只有两种：10=月卡，20=年卡
+		let typeText = '月卡会员'
+		if (vipType == 10) {
+			typeText = '月卡会员'
+		} else if (vipType == 20) {
+			typeText = '年卡会员'
+		}
+	
+		if (vipVal == 20 && vipExpireTime != null && vipExpireTime != '') {
+			const dateStr = formatDateLocal(vipExpireTime)
+			return `${typeText}${dateStr}到期`
+		} else if (vipVal == 20) {
+			return `${typeText}已开通`
+		} else if (vipVal == 30) {
+			return '会员已过期，请尽快续费'
+		}
+	} catch (e) {}
+	return '当前会员状态：未开通'
+}
+
+// 格式化日期
+const formatDate = (dateStr: string | Date): string => {
+	if (dateStr == null) return ''
+	const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr
+	const year = date.getFullYear()
+	const month = (date.getMonth().toString() + 1).padStart(2, '0')
+	const day = (date.getDate().toString()).padStart(2, '0')
+	return `${year}-${month}-${day}`
+}
+
+// 选择套餐
+const selectPackage = (type: string) => {
+	selectedPackage.value = type
+}
+
+// 启动反馈轮播
+const startFeedbackCarousel = () => {
+	feedbackTimer = setInterval(() => {
+		currentFeedbackIndex.value = (currentFeedbackIndex.value + 1) % feedbackList.value.length
+	}, 4000) as any // 每4秒切换一次
+}
+
+// 停止反馈轮播
+const stopFeedbackCarousel = () => {
+	if (feedbackTimer != null) {
+		const t = feedbackTimer as number
+		try { clearInterval(t) } catch (e) {}
+		feedbackTimer = null
+	}
+}
+
+// 手动切换反馈
+const switchFeedback = (index: number) => {
+	currentFeedbackIndex.value = index
+	// 重新启动定时器
+	stopFeedbackCarousel()
+	startFeedbackCarousel()
+}
+
+// 🎯 初始化页面布局（获取状态栏高度）
+const initPageLayout = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 注意：pageStatusBarHeight 已由 composable 初始化，无需额外计算
+}
+
+// 生命周期：放在函数定义之后，确保所有函数已声明（UTS 要求）
+onMounted(() => {
+	console.log('[VIP] 页面加载')
+	// 🎯 初始化页面布局
+	initPageLayout()
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	initUserInfoAction()
+	
+	// 🎯 先从 Storage 加载基本信息（立即显示，避免白屏）
+	loadUserInfoFromStorage()
+	
+	// 🎯 等待登录状态初始化后再从 API 加载最新用户信息
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('[VIP] 登录状态检查结果:', result)
+		if (result == 1) {
+			// 🎯 从 API 获取最新用户信息（包括头像、昵称、VIP状态）
+			loadUserInfo()
+			// 加载抽奖信息
+			loadLotteryInfo()
+		} else {
+			console.log('[VIP] 用户未登录')
+		}
+	})
+	
+	// 获取用户信息（已在store中）
+	console.log('当前用户信息:', userInfo.value)
+	// 启动反馈轮播
+	startFeedbackCarousel()
+})
+
+// 🎯 页面显示时刷新用户信息（支付成功返回后更新VIP状态）
+onShow(() => {
+	console.log('[VIP] 页面显示')
+	// 🔧 修复 APP 端问题：先从 Storage 加载，确保有数据显示
+	loadUserInfoFromStorage()
+	
+	// 🎯 加载抽奖开关状态
+	loadLotterySwitchStatus()
+	
+	// 🔧 修复 APP 端问题：等待登录状态初始化后再从 API 加载
+	waitForLoginStatus(1000).then((result: number) => {
+		console.log('[VIP] onShow 登录状态检查结果:', result)
+		if (result == 1) {
+			// 🔧 修复：强制刷新用户信息，确保VIP状态是最新的（支付成功后返回）
+			// 🎯 修复VIP状态不更新问题：刷新后更新Storage并重新加载页面数据
+			refreshCurrentUserProfile().then((profile: any) => {
+				console.log('[VIP] 用户信息刷新成功')
+				if (profile != null) {
+					// 🎯 关键修复：更新本地存储中的VIP状态
+					const profileJson = JSON.stringify(profile)
+					const profileObj = JSON.parse(profileJson) as UTSJSONObject
+					updateUserInfoAction(profileObj)
+					console.log('[VIP] 已更新Storage中的用户信息')
+					
+					// 🎯 修复：直接更新页面响应式数据，确保立即显示最新状态
+					updateVipDataFromProfile(profile)
+					console.log('[VIP] 已直接更新页面响应式数据')
+				}
+			}).catch((error: any | null): void => {
+				console.error('[VIP] 刷新用户信息失败:', error)
+			})
+		} else {
+			console.log('[VIP] onShow 用户未登录')
+		}
+	})
+})
+
+onUnmounted(() => {
+	// 清除定时器
+	stopFeedbackCarousel()
+})
+
+// 创建VIP订单（提前定义，确保在调用前存在）
+// 🔧 修复 APP 端问题：使用 .then() 处理 Promise，避免 async/await 在 APP 端的问题
+const createVipOrderHandler = () => {
+	uni.showLoading({ title: '创建订单中...' })
+	console.log('🔍 [VIP] 开始创建VIP订单')
+	
+	// 安全获取 userKid
+	const userKidSafe = getUserKid()
+	if (userKidSafe == null || userKidSafe == '') {
+		uni.hideLoading()
+		uni.showToast({ title: '用户信息不完整，请重新登录', icon: 'none' })
+		return
+	}
+	
+	const paramsObj = {
+		totalMoney: getCurrentPrice.value,
+		userKid: userKidSafe,
+		vipType: getVipType.value
+	}
+	
+	console.log('🔍 [VIP] 订单参数:', paramsObj)
+	
+	// 🔧 修复：使用 .then() 处理 Promise，避免 async/await 在 APP 端的问题
+	post('/order/tourist/createVipOrder', paramsObj, true).then((resultRaw: any) => {
+		console.log('🔍 [VIP] API响应:', resultRaw)
+		uni.hideLoading()
+
+		// 使用 UTSJSONObject 安全读取返回值
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(resultRaw)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {
+			console.error('🔍 [VIP] 响应解析失败:', e)
+		}
+		
+		if (resObj == null) {
+			uni.showToast({ title: '订单创建失败，请重试', icon: 'none' })
+			return
+		}
+		
+		let codeAny: any | null = null
+		try { codeAny = resObj.get('code') } catch (e) {}
+		
+		// 🔧 修复：兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeAny != null) {
+			const codeStr = codeAny.toString()
+			isSuccess = (codeStr == '200')
+		}
+
+		if (isSuccess == true) {
+			let orderAny: any | null = null
+			try { orderAny = resObj.get('data') } catch (e) {}
+			console.log('🔍 [VIP] 订单创建成功，跳转支付页面:', orderAny)
+			
+			if (orderAny != null) {
+				// 🔧 修复：安全获取订单 kid
+				let orderKid = ''
+				try {
+					const orderJson = JSON.stringify(orderAny)
+					if (orderJson != null && orderJson != '' && orderJson != 'null') {
+						const orderObj = JSON.parse(orderJson) as UTSJSONObject
+						const kidVal = orderObj.get('kid')
+						if (kidVal != null && kidVal.toString() != '') {
+							orderKid = kidVal.toString()
+						}
+					}
+				} catch (e) {
+					console.error('🔍 [VIP] 订单数据解析失败:', e)
+				}
+				
+				if (orderKid != '') {
+					console.log('🔍 [VIP] 跳转支付页面, orderKid:', orderKid)
+					const payUrl = '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid
+					uni.navigateTo({ 
+						url: payUrl,
+						success: () => {
+							console.log('🔍 [VIP] 跳转支付页面成功')
+						},
+						fail: (err: any) => {
+							console.error('🔍 [VIP] 跳转支付页面失败:', err)
+							uni.showToast({ title: '跳转支付页面失败', icon: 'none' })
+						}
+					})
+				} else {
+					console.error('🔍 [VIP] 订单 kid 为空')
+					uni.showToast({ title: '订单创建异常，请重试', icon: 'none' })
+				}
+			} else {
+				console.error('🔍 [VIP] 订单数据为空')
+				uni.showToast({ title: '订单创建异常，请重试', icon: 'none' })
+			}
+		} else {
+			console.error('🔍 [VIP] 订单创建失败:', resultRaw)
+			let msgAny: any | null = null
+			try { msgAny = resObj.get('msg') } catch (e) {}
+			let messageAny: any | null = null
+			try { messageAny = resObj.get('message') } catch (e) {}
+			const msgVal = (msgAny != null && msgAny.toString() != '') ? msgAny.toString() : ((messageAny != null && messageAny.toString() != '') ? messageAny.toString() : '订单创建失败')
+			uni.showToast({ title: msgVal, icon: 'none' })
+		}
+	}).then((ignore: any) => {}, (error: any) => {
+		console.error('创建VIP订单失败:', error)
+		uni.hideLoading()
+		uni.showToast({ title: '订单创建失败，请重试', icon: 'none' })
+	})
+}
+
+// 确认购买
+const confirmPurchase = () => {
+	if (selectedPackage.value == null || selectedPackage.value.toString() == '') {
+		uni.showToast({
+			title: '请选择会员套餐',
+			icon: 'none'
+		})
+		return
+	}
+
+	const kid = getUserKid()
+	if (kid == null || kid == '') {
+		uni.showToast({
+			title: '用户信息不完整，请重新登录',
+			icon: 'none'
+		})
+		return
+	}
+
+	// 直接创建订单并跳转支付页面
+	createVipOrderHandler()
+}
+
+// （已在上方定义 createVipOrderHandler）
+</script>
+
+<style lang="scss" scoped>
+.vip-auth-page {
+	flex-direction: column;
+	flex: 1;
+	background-color: #F5F5F5;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+	position: relative;
+	padding-bottom: 200rpx;
+}
+
+/* 背景图片 - 参考首页实现 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+/* 用户信息卡片 - 使用 relative 定位和 z-index 确保在背景图上方 */
+.user-info-card {
+	margin-top: 40rpx;
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	position: relative;
+	z-index: 10;
+	
+	.user-avatar-section {
+		margin-right: 32rpx;
+		
+		.user-avatar {
+			width: 120rpx;
+			height: 120rpx;
+			border-radius: 60rpx;
+			border-width: 4rpx;
+			border-style: solid;
+			border-color: #ffffff;
+		}
+	}
+	
+	.user-info-section {
+		flex: 1;
+		flex-direction: column;
+		justify-content: center;
+		
+		.user-nickname {
+			font-size: 32rpx;
+			font-weight: bold;
+			color: #333333;
+			margin-bottom: 12rpx;
+		}
+		
+		.user-vip-status {
+			font-size: 28rpx;
+			color: #666666;
+			margin-top: 8rpx;
+		}
+	}
+	
+	.lottery-btn-section {
+		margin-left: 24rpx;
+		flex-direction: row;
+		align-items: center;
+		
+		.lottery-btn {
+			padding: 16rpx 32rpx;
+			background-color: #FF6B35;
+			border-radius: 32rpx;
+			flex-direction: row;
+			align-items: center;
+			justify-content: center;
+			
+			.lottery-text {
+				font-size: 26rpx;
+				color: #ffffff;
+				font-weight: bold;
+			}
+		}
+	}
+}
+
+.promotion-banner {
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-top: 20rpx;
+	padding: 24rpx;
+	background-color: #FF6B35;
+	border-radius: 16rpx;
+	position: relative;
+	z-index: 10;
+	
+	.promotion-content {
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		
+		.promotion-icon {
+			font-size: 32rpx;
+			margin-right: 16rpx;
+		}
+		
+		.promotion-text {
+			font-size: 28rpx;
+			color: #ffffff;
+			font-weight: bold;
+		}
+	}
+}
+
+.current-vip-status {
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 40rpx;
+	padding: 32rpx;
+	background-color: #E8F5E8;
+	border-radius: 16rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #52C41A;
+	flex-direction: row;
+	align-items: center;
+	position: relative;
+	
+	.status-icon {
+		margin-right: 32rpx;
+		
+		.icon-text {
+			font-size: 32rpx;
+			color: #52C41A;
+		}
+	}
+	
+	.status-text {
+		font-size: 28rpx;
+		color: #389E0D;
+		flex: 1;
+	}
+	
+	.lottery-btn {
+		padding: 16rpx 32rpx;
+		background-color: #FF6B35;
+		border-radius: 32rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		
+		.lottery-text {
+			font-size: 26rpx;
+			color: #ffffff;
+			font-weight: bold;
+		}
+	}
+}
+
+.package-section {
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 40rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	position: relative;
+	z-index: 10;
+	background-color: transparent;
+	
+	.section-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333333;
+		margin-bottom: 8rpx;
+		text-align: center;
+	}
+	
+	.section-subtitle {
+		font-size: 26rpx;
+		color: #666666;
+		margin-bottom: 32rpx;
+		text-align: center;
+	}
+	
+	.package-grid {
+		flex-direction: row;
+		padding-top: 8rpx;
+		padding-bottom: 8rpx;
+		
+		.package-card {
+			flex: 1;
+			padding: 32rpx 24rpx;
+			background-color: #ffffff;
+			border-radius: 20rpx;
+			border-width: 4rpx;
+			border-style: solid;
+			border-color: transparent;
+			position: relative;
+			margin-right: 16rpx;
+		}
+		
+		.package-card.selected {
+			border-color: #37B1F2;
+		}
+		
+		.package-card.yearly {
+			border-color: #FF6B35;
+			background-color: #FFF7F0;
+			margin-right: 0;
+		}
+		
+		.package-card.yearly.selected {
+			border-color: #FF6B35;
+		}
+		
+		.package-ribbon {
+			position: absolute;
+			top: -2rpx;
+			right: -2rpx;
+			padding: 8rpx 24rpx;
+			background-color: #37B1F2;
+			border-radius: 16rpx;
+			
+			.ribbon-text {
+				font-size: 20rpx;
+				color: #ffffff;
+				font-weight: bold;
+			}
+		}
+		
+		.package-ribbon.recommended {
+			background-color: #FF6B35;
+		}
+		
+		.package-ribbon.experience {
+			background-color: #52C41A;
+		}
+		
+		.package-header {
+			text-align: center;
+			margin-bottom: 24rpx;
+			
+			.package-name {
+				font-size: 30rpx;
+				font-weight: bold;
+				color: #333333;
+				margin-bottom: 8rpx;
+			}
+			
+			.package-period {
+				font-size: 24rpx;
+				color: #666666;
+			}
+		}
+		
+		.package-price-section {
+			text-align: center;
+			margin-bottom: 32rpx;
+			
+			.price-row {
+				flex-direction: row;
+				align-items: center;
+				justify-content: center;
+				margin-bottom: 8rpx;
+				
+				.currency {
+					font-size: 28rpx;
+					color: #333333;
+					font-weight: bold;
+				}
+				
+				.price-main {
+					font-size: 64rpx;
+					color: #FF6B35;
+					font-weight: bold;
+					margin-left: 8rpx;
+					margin-right: 8rpx;
+				}
+				
+				.price-unit {
+					font-size: 24rpx;
+					color: #666666;
+				}
+			}
+			
+			.original-price {
+				font-size: 24rpx;
+				color: #999999;
+				margin-bottom: 8rpx;
+			}
+			
+			.discount-tag {
+				padding: 4rpx 16rpx;
+				background-color: #FF6B35;
+				border-radius: 20rpx;
+				
+				.discount-text {
+					font-size: 20rpx;
+					color: #ffffff;
+					font-weight: bold;
+				}
+			}
+		}
+		
+		.package-features {
+			.feature-item {
+				font-size: 24rpx;
+				color: #666666;
+				line-height: 1.6;
+				margin-bottom: 8rpx;
+			}
+		}
+	}
+}
+
+.feedback-section {
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 40rpx;
+	position: relative;
+	z-index: 10;
+	
+	.feedback-carousel {
+		position: relative;
+		border-radius: 16rpx;
+		background-color: #ffffff;
+		
+		.feedback-wrapper {
+			position: relative;
+			width: 100%;
+			height: 200rpx;
+			
+			.feedback-item {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				opacity: 0;
+				background-color: #ffffff;
+				padding: 32rpx;
+				flex-direction: column;
+				justify-content: center;
+				
+				.feedback-content {
+					flex-direction: row;
+					align-items: flex-start;
+					width: 100%;
+					
+					.feedback-icon {
+						font-size: 32rpx;
+						margin-right: 16rpx;
+					}
+					
+					.feedback-text {
+						flex: 1;
+						font-size: 28rpx;
+						color: #333333;
+						line-height: 1.6;
+					}
+				}
+			}
+			
+			.feedback-item.active {
+				opacity: 1;
+				z-index: 1;
+			}
+		}
+		
+		.feedback-dots {
+			flex-direction: row;
+			justify-content: center;
+			align-items: center;
+			padding-top: 24rpx;
+			padding-bottom: 16rpx;
+			background-color: #ffffff;
+		
+			.dot {
+				width: 16rpx;
+				height: 16rpx;
+				border-radius: 8rpx;
+				background-color: #E0E0E0;
+				margin-left: 8rpx;
+				margin-right: 8rpx;
+			}
+			
+			.dot.active {
+				background-color: #37B1F2;
+			}
+		}
+	}
+}
+
+.footer-section {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	padding: 24rpx 32rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+	z-index: 20;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	
+	.price-summary {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-start;
+		
+		.price-info {
+			flex-direction: row;
+			align-items: center;
+			justify-content: flex-start;
+			
+			.total-label {
+				font-size: 26rpx;
+				color: #333333;
+				line-height: 1.2;
+			}
+			
+			.total-price {
+				font-size: 40rpx;
+				color: #FF6B35;
+				font-weight: bold;
+				line-height: 1.2;
+				margin-left: 16rpx;
+				margin-right: 16rpx;
+			}
+			
+			.price-note {
+				font-size: 22rpx;
+				color: #666666;
+				line-height: 1.2;
+			}
+		}
+	}
+	
+	.pay-btn {
+		width: 280rpx;
+		height: 88rpx;
+		background-color: #37B1F2;
+		border-radius: 44rpx;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+		
+		.btn-text {
+			font-size: 32rpx;
+			color: #ffffff;
+			font-weight: bold;
+			line-height: 1;
+		}
+	}
+	
+	.pay-btn.disabled {
+		background-color: #cccccc;
+	}
+}
+</style>

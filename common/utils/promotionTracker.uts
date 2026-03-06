@@ -1,0 +1,400 @@
+/**
+ * 推广追踪模块
+ * 负责解析推广短号、绑定推荐人关系、管理临时推广数据
+ * 
+ * 升级说明（v2.0.0）：
+ * - 推广短号支持6-8位用户短号（short_kid）
+ * - 6位：早期用户，7位：过渡期用户，8位：当前新用户
+ * - 所有用户都可以推广，不再限于导师
+ */
+
+import { bindUserReferrer } from '@/api/userExtend.uts'
+import { BindUserReferrerParams } from '@/api/types/userTypes.uts'
+import { getUserLoginStatus, getUserId } from '@/stores/user.uts'
+import { getUrlParams } from '@/common/utils/security/urlValidator.uts'
+import { CHAR_CODE_0, CHAR_CODE_9 } from '@/common/config/charCodes.uts'
+
+// ==================== 常量定义 ====================
+
+// 本地存储 Key
+const PENDING_PROMOTION_KEY = 'pending_promotion'
+
+// 推广数据有效期（24小时，单位：毫秒）
+const PROMOTION_EXPIRY_MS = 24 * 60 * 60 * 1000
+
+// ==================== 工具函数 ====================
+
+/**
+ * 验证推广短号格式（6-8位纯数字）
+ * 兼容说明：
+ * - 6位：早期用户的短号
+ * - 7位：过渡期用户的短号
+ * - 8位：当前新用户的短号
+ * @param shortKid 推广短号
+ * @returns 是否有效
+ */
+export function validateShortKid(shortKid: string): boolean {
+	if (shortKid == null || shortKid == '') {
+		return false
+	}
+	
+	const len = shortKid.length
+	// 支持6-8位用户短号
+	if (len < 6 || len > 8) {
+		return false
+	}
+	
+	// 检查是否只包含数字
+	for (let i = 0; i < len; i = i + 1) {
+		const charCodeVal = shortKid.charCodeAt(i)
+		// charCodeAt 返回 Number?，需要处理 null 情况
+		if (charCodeVal == null) {
+			return false
+		}
+		const charCode = charCodeVal as number
+		const isDigitChar = (charCode >= CHAR_CODE_0) && (charCode <= CHAR_CODE_9)  // 0-9
+		
+		if (isDigitChar == false) {
+			return false
+		}
+	}
+	
+	return true
+}
+
+/**
+ * 解析URL参数中的推广短号
+ * @param options 页面 onLoad 参数
+ * @returns 推广短号，无效则返回空字符串
+ */
+export function parsePromotionFromUrl(options: UTSJSONObject | null): string {
+	if (options == null) {
+		return ''
+	}
+	
+	try {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 尝试获取 ref 参数
+		const refVal = optionsObj.get('ref')
+		if (refVal != null && refVal.toString() != '') {
+			const refStr = refVal.toString()
+			if (validateShortKid(refStr) == true) {
+				return refStr
+			}
+		}
+	} catch (e) {
+		console.error('📢 [PromotionTracker] 解析URL参数失败:', e)
+	}
+	
+	return ''
+}
+
+/**
+ * 解析 H5 端 URL 中的推广短号
+ * @returns 推广短号，无效则返回空字符串
+ */
+export function parsePromotionFromH5Url(): string {
+	// #ifdef H5
+	try {
+		const urlParams = getUrlParams()
+		const refVal = urlParams.get('ref')
+		if (refVal != null && refVal != '') {
+			if (validateShortKid(refVal) == true) {
+				return refVal
+			}
+		}
+	} catch (e) {
+		console.error('📢 [PromotionTracker] 解析H5 URL失败:', e)
+	}
+	// #endif
+	
+	return ''
+}
+
+// ==================== 本地存储操作 ====================
+
+/**
+ * 存储临时推广数据到本地
+ * @param ref 推广短号
+ * @param guideKid 关联向导KID
+ */
+export function savePendingPromotion(ref: string, guideKid: string): void {
+	if (ref == '' || validateShortKid(ref) == false) {
+		console.warn('📢 [PromotionTracker] 无效的推广短号，不存储')
+		return
+	}
+	
+	try {
+		const data = {
+			ref: ref,
+			guideKid: guideKid,
+			timestamp: Date.now()
+		} as any
+		
+		const dataStr = JSON.stringify(data)
+		uni.setStorageSync(PENDING_PROMOTION_KEY, dataStr)
+		console.log('📢 [PromotionTracker] 已存储临时推广数据:', ref)
+	} catch (e) {
+		console.error('📢 [PromotionTracker] 存储临时推广数据失败:', e)
+	}
+}
+
+/**
+ * 读取待绑定的推广数据
+ * @returns 推广数据对象，无效或过期则返回 null
+ */
+export function getPendingPromotion(): UTSJSONObject | null {
+	try {
+		const dataStr = uni.getStorageSync(PENDING_PROMOTION_KEY)
+		if (dataStr == null || dataStr == '') {
+			return null
+		}
+		
+		let jsonStr = ''
+		if (typeof dataStr === 'string') {
+			jsonStr = dataStr as string
+		} else {
+			jsonStr = JSON.stringify(dataStr)
+		}
+		
+		if (jsonStr == '') {
+			return null
+		}
+		
+		const data = JSON.parse(jsonStr) as UTSJSONObject
+		if (data == null) {
+			return null
+		}
+		
+		// 检查是否过期
+		const timestampVal = data.get('timestamp')
+		if (timestampVal != null) {
+			const timestamp = parseInt(timestampVal.toString())
+			if (isNaN(timestamp) == false) {
+				if (isPromotionExpired(timestamp) == true) {
+					console.log('📢 [PromotionTracker] 推广数据已过期，清除')
+					clearPendingPromotion()
+					return null
+				}
+			}
+		}
+		
+		// 验证推广短号
+		const refVal = data.get('ref')
+		if (refVal == null || refVal.toString() == '') {
+			clearPendingPromotion()
+			return null
+		}
+		
+		const refStr = refVal.toString()
+		if (validateShortKid(refStr) == false) {
+			console.warn('📢 [PromotionTracker] 存储的推广短号格式无效，清除')
+			clearPendingPromotion()
+			return null
+		}
+		
+		return data
+	} catch (e) {
+		console.error('📢 [PromotionTracker] 读取临时推广数据失败:', e)
+		clearPendingPromotion()
+		return null
+	}
+}
+
+/**
+ * 清除临时推广数据
+ */
+export function clearPendingPromotion(): void {
+	try {
+		uni.removeStorageSync(PENDING_PROMOTION_KEY)
+		console.log('📢 [PromotionTracker] 已清除临时推广数据')
+	} catch (e) {
+		console.error('📢 [PromotionTracker] 清除临时推广数据失败:', e)
+	}
+}
+
+/**
+ * 检查推广数据是否过期（24小时）
+ * @param timestamp 存储时间戳
+ * @returns 是否过期
+ */
+export function isPromotionExpired(timestamp: number): boolean {
+	if (timestamp <= 0) {
+		return true
+	}
+	
+	const now = Date.now()
+	const elapsed = now - timestamp
+	
+	return elapsed > PROMOTION_EXPIRY_MS
+}
+
+// ==================== API 调用 ====================
+
+/**
+ * 绑定推荐人关系（调用后端API）
+ * 升级说明：使用新的 /api/user/extend/bind 接口，参数改为 referrerShortKid
+ * @param userKid 当前用户KID
+ * @param referrerShortKid 推荐人短号（8位用户短号）
+ * @returns 是否绑定成功
+ */
+export function bindReferrer(userKid: string, referrerShortKid: string): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		if (userKid == '' || referrerShortKid == '') {
+			console.warn('📢 [PromotionTracker] 绑定参数无效')
+			resolve(false)
+			return
+		}
+		
+		if (validateShortKid(referrerShortKid) == false) {
+			console.warn('📢 [PromotionTracker] 推广短号格式无效（需要6-8位数字）')
+			resolve(false)
+			return
+		}
+		
+		console.log('📢 [PromotionTracker] 开始绑定推荐人:', referrerShortKid, '用户:', userKid)
+		
+		// 使用新的 API 参数格式
+		const params = new BindUserReferrerParams()
+		params.userKid = userKid
+		params.referrerShortKid = referrerShortKid
+		
+		bindUserReferrer(params).then((res: any) => {
+			if (res == null) {
+				console.warn('📢 [PromotionTracker] 绑定API返回空')
+				resolve(false)
+				return
+			}
+			
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				
+				const codeVal = resObj.get('code')
+				let code = 0
+				if (codeVal != null) {
+					const codeNum = parseInt(codeVal.toString())
+					if (isNaN(codeNum) == false) {
+						code = codeNum
+					}
+				}
+				
+				if (code == 200) {
+					resolve(true)
+				} else {
+					// 可能是已有推荐人或其他业务错误，静默处理
+					const msgVal = resObj.get('msg')
+					const msg = (msgVal != null) ? msgVal.toString() : '未知错误'
+					console.log('📢 [PromotionTracker] 绑定返回:', code, msg)
+					// 即使返回非200也认为处理完成（可能是已绑定）
+					resolve(true)
+				}
+			} catch (e) {
+				console.error('📢 [PromotionTracker] 解析绑定响应失败:', e)
+				resolve(false)
+			}
+		}).catch((error: any | null): void => {
+			console.error('📢 [PromotionTracker] 绑定API调用失败:', error)
+			resolve(false)
+		})
+	})
+}
+
+// ==================== 主入口函数 ====================
+
+/**
+ * 处理推广链接（主入口）
+ * 已登录用户直接调用绑定API，未登录用户存储到本地
+ * @param options 页面 onLoad 参数
+ * @param guideKid 关联向导KID
+ */
+export function handlePromotionLink(options: UTSJSONObject | null, guideKid: string): void {
+	// 解析推广短号
+	let refShortKid = parsePromotionFromUrl(options)
+	
+	// H5 端额外尝试从 URL 解析
+	// #ifdef H5
+	if (refShortKid == '') {
+		refShortKid = parsePromotionFromH5Url()
+	}
+	// #endif
+	
+	if (refShortKid == '') {
+		// 无推广参数，不处理
+		return
+	}
+	
+	console.log('📢 [PromotionTracker] 检测到推广短号:', refShortKid)
+	
+	// 检查登录状态
+	const isLoggedIn = getUserLoginStatus()
+	const userKid = getUserId()
+	
+	if (isLoggedIn == true && userKid != '') {
+		// 已登录，直接绑定
+		console.log('📢 [PromotionTracker] 用户已登录，直接绑定')
+		bindReferrer(userKid, refShortKid).then((success: boolean) => {
+			if (success == true) {
+			}
+		}).catch((error: any | null): void => {
+			console.error('📢 [PromotionTracker] 推广绑定异常:', error)
+		})
+	} else {
+		// 未登录，存储到本地
+		console.log('📢 [PromotionTracker] 用户未登录，存储推广数据待登录后绑定')
+		savePendingPromotion(refShortKid, guideKid)
+	}
+}
+
+/**
+ * 登录后检查并绑定待处理的推广
+ * 应在用户登录成功后调用
+ * @param userKid 当前用户KID
+ */
+export function checkAndBindPendingPromotion(userKid: string): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		if (userKid == '') {
+			console.warn('📢 [PromotionTracker] 用户KID为空，跳过绑定')
+			resolve(false)
+			return
+		}
+		
+		// 读取待绑定的推广数据
+		const pendingData = getPendingPromotion()
+		if (pendingData == null) {
+			console.log('📢 [PromotionTracker] 无待绑定的推广数据')
+			resolve(false)
+			return
+		}
+		
+		const refVal = pendingData.get('ref')
+		if (refVal == null || refVal.toString() == '') {
+			clearPendingPromotion()
+			resolve(false)
+			return
+		}
+		
+		const refShortKid = refVal.toString()
+		console.log('📢 [PromotionTracker] 发现待绑定推广:', refShortKid)
+		
+		// 调用绑定API
+		bindReferrer(userKid, refShortKid).then((success: boolean) => {
+			// 无论成功与否都清除本地数据（避免重复绑定）
+			clearPendingPromotion()
+			
+			if (success == true) {
+			} else {
+				console.log('📢 [PromotionTracker] 登录后推广绑定未成功')
+			}
+			
+			resolve(success)
+		}).catch((error: any | null): void => {
+			console.error('📢 [PromotionTracker] 登录后推广绑定异常:', error)
+			// 出错也清除，避免反复尝试
+			clearPendingPromotion()
+			resolve(false)
+		})
+	})
+}

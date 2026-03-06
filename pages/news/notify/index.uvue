@@ -1,0 +1,782 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<!-- 头部背景 -->
+		<image class="header-bg" src="https://www.wyxdapp.com/iconimages/order_bg.png" mode="aspectFill"></image>
+		
+		<!-- Tab 栏 -->
+		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabItems" 
+					:key="index"
+					class="tab-item" 
+					@click="onTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': activeTabIndex == index }">{{ tab.label }}</text>
+					<view v-if="activeTabIndex == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 通知列表 -->
+		<scroll-view 
+			class="scroll-view"
+			:style="{ height: contentHeight + 'px' }"
+			scroll-y
+			:show-scrollbar="false"
+			@scrolltolower="loadMore"
+			refresher-enabled
+			:refresher-triggered="refreshing"
+			@refresherrefresh="onRefresh"
+		>
+			<!-- 骨架屏加载 -->
+			<view v-if="loading == true && notifications.length == 0" class="skeleton-list">
+				<view class="skeleton-item">
+					<view class="skeleton-icon"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+						<view class="skeleton-text short"></view>
+					</view>
+				</view>
+				<view class="skeleton-item">
+					<view class="skeleton-icon"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+						<view class="skeleton-text short"></view>
+					</view>
+				</view>
+				<view class="skeleton-item">
+					<view class="skeleton-icon"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+						<view class="skeleton-text short"></view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 通知列表 -->
+			<view v-else-if="filteredNotifications.length > 0" class="notification-list">
+				<view 
+					v-for="(item, index) in filteredNotifications" 
+					:key="item.id"
+				>
+					<!-- 订单通知卡片 -->
+					<OrderNotificationCard
+						v-if="item.type == 'ORDER'"
+						:title="item.title"
+						:content="item.content"
+						:time="formatTime(item.time)"
+						:order-no="getItemDataString(item, 'orderNo')"
+						:amount="getItemDataNumber(item, 'amount')"
+						:read="item.read"
+						@click="handleNotificationClick(item)"
+						@delete="handleDelete(item)"
+					/>
+					
+					<!-- 提现通知卡片（SYSTEM 类型 + WITHDRAW 子类型） -->
+					<WithdrawNotificationCard
+						v-else-if="item.type == 'SYSTEM' && isWithdrawNotification(item) == true"
+						:title="item.title"
+						:content="item.content"
+						:time="formatTime(item.time)"
+						:amount="getItemDataNumber(item, 'amount')"
+						:cashoutType="getItemDataNumber(item, 'cashoutType')"
+						:status="getItemDataString(item, 'status')"
+						:reason="getItemDataString(item, 'reason')"
+						:read="item.read"
+						@click="handleNotificationClick(item)"
+						@delete="handleDelete(item)"
+					/>
+					
+					<!-- 系统通知卡片（非提现通知） -->
+					<SystemNotificationCard
+						v-else-if="item.type == 'SYSTEM'"
+						:title="item.title"
+						:content="item.content"
+						:time="formatTime(item.time)"
+						:official="item.source == 'official'"
+						:read="item.read"
+						@click="handleNotificationClick(item)"
+						@delete="handleDelete(item)"
+					/>
+					
+					<!-- 礼物通知卡片（INTERACT 类型 + GIFT 子类型） -->
+					<GiftNotificationCard
+						v-else-if="item.type == 'INTERACT' && isGiftNotification(item) == true"
+						:title="item.title"
+						:content="item.content"
+						:time="formatTime(item.time)"
+						:sender-avatar="getItemDataString(item, 'senderAvatar')"
+						:gift-image="getItemDataString(item, 'giftImage')"
+						:gift-name="getItemDataString(item, 'giftName')"
+						:read="item.read"
+						@click="handleGiftNotificationClick(item)"
+						@delete="handleDelete(item)"
+					/>
+					
+					<!-- 互动通知卡片（非礼物通知） -->
+					<InteractNotificationCard
+						v-else-if="item.type == 'INTERACT'"
+						:title="item.title"
+						:content="item.content"
+						:time="formatTime(item.time)"
+						:user-avatar="getItemDataString(item, 'userAvatar')"
+						:trends-preview="getItemDataString(item, 'trendsPreview')"
+						:read="item.read"
+						@click="handleNotificationClick(item)"
+						@delete="handleDelete(item)"
+					/>
+				</view>
+			</view>
+			
+			<!-- 空状态 -->
+			<ListStatus 
+				v-else 
+				status="empty" 
+				emptyText="暂无通知"
+			/>
+			
+			<!-- 加载更多 -->
+			<view v-if="filteredNotifications.length >= 5" class="load-more">
+				<text v-if="loading == true" class="load-more-text">加载中...</text>
+				<text v-else-if="hasMore == true" class="load-more-text">上拉加载更多</text>
+				<text v-else class="load-more-text">没有更多了</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import OrderNotificationCard from '@/components/business/OrderNotificationCard.uvue'
+import SystemNotificationCard from '@/components/business/SystemNotificationCard.uvue'
+import InteractNotificationCard from '@/components/business/InteractNotificationCard.uvue'
+import WithdrawNotificationCard from '@/components/business/WithdrawNotificationCard.uvue'
+import GiftNotificationCard from '@/components/business/GiftNotificationCard.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import { getNotificationList, GetNotificationListParams, markNotificationRead, deleteNotification } from '@/api/notification.uts'
+import { getUserId } from '@/stores/user.uts'
+import { formatRelativeTime } from '@/common/utils/dateUtils.uts'
+import { markAllNotificationsAsRead } from '@/common/services/notificationService.uts'
+import { updateNotificationUnreadCountDirect } from '@/stores/unread.uts'
+import { resetMessageReminderCount, ResetMessageReminderParams } from '@/api/chat.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+
+// ==================== 布局相关 ====================
+// 头部高度（状态栏 + Tab栏）
+const headerHeight = ref<number>(0)
+// 内容区域高度
+const contentHeight = ref<number>(0)
+
+// 初始化页面布局
+const initPageLayout = () => {
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + Tab栏约 90rpx ≈ 45px）
+	headerHeight.value = pageStatusBarHeight.value + 45
+	
+	// 计算内容区域高度
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+	
+	console.log('[Notify] 布局初始化:', {
+		statusBarHeight: pageStatusBarHeight.value,
+		headerHeight: headerHeight.value,
+		contentHeight: contentHeight.value
+	})
+}
+
+// ==================== 辅助函数 ====================
+import { toJsonObj, getStringProp, getNumberProp, getBoolProp } from '@/common/utils/utsSafe.uts'
+
+// ==================== Tab 数据类 ====================
+class TabItemData {
+	label: string = ''
+	value: string = ''
+	unread: number = 0
+	badge: boolean = false
+	constructor(label: string, value: string, unread: number, badge: boolean) {
+		this.label = label
+		this.value = value
+		this.unread = unread
+		this.badge = badge
+	}
+}
+
+// ==================== 通知数据类 ====================
+class NotificationItem {
+	id: string = ''
+	type: string = ''
+	source: string = ''
+	title: string = ''
+	content: string = ''
+	time: string = ''
+	read: boolean = false
+	data: UTSJSONObject | null = null
+	constructor() {}
+}
+
+// Tab 配置
+const tabItems = ref<Array<TabItemData>>([
+	new TabItemData('全部', 'all', 0, false),
+	new TabItemData('订单', 'ORDER', 0, false),
+	new TabItemData('系统', 'SYSTEM', 0, false),
+	new TabItemData('互动', 'INTERACT', 0, false)
+])
+
+const activeTabIndex = ref<number>(0)
+
+// 获取当前 Tab 值
+const getCurrentTabValue = (): string => {
+	if (activeTabIndex.value >= 0 && activeTabIndex.value < tabItems.value.length) {
+		return tabItems.value[activeTabIndex.value].value
+	}
+	return 'all'
+}
+
+// Tab 标签映射
+const getTabLabel = (key: string): string => {
+	if (key == 'all') return '全部'
+	if (key == 'ORDER') return '订单'
+	if (key == 'SYSTEM') return '系统'
+	if (key == 'INTERACT') return '互动'
+	return key
+}
+
+const notifications = ref<Array<NotificationItem>>([])
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const page = ref<number>(1)
+const size = ref<number>(20)
+const total = ref<number>(0)
+
+const hasMore = computed((): boolean => {
+	return notifications.value.length < total.value
+})
+
+const filteredNotifications = computed((): Array<NotificationItem> => {
+	const currentTabVal = getCurrentTabValue()
+	if (currentTabVal == 'all') {
+		return notifications.value
+	}
+	const result: Array<NotificationItem> = []
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		if (notifications.value[i].type == currentTabVal) {
+			result.push(notifications.value[i])
+		}
+	}
+	return result
+})
+
+// 获取通知项 data 中的字符串属性
+const getItemDataString = (item: NotificationItem, key: string): string => {
+	const data = item.data
+	if (data == null) return ''
+	return getStringProp(data, key)
+}
+
+// 获取通知项 data 中的数字属性
+const getItemDataNumber = (item: NotificationItem, key: string): number => {
+	const data = item.data
+	if (data == null) return 0
+	return getNumberProp(data, key)
+}
+
+// 判断是否为提现通知
+const isWithdrawNotification = (item: NotificationItem): boolean => {
+	const subType = item.source
+	if (subType == 'WITHDRAW_SUCCESS' || subType == 'WITHDRAW_REJECTED' || subType == 'WITHDRAW_FAILED') {
+		return true
+	}
+	return false
+}
+
+// 判断是否为礼物通知
+const isGiftNotification = (item: NotificationItem): boolean => {
+	if (item.type != 'INTERACT') return false
+	const subType = item.source
+	return subType == 'GIFT'
+}
+
+// 格式化 Tab 标签
+const formatTabLabel = (key: string, count: number): string => {
+	const label = getTabLabel(key)
+	if (count <= 0) {
+		return label
+	}
+	let display = ''
+	if (count > 99) {
+		display = '99+'
+	} else {
+		display = count.toString()
+	}
+	return label + ' (' + display + ')'
+}
+
+// 更新未读数
+const updateUnreadCount = () => {
+	for (let i = 0; i < tabItems.value.length; i = i + 1) {
+		const tab = tabItems.value[i]
+		let count = 0
+		if (tab.value == 'all') {
+			for (let j = 0; j < notifications.value.length; j = j + 1) {
+				if (notifications.value[j].read == false) {
+					count = count + 1
+				}
+			}
+		} else {
+			for (let j = 0; j < notifications.value.length; j = j + 1) {
+				if (notifications.value[j].type == tab.value && notifications.value[j].read == false) {
+					count = count + 1
+				}
+			}
+		}
+		tab.unread = count
+		tab.badge = count > 0
+		tab.label = formatTabLabel(tab.value, count)
+	}
+}
+
+// 从 API 响应更新未读数
+const updateUnreadCountFromAPI = (unreadCount: any) => {
+	const unreadObj = toJsonObj(unreadCount)
+	if (unreadObj == null) return
+	
+	for (let i = 0; i < tabItems.value.length; i = i + 1) {
+		const tab = tabItems.value[i]
+		let count = 0
+		if (tab.value == 'all') {
+			count = getNumberProp(unreadObj, 'all')
+		} else if (tab.value == 'ORDER') {
+			count = getNumberProp(unreadObj, 'order')
+		} else if (tab.value == 'SYSTEM') {
+			count = getNumberProp(unreadObj, 'system')
+		} else if (tab.value == 'INTERACT') {
+			count = getNumberProp(unreadObj, 'interact')
+		}
+		tab.unread = count
+		tab.badge = count > 0
+		tab.label = formatTabLabel(tab.value, count)
+	}
+}
+
+// 获取通知列表
+const fetchNotifications = async () => {
+	if (loading.value == true) return
+	
+	const userId = getUserId()
+	if (userId == '') {
+		console.warn('用户未登录')
+		return
+	}
+	
+	loading.value = true
+	try {
+		const currentTabVal = getCurrentTabValue()
+		const params = new GetNotificationListParams()
+		params.userId = userId
+		params.type = currentTabVal
+		params.page = page.value
+		params.size = size.value
+		
+		const response = await getNotificationList(params)
+		const resObj = toJsonObj(response)
+		if (resObj != null) {
+			const code = getNumberProp(resObj, 'code')
+			if (code == 200) {
+				const dataVal = resObj.get('data')
+				const dataObj = toJsonObj(dataVal)
+				if (dataObj != null) {
+					const listVal = dataObj.get('list')
+					const totalCount = getNumberProp(dataObj, 'total')
+					const unreadCountVal = dataObj.get('unreadCount')
+					
+					if (listVal != null && Array.isArray(listVal) == true) {
+						const listArr = listVal as Array<any>
+						const formattedList: Array<NotificationItem> = []
+						
+						for (let i = 0; i < listArr.length; i = i + 1) {
+							const itemVal = listArr[i]
+							const itemObj = toJsonObj(itemVal)
+							if (itemObj != null) {
+								const notif = new NotificationItem()
+								notif.id = getStringProp(itemObj, 'id')
+								notif.type = getStringProp(itemObj, 'type')
+								notif.source = getStringProp(itemObj, 'subType')
+								if (notif.source == '') {
+									notif.source = 'default'
+								}
+								notif.title = getStringProp(itemObj, 'title')
+								notif.content = getStringProp(itemObj, 'content')
+								notif.time = getStringProp(itemObj, 'createTime')
+								notif.read = getBoolProp(itemObj, 'read')
+								notif.data = toJsonObj(itemObj.get('data'))
+								formattedList.push(notif)
+							}
+						}
+						
+						if (page.value == 1) {
+							notifications.value = formattedList
+						} else {
+							for (let j = 0; j < formattedList.length; j = j + 1) {
+								notifications.value.push(formattedList[j])
+							}
+						}
+					}
+					
+					total.value = totalCount
+					
+					if (unreadCountVal != null) {
+						updateUnreadCountFromAPI(unreadCountVal)
+					}
+				}
+			} else {
+				const message = getStringProp(resObj, 'message')
+				const errMsg = message != '' ? message : '获取通知失败'
+				throw new Error(errMsg)
+			}
+		}
+	} catch (error: any) {
+		console.error('获取通知失败:', error)
+		uni.showToast({
+			title: '获取通知失败',
+			icon: 'none'
+		})
+	} finally {
+		loading.value = false
+	}
+}
+
+// Tab 切换
+const onTabChange = (index: number) => {
+	if (activeTabIndex.value == index) return
+	
+	activeTabIndex.value = index
+	page.value = 1
+	notifications.value = []
+	fetchNotifications()
+}
+
+// 下拉刷新
+const onRefresh = async () => {
+	refreshing.value = true
+	page.value = 1
+	await fetchNotifications()
+	refreshing.value = false
+}
+
+// 加载更多
+const loadMore = () => {
+	if (hasMore.value == false || loading.value == true) return
+	page.value = page.value + 1
+	fetchNotifications()
+}
+
+// 格式化时间
+const formatTime = (time: string): string => {
+	return formatRelativeTime(time)
+}
+
+// 查找通知索引
+const findNotificationIndex = (id: string): number => {
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		if (notifications.value[i].id == id) {
+			return i
+		}
+	}
+	return -1
+}
+
+// 点击通知
+const handleNotificationClick = async (item: NotificationItem) => {
+	if (item.read == false) {
+		try {
+			await markNotificationRead(item.id)
+			item.read = true
+			updateUnreadCount()
+		} catch (error: any) {
+			console.error('标记已读失败:', error)
+		}
+	}
+	
+	if (item.type == 'ORDER') {
+		const orderId = getItemDataString(item, 'orderId')
+		if (orderId != '') {
+			uni.navigateTo({
+				url: '/packageC/orderDetails/index?orderKid=' + orderId
+			})
+		}
+	} else if (item.type == 'SYSTEM') {
+		// 提现通知跳转到钱包页面
+		if (isWithdrawNotification(item) == true) {
+			uni.navigateTo({
+				url: '/packageA/wallet/index'
+			})
+		} else {
+			// 其他系统通知
+			const url = getItemDataString(item, 'url')
+			if (url != '') {
+				uni.navigateTo({ url: url })
+			}
+		}
+	} else if (item.type == 'INTERACT') {
+		const trendsId = getItemDataString(item, 'trendsId')
+		if (trendsId != '') {
+			uni.navigateTo({
+				url: '/packageB/trendsDetails/index?id=' + trendsId
+			})
+		}
+	}
+}
+
+// 点击礼物通知 - 跳转到与发送者的聊天页面
+const handleGiftNotificationClick = async (item: NotificationItem) => {
+	if (item.read == false) {
+		try {
+			await markNotificationRead(item.id)
+			item.read = true
+			updateUnreadCount()
+		} catch (error: any) {
+			console.error('标记已读失败:', error)
+		}
+	}
+	
+	// 获取发送者ID，跳转到聊天页面
+	const senderKid = getItemDataString(item, 'senderKid')
+	if (senderKid != '') {
+		uni.navigateTo({
+			url: '/packageB/chat/index?targetUserId=' + senderKid
+		})
+	}
+}
+
+// 执行删除通知（必须在 handleDelete 之前定义）
+const doDeleteNotification = async (item: NotificationItem) => {
+	try {
+		await deleteNotification(item.id)
+		const index = findNotificationIndex(item.id)
+		if (index > -1) {
+			notifications.value.splice(index, 1)
+			updateUnreadCount()
+		}
+		uni.showToast({
+			title: '删除成功',
+			icon: 'success'
+		})
+	} catch (error: any) {
+		console.error('删除通知失败:', error)
+		uni.showToast({
+			title: '删除失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 删除通知
+const handleDelete = (item: NotificationItem) => {
+	uni.showModal({
+		title: '提示',
+		content: '确定要删除这条通知吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doDeleteNotification(item)
+			}
+		}
+	})
+}
+
+// 标记所有通知已读并更新徽章
+const markAllAsReadAndUpdateBadge = () => {
+	const userId = getUserId()
+	if (userId == '') {
+		console.warn('用户未登录，无法标记已读')
+		return
+	}
+	
+	// 调用标记全部已读 API
+	markAllNotificationsAsRead(userId).then((count: number) => {
+		console.log('[Notify] 标记全部已读成功，数量:', count)
+		
+		// 更新 unreadStore 中的通知未读数为 0
+		updateNotificationUnreadCountDirect(0)
+		
+		// 更新本地列表中的已读状态
+		for (let i = 0; i < notifications.value.length; i = i + 1) {
+			notifications.value[i].read = true
+		}
+		
+		// 更新 Tab 未读数显示
+		updateUnreadCount()
+	}).catch((error: any | null): void => {
+		console.error('[Notify] 标记全部已读失败:', error)
+	})
+	
+	// ⭐ 重置 trip_message_reminder 中的 notification_reminder_count
+	// reminderType=50 对应通知类型
+	const resetParams = new ResetMessageReminderParams()
+	resetParams.userKid = userId
+	resetParams.reminderType = 50
+	resetMessageReminderCount(resetParams).then(() => {
+		console.log('[Notify] 通知提醒计数已重置')
+	}).catch((error: any | null): void => {
+		console.error('[Notify] 重置通知提醒计数失败:', error)
+	})
+}
+
+// 生命周期
+onMounted(() => {
+	initPageLayout()
+	fetchNotifications()
+	
+	// 进入页面时标记所有通知已读
+	markAllAsReadAndUpdateBadge()
+})
+
+// 页面显示时也标记已读（从其他页面返回时）
+onShow(() => {
+	// 如果已经加载过数据，再次标记已读
+	if (notifications.value.length > 0) {
+		markAllAsReadAndUpdateBadge()
+	}
+})
+</script>
+
+<style scoped>
+@import '@/common/styles/tabs.css';
+
+.fix-page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+.bg-light-base {
+	background-color: #f5f5f5;
+}
+
+.header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 300rpx;
+}
+
+.tabs-wrapper {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.scroll-view {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+	background-color: transparent;
+	z-index: 1;
+}
+
+.loading-box,
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+}
+
+.empty-icon {
+	font-size: 120rpx;
+	margin-bottom: 24rpx;
+}
+
+.skeleton-list {
+	flex-direction: column;
+}
+
+.skeleton-item {
+	flex-direction: row;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 20rpx;
+}
+
+.skeleton-icon {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	background-color: #f0f0f0;
+	margin-right: 20rpx;
+}
+
+.skeleton-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.skeleton-title {
+	height: 32rpx;
+	width: 300rpx;
+	border-radius: 4rpx;
+	background-color: #f0f0f0;
+	margin-bottom: 12rpx;
+}
+
+.skeleton-text {
+	height: 28rpx;
+	width: 500rpx;
+	border-radius: 4rpx;
+	background-color: #f0f0f0;
+	margin-bottom: 12rpx;
+}
+
+.skeleton-text.short {
+	width: 200rpx;
+}
+
+.notification-list {
+	flex-direction: column;
+}
+
+.load-more {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+}
+
+.load-more-text {
+	color: #999999;
+	font-size: 24rpx;
+}
+</style>

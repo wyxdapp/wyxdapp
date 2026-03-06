@@ -1,0 +1,548 @@
+<script lang="uts">
+// ⚠️ 微信小程序模块预注册：确保 chatLocalStorage 在 stores 加载前被注册到模块系统
+import { chatLocalStorageManager as _preloadChatStorage } from '@/common/services/chatLocalStorage.uts'
+import { initUserInfoAction, getUserLoginStatus, getUserId } from '@/stores/user'
+import { initWebSocketAction, forceReconnectAction, resetReconnectAttemptsAction } from '@/stores/chat'
+import { fetchAllUnreadCountsAction, updateiOSAppBadgeDirect, updateAndroidAppBadgeDirect } from '@/stores/unread'
+import { registerPushEventListener, manualBindPush } from '@/common/services/pushEventListener.uts'
+import { initPushService } from '@/common/services/pushService.uts'
+import { registerPushMessageListener } from '@/common/services/pushMessageHandler.uts'
+import { createLogger } from '@/common/utils/logger.uts'
+import { isPrivacyAgreed, broadcastPrivacyAgreed } from '@/common/utils/privacyManager.uts'
+import { loadFeatureToggles } from '@/common/composables/useFeatureToggles.uts'
+import { safeDecodeURIComponent, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+// #ifdef H5
+import { wxLogin } from '@/pagesUser/services/authService'
+// #endif
+
+// 创建日志记录器
+const logger = createLogger('App')
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+  // #ifdef APP-ANDROID || APP-HARMONY
+	let firstBackTime = 0
+  // #endif
+	
+	// 标记 App 是否首次启动
+	let isFirstLaunch = true
+	
+	// 🔧 优化：添加服务初始化标记，防止重复初始化
+	let servicesInitialized = false
+	
+	// 🔒 隐私弹窗显示标记
+	let showPrivacyPopup = false
+	
+	export default {
+		onLaunch: function () {
+			logger.info('App Launch')
+			
+			// ⚠️ 微信小程序：触碰预加载的模块引用，防止编译器 tree-shaking
+			// 这确保 chatLocalStorage.js 在 stores 加载前被注册到模块系统
+			if (_preloadChatStorage != null) {
+			}
+			
+			// 标记为首次启动
+			isFirstLaunch = true
+			
+			// #ifdef H5
+			// H5环境：检查URL中是否有微信授权回调的code（完全参考旧项目实现）
+			if (typeof window != 'undefined' && window.location) {
+				try {
+					// 🔧 修复：完全按照旧项目的urlResetForWxCode实现
+					const currentUrl = window.location.href
+					console.log('🔍 [App] 开始解析微信授权回调URL:', currentUrl)
+					
+					// 按照旧项目逻辑解析URL
+					let oriUrls = currentUrl.split('?')
+					let searchObj = {}
+					
+					if (oriUrls.length > 1) {
+						let searchUrls = oriUrls[1].split('#')
+						let searchUrlReal = searchUrls[0]  // 获取?后面的部分（去掉#后面的）
+						
+						// 手动解析查询参数（与旧项目保持一致）
+						const paramPairs = searchUrlReal.split('&')
+						for (const pair of paramPairs) {
+							const [key, value] = pair.split('=')
+							if (key && value) {
+								searchObj[key] = safeDecodeURIComponent(value)
+							}
+						}
+						
+						console.log('🔍 [App] 解析到的参数:', searchObj)
+					}
+					
+					const urlCode = searchObj.code || ''
+					const codePath = searchObj.codePath || ''
+					const orderKid = searchObj.orderKid || ''
+					const paymentAuth = searchObj.paymentAuth || ''
+					
+					// 只检查codePath方式（统一登录和支付处理）
+					// UTS 规范：不能使用字符串作为布尔条件
+					const hasUrlCode = (urlCode != null && urlCode != '')
+					const hasCodePath = (codePath != null && codePath != '')
+					if (hasUrlCode == true && hasCodePath == true) {
+						console.log('🔍 [App] 检测到微信授权回调（codePath方式）')
+						// UTS 规范：不能使用 !! 双重否定运算符
+						console.log('🔍 [App] code存在:', hasUrlCode, 'codePath:', codePath, 'paymentAuth:', paymentAuth)
+						
+						if (paymentAuth === 'true') {
+							// 支付授权：保存为wxPayCode
+							safeSetStorageSync('wxPayCode', urlCode)
+						} else {
+							// 登录授权：保存为wxCode
+							safeSetStorageSync('wxCode', urlCode)
+						}
+						
+						// 🔧 修复：构建目标页面URL，保留code参数用于授权回调检测
+						const baseUrl = window.location.origin + window.location.pathname
+						let targetUrl = baseUrl + '#' + codePath
+						
+						// 构造查询参数
+						const queryParams = new URLSearchParams()
+						
+						// 🔧 关键修复：保留code参数，让页面能检测到授权回调
+						if (urlCode) {
+							queryParams.set('code', urlCode)
+						}
+						
+						// 如果有orderKid参数，附加到URL（支付流程需要）
+						if (orderKid) {
+							queryParams.set('orderKid', orderKid)
+							// 同时保存到localStorage作为双重保险
+							safeSetStorageSync('pendingOrderKid', orderKid)
+						}
+						
+						// 添加查询参数到URL
+						if (queryParams.toString()) {
+							targetUrl += '?' + queryParams.toString()
+						}
+						
+						console.log('🔄 [App] 跳转到目标页面（hash路由）:', targetUrl)
+						
+						// 使用location.href同步跳转（参考旧项目）
+						safeRedirect(targetUrl)
+						// 同步跳转后不会继续执行，直接return
+						return
+					}
+				} catch (e) {
+					console.warn('⚠️ [App] 检查URL参数失败:', e)
+				}
+			}
+			// #endif
+			
+			// 初始化系统信息（不涉及敏感权限，可以在隐私协议同意前调用）
+			this.initSystemInfo()
+			
+			// 监听网络变化（不涉及敏感权限）
+			this.setupNetworkListener()
+			
+			// 🔒 隐私合规：检查用户是否已同意隐私政策
+			if (isPrivacyAgreed() == true) {
+				// 已同意，直接初始化敏感服务
+				logger.info('✅ 用户已同意隐私政策，初始化所有服务')
+				this.initSensitiveServices()
+			} else {
+				// 未同意，等待隐私弹窗同意后再初始化（弹窗由首页显示）
+				logger.info('🔒 用户未同意隐私政策，等待首页隐私弹窗')
+				showPrivacyPopup = true
+				// 监听隐私同意事件（由首页隐私弹窗触发）
+				const self = this
+				uni.$on('privacy:agreed', () => {
+					logger.info('✅ 收到隐私同意事件，初始化敏感服务')
+					self.initSensitiveServices()
+					uni.$off('privacy:agreed')
+				})
+			}
+		},
+		
+		onShow: function () {
+			logger.debug('App Show')
+			
+			// 首次启动时跳过 onShow，避免与 onLaunch 中的初始化冲突
+			if (isFirstLaunch) {
+				logger.debug('首次启动，跳过 onShow 处理')
+				isFirstLaunch = false
+				// 设置初始时间戳
+				safeSetStorageSync('lastAppShowTime', Date.now().toString())
+				return
+			}
+		
+			const now = Date.now()
+			// UTS 规范：不能使用 || 做真假判断，需要显式处理
+			const lastShowTimeVal = safeGetStorageSync('lastAppShowTime')
+			const lastShowTime = (lastShowTimeVal != null) ? parseInt(lastShowTimeVal.toString()) : 0
+			
+			// 防抖：2秒内不重复触发
+			if (now - lastShowTime < 2000) {
+				console.log('App show too frequent, skip')
+				return
+			}
+			
+			safeSetStorageSync('lastAppShowTime', now.toString())
+			
+			// App回到前台处理
+			this.handleAppForeground()
+			
+			// 应用切换到前台时同步数据
+			this.syncOnAppShow()
+		},
+		
+		onHide: function () {
+			console.log('App Hide')
+			// App进入后台处理
+			this.handleAppBackground()
+		},
+		
+		// #ifdef APP-ANDROID || APP-HARMONY
+		onLastPageBackPress: function () {
+			console.log('App LastPageBackPress')
+			if (firstBackTime == 0) {
+				uni.showToast({
+					title: '再按一次退出应用',
+					position: 'bottom',
+				})
+				firstBackTime = Date.now()
+				safeSetTimeout(() => {
+					firstBackTime = 0
+				}, 2000)
+			} else if (Date.now() - firstBackTime < 2000) {
+				firstBackTime = Date.now()
+				uni.exit()
+			}
+		},
+		// #endif
+		
+		onExit: function () {
+			console.log('App Exit')
+			clearAllTimers()
+		},
+		
+		onError(err : any) {
+			try {
+				console.error('🔴 [Global] 运行时错误:', {
+					error: err,
+					timestamp: new Date().toISOString()
+				})
+			} catch (_e) {
+				// 静默忽略，防止错误处理器自身异常导致连锁故障
+			}
+		},
+		
+		methods: {
+			/**
+			 * 🔒 初始化敏感服务
+			 * 系统隐私声明会自动处理，无需手动检查
+			 */
+			initSensitiveServices() {
+				// 🔧 优化：防止重复初始化
+				if (servicesInitialized == true) {
+					logger.debug('敏感服务已初始化，跳过')
+					return
+				}
+				
+				logger.info('🚀 开始初始化敏感服务')
+				
+				// 重置标记
+				servicesInitialized = true
+				
+				// 🔔 注册推送事件监听器
+				registerPushEventListener()
+				
+				// 初始化推送服务
+				initPushService()
+				
+				// 注册推送消息监听器
+				registerPushMessageListener()
+				
+				// 加载功能开关配置（共享展示等）
+				loadFeatureToggles()
+				
+				// 关键：初始化用户信息（从 localStorage 恢复登录状态）
+				this.initUserInfo()
+				
+				// 静默刷新token
+				this.silentRefreshOnStartup()
+				
+				logger.info('✅ 敏感服务初始化完成')
+			},
+			
+			// 🔥 初始化用户信息（从 localStorage 恢复登录状态）
+			initUserInfo() {
+				try {
+					console.log('🔑 [App] 开始初始化用户信息...')
+					
+					// 🔧 优化：减少延迟，从 200ms 减少到 50ms
+					// H5 环境下仍需要少量延迟确保 localStorage 可用
+					safeSetTimeout(() => {
+						try {
+							// 先检查存储中是否有数据
+							let storedUserInfo = safeGetStorageSync('userInfo')
+							let storedToken = safeGetStorageSync('token')
+							
+							// #ifdef H5
+							// H5环境下，如果safeGetStorageSync获取不到，尝试使用原生localStorage
+							if (storedUserInfo == null && typeof window != 'undefined' && window.localStorage) {
+								try {
+									const nativeUserInfo = window.localStorage.getItem('userInfo')
+									const nativeToken = window.localStorage.getItem('token')
+									if (nativeUserInfo != null) {
+										console.log('🔄 H5环境：从原生localStorage恢复数据')
+										storedUserInfo = nativeUserInfo
+										// 同步到uni存储
+										try {
+											safeSetStorageSync('userInfo', nativeUserInfo)
+										} catch (e) {}
+									}
+									if (nativeToken != null) {
+										storedToken = nativeToken
+										safeSetStorageSync('token', nativeToken)
+									}
+								} catch (e) {
+									console.warn('⚠️ H5环境：原生localStorage读取失败:', e)
+								}
+							}
+							// #endif
+							
+							// UTS 规范：不能使用 !! 双重否定运算符，不能使用 Any? 作为条件
+							const hasUserInfoVal = (storedUserInfo != null)
+							const hasTokenVal = (storedToken != null)
+							const userInfoLengthVal = (storedUserInfo != null && typeof storedUserInfo === 'string') ? storedUserInfo.toString().length : 0
+							console.log('🔍 [App] 检查存储数据:', {
+								hasUserInfo: hasUserInfoVal,
+								hasToken: hasTokenVal,
+								userInfoType: typeof storedUserInfo,
+								userInfoLength: userInfoLengthVal
+							})
+							
+							// 调用导出的独立函数初始化用户信息
+							initUserInfoAction()
+							
+							// 使用导出的函数获取登录状态
+							const isLoginVal = getUserLoginStatus()
+							const userIdVal = getUserId()
+							
+							if (isLoginVal == true) {
+								console.log('👤 用户ID:', userIdVal)
+								
+								// 🔔 手动触发推送绑定（已登录用户首次启动）
+								manualBindPush(userIdVal)
+																
+								// 🔥 初始化 WebSocket 连接（减少延迟到 100ms）
+								safeSetTimeout(() => {
+									const hasUserId = (userIdVal != null && userIdVal != '')
+									if (hasUserId == true) {
+										console.log('🔌 [App] 自动初始化 WebSocket 连接')
+										// 使用导出的独立函数
+										initWebSocketAction(userIdVal)
+										
+										// ⭐ 初始化未读数管理
+										fetchAllUnreadCountsAction(userIdVal)
+									}
+								}, 100) // 🔧 从 200ms 减少到 100ms
+							} else {
+								console.log('⚠️ [App] 用户未登录')
+								// 🔧 优化：移除复杂的重试逻辑，改用 loginHelper 的等待机制
+								// 页面会使用 waitForLoginStatus() 等待 Store 初始化
+							}
+						} catch (e) {
+							console.error('❌ [App] 初始化用户信息失败:', e)
+						}
+					}, 50) // 🔧 从 200ms 减少到 50ms
+				} catch (e) {
+					console.error('❌ [App] 初始化用户信息异常:', e)
+				}
+			},
+			
+			// 初始化系统信息
+			initSystemInfo() {
+				try {
+					const systemInfo = uni.getSystemInfoSync()
+					safeSetStorageSync('systemInfo', JSON.stringify(systemInfo))
+					console.log('System info initialized:', systemInfo)
+				} catch (e) {
+					console.error('Failed to get system info:', e)
+				}
+			},
+			
+			// 冷启动时静默刷新token
+			async silentRefreshOnStartup() {
+				// TODO: Token 刷新功能暂时禁用，需要后端接口支持
+				// 当前登录态通过 userStore.initUserInfo() 从 localStorage 恢复
+				console.log('Token refresh disabled, using stored token')
+				return
+			},
+			
+			// 应用切换到前台时同步数据
+			syncOnAppShow() {
+				try {
+					const userInfoStr = safeGetStorageSync('userInfo')
+					if (userInfoStr == null) {
+						return
+					}
+					
+					// 这里可以添加同步逻辑，如同步未读消息数等
+					console.log('Sync data on app show')
+				} catch (e) {
+					console.error('Sync on app show error:', e)
+				}
+			},
+			
+			// 监听网络变化
+			setupNetworkListener() {
+				uni.onNetworkStatusChange((res) => {
+					console.log('📡 [Network] 网络状态变化:', res)
+					
+					// UTS 规范：布尔值需要显式比较
+					if (res.isConnected == true && res.networkType != 'none') {
+						// 网络恢复，立即重连WebSocket
+						
+						// 重置重连计数器
+						resetReconnectAttemptsAction()
+						
+						// 获取用户ID并强制重连
+						const userId = getUserId()
+						if (userId != null && userId != '') {
+							console.log('🔌 [Network] 网络恢复，强制重连 WebSocket')
+							forceReconnectAction(userId)
+						}
+					} else {
+						// 网络断开
+						uni.showToast({
+							title: '网络已断开',
+							icon: 'none'
+						})
+					}
+				})
+			},
+			
+			// App进入后台处理
+			handleAppBackground() {
+				// ✅ 优化策略：移除强制断开，让操作系统自然管理
+				// 移动端OS会在真正需要时自动暂停连接，无需手动断开
+				console.log('⏸️ [App] 进入后台，保持WebSocket连接（由OS管理）')
+				
+				// ⭐ Android角标：在应用进入后台时设置角标
+				// 小米设备在前台时会自动清空角标，所以在进入后台时重新设置
+				// #ifdef APP-ANDROID
+				try {
+					updateAndroidAppBadgeDirect()
+				} catch (e) {
+					console.warn('⚠️ [App] Android角标已在后台设置失败:', e)
+				}
+				// #endif
+			},
+			
+			// App回到前台处理
+			handleAppForeground() {
+				// 简化处理，聊天服务会自动管理重连
+				console.log('▶️ [App] 回到前台')
+				
+				// ⭐ iOS角标刷新：应用切换到前台时同步iOS角标与当前未读数
+				// #ifdef APP-IOS
+				try {
+					updateiOSAppBadgeDirect()
+				} catch (e) {
+					console.warn('⚠️ [App] iOS角标刷新失败:', e)
+				}
+				// #endif
+				
+				// ⭐ Android角标刷新：应用切换到前台时同步Android角标与当前未读数
+				// #ifdef APP-ANDROID
+				try {
+					updateAndroidAppBadgeDirect()
+				} catch (e) {
+					console.warn('⚠️ [App] Android角标刷新失败:', e)
+				}
+				// #endif
+			}
+		}
+	}
+</script>
+
+<style>
+	/* ==================== 引入新样式系统 ==================== */
+	/* 模块化样式文件，统一管理 */
+	@import url("@/common/styles/index.css");
+	
+	/* ==================== 每个页面公共css ==================== */
+	/* 注意：布局、间距、文字样式已统一在 common/styles/ 中定义 */
+	/* 以下仅保留 App.uvue 特有的样式和向后兼容的类名 */
+	
+	/* uni-row/uni-column 向后兼容 */
+	.uni-row {
+		flex-direction: row;
+	}
+
+	.uni-column {
+		flex-direction: column;
+	}
+	
+	/* 向后兼容的颜色类（已在 colors.css 中定义，但保留以兼容旧代码）*/
+	.title-font {
+		color: #333333;
+	}
+	
+	.light-blue {
+		color: #2EAEF2;
+	}
+	
+	/* 公共背景类 */
+	.bg-white {
+		background-color: #FFFFFF;
+	}
+	
+	.bg-light-blue {
+		background-color: #E8F5FD;
+	}
+	
+	/* 文本省略 */
+	.content_1 {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	
+	.content_2 {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		display: flex;
+		flex-direction: column;
+	}
+	
+	/* 隐藏滚动条 */
+	.scroll-container {
+		width: 0;
+		height: 0;
+		display: none;
+	}
+	
+	/* 相对定位 */
+	.relative {
+		position: relative;
+	}
+	
+	.absolute {
+		position: absolute;
+	}
+	
+	.fixed {
+		position: fixed;
+	}
+</style>

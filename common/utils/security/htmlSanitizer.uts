@@ -1,0 +1,234 @@
+/**
+ * HTML 净化器模块
+ * 对 innerHTML 动态赋值进行 HTML 净化处理，防止 XSS 攻击
+ * 
+ * 需求: 4.1, 4.2, 4.3
+ */
+
+// ==================== 白名单配置 ====================
+
+/**
+ * 默认允许的 HTML 标签白名单
+ */
+const DEFAULT_ALLOWED_TAGS: string[] = [
+	'form', 'input', 'select', 'option', 'button',
+	'div', 'span', 'p', 'br', 'a', 'img'
+]
+
+/**
+ * 支付表单允许的 HTML 标签白名单
+ * 支付宝表单需要 form、input 和 script（用于自动提交）
+ */
+const PAYMENT_FORM_ALLOWED_TAGS: string[] = ['form', 'input', 'script']
+
+/**
+ * 危险的事件处理器属性前缀
+ */
+const DANGEROUS_ATTR_PREFIX: string = 'on'
+
+// ==================== 内部工具函数 ====================
+
+/**
+ * 检查标签名是否在白名单中
+ */
+const isTagAllowed = (tagName: string, allowedTags: string[]): boolean => {
+	const lowerTag = tagName.toLowerCase()
+	for (let i = 0; i < allowedTags.length; i++) {
+		if (lowerTag == allowedTags[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 移除 HTML 字符串中的事件处理器属性（on* 属性）
+ * 例如: onclick, onerror, onload, onmouseover 等
+ */
+const removeEventHandlers = (html: string): string => {
+	// 匹配 on 开头的属性，如 onclick="..." onerror='...' onload=...
+	// 支持双引号、单引号和无引号的属性值
+	let result = html
+	// 处理双引号属性值: onXxx="..."
+	const doubleQuotePattern = new RegExp('\\s+on[a-zA-Z]+\\s*=\\s*"[^"]*"', 'gi')
+	result = result.replace(doubleQuotePattern, '')
+	// 处理单引号属性值: onXxx='...'
+	const singleQuotePattern = new RegExp("\\s+on[a-zA-Z]+\\s*=\\s*'[^']*'", 'gi')
+	result = result.replace(singleQuotePattern, '')
+	// 处理无引号属性值: onXxx=value (到空格或>结束)
+	const noQuotePattern = new RegExp('\\s+on[a-zA-Z]+\\s*=\\s*[^\\s>]+', 'gi')
+	result = result.replace(noQuotePattern, '')
+	return result
+}
+
+/**
+ * 移除 javascript:, data:, vbscript: 协议的属性值
+ */
+const removeDangerousProtocols = (html: string): string => {
+	let result = html
+	// 移除 href="javascript:..." 和 src="javascript:..." 等
+	const jsProtocolPattern = new RegExp('(href|src|action)\\s*=\\s*["\']?\\s*(javascript|data|vbscript)\\s*:', 'gi')
+	result = result.replace(jsProtocolPattern, '$1="')
+	return result
+}
+
+/**
+ * 移除不在白名单中的 HTML 标签
+ * 保留标签内的文本内容
+ */
+const removeDisallowedTags = (html: string, allowedTags: string[]): string => {
+	let result = html
+
+	// 移除不允许的自闭合标签和开闭标签
+	// 匹配所有 HTML 标签
+	const tagPattern = new RegExp('<\\/?([a-zA-Z][a-zA-Z0-9]*)(?:\\s[^>]*)?\\/?>',  'gi')
+
+	result = result.replace(tagPattern, (match: string, ...args: any[]): string => {
+		const tagName = (args[0] as string).toLowerCase()
+		if (isTagAllowed(tagName, allowedTags)) {
+			return match
+		}
+		// 不在白名单中的标签被移除（保留内容）
+		return ''
+	})
+
+	return result
+}
+
+/**
+ * 从 form 标签中提取 action URL
+ */
+const extractFormAction = (html: string): string => {
+	const actionPattern = new RegExp('action\\s*=\\s*["\']([^"\']+)["\']', 'i')
+	const match = actionPattern.exec(html)
+	if (match != null && match.length > 1) {
+		return match[1]
+	}
+	return ''
+}
+
+/**
+ * 验证 URL 是否属于可信域名
+ */
+const isUrlFromTrustedDomain = (url: string, trustedDomain: string): boolean => {
+	if (url == '' || trustedDomain == '') {
+		return false
+	}
+	try {
+		// 提取域名部分
+		let domain = url
+		// 移除协议前缀
+		const protocolEnd = domain.indexOf('://')
+		if (protocolEnd >= 0) {
+			domain = domain.substring(protocolEnd + 3)
+		}
+		// 移除路径部分
+		const pathStart = domain.indexOf('/')
+		if (pathStart >= 0) {
+			domain = domain.substring(0, pathStart)
+		}
+		// 移除端口号
+		const portStart = domain.indexOf(':')
+		if (portStart >= 0) {
+			domain = domain.substring(0, portStart)
+		}
+		// 检查域名是否匹配（精确匹配或子域名匹配）
+		domain = domain.toLowerCase()
+		const trusted = trustedDomain.toLowerCase()
+		return domain == trusted || domain.endsWith('.' + trusted)
+	} catch (e) {
+		return false
+	}
+}
+
+// ==================== 导出函数 ====================
+
+/**
+ * 通用 HTML 净化
+ * 移除不在白名单中的标签、事件处理器属性和危险协议
+ * 
+ * @param html - 待净化的 HTML 字符串
+ * @param allowedTags - 允许的标签白名单，默认为 DEFAULT_ALLOWED_TAGS
+ * @returns 净化后的 HTML 字符串
+ * 
+ * 需求: 4.1, 4.2
+ */
+export const sanitizeHtml = (html: string, allowedTags: string[] | null = null): string => {
+	if (html == null || html == '') {
+		return ''
+	}
+
+	const tags = (allowedTags != null) ? allowedTags : DEFAULT_ALLOWED_TAGS
+
+	let result = html
+
+	// 1. 移除事件处理器属性 (on*)
+	result = removeEventHandlers(result)
+
+	// 2. 移除危险协议 (javascript:, data:, vbscript:)
+	result = removeDangerousProtocols(result)
+
+	// 3. 移除不在白名单中的标签
+	result = removeDisallowedTags(result, tags)
+
+	return result
+}
+
+/**
+ * 支付表单专用 HTML 净化
+ * 仅允许 form、input、script 标签，并验证 form action URL 属于可信域名
+ * 
+ * @param html - 待净化的支付表单 HTML 字符串
+ * @param trustedDomain - 可信域名（如 'openapi.alipay.com'）
+ * @returns 净化后的 HTML 字符串，如果 action URL 不可信则返回空字符串
+ * 
+ * 需求: 4.3
+ */
+export const sanitizePaymentForm = (html: string, trustedDomain: string): string => {
+	if (html == null || html == '') {
+		return ''
+	}
+
+	// 1. 验证 form action URL 是否属于可信域名
+	const actionUrl = extractFormAction(html)
+	if (actionUrl != '' && !isUrlFromTrustedDomain(actionUrl, trustedDomain)) {
+		console.warn('[HTML_Sanitizer] 支付表单 action URL 不属于可信域名:', trustedDomain)
+		return ''
+	}
+
+	// 2. 使用支付表单专用白名单净化
+	let result = html
+
+	// 移除事件处理器属性（script 标签内的内容除外）
+	// 先提取 script 标签内容，净化非 script 部分，再还原
+	const scriptPattern = new RegExp('<script[^>]*>[\\s\\S]*?<\\/script>', 'gi')
+	const scripts: string[] = []
+	const scriptMatches = result.match(scriptPattern)
+	if (scriptMatches != null) {
+		for (let i = 0; i < scriptMatches.length; i++) {
+			scripts.push(scriptMatches[i])
+		}
+	}
+
+	// 用占位符替换 script 标签
+	let placeholder = result
+	for (let i = 0; i < scripts.length; i++) {
+		placeholder = placeholder.replace(scripts[i], '___SCRIPT_PLACEHOLDER_' + i.toString() + '___')
+	}
+
+	// 对非 script 部分移除事件处理器
+	placeholder = removeEventHandlers(placeholder)
+
+	// 移除危险协议
+	placeholder = removeDangerousProtocols(placeholder)
+
+	// 移除不在支付表单白名单中的标签
+	placeholder = removeDisallowedTags(placeholder, PAYMENT_FORM_ALLOWED_TAGS)
+
+	// 还原 script 标签
+	for (let i = 0; i < scripts.length; i++) {
+		placeholder = placeholder.replace('___SCRIPT_PLACEHOLDER_' + i.toString() + '___', scripts[i])
+	}
+
+	return placeholder
+}

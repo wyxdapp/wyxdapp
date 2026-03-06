@@ -1,0 +1,607 @@
+<template>
+	<view v-if="show == true" class="gift-selector-mask" @click="handleClose">
+		<view class="gift-selector-panel" @click.stop>
+			<!-- Tab栏：背包 | 商城 - 靠左，右边显示等级图标 -->
+			<view class="gift-tabs">
+				<view class="tabs-left">
+					<view class="tab-item" @click="switchTab('bag')">
+						<text class="tab-text" :class="{ 'tab-text-active': activeTab == 'bag' }">背包</text>
+						<view v-if="activeTab == 'bag'" class="tab-underline"></view>
+						<view v-if="bagGiftsCount > 0 && activeTab != 'bag'" class="tab-badge">
+							<text class="tab-badge-text">{{ bagGiftsCount }}</text>
+						</view>
+					</view>
+					<view class="tab-item" @click="switchTab('shop')">
+						<text class="tab-text" :class="{ 'tab-text-active': activeTab == 'shop' }">商城</text>
+						<view v-if="activeTab == 'shop'" class="tab-underline"></view>
+					</view>
+				</view>
+				<!-- 右侧礼物积分等级图标 -->
+				<view class="tabs-right">
+					<image v-if="giftLevelIcon != ''" :src="giftLevelIcon" class="level-icon" mode="aspectFit" />
+				</view>
+			</view>
+			
+			<!-- 礼物网格内容区 -->
+			<scroll-view scroll-y="true" class="gift-scroll">
+				<!-- 背包标签内容 -->
+				<view v-if="activeTab == 'bag'">
+					<view v-if="bagGiftsLength == 0" class="empty-state">
+						<text class="empty-text">背包中暂无礼物</text>
+					</view>
+					<view v-else class="gift-grid">
+						<view 
+							v-for="(gift, index) in (bagGifts as Array<any>)" 
+							:key="index"
+							class="gift-item"
+							@click="handleSelectGift(gift, 'bag')"
+						>
+							<image 
+								class="gift-image" 
+								:src="getGiftProp(gift, 'rewardImage')" 
+								mode="aspectFit"
+							/>
+							<text class="gift-name">{{ getGiftProp(gift, 'rewardName') }}</text>
+							<text class="gift-count">x{{ getGiftProp(gift, 'count') }}</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 商城标签内容 -->
+				<view v-if="activeTab == 'shop'">
+					<view v-if="shopGiftsLength == 0" class="empty-state">
+						<text class="empty-text">暂无可用礼物</text>
+					</view>
+					<view v-else class="gift-grid">
+						<view 
+							v-for="(gift, index) in (shopGifts as Array<any>)" 
+							:key="index"
+							class="gift-item"
+							@click="handleSelectGift(gift, 'shop')"
+						>
+							<image 
+								class="gift-image" 
+								:src="getGiftProp(gift, 'giftImage')" 
+								mode="aspectFit"
+							/>
+							<text class="gift-name">{{ getGiftProp(gift, 'giftName') }}</text>
+							<text class="gift-price">{{ getGiftCoinPrice(gift) }}钻</text>
+						</view>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch } from 'vue'
+import { getMyGifts, getAllGifts } from '@/common/services/lotteryService.uts'
+
+// 接口定义（UTS 规范：接口名称必须全局唯一）
+interface GiftSelectorGiftItem {
+	count?: string | number | null
+	rewardImage?: string | null
+	rewardName?: string | null
+	giftImage?: string | null
+	giftName?: string | null
+	giftValue?: string | number | null
+}
+
+interface GiftSelectorResultData {
+	code?: any
+	data?: any
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	userKid: { type: String, default: '' },
+	receiveUserKid: { type: String, default: '' },
+	giftLevel: { type: Number, default: 1 }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+	selectGift: [gift: any, source: string]
+}>()
+
+// 响应式数据
+const activeTab = ref('bag')
+const bagGifts = ref<any[]>([])
+const shopGifts = ref<any[]>([])
+const loading = ref(false)
+
+// 勋章图标路径前缀
+const MEDAL_BADGE_PREFIX = 'https://jiasu.wyxdapp.com/iconimages/badge_medal_'
+
+// 礼物等级图标
+const giftLevelIcon = computed((): string => {
+	const level = props.giftLevel
+	if (level <= 0) return MEDAL_BADGE_PREFIX + '1.png'
+	if (level > 50) return MEDAL_BADGE_PREFIX + '46.png'
+	return MEDAL_BADGE_PREFIX + level.toString() + '.png'
+})
+
+// 计算属性
+const bagGiftsCount = computed((): number => {
+	try {
+		const listVal = bagGifts.value
+		if (listVal == null || Array.isArray(listVal) != true) {
+			return 0
+		}
+		const listArr = listVal as Array<any>
+		const len = listArr.length
+		let sum = 0 as number
+		for (let i = 0; i < len; i = i + 1) {
+			const gift = listArr[i]
+			let count = 1 as number
+			if (gift != null) {
+				try {
+					// 🔧 修复：使用 UTSJSONObject.get() 安全访问属性
+					const giftJson = JSON.stringify(gift)
+					if (giftJson != null && giftJson != '') {
+						const giftObj = JSON.parse(giftJson) as UTSJSONObject
+						if (giftObj != null) {
+							const countVal = giftObj.get('count')
+							if (countVal != null) {
+								const countStr = countVal.toString()
+								if (countStr != null && countStr != '') {
+									const num = parseInt(countStr)
+									if (isNaN(num) == false) {
+										count = num as number
+									}
+								}
+							}
+						}
+					}
+				} catch (e) {}
+			}
+			sum = (sum + count) as number
+		}
+		return sum
+	} catch (e) {}
+	return 0
+})
+
+// 背包礼物列表长度
+const bagGiftsLength = computed((): number => {
+	try {
+		const listVal = bagGifts.value
+		if (listVal != null && Array.isArray(listVal) == true) {
+			return (listVal as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 商城礼物列表长度
+const shopGiftsLength = computed((): number => {
+	try {
+		const listVal = shopGifts.value
+		if (listVal != null && Array.isArray(listVal) == true) {
+			return (listVal as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 切换 Tab
+const switchTab = (tab: string) => {
+	activeTab.value = tab
+}
+
+// 获取礼物金币价格（元转金币：giftValue * 100）
+const getGiftCoinPrice = (gift: any): string => {
+	if (gift == null) return '0'
+	try {
+		const giftJson = JSON.stringify(gift)
+		if (giftJson != null && giftJson != '') {
+			const giftObj = JSON.parse(giftJson) as UTSJSONObject
+			if (giftObj != null) {
+				const val = giftObj.get('giftValue')
+				if (val != null) {
+					const valStr = val.toString()
+					if (valStr != null && valStr != '') {
+						const numVal = parseFloat(valStr)
+						if (isNaN(numVal) == false) {
+							// 元转金币：1元 = 100金币
+							const coinPrice = Math.round(numVal * 100)
+							return coinPrice.toString()
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {}
+	return '0'
+}
+
+// 加载背包礼物
+const loadBagGifts = async () => {
+	try {
+		loading.value = true
+		console.log('🎁 [GiftSelector] ========== 开始加载背包礼物 ==========')
+		console.log('🎁 [GiftSelector] props.userKid:', props.userKid)
+		console.log('🎁 [GiftSelector] props.userKid 类型:', typeof props.userKid)
+		console.log('🎁 [GiftSelector] props.userKid 长度:', props.userKid != null ? props.userKid.length : 0)
+		
+		// ⚠️ 二次验证：确保 userKid 不为空
+		if (props.userKid == null || props.userKid == '') {
+			console.error('🎁 [GiftSelector] ❌ loadBagGifts: userKid 为空，终止加载')
+			bagGifts.value = []
+			return
+		}
+		
+		// 🔧 修复：直接传递 any 类型参数，避免 Android 端 ClassCastException
+		// getMyGifts 函数内部会使用 JSON.stringify + JSON.parse 安全处理参数
+		const apiParams = { userKid: props.userKid } as UTSJSONObject
+		console.log('🎁 [GiftSelector] API 请求参数:', JSON.stringify(apiParams))
+		
+		console.log('🎁 [GiftSelector] 准备调用 getMyGifts API...')
+		const result = await getMyGifts(apiParams)
+		
+		console.log('🎁 [GiftSelector] 背包礼物API返回:', result)
+		console.log('🎁 [GiftSelector] API返回类型:', typeof result)
+
+		// 🔧 修复：使用 UTSJSONObject.get() 安全访问属性
+		let code: any = ''
+		let data: any = ''
+
+		if (result != null) {
+			try {
+				const resultJson = JSON.stringify(result)
+				console.log('🎁 [GiftSelector] API返回JSON字符串:', resultJson)
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						const codeVal = resultObj.get('code')
+						const dataVal = resultObj.get('data')
+						code = (codeVal != null) ? codeVal : ''
+						data = (dataVal != null) ? dataVal : ''
+						console.log('🎁 [GiftSelector] 背包礼物解析: code=', code, ', code类型=', typeof code)
+						console.log('🎁 [GiftSelector] 背包礼物解析: data类型=', typeof data, ', data是否为数组=', Array.isArray(data))
+						if (data != null && Array.isArray(data) == true) {
+							const dataArr = data as Array<any>
+							console.log('🎁 [GiftSelector] data数组长度:', dataArr.length)
+							if (dataArr.length > 0) {
+								console.log('🎁 [GiftSelector] 第一个礼物数据:', JSON.stringify(dataArr[0]))
+							}
+						}
+					}
+				}
+			} catch (e) {
+				console.error('🎁 [GiftSelector] 背包礼物解析错误:', e)
+			}
+		} else {
+			console.log('🎁 [GiftSelector] ⚠️ API返回result为null')
+		}
+
+		const success = (code != null && code.toString() == '200')
+		console.log('🎁 [GiftSelector] 请求是否成功:', success)
+
+		if (success == true && data != null && Array.isArray(data) == true) {
+			bagGifts.value = data as Array<any>
+			console.log('🎁 [GiftSelector] ✅ 背包礼物加载成功, 数量:', bagGifts.value.length)
+		} else {
+			bagGifts.value = []
+			console.log('🎁 [GiftSelector] ⚠️ 背包礼物为空或加载失败 - code:', code, ', data是否为数组:', Array.isArray(data))
+		}
+	} catch (error) {
+		console.error('🎁 [GiftSelector] ❌ 加载背包礼物失败:', error)
+		bagGifts.value = []
+	} finally {
+		loading.value = false
+		console.log('🎁 [GiftSelector] bagGifts.value 最终长度:', bagGifts.value.length)
+		console.log('🎁 [GiftSelector] bagGiftsLength 计算属性值:', bagGiftsLength.value)
+		console.log('🎁 [GiftSelector] ========== 背包礼物加载结束 ==========')
+	}
+}
+
+// 加载商店礼物
+const loadShopGifts = async () => {
+	try {
+		loading.value = true
+		console.log('🎁 [GiftSelector] 开始加载商店礼物')
+		
+		const result = await getAllGifts()
+		
+		console.log('🎁 [GiftSelector] 商店礼物API返回:', result)
+
+		// 🔧 修复：使用 UTSJSONObject.get() 安全访问属性
+		let code: any = ''
+		let data: any = ''
+
+		if (result != null) {
+			try {
+				const resultJson = JSON.stringify(result)
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						const codeVal = resultObj.get('code')
+						const dataVal = resultObj.get('data')
+						code = (codeVal != null) ? codeVal : ''
+						data = (dataVal != null) ? dataVal : ''
+						console.log('🎁 [GiftSelector] 商店礼物解析: code=', code, ', data=', data)
+					}
+				}
+			} catch (e) {
+				console.error('🎁 [GiftSelector] 商店礼物解析错误:', e)
+			}
+		}
+
+		const success = (code != null && code.toString() == '200')
+
+		if (success == true && data != null && Array.isArray(data) == true) {
+			shopGifts.value = data as Array<any>
+			console.log('🎁 [GiftSelector] 商店礼物加载成功, 数量:', shopGifts.value.length)
+		} else {
+			shopGifts.value = []
+			console.log('🎁 [GiftSelector] 商店礼物为空或加载失败')
+		}
+	} catch (error) {
+		console.error('加载商店礼物失败:', error)
+		shopGifts.value = []
+	} finally {
+		loading.value = false
+	}
+}
+
+// 关闭弹窗
+const handleClose = () => {
+	emit('close')
+}
+
+// 辅助函数：获取礼物的属性（用于模板访问，避免 error18）
+// 🔧 修复：使用 UTSJSONObject.get() 方法安全访问属性，避免 APP 端接口类型点访问问题
+const getGiftProp = (gift: any, key: string): string => {
+	if (gift == null) {
+		console.log('🎁 [getGiftProp] gift为null, key:', key)
+		if (key == 'rewardImage' || key == 'giftImage') {
+			return '/static/images/liwu/xiaoxinxin.png'
+		}
+		if (key == 'count') {
+			return '1'
+		}
+		if (key == 'giftValue') {
+			return '0'
+		}
+		return ''
+	}
+	try {
+		// 使用 JSON.parse + UTSJSONObject.get() 安全访问属性
+		const giftJson = JSON.stringify(gift)
+		if (giftJson != null && giftJson != '') {
+			const giftObj = JSON.parse(giftJson) as UTSJSONObject
+			if (giftObj != null) {
+				// 使用 UTSJSONObject.get() 方法获取属性值
+				const val = giftObj.get(key)
+				if (val != null && val.toString() != '') {
+					return val.toString()
+				}
+				// 返回默认值
+				if (key == 'rewardImage' || key == 'giftImage') {
+					return '/static/images/liwu/xiaoxinxin.png'
+				}
+				if (key == 'giftValue') {
+					return '0'
+				}
+				if (key == 'count') {
+					return '1'
+				}
+				if (key == 'rewardName' || key == 'giftName') {
+					return '未知礼物'
+				}
+			}
+		}
+	} catch (e) {
+		console.error('🎁 [getGiftProp] 解析错误, key:', key, ', error:', e)
+	}
+	// 最终兜底默认值
+	if (key == 'rewardImage' || key == 'giftImage') {
+		return '/static/images/liwu/xiaoxinxin.png'
+	}
+	if (key == 'count') {
+		return '1'
+	}
+	if (key == 'giftValue') {
+		return '0'
+	}
+	if (key == 'rewardName' || key == 'giftName') {
+		return '未知礼物'
+	}
+	return ''
+}
+
+// 选择礼物
+const handleSelectGift = (gift: any, source: string) => {
+	emit('selectGift', gift, source)
+	handleClose()
+}
+
+// 监听show变化，加载数据
+const watchShowGetter = (): boolean => {
+	return props.show
+}
+watch(watchShowGetter, (newVal: boolean) => {
+	console.log('🎁 [GiftSelector] watch触发 - show:', newVal, ', userKid:', props.userKid)
+	
+	// ⚠️ 关键验证：检查 userKid 是否有效
+	if (newVal == true) {
+		if (props.userKid == null || props.userKid == '') {
+			console.error('🎁 [GiftSelector] ❌ userKid 为空！无法加载礼物')
+			uni.showToast({ title: '用户信息获取失败', icon: 'none' })
+			return
+		}
+		
+		console.log('🎁 [GiftSelector] ✅ userKid 有效，开始加载数据')
+		loadBagGifts()
+		loadShopGifts()
+	}
+})
+</script>
+
+<style scoped>
+/* 弹窗遮罩层 - 透明背景 */
+.gift-selector-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: transparent;
+	z-index: 1000;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+/* 弹窗面板 - 底部抽屉样式 */
+.gift-selector-panel {
+	width: 750rpx;
+	height: 680rpx;
+	background-color: #EDEDED;
+	flex-direction: column;
+	padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Tab栏 - 靠左布局，右边显示等级 */
+.gift-tabs {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 24rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #FFFFFF;
+}
+
+.tabs-left {
+	flex-direction: row;
+	align-items: center;
+}
+
+.tabs-right {
+	flex-direction: row;
+	align-items: center;
+}
+
+.level-icon {
+	width: 64rpx;
+	height: 64rpx;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-right: 48rpx;
+	height: 70rpx;
+	position: relative;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.tab-text-active {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 6rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-top: 8rpx;
+}
+
+.tab-badge {
+	position: absolute;
+	top: -8rpx;
+	right: 0;
+	background-color: #FF6B35;
+	border-radius: 20rpx;
+	padding-left: 8rpx;
+	padding-right: 8rpx;
+	padding-top: 2rpx;
+	padding-bottom: 2rpx;
+	min-width: 32rpx;
+}
+
+.tab-badge-text {
+	font-size: 20rpx;
+	color: #FFFFFF;
+	text-align: center;
+}
+
+/* 礼物滚动区域 */
+.gift-scroll {
+	flex: 1;
+	flex-direction: column;
+}
+
+/* 礼物网格 - 4列均匀布局 */
+.gift-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+.gift-item {
+	width: 179rpx;
+	flex-direction: column;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.gift-image {
+	width: 110rpx;
+	height: 110rpx;
+}
+
+.gift-name {
+	font-size: 24rpx;
+	color: #333333;
+	margin-top: 8rpx;
+	text-align: center;
+	lines: 1;
+	text-overflow: ellipsis;
+	width: 160rpx;
+}
+
+.gift-price {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 4rpx;
+}
+
+.gift-count {
+	font-size: 22rpx;
+	color: #FF6B35;
+	margin-top: 4rpx;
+}
+
+/* 空状态 */
+.empty-state {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+</style>
+

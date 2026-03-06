@@ -1,0 +1,42 @@
+﻿/**
+ * 短信服务 API
+ * 统一短信服务，从 pagesUser/services/smsService.ts 迁移
+ * 使用 /third/sms/sendSms 接口，smsType=20（登录验证码）
+ */
+import { request } from '@/utils/request'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 定义接口类型
+export interface GetMobileCodeParams {
+  phone: string
+}
+
+/**
+ * 获取手机验证码（绑定/登录场景）
+ * 后端接口：/third/sms/sendSms，smsType=20（登录验证码）
+ * UTS 规范：API 函数参数使用 UTSJSONObject 类型
+ */
+export const getMobileCode = (params: UTSJSONObject) => {
+  // 使用 JSON 序列化安全访问属性
+  let phone = ''
+  try {
+    const paramsStr = JSON.stringify(params)
+    const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+    const phoneVal = paramsObj.get('phone')
+    if (phoneVal != null && phoneVal.toString() != '') {
+      phone = phoneVal.toString().trim().replace(/\D/g, '')
+    }
+  } catch (e) {
+    handleSilentError(e, '解析手机号参数')
+  }
+  
+  return request.post('/third/sms/sendSms', {
+    phone,
+    smsType: 20
+  }, false)
+}
+
+export default {
+  getMobileCode
+}
+

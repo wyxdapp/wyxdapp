@@ -1,0 +1,1822 @@
+<template>
+	<view class="page">
+		<!-- 背景图片 -->
+		<image 
+			class="bg-index-header" 
+			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
+			mode="aspectFill"
+		></image>
+		
+		<!-- 顶部 Tab -->
+		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<!-- Tab 切换 - 直接实现，不使用组件 -->
+			<view class="tabs-row">
+				<view class="tab-item" @click="switchTabIndex(0)">
+					<text class="tab-text" :class="{ 'tab-text-active': currentTab == 0 }">动态</text>
+					<view v-if="currentTab == 0" class="tab-underline"></view>
+				</view>
+				<view class="tab-item" @click="switchTabIndex(1)">
+					<text class="tab-text" :class="{ 'tab-text-active': currentTab == 1 }">抢单</text>
+					<view v-if="currentTab == 1" class="tab-underline"></view>
+				</view>
+				<view class="publish-btn" @click="goToPublish">
+					<image src="https://jiasu.wyxdapp.com/iconimages/n_index_send.png" mode="aspectFit" class="publish-icon"></image>
+					<text class="publish-text">发布</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 内容区域 -->
+		<swiper 
+			class="swiper-container"
+			:style="{ marginTop: headerHeight + 'px', height: contentHeight + 'px' }"
+			:current="currentTab"
+			@change="onSwiperChange"
+		>
+			<!-- 动态 Tab -->
+			<swiper-item>
+				<scroll-view 
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					scroll-y="true"
+					:show-scrollbar="false"
+					refresher-enabled="true"
+					:refresher-triggered="trendsRefreshing"
+					@refresherrefresh="onRefreshTrends"
+					@scrolltolower="loadMoreTrends"
+				>
+					<view v-if="trendsLoading == true && trendsListLength == 0" class="loading">
+						<text class="loading-text">加载中...</text>
+					</view>
+					
+					<ListStatus 
+						v-else-if="trendsListLength == 0" 
+						status="empty" 
+						emptyText="暂无动态"
+					/>
+					
+					<view v-else class="list">
+						<DynamicItem 
+							v-for="(item, index) in trendsList" 
+							:key="getTrendsItemKey(item, index)"
+							:item="item"
+							@user-click="handleUserClick"
+							@content-click="handleContentClick"
+							@play="onVideoPlay"
+							@like="onLike"
+							@comment="handleCommentClick"
+							@more-click="handleMoreOptions"
+							@video-click="handleVideoClick"
+						/>
+					</view>
+
+					<!-- 加载更多 -->
+					<view v-if="trendsListLength > 0" class="load-status">
+						<text v-if="trendsLoadStatus == 'loading'" class="status-text">加载中...</text>
+						<text v-else-if="trendsLoadStatus == 'nomore'" class="status-text">没有更多了</text>
+						<text v-else class="status-text-more">上拉加载更多</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+			
+			<!-- 抢单 Tab -->
+			<swiper-item>
+				<scroll-view 
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					scroll-y="true"
+					:show-scrollbar="false"
+					refresher-enabled="true"
+					:refresher-triggered="grabOrderRefreshing"
+					@refresherrefresh="onRefreshGrabOrder"
+					@scrolltolower="loadMoreGrabOrders"
+				>
+					<view v-if="grabOrderLoading == true && grabOrderListLength == 0" class="loading">
+						<text class="loading-text">加载中...</text>
+					</view>
+					
+					<ListStatus 
+						v-else-if="grabOrderListLength == 0" 
+						status="empty" 
+						emptyText="暂无抢单"
+					/>
+					
+					<view v-else class="list grab-order-list">
+						<view 
+							v-for="(item, index) in grabOrderList" 
+							:key="getGrabOrderItemKey(item, index)"
+							class="order-card"
+							@click="handleGrabOrderClick(item)"
+						>
+							<!-- 头部：头像 + 用户名 + 分享按钮 -->
+							<view class="order-card-header">
+								<view class="order-card-user" @click.stop="handleGrabOrderUserClick(item)">
+									<Avatar
+										:url="getGrabOrderAvatar(item)"
+										:userId="getGrabOrderUserKid(item)"
+										size="small"
+										clickMode="none"
+									/>
+									<text class="order-username">{{ getGrabOrderUserName(item) }}</text>
+								</view>
+								<view class="order-share-btn" @click.stop="handleGrabOrderShare(item)">
+									<uni-icons type="redo" :size="24" color="#999999"></uni-icons>
+								</view>
+							</view>
+							<!-- 分割线 -->
+							<view class="order-divider"></view>
+							<!-- 订单编号 -->
+							<view class="order-info-row">
+								<text class="order-info-label">订单编号：</text>
+								<text class="order-info-value">{{ getGrabOrderNo(item) }}</text>
+							</view>
+							<!-- 订单描述 -->
+							<view class="order-desc-row">
+								<text class="order-desc-text">{{ getGrabOrderTitle(item) }}</text>
+							</view>
+							<!-- 出发时间 -->
+							<view class="order-time-row">
+								<image
+									class="order-time-icon"
+									src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png"
+									mode="aspectFill"
+								/>
+								<text class="order-time-label">出发时间：</text>
+								<text class="order-time-value">{{ getGrabOrderTime(item) }}</text>
+							</view>
+							<!-- 操作按钮行：预算 + 抢单按钮 -->
+							<view class="order-btn-row" @click.stop>
+								<view class="order-budget-box">
+									<text class="order-budget-label">预算：</text>
+									<text class="order-price-symbol">¥</text>
+									<text class="order-price-value">{{ getGrabOrderPrice(item) }}</text>
+								</view>
+								<view class="order-btn order-btn-primary" @click="handleGrabOrder(item)">
+									<text class="order-btn-primary-text">立即抢单</text>
+								</view>
+							</view>
+						</view>
+					</view>
+					
+					<!-- 加载更多 -->
+					<view v-if="grabOrderListLength > 0" class="load-status">
+						<text v-if="grabOrderLoadStatus == 'loading'" class="status-text">加载中...</text>
+						<text v-else-if="grabOrderLoadStatus == 'nomore'" class="status-text">没有更多了</text>
+						<text v-else class="status-text-more">上拉加载更多</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+
+		</swiper>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { calculateAndFormatDistance, getFloatProp, toJsonObj } from '@/common/utils/utsSafe.uts'
+import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { initUserInfoAction } from '@/stores/user.uts'
+import { batchSetLikeStatus, toggleLike, isLiked, getLikeCount } from '@/stores/like.uts'
+import { setVideoFeedData } from '@/stores/videoFeed.uts'
+import DynamicItem from '@/components/business/DynamicItem.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import request from '@/utils/request'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { isSharedDataDisplayEnabled, isFeatureTogglesLoaded } from '@/common/composables/useFeatureToggles.uts'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import { 
+	getChatList as getChatListFn, 
+	getChatListRef,
+	handleShareToChat as handleShareToChatFn
+} from '@/common/composables/useChatAndShare.uts'
+import { 
+	handleShareWechat as handleShareWechatFn,
+	handleShareMoments as handleShareMomentsFn,
+	handleCopyLink as handleCopyLinkFn,
+	handleShowQrcode as handleShowQrcodeFn
+} from '@/common/composables/useShareUi.uts'
+import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+
+// ==================== 类定义 ====================
+class PageListData {
+	pageNumber: number = 1
+	pageSize: number = 10
+	status: string = 'loadmore'
+	total: number = 0
+}
+
+// ==================== 用户位置 ====================
+const userLatitude = ref<number>(0)
+const userLongitude = ref<number>(0)
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+// 获取字符串属性
+const getItemStringProp = (item: UTSJSONObject, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 获取数字属性
+const getItemNumberProp = (item: UTSJSONObject, key: string): number => {
+	if (item == null) return 0
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val != null) {
+			const num = parseInt(val.toString())
+			if (isNaN(num) == false) return num
+		}
+	} catch (e) {}
+	return 0
+}
+
+// 内联金额格式化（替代 money.uts）
+const formatMoney = (value: number): string => {
+	if (isNaN(value)) return '0.00'
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+// 获取数组属性
+const getItemArrayProp = (item: UTSJSONObject, key: string): Array<UTSJSONObject> => {
+	if (item == null) return []
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val == null) return []
+		if (Array.isArray(val) == true) {
+			return val as Array<UTSJSONObject>
+		}
+		return []
+	} catch (e) {
+		return []
+	}
+}
+
+// 从 loginHelper 获取用户 Kid（可靠版本）
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 检查是否已登录（可靠版本）
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 响应式状态 ====================
+
+// 头部高度
+const headerHeight = ref<number>(0)
+// 内容区域高度
+const contentHeight = ref<number>(0)
+
+// Tab 相关
+const currentTab = ref<number>(0)
+
+// 动态列表
+const trendsList = ref<Array<UTSJSONObject>>([])
+const trendsLoading = ref<boolean>(false)
+const trendsRefreshing = ref<boolean>(false)
+const trendsPageData = ref<PageListData>(new PageListData())
+
+// 抢单列表
+const grabOrderList = ref<Array<UTSJSONObject>>([])
+const grabOrderLoading = ref<boolean>(false)
+const grabOrderRefreshing = ref<boolean>(false)
+const grabOrderPageData = ref<PageListData>(new PageListData())
+
+// 当前播放的视频 ID
+const currentPlayingVideoId = ref<string>('')
+
+// 分享相关状态
+const showSharePopup = ref(false)
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	desc: '',
+	summary: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+} as UTSJSONObject)
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const userStore = useUserStore()
+const currentShareItem = ref({} as UTSJSONObject)
+
+// ==================== 计算属性 ====================
+
+const trendsListLength = computed((): number => {
+	try {
+		const list = trendsList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const trendsLoadStatus = computed((): string => {
+	try {
+		return trendsPageData.value.status
+	} catch (e) {}
+	return 'loadmore'
+})
+
+const grabOrderListLength = computed((): number => {
+	try {
+		const list = grabOrderList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const grabOrderLoadStatus = computed((): string => {
+	try {
+		return grabOrderPageData.value.status
+	} catch (e) {}
+	return 'loadmore'
+})
+
+// ==================== 模板辅助函数 ====================
+
+// 动态列表 key
+const getTrendsItemKey = (item: UTSJSONObject, index: number): string => {
+	const kid = getItemStringProp(item, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+// 抢单列表 key
+const getGrabOrderItemKey = (item: UTSJSONObject, index: number): string => {
+	const kid = getItemStringProp(item, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+// 抢单属性获取
+const getGrabOrderTitle = (item: UTSJSONObject): string => {
+	let title = getItemStringProp(item, 'orderDescribe')
+	if (title == '') title = getItemStringProp(item, 'orderTitle')
+	return (title != '') ? title : '待抢订单'
+}
+
+const getGrabOrderPrice = (item: UTSJSONObject): string => {
+	let price = getItemNumberProp(item, 'orderPrice')
+	if (price == 0) price = getItemNumberProp(item, 'totalMoney')
+	return formatMoney(price)
+}
+
+const getGrabOrderTime = (item: UTSJSONObject): string => {
+	let time = getItemStringProp(item, 'startTime')
+	if (time == '') time = getItemStringProp(item, 'serviceTime')
+	if (time == '') time = getItemStringProp(item, 'travelDate')
+	return (time != '') ? time : '-'
+}
+
+const getGrabOrderNo = (item: UTSJSONObject): string => {
+	let orderNo = getItemStringProp(item, 'orderNo')
+	if (orderNo == '') orderNo = getItemStringProp(item, 'shortKid')
+	return (orderNo != '') ? orderNo : '-'
+}
+
+const getGrabOrderAvatar = (item: UTSJSONObject): string => {
+	let avatar = getItemStringProp(item, 'touristAvatar')
+	if (avatar == '') avatar = getItemStringProp(item, 'userImg')
+	if (avatar == '') avatar = getItemStringProp(item, 'avatar')
+	return (avatar != '') ? avatar : DEFAULT_AVATAR_LOCAL
+}
+
+const getGrabOrderUserName = (item: UTSJSONObject): string => {
+	let name = getItemStringProp(item, 'touristName')
+	if (name == '') name = getItemStringProp(item, 'userNickname')
+	if (name == '') name = getItemStringProp(item, 'nickname')
+	return (name != '') ? name : '游客'
+}
+
+// 获取抢单用户 ID
+const getGrabOrderUserKid = (item: UTSJSONObject): string => {
+	let userKid = getItemStringProp(item, 'touristKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userKid')
+	return userKid
+}
+
+// ==================== API 调用函数 ====================
+
+// 获取动态列表
+const fetchTrendsList = async (isRefresh: boolean) => {
+	try {
+		if (isRefresh == true) {
+			trendsPageData.value.pageNumber = 1
+			trendsPageData.value.status = 'loadmore'
+		}
+		
+		if (trendsPageData.value.status == 'nomore') return
+		
+		trendsLoading.value = true
+		trendsPageData.value.status = 'loading'
+		
+		const userKid = getUserKidFromStore()
+		const params = {
+			pageNumber: trendsPageData.value.pageNumber,
+			pageSize: trendsPageData.value.pageSize,
+			userKid: userKid
+		} as UTSJSONObject
+		// 功能开关已加载时才传递 sharedDataEnabled，否则让后端从数据库查询商户配置
+		if (isFeatureTogglesLoaded() == true) {
+			params['sharedDataEnabled'] = isSharedDataDisplayEnabled()
+		}
+		
+		const res = await request.post('/dynamic/v1/queryAllDynamic', params, false)
+		
+		console.log('动态列表响应:', JSON.stringify(res))
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			
+			// 先获取 data 字段
+			const dataVal = resObj.get('data')
+			let dataObj: UTSJSONObject | null = null
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				dataObj = JSON.parse(dataStr) as UTSJSONObject
+			}
+			
+			// 从 data 中获取 entities 和 count
+			let entities: Array<UTSJSONObject> = []
+			let count = 0
+			
+			if (dataObj != null) {
+				const entitiesVal = dataObj.get('entities')
+				const countVal = dataObj.get('count')
+				
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as Array<UTSJSONObject>
+				}
+				
+				if (countVal != null) {
+					const num = parseInt(countVal.toString())
+					if (isNaN(num) == false) count = num
+				}
+			}
+			
+			console.log('动态列表数据 - entities数量:', entities.length, 'count:', count)
+			
+			// 为每个项目计算距离
+			const userLat = userLatitude.value
+			const userLng = userLongitude.value
+			if (userLat != 0 && userLng != 0) {
+				for (let i = 0; i < entities.length; i = i + 1) {
+					const entity = entities[i]
+					const itemLat = getFloatProp(entity, 'latitude')
+					const itemLng = getFloatProp(entity, 'longitude')
+					
+					if (itemLat != 0 && itemLng != 0) {
+						const distanceStr = calculateAndFormatDistance(userLat, userLng, itemLat, itemLng)
+						if (distanceStr != '') {
+							// 更新 entity 的 distance 字段
+							const entityStr = JSON.stringify(entity)
+							const entityObj = JSON.parse(entityStr) as UTSJSONObject
+							entityObj.set('distance', distanceStr)
+							entities[i] = entityObj as UTSJSONObject
+						}
+					}
+				}
+			}
+			
+			// 批量设置点赞状态
+			if (entities.length > 0) {
+				const likeItems: Array<any> = []
+				for (let i = 0; i < entities.length; i = i + 1) {
+					const entity = entities[i]
+					const kid = getItemStringProp(entity, 'kid')
+					const isLikeVal = getItemNumberProp(entity, 'isLike')
+					const likeNumVal = getItemNumberProp(entity, 'likeNum')
+					if (kid != '') {
+						const likeItem = {
+							kid: kid,
+							isLike: isLikeVal,
+							likeNum: likeNumVal
+						} as UTSJSONObject
+						likeItems.push(likeItem)
+					}
+				}
+				if (likeItems.length > 0) {
+					batchSetLikeStatus(likeItems)
+				}
+			}
+			
+			if (isRefresh == true) {
+				trendsList.value = entities
+			} else {
+				const currentList = trendsList.value
+				for (let i = 0; i < entities.length; i = i + 1) {
+					currentList.push(entities[i])
+				}
+				trendsList.value = currentList
+			}
+			
+			trendsPageData.value.total = count
+			
+			const currentLength = trendsList.value.length
+			if (currentLength >= count || entities.length < trendsPageData.value.pageSize) {
+				trendsPageData.value.status = 'nomore'
+			} else {
+				trendsPageData.value.status = 'loadmore'
+				trendsPageData.value.pageNumber = trendsPageData.value.pageNumber + 1
+			}
+		}
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取动态列表', null)
+		}
+		trendsPageData.value.status = 'loadmore'
+	} finally {
+		trendsLoading.value = false
+	}
+}
+
+// 获取抢单列表
+const fetchGrabOrderList = async (isRefresh: boolean) => {
+	try {
+		if (isRefresh == true) {
+			grabOrderPageData.value.pageNumber = 1
+			grabOrderPageData.value.status = 'loadmore'
+		}
+		
+		if (grabOrderPageData.value.status == 'nomore') return
+		
+		grabOrderLoading.value = true
+		grabOrderPageData.value.status = 'loading'
+		
+		const params = {
+			pageNumber: grabOrderPageData.value.pageNumber,
+			pageSize: grabOrderPageData.value.pageSize
+		} as UTSJSONObject
+		
+		const res = await request.post('/order/guide/queryGrabOrder', params, false)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			
+			// 先获取 data 字段
+			const dataVal = resObj.get('data')
+			let dataObj: UTSJSONObject | null = null
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				dataObj = JSON.parse(dataStr) as UTSJSONObject
+			}
+			
+			// 从 data 中获取 entities 和 count
+			let entities: Array<UTSJSONObject> = []
+			let count = 0
+			
+			if (dataObj != null) {
+				const entitiesVal = dataObj.get('entities')
+				const countVal = dataObj.get('count')
+				
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as Array<UTSJSONObject>
+				}
+				
+				if (countVal != null) {
+					const num = parseInt(countVal.toString())
+					if (isNaN(num) == false) count = num
+				}
+			}
+			
+			if (isRefresh == true) {
+				grabOrderList.value = entities
+			} else {
+				const currentList = grabOrderList.value
+				for (let i = 0; i < entities.length; i = i + 1) {
+					currentList.push(entities[i])
+				}
+				grabOrderList.value = currentList
+			}
+			
+			grabOrderPageData.value.total = count
+			
+			const currentLength = grabOrderList.value.length
+			if (currentLength >= count || entities.length < grabOrderPageData.value.pageSize) {
+				grabOrderPageData.value.status = 'nomore'
+			} else {
+				grabOrderPageData.value.status = 'loadmore'
+				grabOrderPageData.value.pageNumber = grabOrderPageData.value.pageNumber + 1
+			}
+		}
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取抢单列表', null)
+		}
+		grabOrderPageData.value.status = 'loadmore'
+	} finally {
+		grabOrderLoading.value = false
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+// Tab 切换 - 直接点击 Tab 项
+const switchTabIndex = (index: number) => {
+	if (currentTab.value != index) {
+		currentTab.value = index
+	}
+	
+	// 首次切换时加载数据
+	if (index == 1 && grabOrderListLength.value == 0) {
+		fetchGrabOrderList(true)
+	}
+}
+
+// Swiper 切换
+const onSwiperChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const detailVal = eObj.get('detail')
+		if (detailVal != null) {
+			const detailStr = JSON.stringify(detailVal)
+			const detailObj = JSON.parse(detailStr) as UTSJSONObject
+			const currentVal = detailObj.get('current')
+			if (currentVal != null) {
+				const current = parseInt(currentVal.toString())
+				if (isNaN(current) == false) {
+					currentTab.value = current
+					
+					// 首次切换时加载数据
+					if (current == 1 && grabOrderListLength.value == 0) {
+						fetchGrabOrderList(true)
+					}
+				}
+			}
+		}
+	}
+}
+
+// 跳转发布 - 根据当前Tab决定跳转目标
+const goToPublish = () => {
+	if (currentTab.value == 0) {
+		// 动态Tab - 跳转到发布动态页面
+		uni.navigateTo({ url: '/pages/index/components/addTrends' })
+	} else if (currentTab.value == 1) {
+		// 抢单Tab - 跳转到提交订单页面
+		uni.navigateTo({ url: '/pagesUser/submitOrder/index' })
+	}
+}
+
+// 下拉刷新 - 动态
+const onRefreshTrends = async () => {
+	trendsRefreshing.value = true
+	await fetchTrendsList(true)
+	trendsRefreshing.value = false
+}
+
+// 下拉刷新 - 抢单
+const onRefreshGrabOrder = async () => {
+	grabOrderRefreshing.value = true
+	await fetchGrabOrderList(true)
+	grabOrderRefreshing.value = false
+}
+
+// 加载更多 - 动态
+const loadMoreTrends = () => {
+	if (trendsPageData.value.status == 'loadmore') {
+		fetchTrendsList(false)
+	}
+}
+
+// 加载更多 - 抢单
+const loadMoreGrabOrders = () => {
+	if (grabOrderPageData.value.status == 'loadmore') {
+		fetchGrabOrderList(false)
+	}
+}
+
+// 用户头像点击
+const handleUserClick = (item: UTSJSONObject) => {
+	const userKid = getItemStringProp(item, 'userKid')
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+// 内容点击 - 跳转详情
+const handleContentClick = (item: UTSJSONObject) => {
+	const kid = getItemStringProp(item, 'kid')
+	if (kid != '') {
+		uni.navigateTo({
+			url: '/pagesBusiness/commend/index?kid=' + kid
+		})
+	}
+}
+
+// 视频播放
+const onVideoPlay = (videoId: string) => {
+	// 暂停其他视频
+	if (currentPlayingVideoId.value != '' && currentPlayingVideoId.value != videoId) {
+		try {
+			const videoContext = uni.createVideoContext('video-' + currentPlayingVideoId.value)
+			if (videoContext != null) {
+				videoContext.pause()
+			}
+		} catch (e) {}
+	}
+	currentPlayingVideoId.value = videoId
+}
+
+// 视频点击 - 跳转到全屏视频播放页
+const handleVideoClick = (item: UTSJSONObject) => {
+	// 筛选出视频类型的动态（insertType == 3）
+	const videoItems: Array<any> = []
+	let clickedIndex = 0
+	const list = trendsList.value
+	
+	for (let i = 0; i < list.length; i = i + 1) {
+		const listItem = list[i]
+		const insertType = getItemNumberProp(listItem, 'insertType')
+		if (insertType == 3) {
+			const mediaName = getItemStringProp(listItem, 'mediaName')
+			if (mediaName != '') {
+				// 检查是否是当前点击的视频
+				const itemKid = getItemStringProp(item, 'kid')
+				const listItemKid = getItemStringProp(listItem, 'kid')
+				if (itemKid == listItemKid) {
+					clickedIndex = videoItems.length
+				}
+				videoItems.push(listItem)
+			}
+		}
+	}
+	
+	if (videoItems.length > 0) {
+		// 设置视频数据到 Store
+		setVideoFeedData(videoItems, clickedIndex)
+		
+		// 跳转到视频播放页
+		uni.navigateTo({
+			url: '/pagesBusiness/videoFeed/index'
+		})
+	} else {
+		uni.showToast({
+			title: '视频不可用',
+			icon: 'none'
+		})
+	}
+}
+
+// 点赞
+const onLike = async (item: UTSJSONObject) => {
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getUserKidFromStore()
+	const discoverKid = getItemStringProp(item, 'kid')
+	
+	if (userKid == '' || discoverKid == '') return
+	
+	try {
+		await toggleLike(userKid, discoverKid)
+		
+		// 更新列表中的点赞状态
+		const list = trendsList.value
+		for (let i = 0; i < list.length; i = i + 1) {
+			const listItem = list[i]
+			const itemKid = getItemStringProp(listItem, 'kid')
+			if (itemKid == discoverKid) {
+				const isLikedNow = isLiked(discoverKid)
+				const likeCount = getLikeCount(discoverKid)
+				
+				// 更新 item
+				const itemStr = JSON.stringify(listItem)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set('isLike', isLikedNow == true ? 10 : 0)
+				itemObj.set('likeNum', likeCount)
+				list[i] = itemObj as UTSJSONObject
+				break
+			}
+		}
+		trendsList.value = list
+	} catch (error: Error) {
+		handleSilentError(error, '点赞失败')
+	}
+}
+
+// 评论点击
+const handleCommentClick = (item: UTSJSONObject) => {
+	const kid = getItemStringProp(item, 'kid')
+	if (kid != '') {
+		uni.navigateTo({
+			url: '/pagesBusiness/commend/index?kid=' + kid + '&focusComment=1'
+		})
+	}
+}
+
+// 更多操作 - 改为分享功能
+const handleMoreOptions = async (item: UTSJSONObject) => {
+	console.log('[Find] handleMoreOptions called - 分享动态')
+	currentShareItem.value = item
+	
+	try {
+		// 构建分享标题
+		const nickName = getItemStringProp(item, 'nickName')
+		const shareTitle = nickName != '' ? `${nickName}的动态` : '网约向导趣游玩'
+		
+		// 构建分享描述
+		let shareDesc = '发现精彩动态，一起来看看吧！'
+		const content = getItemStringProp(item, 'discoverContent')
+		if (content != '') {
+			// 截取前50个字符作为描述
+			shareDesc = content.length > 50 ? content.substring(0, 50) + '...' : content
+		}
+		
+		// 获取分享图片
+		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		const insertType = getItemNumberProp(item, 'insertType')
+		
+		if (insertType == 1) {
+			// 图片类型 - 使用第一张图片
+			const picList = getItemArrayProp(item, 'picList')
+			if (picList.length > 0) {
+				const firstPic = picList[0]
+				if (firstPic != null) {
+					// 🔧 修复：安全地获取图片 URL，添加错误处理
+					try {
+						// 先尝试作为字符串处理
+						const picStr = firstPic.toString()
+						if (picStr != '' && picStr.indexOf('http') >= 0) {
+							// 已经是 URL 字符串
+							imageStr = picStr
+						} else {
+							// 尝试作为对象处理
+							const picUrl = getItemStringProp(firstPic, 'picUrl')
+							if (picUrl != '') {
+								imageStr = picUrl
+							}
+						}
+					} catch (e) {
+						handleSilentError(e, '获取图片URL')
+						// 使用默认图片
+					}
+				}
+			}
+		} else if (insertType == 3) {
+			// 视频类型 - 使用视频封面
+			const videoPic = getItemStringProp(item, 'videoPic')
+			if (videoPic != '') {
+				imageStr = videoPic
+			}
+		}
+		
+		// 构建分享链接
+		const kid = getItemStringProp(item, 'kid')
+		let shareLink = 'https://m.wyxdapp.com/#/pagesBusiness/commend/index?kid=' + kid
+		
+		// 获取当前用户的推广短号
+		let referrerShortKid = ''
+		try {
+			// 🔧 修复：优先使用 getUserShortKid()，再 fallback 到 store 和缓存 profile
+			referrerShortKid = getUserShortKid()
+			if (referrerShortKid == '') {
+				// 使用 toJsonObj 安全访问 store
+				const userStoreObj = toJsonObj(userStore)
+				if (userStoreObj != null) {
+					const userInfoVal = userStoreObj.get('userInfo')
+					if (userInfoVal != null) {
+						const userInfoJson = JSON.stringify(userInfoVal)
+						if (userInfoJson != null && userInfoJson != '') {
+							const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+							const shortKidVal = userInfoObj.get('shortKid')
+							if (shortKidVal != null && shortKidVal.toString() != '') {
+								referrerShortKid = shortKidVal.toString()
+							}
+						}
+					}
+				}
+			}
+			// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+			if (referrerShortKid == '') {
+				const currentUserKidForRef = getUserKidFromStore()
+				if (currentUserKidForRef != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidForRef, currentUserKidForRef)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+							}
+						}
+					} catch (e2) {}
+				}
+			}
+			if (referrerShortKid != '') {
+				// 添加推广参数到链接
+				if (shareLink.indexOf('?') >= 0) {
+					shareLink = shareLink + '&ref=' + referrerShortKid
+				} else {
+					shareLink = shareLink + '?ref=' + referrerShortKid
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 构建分享数据
+		// 🔧 修复：添加 discoverKid 字段，用于举报功能
+		const newPayload = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: imageStr,
+			userId: '',
+			referrerShortKid: referrerShortKid,
+			discoverKid: kid  // ✅ 添加动态KID，用于举报
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleMoreOptions] 分享数据构建完成:')
+		console.log('[handleMoreOptions] - title:', shareTitle)
+		console.log('[handleMoreOptions] - desc:', shareDesc)
+		console.log('[handleMoreOptions] - imageUrl:', imageStr)
+		console.log('[handleMoreOptions] - link:', shareLink)
+	} catch (e) {
+		handleSilentError(e, '构建分享数据')
+		// 使用默认值
+		sharePayload.value = {
+			title: '网约向导趣游玩',
+			summary: '发现精彩动态，一起来看看吧！',
+			desc: '发现精彩动态，一起来看看吧！',
+			link: 'https://m.wyxdapp.com',
+			url: 'https://m.wyxdapp.com',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		console.log('[Find] getChatListFn result:', JSON.stringify(result))
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+				console.log('[Find] assigned result to shareChatList, new length:', shareChatList.value.length)
+			} else {
+				// fallback: 安全解析模块级 chatList
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const chatList = getChatListRef()
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {}
+					
+					if (fallbackArr.length == 0) {
+						try {
+							const chatList = getChatListRef()
+							const chatListObj = JSON.parse(JSON.stringify(chatList)) as UTSJSONObject
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										try {
+											const parsedV = JSON.parse(JSON.stringify(v))
+											if (Array.isArray(parsedV) == true) {
+												fallbackArr = parsedV as Array<UTSJSONObject>
+											}
+										} catch (e) {}
+									}
+								} catch (e) {}
+							}
+						} catch (e) {}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+					console.log('[Find] used fallback chatList, length:', shareChatList.value.length)
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '解析会话列表')
+		}
+	} catch (e) {
+		handleSilentError(e, '获取会话列表')
+		shareChatList.value = []
+	}
+
+	showSharePopup.value = true
+}
+
+// 分享事件处理函数
+const handleShareToChat = (data: UTSJSONObject) => {
+	console.log('[Find] handleShareToChat called with data:', JSON.stringify(data))
+	
+	if (currentShareItem.value == null) {
+		uni.showToast({
+			title: '分享失败，请重试',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 🔧 修复：从 data 中提取 chatItem（SharePopup 传递的是 { chatItem, shareData }）
+	let chatItem: UTSJSONObject = {} as UTSJSONObject
+	try {
+		const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+		const chatItemVal = dataObj.get('chatItem')
+		if (chatItemVal != null) {
+			chatItem = chatItemVal as UTSJSONObject
+			console.log('[Find] 成功提取 chatItem:', JSON.stringify(chatItem))
+		} else {
+			console.error('[Find] ❌ data 中没有 chatItem 字段')
+		}
+	} catch (e) {
+		handleSilentError(e, '解析分享数据')
+	}
+	
+	if (chatItem == null) {
+		uni.showToast({
+			title: '分享失败，会话信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 🔧 判断分享内容类型：检查是否为订单
+	const orderNo = getItemStringProp(currentShareItem.value, 'orderNo')
+	const shortKid = getItemStringProp(currentShareItem.value, 'shortKid')
+	const orderPrice = getItemNumberProp(currentShareItem.value, 'orderPrice')
+	const totalMoney = getItemNumberProp(currentShareItem.value, 'totalMoney')
+	
+	const hasOrderNo = (orderNo != '' || shortKid != '')
+	const hasPrice = (orderPrice > 0 || totalMoney > 0)
+	
+	if (hasOrderNo == true || hasPrice == true) {
+		// 订单分享
+		console.log('[Find] 检测到订单分享')
+		
+		// 构建订单信息对象用于分享
+		const orderInfo = {
+			kid: getItemStringProp(currentShareItem.value, 'kid'),
+			orderNo: getGrabOrderNo(currentShareItem.value),
+			orderTitle: getGrabOrderTitle(currentShareItem.value),
+			totalMoney: getGrabOrderPrice(currentShareItem.value),
+			travelDate: getGrabOrderTime(currentShareItem.value),
+			touristName: getGrabOrderUserName(currentShareItem.value),
+			touristAvatar: getGrabOrderAvatar(currentShareItem.value)
+		}
+		
+		console.log('[Find] handleShareToChat - orderInfo:', JSON.stringify(orderInfo))
+		
+		// 传递包含 chatItem 的对象作为第一个参数
+		const shareData = {
+			chatItem: chatItem
+		} as UTSJSONObject
+		
+		handleShareToChatFn(shareData, orderInfo)
+	} else {
+		// 动态分享（原有逻辑）
+		console.log('[Find] 检测到动态分享')
+		
+		// 构建动态信息对象用于分享（使用动态卡片格式）
+		// 🔧 确保字段完整，便于 useChatAndShare.uts 正确识别为动态内容
+		const contentText = getItemStringProp(currentShareItem.value, 'discoverContent')
+		const titleText = contentText != '' ? contentText : '精彩动态分享'
+		
+		const dynamicInfo = {
+			kid: getItemStringProp(currentShareItem.value, 'kid'),
+			id: getItemStringProp(currentShareItem.value, 'kid'),
+			title: titleText.length > TEXT_PREVIEW_LENGTH ? titleText.substring(0, TEXT_PREVIEW_LENGTH) + '...' : titleText,
+			content: contentText,
+			text: contentText,
+			description: contentText,  // 🔧 添加 description 字段
+			image: '',
+			coverImage: '',
+			// 🔧 添加用户信息字段，用于卡片显示
+			userKid: getItemStringProp(currentShareItem.value, 'userKid'),
+			nickName: getItemStringProp(currentShareItem.value, 'nickName'),
+			userImage: getItemStringProp(currentShareItem.value, 'userImage')
+		}
+		
+		// 获取封面图片
+		const insertType = getItemNumberProp(currentShareItem.value, 'insertType')
+		if (insertType == 1) {
+			// 图片类型 - 使用第一张图片
+			const picList = getItemArrayProp(currentShareItem.value, 'picList')
+			if (picList.length > 0) {
+				const firstPic = picList[0]
+				if (firstPic != null) {
+					// 🔧 修复：安全地获取图片 URL
+					// firstPic 可能是字符串或对象，需要分别处理
+					let picUrl = ''
+					try {
+						// 先尝试作为字符串处理
+						const picStr = firstPic.toString()
+						if (picStr != '' && picStr.indexOf('http') >= 0) {
+							// 已经是 URL 字符串
+							picUrl = picStr
+						} else {
+							// 尝试作为对象处理
+							const picUrlFromObj = getItemStringProp(firstPic, 'picUrl')
+							if (picUrlFromObj != '') {
+								picUrl = picUrlFromObj
+							}
+						}
+					} catch (e) {
+						handleSilentError(e, '获取分享图片URL')
+					}
+					
+					if (picUrl != '') {
+						dynamicInfo.image = picUrl
+						dynamicInfo.coverImage = picUrl
+					}
+				}
+			}
+		} else if (insertType == 3) {
+			// 视频类型 - 使用视频封面
+			const videoPic = getItemStringProp(currentShareItem.value, 'videoPic')
+			if (videoPic != '') {
+				dynamicInfo.image = videoPic
+				dynamicInfo.coverImage = videoPic
+			}
+		}
+		
+		// 🔧 如果没有图片，使用默认动态图片
+		if (dynamicInfo.image == '') {
+			dynamicInfo.image = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+			dynamicInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+		}
+		
+		console.log('[Find] handleShareToChat - dynamicInfo:', JSON.stringify(dynamicInfo))
+		console.log('[Find] - 动态ID:', dynamicInfo.kid)
+		console.log('[Find] - 标题:', dynamicInfo.title)
+		console.log('[Find] - 内容:', dynamicInfo.content)
+		console.log('[Find] - 图片:', dynamicInfo.image)
+		
+		// 🔧 修复：传递包含 chatItem 的对象作为第一个参数
+		const shareData = {
+			chatItem: chatItem
+		} as UTSJSONObject
+		
+		handleShareToChatFn(shareData, dynamicInfo)
+	}
+}
+
+// 抢单分享按钮点击
+const handleGrabOrderShare = async (item: UTSJSONObject) => {
+	console.log('[Find] handleGrabOrderShare called')
+	currentShareItem.value = item
+	
+	try {
+		// 构建分享标题
+		const orderTitle = getGrabOrderTitle(item)
+		const shareTitle = '待抢订单：' + orderTitle
+		
+		// 构建分享描述
+		const orderNo = getGrabOrderNo(item)
+		const price = getGrabOrderPrice(item)
+		const time = getGrabOrderTime(item)
+		const shareDesc = '订单编号：' + orderNo + '\n价格：¥' + price + '\n出发时间：' + time
+		
+		// 构建分享链接
+		const kid = getItemStringProp(item, 'kid')
+		let shareLink = 'https://m.wyxdapp.com/#/pagesTrade/orderDetails/index?orderKid=' + kid
+		
+		// 获取推广短号
+		let referrerShortKid = ''
+		try {
+			// 使用 toJsonObj 安全访问 store
+			const userStoreObj = toJsonObj(userStore)
+			if (userStoreObj != null) {
+				const userInfoVal = userStoreObj.get('userInfo')
+				if (userInfoVal != null) {
+					const userInfoJson = JSON.stringify(userInfoVal)
+					if (userInfoJson != null && userInfoJson != '') {
+						const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+						const shortKidVal = userInfoObj.get('shortKid')
+						if (shortKidVal != null && shortKidVal.toString() != '') {
+							referrerShortKid = shortKidVal.toString()
+							shareLink = shareLink + '&ref=' + referrerShortKid
+						}
+					}
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 构建分享数据
+		// 🔧 修复：添加订单KID字段，用于举报功能
+		const newPayload = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			userId: '',
+			referrerShortKid: referrerShortKid,
+			orderKid: kid  // ✅ 添加订单KID（注意：后端可能需要支持订单举报类型）
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleGrabOrderShare] 分享数据构建完成')
+	} catch (e) {
+		handleSilentError(e, '构建抢单分享数据')
+		sharePayload.value = {
+			title: '待抢订单',
+			summary: '精彩订单，等你来抢！',
+			desc: '精彩订单，等你来抢！',
+			link: 'https://m.wyxdapp.com',
+			url: 'https://m.wyxdapp.com',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		if (result != null && Array.isArray(result) == true) {
+			shareChatList.value = result as Array<UTSJSONObject>
+		} else {
+			shareChatList.value = []
+		}
+	} catch (e) {
+		handleSilentError(e, '获取抢单会话列表')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+const handleShareWechat = () => {
+	handleShareWechatFn(sharePayload.value)
+}
+
+const handleShareMoments = () => {
+	handleShareMomentsFn(sharePayload.value)
+}
+
+const handleCopyLink = () => {
+	handleCopyLinkFn(sharePayload.value)
+}
+
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(sharePayload.value)
+}
+
+// 抢单点击
+const handleGrabOrderClick = (item: UTSJSONObject) => {
+	const orderKid = getItemStringProp(item, 'kid')
+	if (orderKid != '') {
+		uni.navigateTo({
+			url: '/pagesTrade/orderDetails/index?orderKid=' + orderKid
+		})
+	}
+}
+
+// 抢单用户头像/昵称点击 - 跳转个人主页
+const handleGrabOrderUserClick = (item: UTSJSONObject) => {
+	// 尝试多个可能的用户ID字段
+	let userKid = getItemStringProp(item, 'touristKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userId')
+	
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+// 抢单操作
+const handleGrabOrder = async (item: UTSJSONObject) => {
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getUserKidFromStore()
+	const orderKid = getItemStringProp(item, 'kid')
+	
+	if (userKid == '' || orderKid == '') return
+	
+	try {
+		const params = {
+			orderKid: orderKid,
+			guideKid: userKid
+		} as UTSJSONObject
+		
+		await request.post('/order/guide/grabOrder', params, true)
+		
+		uni.showToast({
+			title: '抢单成功',
+			icon: 'success'
+		})
+		
+		// 刷新列表
+		fetchGrabOrderList(true)
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '抢单', null)
+		}
+	}
+}
+
+// ==================== 初始化函数 ====================
+
+// 获取用户位置
+const fetchUserLocation = async () => {
+	try {
+		const locationResult = await getLocationInfo()
+		if (locationResult != null) {
+			userLatitude.value = locationResult.latitude
+			userLongitude.value = locationResult.longitude
+			console.log('用户位置获取成功:', userLatitude.value, userLongitude.value)
+		}
+	} catch (e) {
+		handleSilentError(e, '获取用户位置')
+	}
+}
+
+const initPageData = async () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + Tab栏约90rpx = 状态栏 + 45px）
+	headerHeight.value = pageStatusBarHeight.value + 45
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	console.log('状态栏高度:', pageStatusBarHeight.value, '头部高度:', headerHeight.value, '内容高度:', contentHeight.value)
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 600
+	}
+	
+	// 先获取用户位置，再加载列表
+	await fetchUserLocation()
+	await fetchTrendsList(true)
+}
+
+// ==================== 生命周期 ====================
+
+onMounted(() => {
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	// 因为 App.uvue 的初始化是延迟的，页面可能在初始化完成前就加载了
+	initUserInfoAction()
+	
+	// 使用 waitForLoginStatus 等待 Store 初始化完成
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('[Find] Store 初始化完成，登录状态:', result == 1)
+		// 初始化页面数据
+		initPageData()
+	}).catch((error) => {
+		if (error != null) {
+			handleSilentError(error, '等待登录状态初始化')
+		}
+	})
+})
+
+onShow(() => {
+	const isLogin = checkUserLoginReliable()
+	console.log('[Find] onShow 登录状态:', isLogin)
+})
+</script>
+
+<style>
+/* ==================== 页面基础样式 ==================== */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+/* ==================== 背景图片 ==================== */
+.bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+/* ==================== 顶部固定区域 ==================== */
+.header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	z-index: 100;
+}
+
+/* ==================== Tab 栏样式 ==================== */
+.tabs-row {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	height: 90rpx;
+	background-color: transparent;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-right: 48rpx;
+	height: 90rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.tab-text-active {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 6rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-top: 8rpx;
+}
+
+.filter-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	height: 60rpx;
+	margin-left: auto;
+}
+
+.icon-screen {
+	width: 28rpx;
+	height: 28rpx;
+	margin-right: 10rpx;
+}
+
+.filter-text {
+	font-size: 22rpx;
+	color: #333333;
+}
+
+/* ==================== 发布按钮 ==================== */
+.publish-btn {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-left: auto;
+}
+
+.publish-icon {
+	width: 30rpx;
+	height: 30rpx;
+	margin-bottom: 6rpx;
+}
+
+.publish-text {
+	font-size: 22rpx;
+	color: #333333;
+}
+
+/* ==================== Swiper 容器 ==================== */
+.swiper-container {
+	width: 750rpx;
+	background-color: transparent;
+	z-index: 10;
+}
+
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+
+/* ==================== 列表状态样式 ==================== */
+.loading {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+	padding-left: 0;
+	padding-right: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.empty {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+	padding-left: 0;
+	padding-right: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.empty-img {
+	width: 300rpx;
+	height: 300rpx;
+}
+
+.list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 0;
+	padding-bottom: 120rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: transparent;
+}
+
+.load-status {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 0;
+	padding-right: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.status-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.status-text-more {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+/* ==================== 抢单列表样式（与订单页面一致）==================== */
+.grab-order-list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 0;
+	padding-bottom: 120rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: transparent;
+}
+
+.order-card {
+	flex-direction: column;
+	width: 702rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-top: 0;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.order-card-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+}
+
+.order-card-user {
+	flex-direction: row;
+	align-items: center;
+}
+
+.order-avatar {
+	width: 56rpx;
+	height: 56rpx;
+	border-radius: 28rpx;
+	background-color: #f0f0f0;
+}
+
+.order-username {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-left: 16rpx;
+}
+
+.order-share-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding: 10rpx;
+}
+
+.order-status-box {
+	flex-direction: row;
+	align-items: center;
+}
+
+.order-status-text {
+	font-size: 28rpx;
+}
+
+.orange {
+	color: #ff9500;
+}
+
+.order-divider {
+	width: 646rpx;
+	height: 2rpx;
+	background-color: #f5f5f5;
+}
+
+.order-info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 32rpx;
+}
+
+.order-info-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.order-info-value {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.order-desc-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 32rpx;
+}
+
+.order-desc-text {
+	font-size: 28rpx;
+	color: #333333;
+	flex: 1;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.order-time-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 24rpx;
+}
+
+.order-time-icon {
+	width: 40rpx;
+	height: 34rpx;
+	margin-bottom: 6rpx;
+}
+
+.order-time-label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-left: 16rpx;
+}
+
+.order-time-value {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.order-btn-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 30rpx;
+	min-height: 60rpx;
+}
+
+.order-budget-box {
+	flex-direction: row;
+	align-items: center;
+}
+
+.order-budget-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.order-price-symbol {
+	font-size: 24rpx;
+	color: #FF6B00;
+	margin-top: 6rpx;
+	margin-left: 6rpx;
+}
+
+.order-price-value {
+	font-size: 32rpx;
+	color: #FF6B00;
+	font-weight: bold;
+}
+
+.order-btn {
+	min-width: 140rpx;
+	height: 56rpx;
+	border-radius: 28rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.order-btn-primary {
+	background-color: #37b1f2;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37b1f2;
+}
+
+.order-btn-primary-text {
+	font-size: 26rpx;
+	color: #ffffff;
+}
+</style>

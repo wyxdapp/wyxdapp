@@ -1,0 +1,1155 @@
+<template>
+	<view class="page">
+		<!-- 顶部导航栏 -->
+		<!-- #ifndef H5 -->
+		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-bar">
+				<view class="back-btn" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">我的定制</text>
+				<view class="nav-right"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- 滚动内容 -->
+		<!-- #ifdef H5 -->
+		<scroll-view 
+			class="scroll-view-h5"
+			:style="{ height: contentHeight + 'px' }"
+			scroll-y="true"
+			refresher-enabled="true"
+			:refresher-triggered="refreshing"
+			@refresherrefresh="handleRefresh"
+			@scrolltolower="handleLoadMore"
+		>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<scroll-view 
+			class="scroll-view"
+			scroll-y="true"
+			refresher-enabled="true"
+			:refresher-triggered="refreshing"
+			@refresherrefresh="handleRefresh"
+			@scrolltolower="handleLoadMore"
+		>
+		<!-- #endif -->
+			<!-- 空状态 -->
+			<view v-if="listLength == 0 && loading == false" class="empty-box">
+				<text class="empty-text">暂无定制路线</text>
+				<text class="empty-tip">快去发布你的第一条定制路线吧~</text>
+			</view>
+			
+			<!-- 路线列表 -->
+			<view class="list-container">
+				<view v-for="(item, index) in list" :key="getKey(item, index)" class="item-wrapper">
+					<view class="route-item" @click="handleItemClick(item)">
+						<!-- 封面图片 -->
+						<view class="image-box">
+							<image 
+								:src="getCoverImage(item)" 
+								class="cover-image"
+								mode="aspectFill"
+							/>
+							<!-- 顶置/私密徽章 -->
+							<view v-if="isItemTop(item) == true" class="badge-top">
+								<text class="badge-text">顶置</text>
+							</view>
+							<view v-if="isItemPrivate(item) == true" class="badge-private">
+								<text class="badge-text">私密</text>
+							</view>
+						</view>
+						
+						<!-- 信息区域 -->
+						<view class="info-box">
+							<!-- 标题 -->
+							<text class="title">{{ getItemTitle(item) }}</text>
+							
+							<!-- 地址 -->
+							<text class="address">{{ getItemAddress(item) }}</text>
+							
+							<!-- 状态标签 -->
+							<view class="status-row">
+								<view class="status-tag" :style="{ backgroundColor: getStatusBgColor(item) }">
+									<text class="status-text" :style="{ color: getStatusColor(item) }">{{ getStatusText(item) }}</text>
+								</view>
+							</view>
+							
+							<!-- 价格 -->
+							<view class="price-row">
+								<text class="price">{{ getItemPrice(item) }}</text>
+								<text class="price-unit">起/人</text>
+							</view>
+						</view>
+						
+						<!-- 更多按钮 -->
+						<view class="more-btn" @click.stop="handleMoreClick(item)">
+							<text class="more-icon">⋮</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 列表状态 -->
+			<ListStatus 
+				v-if="listLength > 0"
+				:loading="loading"
+				:hasMore="hasMore"
+			/>
+		</scroll-view>
+		
+		<!-- 固定发布按钮 -->
+		<view class="publish-btn-wrapper">
+			<view class="publish-btn" @click="handlePublish">
+				<text class="publish-text">发布定制</text>
+			</view>
+		</view>
+		
+		<!-- 操作菜单 -->
+		<view v-if="showActionSheet == true" class="action-sheet-mask" @click="handleActionCancel">
+			<view class="action-sheet-popup" @click.stop>
+				<!-- 选项列表 -->
+				<view class="action-list">
+					<!-- 顶置选项 -->
+					<view class="action-item" @click="handleActionSelect(0)">
+						<view class="action-item-content">
+							<text class="action-text">{{ topActionText }}</text>
+							<view class="vip-badge">
+								<text class="vip-text">会员专享</text>
+							</view>
+						</view>
+					</view>
+					<!-- 分享选项 -->
+					<view class="action-item" @click="handleActionSelect(1)">
+						<text class="action-text">分享</text>
+					</view>
+					<!-- 编辑选项 -->
+					<view class="action-item" @click="handleActionSelect(2)">
+						<text class="action-text">编辑</text>
+					</view>
+					<!-- 私密选项 -->
+					<view class="action-item" @click="handleActionSelect(3)">
+						<text class="action-text">{{ privateActionText }}</text>
+					</view>
+					<!-- 删除选项 -->
+					<view class="action-item action-item-danger" @click="handleActionSelect(4)">
+						<text class="action-text-danger">删除</text>
+					</view>
+				</view>
+				
+				<!-- 取消按钮 -->
+				<view class="cancel-section">
+					<view class="cancel-btn" @click="handleActionCancel">
+						<text class="cancel-text">取消</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		<!-- 分享弹窗 -->
+		<SharePopup
+			:visity="showSharePopup"
+			:shareData="shareData"
+			:chatList="shareChatList"
+			@update:visity="(val: boolean) => { showSharePopup = val }"
+			@share-to-chat="onShareToChat"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import { 
+	getStringProp, 
+	getNumberProp,
+	getItemKey,
+	getResponseCode,
+	getResponseData,
+	getEntities,
+	getDataCount,
+	toJsonObj
+} from '@/common/utils/utsSafe.uts'
+import { 
+	getUserId, 
+	getUserVipStatus, 
+	getUserVipExpireTime,
+	getUserLoginStatus,
+	useUserStore
+} from '@/stores/user.uts'
+import { 
+	getMyRoutes, 
+	setRouteTop, 
+	setRoutePrivate, 
+	deleteRoute 
+} from '@/common/services/routeService.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+// 🔧 新增：导入功能开关
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { 
+	getChatListRef,
+	getChatList as getChatListFn, 
+	handleShareToChat as handleShareToChatFn 
+} from '@/common/composables/useChatAndShare.uts'
+
+
+// ==================== 响应式状态 ====================
+const list = ref<Array<UTSJSONObject>>([])
+const page = ref<number>(1)
+const total = ref<number>(0)
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const hasMore = ref<boolean>(true)
+
+const statusBarHeight = ref<number>(44)
+const headerHeight = ref<number>(88)
+const contentHeight = ref<number>(600)
+
+// 操作菜单
+const showActionSheet = ref<boolean>(false)
+const selectedItem = ref<UTSJSONObject | null>(null)
+
+// 分享弹窗
+const showSharePopup = ref<boolean>(false)
+const shareData = ref<UTSJSONObject>({})
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const userStore = useUserStore()
+const chatList = getChatListRef()
+
+// ==================== 计算属性 ====================
+const listLength = computed((): number => {
+	try {
+		const arr = list.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 顶置操作文本
+const topActionText = computed((): string => {
+	if (selectedItem.value == null) return '顶置'
+	const onTop = getNumberProp(selectedItem.value as any, 'onTop')
+	return onTop == 10 ? '取消顶置' : '顶置'
+})
+
+// 私密操作文本
+const privateActionText = computed((): string => {
+	if (selectedItem.value == null) return '私密'
+	const privatel = getNumberProp(selectedItem.value as any, 'privatel')
+	return privatel == 20 ? '取消私密' : '私密'
+})
+
+// ==================== 辅助函数 ====================
+const getKey = (item: UTSJSONObject | null, index: number): string => {
+	return getItemKey(item as any, index)
+}
+
+// 获取封面图片
+const getCoverImage = (item: UTSJSONObject | null): string => {
+	if (item == null) return ''
+	try {
+		const dataStr = JSON.stringify(item)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		const homePicsVal = dataObj.get('homePics')
+		if (homePicsVal != null && Array.isArray(homePicsVal) == true) {
+			const homePics = homePicsVal as Array<UTSJSONObject>
+			if (homePics.length > 0) {
+				const firstPic = homePics[0]
+				if (firstPic != null) {
+					const picStr = JSON.stringify(firstPic)
+					const picObj = JSON.parse(picStr) as UTSJSONObject
+					const picUrl = picObj.get('picUrl')
+					if (picUrl != null && picUrl.toString() != '') {
+						return picUrl.toString()
+					}
+				}
+			}
+		}
+		// 尝试其他字段
+		const picUrl = dataObj.get('picUrl')
+		if (picUrl != null && picUrl.toString() != '') {
+			return picUrl.toString()
+		}
+		const lineCover = dataObj.get('lineCover')
+		if (lineCover != null && lineCover.toString() != '') {
+			return lineCover.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getItemTitle = (item: UTSJSONObject | null): string => {
+	const itemAny = item as any
+	let title = getStringProp(itemAny, 'lineTitle')
+	if (title != '') return title
+	title = getStringProp(itemAny, 'title')
+	if (title != '') return title
+	return '未命名路线'
+}
+
+const getItemAddress = (item: UTSJSONObject | null): string => {
+	const itemAny = item as any
+	let address = getStringProp(itemAny, 'lineAddress')
+	if (address != '') return address + '出发'
+	address = getStringProp(itemAny, 'departureCity')
+	if (address != '') return address + '出发'
+	return ''
+}
+
+const getItemPrice = (item: UTSJSONObject | null): string => {
+	const itemAny = item as any
+	let price = getStringProp(itemAny, 'tripPrice')
+	if (price == '') {
+		price = getStringProp(itemAny, 'linePrice')
+	}
+	if (price != '') {
+		const priceNum = parseFloat(price)
+		if (isNaN(priceNum) == false && priceNum > 0) {
+			return '￥' + price
+		}
+	}
+	return '待定'
+}
+
+const isItemTop = (item: UTSJSONObject | null): boolean => {
+	const onTop = getNumberProp(item as any, 'onTop')
+	return onTop == 10
+}
+
+const isItemPrivate = (item: UTSJSONObject | null): boolean => {
+	const privatel = getNumberProp(item as any, 'privatel')
+	return privatel == 20
+}
+
+// 路线状态文本
+const getStatusText = (item: UTSJSONObject | null): string => {
+	const lineStatu = getNumberProp(item as any, 'lineStatu')
+	if (lineStatu == 10) return '审核中'
+	if (lineStatu == 20) return '进行中'
+	if (lineStatu == 30) return '已失效'
+	if (lineStatu == 40) return '审核不通过'
+	if (lineStatu == 50) return '编辑中'
+	if (lineStatu == 80) return '草稿'
+	return '未知'
+}
+
+// 路线状态颜色
+const getStatusColor = (item: UTSJSONObject | null): string => {
+	const lineStatu = getNumberProp(item as any, 'lineStatu')
+	if (lineStatu == 10) return '#FF9800'
+	if (lineStatu == 20) return '#4CAF50'
+	if (lineStatu == 30) return '#999999'
+	if (lineStatu == 40) return '#F44336'
+	if (lineStatu == 50) return '#37B1F2'
+	if (lineStatu == 80) return '#9E9E9E'
+	return '#999999'
+}
+
+// 路线状态背景色
+const getStatusBgColor = (item: UTSJSONObject | null): string => {
+	const lineStatu = getNumberProp(item as any, 'lineStatu')
+	if (lineStatu == 10) return '#FFF3E0'
+	if (lineStatu == 20) return '#E8F5E9'
+	if (lineStatu == 30) return '#F5F5F5'
+	if (lineStatu == 40) return '#FFEBEE'
+	if (lineStatu == 50) return '#E3F2FD'
+	if (lineStatu == 80) return '#F5F5F5'
+	return '#F5F5F5'
+}
+
+// 检查 VIP 状态
+const checkVipStatus = (): boolean => {
+	const vipStatus = getUserVipStatus()
+	const vipExpireTime = getUserVipExpireTime()
+	
+	if (vipStatus != 20) return false
+	
+	if (vipExpireTime != null && vipExpireTime != '') {
+		const expireDate = new Date(vipExpireTime)
+		const now = new Date()
+		return expireDate > now
+	}
+	
+	return true
+}
+
+// 更新列表项状态
+const updateItemStatus = (kid: string, key: string, value: number) => {
+	const arr = list.value
+	for (let i = 0; i < arr.length; i = i + 1) {
+		const item = arr[i]
+		const itemKid = getStringProp(item as any, 'kid')
+		if (itemKid == kid) {
+			try {
+				const itemStr = JSON.stringify(item)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set(key, value)
+				arr[i] = itemObj
+			} catch (e) {}
+			break
+		}
+	}
+}
+
+// 从列表中移除项
+const removeItemFromList = (kid: string) => {
+	const arr = list.value
+	const newList: Array<UTSJSONObject> = []
+	for (let i = 0; i < arr.length; i = i + 1) {
+		const item = arr[i]
+		const itemKid = getStringProp(item as any, 'kid')
+		if (itemKid != kid) {
+			newList.push(item)
+		}
+	}
+	list.value = newList
+}
+
+
+// ==================== 数据加载 ====================
+const loadList = (refresh: boolean) => {
+	if (refresh == true) {
+		page.value = 1
+		list.value = []
+	}
+	
+	if (loading.value == true) return
+	loading.value = true
+	
+	const userKid = getUserId()
+	if (userKid == '') {
+		loading.value = false
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	const params = {
+		userKid: userKid,
+		pageNumber: page.value,
+		pageSize: 20
+	} as UTSJSONObject
+	
+	getMyRoutes(params).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const items = getEntities(dataObj)
+			total.value = getDataCount(dataObj)
+			
+			if (refresh == true) {
+				list.value = items as Array<UTSJSONObject>
+			} else {
+				for (let i = 0; i < items.length; i = i + 1) {
+					list.value.push(items[i] as UTSJSONObject)
+				}
+			}
+			
+			hasMore.value = list.value.length < total.value
+		}
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '加载路线列表', null)
+	}).finally(() => {
+		loading.value = false
+		refreshing.value = false
+	})
+}
+
+// ==================== 事件处理 ====================
+const handleBack = () => {
+	uni.navigateBack()
+}
+
+const handleRefresh = () => {
+	refreshing.value = true
+	loadList(true)
+}
+
+const handleLoadMore = () => {
+	if (hasMore.value == true && loading.value == false) {
+		page.value = page.value + 1
+		loadList(false)
+	}
+}
+
+const handlePublish = () => {
+	uni.navigateTo({ url: '/pages/index/components/addRoute' })
+}
+
+const handleItemClick = (item: UTSJSONObject | null) => {
+	const kid = getStringProp(item as any, 'kid')
+	if (kid == '') return
+	const lineStatu = getNumberProp(item as any, 'lineStatu')
+	// 审核中(10)、审核不通过(40)、编辑中(50)、草稿(80) → 跳转编辑页
+	if (lineStatu == 10 || lineStatu == 40 || lineStatu == 50 || lineStatu == 80) {
+		uni.navigateTo({ url: '/pages/index/components/addRoute?kid=' + kid })
+	} else {
+		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?kid=' + kid })
+	}
+}
+
+// 更多操作
+const handleMoreClick = (item: UTSJSONObject | null) => {
+	selectedItem.value = item
+	showActionSheet.value = true
+}
+
+// 分享操作
+const buildShareData = (item: UTSJSONObject | null): UTSJSONObject => {
+	const itemAny = item as any
+	const kid = getStringProp(itemAny, 'kid')
+	const itemUserKid = getStringProp(itemAny, 'userKid')
+
+	let title = getItemTitle(item)
+	if (title.length > TEXT_PREVIEW_LENGTH) {
+		title = title.substring(0, TEXT_PREVIEW_LENGTH) + '...'
+	}
+
+	// 封面图
+	let imageUrl = getCoverImage(item)
+	if (imageUrl == '') {
+		imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	}
+
+	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/routeInfo/index?kid=' + kid
+
+	return {
+		title: title,
+		desc: getItemTitle(item),
+		summary: getItemTitle(item),
+		imageUrl: imageUrl,
+		url: shareUrl,
+		link: shareUrl,
+		routeKid: kid,
+		userId: itemUserKid
+	} as UTSJSONObject
+}
+
+const handleShareRoute = async () => {
+	if (selectedItem.value == null) return
+	shareData.value = buildShareData(selectedItem.value)
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+			} else {
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {}
+					if (fallbackArr.length == 0) {
+						try {
+							const chatListObj = toJsonObj(chatList)
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										const parsedV = JSON.parse(JSON.stringify(v))
+										if (Array.isArray(parsedV) == true) {
+											fallbackArr = parsedV as Array<UTSJSONObject>
+										}
+									}
+								} catch (e) {}
+								try {
+									const l = chatListObj.get('list')
+									if (l != null) {
+										const parsedL = JSON.parse(JSON.stringify(l))
+										if (Array.isArray(parsedL) == true) {
+											fallbackArr = parsedL as Array<UTSJSONObject>
+										}
+									}
+								} catch (e) {}
+							}
+						} catch (e) {}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '[MyRoutes] 会话列表赋值')
+		}
+	} catch (e) {
+		handleSilentError(e, '[MyRoutes] 获取会话列表')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+// 分享到聊天
+const onShareToChat = (data: UTSJSONObject | null) => {
+	if (selectedItem.value == null) return
+	
+	const item = selectedItem.value
+	const title = getItemTitle(item)
+	const itemAny = item as any
+	
+	const routeInfo = {
+		kid: getStringProp(itemAny, 'kid'),
+		id: getStringProp(itemAny, 'kid'),
+		title: title.length > TEXT_PREVIEW_LENGTH ? title.substring(0, TEXT_PREVIEW_LENGTH) + '...' : title,
+		content: title,
+		text: title,
+		description: getItemAddress(item),
+		image: getCoverImage(item),
+		coverImage: getCoverImage(item),
+		userKid: getStringProp(itemAny, 'userKid')
+	}
+	
+	if (routeInfo.image == '') {
+		routeInfo.image = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		routeInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	}
+	
+	handleShareToChatFn(data as any, routeInfo as any)
+}
+
+// 顶置操作
+const handleTopRoute = () => {
+	if (selectedItem.value == null) return
+	
+	if (checkVipStatus() == false) {
+		// 🔧 新增：检查会员功能是否开启
+		if (isMemberFeatureEnabled() == false) {
+			uni.showToast({
+				title: '会员功能暂未开放',
+				icon: 'none'
+			})
+			return
+		}
+		
+		uni.showModal({
+			title: '提示',
+			content: '顶置功能需要开通会员',
+			confirmText: '去开通',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+				}
+			}
+		})
+		return
+	}
+	
+	const item = selectedItem.value
+	const kid = getStringProp(item as any, 'kid')
+	const onTop = getNumberProp(item as any, 'onTop')
+	const isCurrentlyTop = onTop == 10
+	const userKid = getUserId()
+	
+	const params = { 
+		kid: kid, 
+		userKid: userKid,
+		isTop: isCurrentlyTop == false 
+	} as UTSJSONObject
+	
+	setRouteTop(params).then((res: UTSJSONObject) => {
+		const newOnTop = isCurrentlyTop == true ? 20 : 10
+		updateItemStatus(kid, 'onTop', newOnTop)
+		uni.showToast({ 
+			title: isCurrentlyTop == true ? '已取消顶置' : '已顶置', 
+			icon: 'success' 
+		})
+		// 刷新列表以更新排序
+		loadList(true)
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '顶置路线', null)
+	})
+}
+
+// 编辑操作
+const handleEditRoute = () => {
+	if (selectedItem.value == null) return
+	
+	const item = selectedItem.value
+	const kid = getStringProp(item as any, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pages/index/components/addRoute?kid=' + kid })
+	}
+}
+
+// 私密操作
+const handlePrivateRoute = () => {
+	if (selectedItem.value == null) return
+	
+	const item = selectedItem.value
+	const kid = getStringProp(item as any, 'kid')
+	const privatel = getNumberProp(item as any, 'privatel')
+	const isCurrentlyPrivate = privatel == 20
+	const userKid = getUserId()
+	
+	const params = { 
+		kid: kid, 
+		userKid: userKid,
+		isPrivate: isCurrentlyPrivate == false 
+	} as UTSJSONObject
+	
+	setRoutePrivate(params).then((res: UTSJSONObject) => {
+		const newPrivatel = isCurrentlyPrivate == true ? 10 : 20
+		updateItemStatus(kid, 'privatel', newPrivatel)
+		uni.showToast({ 
+			title: isCurrentlyPrivate == true ? '已取消私密' : '已设为私密', 
+			icon: 'success' 
+		})
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '设置路线私密', null)
+	})
+}
+
+// 删除操作
+const handleDeleteRoute = () => {
+	if (selectedItem.value == null) return
+	
+	uni.showModal({
+		title: '提示',
+		content: '确定删除这条定制路线吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				const item = selectedItem.value
+				const kid = getStringProp(item as any, 'kid')
+				const userKid = getUserId()
+				const params = { 
+					kid: kid,
+					userKid: userKid
+				} as UTSJSONObject
+				
+				deleteRoute(params).then((res: UTSJSONObject) => {
+					removeItemFromList(kid)
+					uni.showToast({ title: '已删除', icon: 'success' })
+				}).catch((error: any | null): void => {
+					handlePageError(error as any, '删除路线', null)
+				})
+			}
+		}
+	})
+}
+
+// 操作菜单选择（必须在所有操作函数之后定义）
+const handleActionSelect = (index: number) => {
+	showActionSheet.value = false
+	
+	if (index == 0) {
+		handleTopRoute()
+	} else if (index == 1) {
+		handleShareRoute()
+	} else if (index == 2) {
+		handleEditRoute()
+	} else if (index == 3) {
+		handlePrivateRoute()
+	} else if (index == 4) {
+		handleDeleteRoute()
+	}
+}
+
+const handleActionCancel = () => {
+	showActionSheet.value = false
+	selectedItem.value = null
+}
+
+// ==================== 页面初始化 ====================
+const initPage = () => {
+	// 初始化布局
+	initPageLayout()
+	statusBarHeight.value = pageStatusBarHeight.value
+	headerHeight.value = statusBarHeight.value + 44
+	
+	// #ifdef H5
+	// H5端移除了自定义导航栏，滚动区域占满整个窗口
+	contentHeight.value = pageWindowHeight.value
+	// #endif
+	
+	// #ifndef H5
+	// APP端保留自定义导航栏，需要减去导航栏高度
+	contentHeight.value = pageWindowHeight.value - headerHeight.value
+	// #endif
+	
+	// 加载数据
+	loadList(true)
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 检查登录状态
+	const isLogin = getUserLoginStatus()
+	if (isLogin == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+	
+	initPage()
+})
+
+onShow(() => {
+	// 页面显示时刷新数据
+	const isLogin = getUserLoginStatus()
+	if (isLogin == true && list.value.length > 0) {
+		loadList(true)
+	}
+})
+</script>
+
+
+<style>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #F5F5F5;
+}
+
+/* 顶部导航栏 */
+.header {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+.nav-bar {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-right {
+	width: 60rpx;
+	height: 60rpx;
+}
+
+/* 滚动区域 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+/* 列表容器 */
+.list-container {
+	flex-direction: column;
+	padding-top: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 160rpx;
+}
+
+.item-wrapper {
+	flex-direction: column;
+	margin-bottom: 24rpx;
+}
+
+/* 路线卡片 */
+.route-item {
+	flex-direction: row;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding: 24rpx;
+}
+
+.image-box {
+	position: relative;
+	width: 200rpx;
+	height: 200rpx;
+	border-radius: 12rpx;
+}
+
+.cover-image {
+	width: 200rpx;
+	height: 200rpx;
+	border-radius: 12rpx;
+	background-color: #f0f0f0;
+}
+
+/* 徽章 */
+.badge-top {
+	position: absolute;
+	top: 0;
+	left: 0;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	background-color: #FF9800;
+	border-top-left-radius: 12rpx;
+	border-bottom-right-radius: 12rpx;
+}
+
+.badge-private {
+	position: absolute;
+	top: 0;
+	right: 0;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	background-color: #9E9E9E;
+	border-top-right-radius: 12rpx;
+	border-bottom-left-radius: 12rpx;
+}
+
+.badge-text {
+	font-size: 20rpx;
+	color: #FFFFFF;
+}
+
+.info-box {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 20rpx;
+	justify-content: space-between;
+}
+
+.title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.address {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.status-row {
+	flex-direction: row;
+	margin-top: 12rpx;
+}
+
+.status-tag {
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	border-radius: 8rpx;
+}
+
+.status-text {
+	font-size: 22rpx;
+}
+
+.price-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 12rpx;
+}
+
+.price {
+	font-size: 32rpx;
+	color: #FF9800;
+	font-weight: bold;
+}
+
+.price-unit {
+	font-size: 20rpx;
+	color: #FF9800;
+	margin-left: 4rpx;
+}
+
+/* 更多按钮 */
+.more-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.more-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+/* 空状态 */
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+	padding-bottom: 200rpx;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.empty-tip {
+	font-size: 26rpx;
+	color: #CCCCCC;
+	margin-top: 16rpx;
+}
+
+/* 固定发布按钮 */
+.publish-btn-wrapper {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	padding-top: 20rpx;
+	padding-bottom: 40rpx;
+	background-color: transparent;
+}
+
+.publish-btn {
+	width: 654rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 52rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.publish-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+/* 自定义操作菜单 */
+.action-sheet-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.action-sheet-popup {
+	width: 750rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+}
+
+.action-list {
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.action-item {
+	height: 100rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.action-item-content {
+	flex-direction: row;
+	align-items: center;
+}
+
+.action-item-danger {
+	border-bottom-width: 0;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.action-text-danger {
+	font-size: 28rpx;
+	color: #FF4D4F;
+}
+
+.vip-badge {
+	margin-left: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	background-color: #FFE4B5;
+	border-radius: 8rpx;
+}
+
+.vip-text {
+	font-size: 20rpx;
+	color: #FF8C00;
+}
+
+.cancel-section {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	flex-direction: column;
+}
+
+.cancel-btn {
+	height: 100rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+	margin-right: 16rpx;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #666666;
+	font-weight: bold;
+}
+</style>

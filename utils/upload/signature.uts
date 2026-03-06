@@ -1,0 +1,158 @@
+/**
+ * 签名算法工具类
+ * 用于计算腾讯云 COS 签名
+ */
+
+// === SHA-1 初始哈希值 ===
+const SHA1_H0 = 1732584193
+const SHA1_H1 = -271733879
+const SHA1_H2 = -1732584194
+const SHA1_H3 = 271733878
+const SHA1_H4 = -1009589776
+
+// === SHA-1 轮常量 ===
+const SHA1_K0 = 1518500249
+const SHA1_K1 = 1859775393
+const SHA1_K2 = -1894007588
+const SHA1_K3 = -899497514
+
+// === SHA-1 算法参数 ===
+const SHA1_BLOCK_SIZE = 16
+const SHA1_ROUNDS = 80
+const SHA1_HASH_BITS = 512
+const SHA1_DIGEST_BITS = 160
+
+// === 位操作常量 ===
+const BIT_SHIFT_24 = 24
+const BIT_SHIFT_16 = 16
+const BIT_SHIFT_32 = 32
+const HMAC_BLOCK_SIZE = 16
+
+/**
+ * 计算 SHA1
+ */
+export const sha1 = (message: string): string => {
+	const m = str2binb(message);
+	const h = binb_sha1(m, message.length * 8);
+	return binb2str(h);
+}
+
+/**
+ * 计算 HMAC-SHA1
+ */
+export const hmacSha1 = (key: string, message: string): string => {
+	const k = str2binb(key);
+	const m = str2binb(message);
+	
+	if (k.length > HMAC_BLOCK_SIZE) {
+		// key is too long, hash it first
+		const kHash = binb_sha1(k, key.length * 8);
+		// pad key
+		for (let i = 0; i < HMAC_BLOCK_SIZE; i++) {
+			k[i] = kHash[i] || 0;
+		}
+	} else {
+		// pad key
+		for (let i = 0; i < HMAC_BLOCK_SIZE; i++) {
+			if (i >= k.length) k[i] = 0;
+		}
+	}
+	
+	const ipad = new Array<number>(HMAC_BLOCK_SIZE);
+	const opad = new Array<number>(HMAC_BLOCK_SIZE);
+	
+	for (let i = 0; i < HMAC_BLOCK_SIZE; i++) {
+		ipad[i] = k[i] ^ 0x36363636;
+		opad[i] = k[i] ^ 0x5C5C5C5C;
+	}
+	
+	const hash1 = binb_sha1(ipad.concat(m), SHA1_HASH_BITS + message.length * 8);
+	const hash2 = binb_sha1(opad.concat(hash1), SHA1_HASH_BITS + SHA1_DIGEST_BITS);
+	
+	return binb2str(hash2);
+}
+
+/**
+ * Sha1 核心算法
+ */
+function binb_sha1(x: Array<number>, len: number): Array<number> {
+	// append padding
+	x[len >> 5] |= 0x80 << (BIT_SHIFT_24 - len % BIT_SHIFT_32);
+	x[((len + 64 >> 9) << 4) + 15] = len;
+	
+	const w = new Array<number>(SHA1_ROUNDS);
+	let a = SHA1_H0;
+	let b = SHA1_H1;
+	let c = SHA1_H2;
+	let d = SHA1_H3;
+	let e = SHA1_H4;
+	
+	for (let i = 0; i < x.length; i += SHA1_BLOCK_SIZE) {
+		const olda = a;
+		const oldb = b;
+		const oldc = c;
+		const oldd = d;
+		const olde = e;
+		
+		for (let j = 0; j < SHA1_ROUNDS; j++) {
+			if (j < SHA1_BLOCK_SIZE) w[j] = x[i + j] || 0;
+			else w[j] = rol(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1);
+			
+			const t = safe_add(safe_add(rol(a, 5), sha1_ft(j, b, c, d)), safe_add(safe_add(e, w[j]), sha1_kt(j)));
+			e = d;
+			d = c;
+			c = rol(b, 30);
+			b = a;
+			a = t;
+		}
+		
+		a = safe_add(a, olda);
+		b = safe_add(b, oldb);
+		c = safe_add(c, oldc);
+		d = safe_add(d, oldd);
+		e = safe_add(e, olde);
+	}
+	return [a, b, c, d, e];
+}
+
+function sha1_ft(t: number, b: number, c: number, d: number): number {
+	if (t < 20) return (b & c) | ((~b) & d);
+	if (t < 40) return b ^ c ^ d;
+	if (t < 60) return (b & c) | (b & d) | (c & d);
+	return b ^ c ^ d;
+}
+
+function sha1_kt(t: number): number {
+	return (t < 20) ? SHA1_K0 : (t < 40) ? SHA1_K1 : (t < 60) ? SHA1_K2 : SHA1_K3;
+}
+
+function safe_add(x: number, y: number): number {
+	const lsw = (x & 0xFFFF) + (y & 0xFFFF);
+	const msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+	return (msw << 16) | (lsw & 0xFFFF);
+}
+
+function rol(num: number, cnt: number): number {
+	return (num << cnt) | (num >>> (BIT_SHIFT_32 - cnt));
+}
+
+function str2binb(str: string): Array<number> {
+	const bin = new Array<number>();
+	const mask = (1 << 8) - 1;
+	for (let i = 0; i < str.length * 8; i += 8) {
+		const byte = str.charCodeAt(i / 8) & mask;
+		const index = i >> 5;
+		if (bin.length <= index) bin.push(0);
+		bin[index] |= (byte) << (BIT_SHIFT_24 - i % BIT_SHIFT_32);
+	}
+	return bin;
+}
+
+function binb2str(bin: Array<number>): string {
+	let str = "";
+	const mask = (1 << 8) - 1;
+	for (let i = 0; i < bin.length * BIT_SHIFT_32; i += 8) {
+		str += String.fromCharCode((bin[i >> 5] >>> (BIT_SHIFT_24 - i % BIT_SHIFT_32)) & mask);
+	}
+	return str;
+}

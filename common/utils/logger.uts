@@ -1,0 +1,137 @@
+/**
+ * 日志管理工具
+ * 根据环境自动调整日志级别，生产环境减少日志输出
+ * 
+ * 使用方法：
+ * import { Logger } from '@/common/utils/logger.uts'
+ * const logger = new Logger('ModuleName')
+ * logger.debug('调试信息')
+ * logger.info('普通信息')
+ * logger.warn('警告信息')
+ * logger.error('错误信息')
+ */
+
+// 日志级别常量
+export const LOG_LEVEL_DEBUG: number = 0
+export const LOG_LEVEL_INFO: number = 1
+export const LOG_LEVEL_WARN: number = 2
+export const LOG_LEVEL_ERROR: number = 3
+export const LOG_LEVEL_NONE: number = 4
+
+// 当前日志级别（根据环境自动设置）
+let currentLogLevel: number = LOG_LEVEL_DEBUG
+
+/**
+ * 初始化日志级别
+ * 根据编译环境自动设置
+ */
+const initLogLevel = (): void => {
+	// #ifdef MP-WEIXIN || H5
+	// 生产环境：只输出警告和错误
+	currentLogLevel = LOG_LEVEL_WARN
+	// #endif
+	
+	// #ifdef APP-PLUS
+	// APP 环境：根据是否为开发模式决定
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const infoStr = JSON.stringify(systemInfo)
+			const infoObj = JSON.parse(infoStr) as UTSJSONObject
+			const appVersionVal = infoObj.get('appVersion')
+			const appVersion = (appVersionVal != null) ? appVersionVal.toString() : ''
+			
+			// 如果版本号包含 'dev' 或 'debug'，使用调试级别
+			if (appVersion.indexOf('dev') >= 0 || appVersion.indexOf('debug') >= 0) {
+				currentLogLevel = LOG_LEVEL_DEBUG
+			} else {
+				currentLogLevel = LOG_LEVEL_WARN
+			}
+		}
+	} catch (e) {
+		// 获取失败，默认使用警告级别
+		currentLogLevel = LOG_LEVEL_WARN
+	}
+	// #endif
+}
+
+// 初始化日志级别
+initLogLevel()
+
+/**
+ * 设置日志级别
+ * @param level 日志级别
+ */
+export const setLogLevel = (level: number): void => {
+	currentLogLevel = level
+}
+
+/**
+ * 获取当前日志级别
+ */
+export const getLogLevel = (): number => {
+	return currentLogLevel
+}
+
+/**
+ * 日志记录器类
+ */
+export class Logger {
+	private moduleName: string = ''
+	
+	constructor(moduleName: string) {
+		this.moduleName = moduleName
+	}
+	
+	/**
+	 * 格式化日志消息
+	 */
+	private formatMessage(level: string, message: string): string {
+		return `[${this.moduleName}] ${message}`
+	}
+	
+	/**
+	 * 调试日志（仅开发环境）
+	 */
+	debug(message: string, ...args: any[]): void {
+		if (currentLogLevel <= LOG_LEVEL_DEBUG) {
+			console.log(this.formatMessage('DEBUG', message), ...args)
+		}
+	}
+	
+	/**
+	 * 信息日志
+	 */
+	info(message: string, ...args: any[]): void {
+		if (currentLogLevel <= LOG_LEVEL_INFO) {
+			console.log(this.formatMessage('INFO', message), ...args)
+		}
+	}
+	
+	/**
+	 * 警告日志
+	 */
+	warn(message: string, ...args: any[]): void {
+		if (currentLogLevel <= LOG_LEVEL_WARN) {
+			console.warn(this.formatMessage('WARN', message), ...args)
+		}
+	}
+	
+	/**
+	 * 错误日志（始终输出）
+	 */
+	error(message: string, ...args: any[]): void {
+		if (currentLogLevel <= LOG_LEVEL_ERROR) {
+			console.error(this.formatMessage('ERROR', message), ...args)
+		}
+	}
+}
+
+/**
+ * 创建日志记录器
+ * @param moduleName 模块名称
+ */
+export const createLogger = (moduleName: string): Logger => {
+	return new Logger(moduleName)
+}
+

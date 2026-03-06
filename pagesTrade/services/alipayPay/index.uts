@@ -1,0 +1,586 @@
+/**
+ * 支付宝支付服务模块
+ * 支持 APP 端、H5 端（手机浏览器）、PC 端（电脑浏览器）三种支付场景
+ */
+import request from '@/utils/request'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { sanitizePaymentForm } from '@/common/utils/security/htmlSanitizer.uts'
+import { ORDER_TYPE_CUSTOM, ORDER_TYPE_GUIDE } from '@/common/config/businessCodes.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 支付宝支付参数类
+ */
+export class AlipayPayParams {
+	orderId: string = ''        // 订单号（使用 orderKid）
+	totalAmount: string = ''    // 金额（元，保留2位小数）
+	subject: string = ''        // 商品名称
+	body: string = ''           // 商品描述（可选）
+	type: number = 10           // 订单类型
+	returnUrl: string = ''      // 同步回调地址（H5/PC端使用）
+	
+	constructor(orderId: string, totalAmount: string, subject: string) {
+		this.orderId = orderId
+		this.totalAmount = totalAmount
+		this.subject = subject
+	}
+}
+
+/**
+ * 支付宝支付结果类
+ */
+export class AlipayPayResult {
+	success: boolean = false
+	message: string = ''
+	data: UTSJSONObject | null = null
+	
+	constructor(success: boolean, message: string) {
+		this.success = success
+		this.message = message
+	}
+}
+
+// ==================== 错误类型常量 ====================
+
+export const ALIPAY_ERROR_USER_CANCEL = 'USER_CANCEL'
+export const ALIPAY_ERROR_NETWORK = 'NETWORK_ERROR'
+export const ALIPAY_ERROR_PARAM = 'PARAM_ERROR'
+export const ALIPAY_ERROR_BACKEND = 'BACKEND_ERROR'
+export const ALIPAY_ERROR_TIMEOUT = 'TIMEOUT_ERROR'
+export const ALIPAY_ERROR_APP_NOT_INSTALLED = 'APP_NOT_INSTALLED'
+export const ALIPAY_ERROR_UNKNOWN = 'UNKNOWN_ERROR'
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+/**
+ * 将任意值转换为 UTSJSONObject
+ */
+// 使用通用工具（已在文件顶部导入）
+
+/**
+ * 从对象获取字符串属性
+ */
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 从对象获取数字属性
+ */
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseFloat(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// ==================== 平台检测函数 ====================
+
+/**
+ * 检测是否为 APP 平台
+ */
+export const isAlipayAppPlatform = (): boolean => {
+	// #ifdef APP
+	return true
+	// #endif
+	// #ifndef APP
+	return false
+	// #endif
+}
+
+/**
+ * 检测是否为 H5 平台
+ */
+export const isAlipayH5Platform = (): boolean => {
+	// #ifdef H5
+	return true
+	// #endif
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
+ * 检测是否为移动设备浏览器
+ */
+export const isMobileBrowser = (): boolean => {
+	// #ifdef H5
+	try {
+		if (typeof navigator != 'undefined' && navigator.userAgent != null) {
+			const ua = navigator.userAgent.toLowerCase()
+			const mobileKeywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'windows phone']
+			for (let i = 0; i < mobileKeywords.length; i = i + 1) {
+				if (ua.indexOf(mobileKeywords[i]) >= 0) {
+					return true
+				}
+			}
+		}
+	} catch (e) {
+		console.error('检测移动设备失败:', e)
+	}
+	// #endif
+	return false
+}
+
+// ==================== 订单类型映射 ====================
+
+/**
+ * 根据订单类型获取支付宝 type 参数
+ * orderType: 10=路线订单, ORDER_TYPE_CUSTOM(30)=会员订单, ORDER_TYPE_GUIDE(40)=礼物/聊天红包, ORDER_TYPE_LINE(50)=抽奖订单
+ * type: 10=路线订单, 20=会员订单, 30=推广红包, 40=聊天红包
+ */
+export const getAlipayOrderType = (orderType: number): number => {
+	if (orderType == ORDER_TYPE_CUSTOM) {
+		// 会员订单
+		return 20
+	}
+	if (orderType == ORDER_TYPE_GUIDE) {
+		// 礼物/聊天红包
+		return 40
+	}
+	// 路线订单(10)、抽奖订单(50)等默认使用 10
+	return 10
+}
+
+// ==================== 参数构造函数 ====================
+
+/**
+ * 构造支付宝支付请求参数
+ */
+export const buildAlipayPayParams = (
+	orderId: string,
+	totalAmount: string,
+	subject: string,
+	orderType: number,
+	returnUrl: string
+): AlipayPayParams => {
+	const params = new AlipayPayParams(orderId, totalAmount, subject)
+	params.type = getAlipayOrderType(orderType)
+	params.body = subject
+	params.returnUrl = returnUrl
+	return params
+}
+
+// ==================== 错误处理函数 ====================
+
+/**
+ * 分类支付宝支付错误
+ */
+export const classifyAlipayError = (error: string): string => {
+	if (error == null || error == '') {
+		return ALIPAY_ERROR_UNKNOWN
+	}
+	
+	const errorLower = error.toLowerCase()
+	
+	// 用户取消
+	if (error.indexOf('取消') != -1 || errorLower.indexOf('cancel') != -1) {
+		return ALIPAY_ERROR_USER_CANCEL
+	}
+	
+	// 网络错误
+	if (error.indexOf('网络') != -1 || errorLower.indexOf('network') != -1 || 
+		errorLower.indexOf('timeout') != -1 || error.indexOf('请求失败') != -1) {
+		return ALIPAY_ERROR_NETWORK
+	}
+	
+	// 参数错误
+	if (error.indexOf('参数') != -1 || errorLower.indexOf('param') != -1 || 
+		error.indexOf('缺少') != -1 || error.indexOf('无效') != -1) {
+		return ALIPAY_ERROR_PARAM
+	}
+	
+	// 未安装 APP
+	if (error.indexOf('未安装') != -1 || errorLower.indexOf('not installed') != -1 ||
+		error.indexOf('没有安装') != -1) {
+		return ALIPAY_ERROR_APP_NOT_INSTALLED
+	}
+	
+	// 超时
+	if (error.indexOf('超时') != -1 || errorLower.indexOf('timeout') != -1) {
+		return ALIPAY_ERROR_TIMEOUT
+	}
+	
+	return ALIPAY_ERROR_BACKEND
+}
+
+/**
+ * 获取用户友好的错误提示
+ */
+export const getAlipayErrorMessage = (error: string, errorType: string): string => {
+	if (errorType == ALIPAY_ERROR_USER_CANCEL) {
+		return '已取消支付'
+	}
+	if (errorType == ALIPAY_ERROR_NETWORK) {
+		return '网络连接失败，请检查网络后重试'
+	}
+	if (errorType == ALIPAY_ERROR_PARAM) {
+		return '支付参数错误，请重试'
+	}
+	if (errorType == ALIPAY_ERROR_APP_NOT_INSTALLED) {
+		return '请安装支付宝APP或选择其他支付方式'
+	}
+	if (errorType == ALIPAY_ERROR_TIMEOUT) {
+		return '支付超时，请重试'
+	}
+	
+	// 如果有具体错误信息且长度合适，显示具体信息
+	if (error != '' && error.length < 50) {
+		return error
+	}
+	
+	return '支付失败，请重试'
+}
+
+
+// ==================== APP 端支付宝支付 ====================
+
+/**
+ * APP 端支付宝支付
+ * 调用后端接口获取订单信息字符串，然后使用 uni.requestPayment 调起支付宝 APP
+ */
+export const alipayPayApp = (
+	params: AlipayPayParams,
+	onSuccess: (result: AlipayPayResult) => void,
+	onError: (error: string) => void
+): void => {
+	console.log('📱 [ALIPAY] APP 端支付宝支付开始')
+	console.log('📱 [ALIPAY] 支付参数:', JSON.stringify(params))
+	
+	// 构造请求参数
+	const requestParams = {
+		orderId: params.orderId,
+		totalAmount: params.totalAmount,
+		subject: params.subject,
+		body: params.body,
+		type: params.type
+	} as UTSJSONObject
+	
+	// 调用后端接口获取订单信息字符串
+	request.post('/pay/alipay/applyAppPay', requestParams, false).then((res: UTSJSONObject | null) => {
+		console.log('📱 [ALIPAY] 后端响应:', JSON.stringify(res))
+		
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			onError('获取支付信息失败')
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code != 200) {
+			const msg = getObjString(resObj, 'msg')
+			onError((msg != '') ? msg : '获取支付信息失败')
+			return
+		}
+		
+		// 获取订单信息字符串
+		const orderString = getObjString(resObj, 'data')
+		if (orderString == '') {
+			onError('订单信息为空')
+			return
+		}
+		
+		console.log('📱 [ALIPAY] 获取订单信息成功，调起支付宝 APP')
+		
+		// 调用 uni.requestPayment 调起支付宝 APP
+		// #ifdef APP
+		// 清理 orderInfo：去除可能的首尾引号和空白字符
+		let cleanOrderString = orderString.trim()
+		if (cleanOrderString.charAt(0) == '"' && cleanOrderString.charAt(cleanOrderString.length - 1) == '"') {
+			cleanOrderString = cleanOrderString.substring(1, cleanOrderString.length - 1)
+		}
+		
+		console.log('📱 [ALIPAY] 支付宝支付字符串长度:', cleanOrderString.length)
+		console.log('📱 [ALIPAY] 支付宝支付字符串前200字符:', cleanOrderString.substring(0, Math.min(200, cleanOrderString.length)))
+		
+		uni.requestPayment({
+			provider: 'alipay',
+			orderInfo: cleanOrderString,  // 后端返回的完整支付宝支付字符串
+			success: (payRes: any | null) => {
+				const result = new AlipayPayResult(true, '支付成功')
+				result.data = payRes as UTSJSONObject | null
+				onSuccess(result)
+			},
+			fail: (payErr: any | null) => {
+				console.error('❌ [ALIPAY] 支付失败:', JSON.stringify(payErr))
+				let errMsg = '支付失败'
+				if (payErr != null) {
+					const payErrObj = toJsonObj(payErr)
+					if (payErrObj != null) {
+						const errMsgVal = getObjString(payErrObj, 'errMsg')
+						if (errMsgVal != '') {
+							errMsg = errMsgVal
+						}
+					}
+				}
+				// 🔧 增强错误信息处理
+				if (errMsg.indexOf('商户订单参数异常') != -1) {
+					console.error('❌ [ALIPAY] 检测到商户订单参数异常，记录详细信息:')
+					console.error('❌ [ALIPAY] orderInfo长度:', cleanOrderString.length)
+					console.error('❌ [ALIPAY] orderInfo预览:', cleanOrderString.substring(0, Math.min(200, cleanOrderString.length)))
+				}
+				onError(errMsg)
+			}
+		})
+		// #endif
+		// #ifndef APP
+		onError('当前平台不支持 APP 支付')
+		// #endif
+		
+	}).catch((error: any | null): void => {
+		console.error('❌ [ALIPAY] 请求后端失败:', error)
+		let errMsg = '网络请求失败'
+		if (error != null) {
+			const errorObj = toJsonObj(error)
+			if (errorObj != null) {
+				const msg = getObjString(errorObj, 'message')
+				if (msg != '') {
+					errMsg = msg
+				}
+			}
+		}
+		onError(errMsg)
+	})
+}
+
+// ==================== H5 端表单提交工具函数 ====================
+
+/**
+ * H5 端提交支付宝表单
+ * 动态创建表单并提交，跳转到支付宝支付页面
+ */
+export const submitAlipayForm = (formHtml: string): boolean => {
+	// #ifdef H5
+	try {
+		console.log('🌐 [ALIPAY] 提交支付宝表单')
+		
+		// 创建临时容器
+		const container = document.createElement('div')
+		container.id = 'alipay-form-container'
+		container.style.display = 'none'
+		container.innerHTML = sanitizePaymentForm(formHtml, 'openapi.alipay.com')
+		document.body.appendChild(container)
+		
+		// 获取表单并提交
+		const form = container.querySelector('form')
+		if (form != null) {
+			console.log('🌐 [ALIPAY] 找到表单，准备提交')
+			form.submit()
+			return true
+		} else {
+			console.error('❌ [ALIPAY] 未找到表单元素')
+			// 清理容器
+			document.body.removeChild(container)
+			return false
+		}
+	} catch (e) {
+		console.error('❌ [ALIPAY] 提交支付宝表单失败:', e)
+		return false
+	}
+	// #endif
+	// #ifndef H5
+	console.error('❌ [ALIPAY] 当前平台不支持表单提交')
+	return false
+	// #endif
+}
+
+// ==================== H5 端支付宝支付（手机浏览器 WAP 支付）====================
+
+/**
+ * H5 端支付宝支付（手机浏览器）
+ * 调用后端接口获取支付表单，然后动态提交表单跳转到支付宝
+ */
+export const alipayPayH5 = (
+	params: AlipayPayParams,
+	onSuccess: (result: AlipayPayResult) => void,
+	onError: (error: string) => void
+): void => {
+	console.log('🌐 [ALIPAY] H5 端支付宝支付开始（WAP）')
+	console.log('🌐 [ALIPAY] 支付参数:', JSON.stringify(params))
+	
+	// 构造请求参数
+	const requestParams = {
+		orderId: params.orderId,
+		totalAmount: params.totalAmount,
+		subject: params.subject,
+		body: params.body,
+		type: params.type,
+		returnUrl: params.returnUrl
+	} as UTSJSONObject
+	
+	// 调用后端接口获取支付表单
+	request.post('/pay/alipay/applyWapPay', requestParams, false).then((res: UTSJSONObject | null) => {
+		console.log('🌐 [ALIPAY] 后端响应类型:', typeof res)
+		
+		// 后端返回 JSON 格式: { code: "200", data: "<form>...</form>" }
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			onError('获取支付信息失败')
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code != 200 && code != 0) {
+			const msg = getObjString(resObj, 'msg')
+			onError((msg != '') ? msg : '获取支付信息失败')
+			return
+		}
+		
+		const formHtml = getObjString(resObj, 'data')
+		
+		if (formHtml == '') {
+			onError('获取支付表单失败')
+			return
+		}
+		
+		console.log('🌐 [ALIPAY] 获取支付表单成功，准备提交')
+		
+		// 提交表单
+		const submitted = submitAlipayForm(formHtml)
+		if (submitted == true) {
+			// 表单提交成功，页面会跳转到支付宝
+			// 这里不需要调用 onSuccess，因为页面会跳转
+			console.log('🌐 [ALIPAY] 表单提交成功，等待跳转')
+		} else {
+			onError('提交支付表单失败')
+		}
+		
+	}).catch((error: any | null): void => {
+		console.error('❌ [ALIPAY] 请求后端失败:', error)
+		let errMsg = '网络请求失败'
+		if (error != null) {
+			const errorObj = toJsonObj(error)
+			if (errorObj != null) {
+				const msg = getObjString(errorObj, 'message')
+				if (msg != '') {
+					errMsg = msg
+				}
+			}
+		}
+		onError(errMsg)
+	})
+}
+
+// ==================== PC 端支付宝支付（电脑浏览器 Page 支付）====================
+
+/**
+ * PC 端支付宝支付（电脑浏览器）
+ * 调用后端接口获取支付表单，然后动态提交表单跳转到支付宝
+ */
+export const alipayPayPC = (
+	params: AlipayPayParams,
+	onSuccess: (result: AlipayPayResult) => void,
+	onError: (error: string) => void
+): void => {
+	console.log('💻 [ALIPAY] PC 端支付宝支付开始（Page）')
+	console.log('💻 [ALIPAY] 支付参数:', JSON.stringify(params))
+	
+	// 构造请求参数
+	const requestParams = {
+		orderId: params.orderId,
+		totalAmount: params.totalAmount,
+		subject: params.subject,
+		body: params.body,
+		type: params.type,
+		returnUrl: params.returnUrl
+	} as UTSJSONObject
+	
+	// 调用后端接口获取支付表单
+	request.post('/pay/alipay/applyPagePay', requestParams, false).then((res: UTSJSONObject | null) => {
+		console.log('💻 [ALIPAY] 后端响应类型:', typeof res)
+		
+		// 后端返回 JSON 格式: { code: "200", data: "<form>...</form>" }
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			onError('获取支付信息失败')
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code != 200 && code != 0) {
+			const msg = getObjString(resObj, 'msg')
+			onError((msg != '') ? msg : '获取支付信息失败')
+			return
+		}
+		
+		const formHtml = getObjString(resObj, 'data')
+		
+		if (formHtml == '') {
+			onError('获取支付表单失败')
+			return
+		}
+		
+		console.log('💻 [ALIPAY] 获取支付表单成功，准备提交')
+		
+		// 提交表单
+		const submitted = submitAlipayForm(formHtml)
+		if (submitted == true) {
+			// 表单提交成功，页面会跳转到支付宝
+			console.log('💻 [ALIPAY] 表单提交成功，等待跳转')
+		} else {
+			onError('提交支付表单失败')
+		}
+		
+	}).catch((error: any | null): void => {
+		console.error('❌ [ALIPAY] 请求后端失败:', error)
+		let errMsg = '网络请求失败'
+		if (error != null) {
+			const errorObj = toJsonObj(error)
+			if (errorObj != null) {
+				const msg = getObjString(errorObj, 'message')
+				if (msg != '') {
+					errMsg = msg
+				}
+			}
+		}
+		onError(errMsg)
+	})
+}
+
+// ==================== 统一支付入口 ====================
+
+/**
+ * 支付宝支付统一入口
+ * 根据平台自动选择合适的支付方式
+ */
+export const alipayPay = (
+	params: AlipayPayParams,
+	onSuccess: (result: AlipayPayResult) => void,
+	onError: (error: string) => void
+): void => {
+	console.log('💰 [ALIPAY] 支付宝支付开始')
+	
+	// 检测平台
+	const isApp = isAlipayAppPlatform()
+	const isH5 = isAlipayH5Platform()
+	
+	if (isApp == true) {
+		// APP 端
+		console.log('💰 [ALIPAY] 检测到 APP 平台，使用 APP 支付')
+		alipayPayApp(params, onSuccess, onError)
+	} else if (isH5 == true) {
+		// H5 端，根据设备类型选择 WAP 或 Page 支付
+		const isMobile = isMobileBrowser()
+		if (isMobile == true) {
+			console.log('💰 [ALIPAY] 检测到 H5 移动端，使用 WAP 支付')
+			alipayPayH5(params, onSuccess, onError)
+		} else {
+			console.log('💰 [ALIPAY] 检测到 H5 桌面端，使用 Page 支付')
+			alipayPayPC(params, onSuccess, onError)
+		}
+	} else {
+		console.error('❌ [ALIPAY] 未知平台，无法支付')
+		onError('当前平台不支持支付宝支付')
+	}
+}

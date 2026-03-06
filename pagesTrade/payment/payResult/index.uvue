@@ -1,0 +1,318 @@
+﻿<template>
+	<view class="result-page">
+		<view class="result-icon">
+			<UniIcons v-if="isSuccess == true" type="checkbox-filled" :size="120" color="#4CAF50" />
+			<UniIcons v-else type="close" :size="120" color="#FF4757" />
+		</view>
+		<text class="result-title">{{ isSuccess == true ? '支付成功' : '支付失败' }}</text>
+		<text class="result-desc">{{ desc }}</text>
+		
+		<view class="order-info" v-if="isSuccess == true">
+			<view class="info-row">
+				<text class="info-label">订单号</text>
+				<text class="info-value">{{ orderNo }}</text>
+			</view>
+			<view class="info-row">
+				<text class="info-label">支付金额</text>
+				<text class="info-value-amount">¥{{ amount }}</text>
+			</view>
+			<view class="info-row">
+				<text class="info-label">支付时间</text>
+				<text class="info-value">{{ payTime }}</text>
+			</view>
+		</view>
+		
+		<view class="action-buttons">
+			<view class="default-btn" @click="goToHome">
+				<text class="default-btn-text">返回首页</text>
+			</view>
+			<view class="primary-btn" @click="goToOrderDetail">
+				<text class="primary-btn-text">查看订单</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { getCurrentTimeString } from '@/common/utils/dateUtils.uts'
+import { goToHome } from '@/common/utils/utsSafe.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { getUrlParams } from '@/common/utils/security/urlValidator.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 响应式数据 ====================
+const isSuccess = ref<boolean>(true)
+const desc = ref<string>('您的订单已支付成功')
+const orderNo = ref<string>('')
+const amount = ref<string>('0.00')
+const payTime = ref<string>('')
+const orderId = ref<string>('')
+
+// ==================== 事件处理函数（必须在 onLoad 之前定义）====================
+
+// 返回首页（使用全局工具函数）
+// goToHome 已从 utsSafe.uts 导入
+
+// 查看订单详情
+const goToOrderDetail = () => {
+	if (orderId.value != '') {
+		uni.redirectTo({
+			url: '/pagesTrade/orderDetails/index?orderKid=' + orderId.value
+		})
+	} else {
+		uni.showToast({ title: '订单信息不完整', icon: 'none' })
+	}
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// ==================== H5: 合并 URL 安全参数 ====================
+		// 支付宝同步回跳时，会把 out_trade_no、trade_no 等参数放在 URL 的 ? 查询串中（# 之前），
+		// 而 uni-app hash 路由的 onLoad options 只包含 # 之后的参数。
+		// 因此需要从 URL 中提取支付宝回调参数并合并到 optionsObj 中。
+		// #ifdef H5
+		try {
+			const safeParams = getUrlParams()
+			if (safeParams.size > 0) {
+				safeParams.forEach((value: string, key: string) => {
+					// 只合并 optionsObj 中不存在的参数，避免覆盖路由参数
+					if (optionsObj.get(key) == null || optionsObj.get(key).toString() == '') {
+						optionsObj.set(key, value)
+					}
+				})
+				console.log('🔍 [PAY-RESULT] 合并 URL 安全参数后:', JSON.stringify(optionsObj))
+			}
+		} catch (e) {
+			handleSilentError(e, '解析URL参数')
+		}
+		// #endif
+		
+		// 检查支付方式
+		const payMethodVal = optionsObj.get('payMethod')
+		let payMethodNum = 0
+		if (payMethodVal != null && payMethodVal.toString() != '') {
+			const pm = parseInt(payMethodVal.toString())
+			if (isNaN(pm) == false) {
+				payMethodNum = pm
+			}
+		}
+		
+		// 自动检测支付宝回调：如果 URL 中包含 trade_no 或 out_trade_no 参数，
+		// 说明是支付宝同步回跳，自动识别为支付宝支付（payMethod=2）
+		// 这样即使 returnUrl 中没有 &payMethod=2 也能正确处理
+		if (payMethodNum == 0) {
+			const tradeNoCheck = optionsObj.get('trade_no')
+			const outTradeNoCheck = optionsObj.get('out_trade_no')
+			if ((tradeNoCheck != null && tradeNoCheck.toString() != '') || 
+				(outTradeNoCheck != null && outTradeNoCheck.toString() != '')) {
+				payMethodNum = 2
+			}
+		}
+		
+		// 支付宝回调处理（payMethod=2 表示支付宝）
+		if (payMethodNum == 2) {
+			// 支付宝同步回调参数
+			// out_trade_no: 商户订单号
+			// trade_no: 支付宝交易号
+			// total_amount: 支付金额
+			
+			const outTradeNo = optionsObj.get('out_trade_no')
+			const tradeNo = optionsObj.get('trade_no')
+			const totalAmount = optionsObj.get('total_amount')
+			
+			// 如果有支付宝回调参数，说明是从支付宝跳转回来
+			if (tradeNo != null && tradeNo.toString() != '') {
+				// 支付宝支付成功
+				isSuccess.value = true
+				desc.value = '您的订单已支付成功'
+				
+				// 订单号
+				if (outTradeNo != null && outTradeNo.toString() != '') {
+					orderNo.value = outTradeNo.toString()
+					orderId.value = outTradeNo.toString()
+				}
+				
+				// 支付金额
+				if (totalAmount != null && totalAmount.toString() != '') {
+					amount.value = totalAmount.toString()
+				}
+				
+				// 标记订单列表为脏
+				try {
+					uni.setStorageSync('order:dirty', JSON.stringify({ ts: Date.now() }))
+				} catch (e) {}
+				
+				// 支付时间
+				payTime.value = getCurrentTimeString()
+				return
+			}
+			
+			// 没有 trade_no 说明支付可能失败或用户取消
+			// 尝试从 orderKid 获取订单信息
+			const orderKidVal = optionsObj.get('orderKid')
+			if (orderKidVal != null && orderKidVal.toString() != '') {
+				orderId.value = orderKidVal.toString()
+				orderNo.value = orderKidVal.toString()
+			}
+			
+			// 默认显示支付结果待确认
+			isSuccess.value = false
+			desc.value = '支付结果确认中，请稍后查看订单状态'
+			payTime.value = getCurrentTimeString()
+			return
+		}
+		
+		// 其他支付方式的处理（原有逻辑）
+		// 支付结果
+		const successVal = optionsObj.get('success')
+		if (successVal != null && successVal.toString() == 'true') {
+			isSuccess.value = true
+			desc.value = '您的订单已支付成功'
+		} else {
+			isSuccess.value = false
+			desc.value = '支付失败，请重试'
+		}
+		
+		// 订单号
+		const orderNoVal = optionsObj.get('orderNo')
+		if (orderNoVal != null && orderNoVal.toString() != '') {
+			orderNo.value = orderNoVal.toString()
+		} else {
+			orderNo.value = ''
+		}
+		
+		// 支付金额
+		const amountVal = optionsObj.get('amount')
+		if (amountVal != null && amountVal.toString() != '') {
+			amount.value = amountVal.toString()
+		} else {
+			amount.value = '0.00'
+		}
+		
+		// 订单 ID
+		const orderIdVal = optionsObj.get('orderId')
+		if (orderIdVal != null && orderIdVal.toString() != '') {
+			orderId.value = orderIdVal.toString()
+		} else {
+			// 兼容 orderKid 参数
+			const orderKidVal = optionsObj.get('orderKid')
+			if (orderKidVal != null && orderKidVal.toString() != '') {
+				orderId.value = orderKidVal.toString()
+			}
+		}
+		
+		// 支付时间
+		payTime.value = getCurrentTimeString()
+	}
+})
+</script>
+
+<style scoped>
+.result-page {
+	width: 750rpx;
+	min-height: 1334rpx;
+	background-color: #ffffff;
+	padding-top: 120rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 60rpx;
+	flex-direction: column;
+	align-items: center;
+}
+
+.result-icon {
+	margin-bottom: 40rpx;
+}
+
+.icon-text {
+	font-size: 160rpx;
+}
+
+.result-title {
+	font-size: 40rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.result-desc {
+	font-size: 26rpx;
+	color: #999999;
+	margin-bottom: 60rpx;
+}
+
+.order-info {
+	width: 100%;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+	padding: 28rpx;
+	margin-bottom: 60rpx;
+}
+
+.info-row {
+	flex-direction: row;
+	justify-content: space-between;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+}
+
+.info-label {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.info-value {
+	font-size: 26rpx;
+	color: #333333;
+}
+
+.info-value-amount {
+	font-size: 32rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.action-buttons {
+	width: 100%;
+	flex-direction: row;
+	justify-content: space-between;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.default-btn {
+	width: 300rpx;
+	height: 80rpx;
+	background-color: #f5f5f5;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.default-btn-text {
+	color: #333333;
+	font-size: 28rpx;
+}
+
+.primary-btn {
+	width: 300rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.primary-btn-text {
+	color: #ffffff;
+	font-size: 28rpx;
+}
+</style>

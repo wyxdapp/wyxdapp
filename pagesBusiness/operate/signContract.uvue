@@ -1,0 +1,751 @@
+<template>
+	<view class="page">
+		<!-- 背景图片 -->
+		<image 
+			class="bg-index-header" 
+			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
+			mode="aspectFill"
+		></image>
+		
+		<!-- 顶部搜索栏 -->
+		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="search-bar">
+				<view class="location" @click="openCityPicker">
+					<image class="location-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_location.png" mode="aspectFit"></image>
+					<text class="location-text">{{ cityName }}</text>
+					<text class="arrow">▼</text>
+				</view>
+				<view class="search-input" @click="goToSearch">
+					<image class="search-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png" mode="aspectFit"></image>
+					<text class="search-placeholder">搜索昵称或定制</text>
+				</view>
+				<view class="publish-btn" @click="goToAddGuide">
+					<image class="publish-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_send.png" mode="aspectFit"></image>
+					<text class="publish-text">发布</text>
+				</view>
+			</view>
+			
+			<!-- Tab 切换（只显示向导） -->
+			<view class="tabs-row">
+				<view class="tab-item">
+					<text class="tab-text tab-text-active">向导</text>
+					<view class="tab-underline"></view>
+				</view>
+				<view class="filter-btn" @click="openFilter">
+					<image class="filter-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_screen.png" mode="aspectFit"></image>
+					<text class="filter-text">全部</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 向导列表 -->
+		<scroll-view 
+			class="scroll-view"
+			:style="{ marginTop: headerHeight + 'px', height: contentHeight + 'px' }"
+			scroll-y="true"
+			refresher-enabled="true"
+			:refresher-triggered="guiderRefreshing"
+			:show-scrollbar="false"
+			@refresherrefresh="onRefresh"
+			@scrolltolower="loadMore"
+		>
+			<ListStatus 
+				v-if="guiderLoading == true && guiderListLength == 0" 
+				status="loading" 
+			/>
+			<ListStatus 
+				v-else-if="guiderListLength == 0" 
+				status="empty" 
+				emptyText="暂无向导" 
+			/>
+			<view v-else class="guider-list">
+				<guider-card 
+					v-for="(item, index) in guiderList" 
+					:key="getGuiderKey(item, index)"
+					:data="item"
+					:showCommission="true"
+					@click="goToGuiderDetail"
+					@share="handleShareGuide"
+				/>
+			</view>
+			<ListStatus 
+				v-if="guiderHasMore == true && guiderLoading == false && guiderListLength > 0" 
+				status="loadMore" 
+			/>
+			<ListStatus 
+				v-if="guiderHasMore == false && guiderListLength > 0" 
+				status="noMore" 
+			/>
+		</scroll-view>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import GuiderCard from '@/components/guider-card/index.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { getGuiderList } from '@/common/services/homeService.uts'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	getStringProp, 
+	getResponseCode, 
+	getResponseData, 
+	getEntities, 
+	getDataCount,
+	getItemKeyByField,
+	toJsonObj
+} from '@/common/utils/utsSafe.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { useUserStore, initUserInfoAction, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
+import { 
+	getChatListRef, 
+	getChatList as getChatListFn, 
+	handleShareToChat as handleShareToChatFn 
+} from '@/common/composables/useChatAndShare.uts'
+import { 
+	handleShareWechat as handleShareWechatFn, 
+	handleShareMoments as handleShareMomentsFn, 
+	handleCopyLink as handleCopyLinkFn, 
+	handleShowQrcode as handleShowQrcodeFn 
+} from '@/common/composables/useShareUi.uts'
+
+// ==================== Store 实例 ====================
+const userStore = useUserStore()
+
+// ==================== 响应式状态 ====================
+
+// 布局相关
+const headerHeight = ref<number>(0)
+const contentHeight = ref<number>(0)
+
+// 城市名称
+const cityName = ref<string>('中国')
+
+// 位置信息
+const latitude = ref<number>(0)
+const longitude = ref<number>(0)
+
+// 向导列表状态
+const guiderList = ref<Array<UTSJSONObject>>([])
+const guiderPage = ref<number>(1)
+const guiderTotal = ref<number>(0)
+const guiderLoading = ref<boolean>(false)
+const guiderRefreshing = ref<boolean>(false)
+const guiderHasMore = ref<boolean>(true)
+
+// 分享弹窗状态
+const showSharePopup = ref<boolean>(false)
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	summary: '',
+	desc: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+} as UTSJSONObject)
+
+// 当前分享的向导信息
+const currentShareGuideData = ref<string>('')
+
+// ==================== 计算属性 ====================
+
+const guiderListLength = computed((): number => {
+	try {
+		const list = guiderList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 模板辅助函数 ====================
+
+const getGuiderKey = (item: UTSJSONObject, index: number): string => {
+	return getItemKeyByField(item, index, 'memberGuideKid')
+}
+
+// 获取城市名（用于 API）
+const getCityNameForApi = (): string => {
+	const city = cityName.value
+	if (city == '中国' || city == '全部') {
+		return ''
+	}
+	return city
+}
+
+// ==================== 数据加载函数 ====================
+
+// 加载向导列表
+const loadGuiderList = (refresh: boolean) => {
+	if (refresh == true) {
+		guiderPage.value = 1
+		guiderList.value = []
+	}
+	
+	if (guiderLoading.value == true) return
+	guiderLoading.value = true
+	
+	const params = {
+		pageNumber: guiderPage.value,
+		pageSize: 10,
+		latitude: latitude.value,
+		longitude: longitude.value,
+		userCityName: getCityNameForApi()
+	} as UTSJSONObject
+	
+	getGuiderList(params).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const items = getEntities(dataObj)
+			const totalCount = getDataCount(dataObj)
+			
+			guiderTotal.value = totalCount
+			
+			if (refresh == true) {
+				guiderList.value = items as Array<UTSJSONObject>
+			} else {
+				for (let i = 0; i < items.length; i = i + 1) {
+					guiderList.value.push(items[i] as UTSJSONObject)
+				}
+			}
+			
+			guiderHasMore.value = guiderList.value.length < guiderTotal.value
+		}
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '加载向导列表', guiderLoading)
+		}
+	}).finally(() => {
+		guiderLoading.value = false
+		guiderRefreshing.value = false
+	})
+}
+
+// 刷新列表
+const refreshList = () => {
+	guiderList.value = []
+	guiderPage.value = 1
+	guiderTotal.value = 0
+	guiderLoading.value = false
+	guiderRefreshing.value = false
+	guiderHasMore.value = true
+	
+	loadGuiderList(true)
+}
+
+// 获取定位
+const getLocation = () => {
+	getLocationInfo().then((location) => {
+		if (location != null) {
+			latitude.value = location.latitude
+			longitude.value = location.longitude
+			if (location.city != '') {
+				cityName.value = location.city
+			}
+		}
+		refreshList()
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '获取定位信息')
+		cityName.value = '武汉市'
+		refreshList()
+	})
+}
+
+// 初始化
+const initPage = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
+	headerHeight.value = pageStatusBarHeight.value + 87
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 600
+	}
+	
+	getLocation()
+}
+
+// ==================== 事件处理函数 ====================
+
+// 下拉刷新
+const onRefresh = () => {
+	guiderRefreshing.value = true
+	loadGuiderList(true)
+}
+
+// 加载更多
+const loadMore = () => {
+	if (guiderLoading.value == false && guiderHasMore.value == true) {
+		guiderPage.value = guiderPage.value + 1
+		loadGuiderList(false)
+	}
+}
+
+// 打开城市选择器
+const openCityPicker = () => {
+	const currentCity = cityName.value
+	const locationCityVal = cityName.value
+	
+	uni.navigateTo({
+		url: '/pagesBusiness/citySelect/index?currentCity=' + encodeURIComponent(currentCity) + '&locationCity=' + encodeURIComponent(locationCityVal)
+	})
+}
+
+// 监听城市选择事件
+const handleCitySelected = (data: UTSJSONObject | null) => {
+	if (data != null) {
+		try {
+			const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+			const cityVal = dataObj.get('city')
+			if (cityVal != null && cityVal.toString() != '') {
+				const selectedCity = cityVal.toString()
+				cityName.value = selectedCity
+				refreshList()
+			}
+		} catch (e) {
+			handleSilentError(e, '解析城市数据')
+		}
+	}
+}
+
+// 打开筛选
+const openFilter = () => {
+	uni.showToast({ title: '筛选功能开发中', icon: 'none' })
+}
+
+// 跳转搜索
+const goToSearch = () => {
+	uni.navigateTo({ url: '/pagesBusiness/search/search' })
+}
+
+// 跳转发布
+const goToAddGuide = () => {
+	uni.navigateTo({ url: '/pages/index/components/addGuide' })
+}
+
+// 跳转向导详情（个人主页）
+const goToGuiderDetail = (item: UTSJSONObject) => {
+	const kid = getStringProp(item, 'memberGuideKid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + kid })
+	}
+}
+
+// 分享向导个人主页
+const handleShareGuide = async (shareData: UTSJSONObject | null) => {
+	if (shareData == null) return
+	
+	// 检查登录状态
+	if (checkUserLoginReliable() == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+	
+	try {
+		const dataStr = JSON.stringify(shareData)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		const guideKidVal = dataObj.get('guideKid')
+		const nicknameVal = dataObj.get('nickname')
+		const avatarVal = dataObj.get('avatar')
+		
+		const guideKid = guideKidVal != null ? guideKidVal.toString() : ''
+		const nickname = nicknameVal != null ? nicknameVal.toString() : '向导'
+		const avatar = avatarVal != null ? avatarVal.toString() : ''
+		
+		if (guideKid == '') {
+			uni.showToast({ title: '向导信息错误', icon: 'none' })
+			return
+		}
+		
+		// 保存当前分享的向导信息（存储为 JSON 字符串）
+		currentShareGuideData.value = JSON.stringify(shareData)
+		
+		// 构建分享链接（个人主页）- 使用正确域名和 hash 路由
+		let shareUrl = `https://m.wyxdapp.com/#/pagesUser/persionInfo/index?id=${guideKid}`
+		const shareTitle = nickname + '的个人主页'
+		const shareDesc = '快来看看这位优质向导吧！'
+		
+		// 获取当前用户的推广短号
+		let referrerShortKid = ''
+		try {
+			// 🔧 修复：优先使用 getUserShortKid()，再 fallback 到 store 和缓存 profile
+			referrerShortKid = getUserShortKid()
+			if (referrerShortKid == '') {
+				const storeObj = toJsonObj(userStore)
+				if (storeObj != null) {
+					const userInfoVal = storeObj.get('userInfo')
+					if (userInfoVal != null) {
+						const userInfoJson = JSON.stringify(userInfoVal)
+						const userInfoParsed = JSON.parse(userInfoJson) as UTSJSONObject
+						const shortKidVal = userInfoParsed.get('shortKid')
+						if (shortKidVal != null && shortKidVal.toString() != '') {
+							referrerShortKid = shortKidVal.toString()
+						}
+					}
+				}
+			}
+			// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+			if (referrerShortKid == '') {
+				const currentUserKidForRef = getCurrentUserIdReliable()
+				if (currentUserKidForRef != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidForRef, currentUserKidForRef)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+							}
+						}
+					} catch (e2) {}
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '获取用户短号')
+		}
+		
+		// 当推广短号非空时，在 URL 中拼接 ref 参数
+		if (referrerShortKid != '') {
+			shareUrl = `${shareUrl}&ref=${referrerShortKid}`
+		}
+		
+		// 构建分享数据
+		const newPayload: UTSJSONObject = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareUrl,
+			url: shareUrl,
+			imageUrl: avatar,
+			userId: guideKid,
+			referrerShortKid: referrerShortKid
+		}
+		sharePayload.value = newPayload
+		
+		// 获取会话列表
+		try {
+			const result = await getChatListFn(userStore)
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+			} else {
+				shareChatList.value = []
+			}
+		} catch (e) {
+			handleSilentError(e, '获取会话列表')
+			shareChatList.value = []
+		}
+		
+		// 显示分享弹窗
+		showSharePopup.value = true
+		
+	} catch (e) {
+		if (!isAuthError(e)) {
+			handlePageError(e, '分享向导', null)
+		}
+	}
+}
+
+// 获取分享数据值（用于分享操作）
+const getShareDataValue = (): UTSJSONObject => {
+	const shareDataJson = JSON.stringify(sharePayload.value)
+	const shareDataObj = JSON.parse(shareDataJson) as UTSJSONObject
+	
+	const titleVal = shareDataObj.get('title')
+	const summaryVal = shareDataObj.get('summary')
+	const linkVal = shareDataObj.get('link')
+	const imageUrlVal = shareDataObj.get('imageUrl')
+	const userIdVal = shareDataObj.get('userId')
+	
+	return {
+		title: (titleVal != null) ? titleVal.toString() : '',
+		summary: (summaryVal != null) ? summaryVal.toString() : '',
+		desc: (summaryVal != null) ? summaryVal.toString() : '',
+		link: (linkVal != null) ? linkVal.toString() : '',
+		url: (linkVal != null) ? linkVal.toString() : '',
+		imageUrl: (imageUrlVal != null) ? imageUrlVal.toString() : '',
+		userId: (userIdVal != null) ? userIdVal.toString() : ''
+	}
+}
+
+// 分享到聊天
+const handleShareToChat = (data: UTSJSONObject | null) => {
+	if (currentShareGuideData.value != '') {
+		const guideData = JSON.parse(currentShareGuideData.value) as UTSJSONObject
+		handleShareToChatFn(data as any, guideData as any)
+	}
+}
+
+// 分享到微信
+const handleShareWechat = () => {
+	handleShareWechatFn(getShareDataValue())
+}
+
+// 分享到朋友圈
+const handleShareMoments = () => {
+	handleShareMomentsFn(getShareDataValue())
+}
+
+// 复制链接
+const handleCopyLink = () => {
+	handleCopyLinkFn(getShareDataValue())
+}
+
+// 显示二维码
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(getShareDataValue())
+}
+
+// ==================== 生命周期 ====================
+
+onMounted(() => {
+	// 初始化用户信息（确保分享功能可用）
+	initUserInfoAction()
+	
+	// 注册城市选择事件监听
+	uni.$on('onCitySelected', handleCitySelected)
+	
+	initPage()
+})
+
+onUnmounted(() => {
+	// 注销城市选择事件监听
+	uni.$off('onCitySelected', handleCitySelected)
+})
+</script>
+
+
+<style>
+/* ==================== 页面基础样式 ==================== */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+/* ==================== 背景图片 ==================== */
+.bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+/* ==================== 顶部固定区域 ==================== */
+.header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	z-index: 100;
+}
+
+/* ==================== 搜索栏 ==================== */
+.search-bar {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	height: 84rpx;
+}
+
+.location {
+	flex-direction: row;
+	align-items: center;
+	margin-right: 16rpx;
+}
+
+.location-icon {
+	width: 44rpx;
+	height: 44rpx;
+	margin-right: 4rpx;
+}
+
+.location-text {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.arrow {
+	font-size: 20rpx;
+	color: #333333;
+	margin-left: 6rpx;
+}
+
+.search-input {
+	flex: 1;
+	height: 64rpx;
+	background-color: #FFFFFF;
+	border-radius: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+	padding-left: 26rpx;
+	padding-right: 26rpx;
+	padding-top: 0;
+	padding-bottom: 0;
+	margin-left: 24rpx;
+	margin-right: 32rpx;
+}
+
+.search-icon {
+	width: 30rpx;
+	height: 30rpx;
+	margin-right: 22rpx;
+}
+
+.search-placeholder {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.publish-btn {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.publish-icon {
+	width: 30rpx;
+	height: 30rpx;
+	margin-bottom: 6rpx;
+}
+
+.publish-text {
+	font-size: 22rpx;
+	color: #333333;
+}
+
+/* ==================== Tab 栏 ==================== */
+.tabs-row {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	height: 90rpx;
+	background-color: transparent;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-right: 48rpx;
+	height: 90rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.tab-text-active {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 6rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-top: 8rpx;
+}
+
+.filter-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	height: 60rpx;
+	margin-left: auto;
+}
+
+.filter-icon {
+	width: 28rpx;
+	height: 28rpx;
+	margin-right: 10rpx;
+}
+
+.filter-text {
+	font-size: 22rpx;
+	color: #333333;
+}
+
+/* ==================== 滚动容器 ==================== */
+/* APP 端：使用 flex: 1 自动填充 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+/* #endif */
+
+/* H5 端：使用明确高度 */
+/* #ifdef H5 */
+.scroll-view {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+/* #endif */
+
+/* ==================== 列表容器 ==================== */
+.guider-list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 0;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 120rpx;
+	background-color: transparent;
+}
+</style>

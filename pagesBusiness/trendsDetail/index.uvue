@@ -1,0 +1,559 @@
+<template>
+	<view class="detail-page">
+		<scroll-view class="detail-scroll" scroll-y :show-scrollbar="false">
+			<!-- 动态内容 -->
+			<view class="trends-content">
+				<!-- 用户信息 -->
+				<view class="user-info">
+					<Avatar 
+						:url="trendsInfo.userAvatar"
+						:userId="trendsInfo.userId"
+						size="medium"
+						:customSize="80"
+						clickMode="profile"
+					/>
+					<view class="user-detail">
+						<text class="username">{{ trendsInfo.userName }}</text>
+						<text class="time">{{ trendsInfo.createTime }}</text>
+					</view>
+					<FollowButton 
+						:targetUserKid="trendsInfo.userId"
+						:isFollow="trendsInfo.isFollow"
+						@change="onFollowChange"
+					/>
+				</view>
+				
+				<!-- 文字内容 -->
+				<text class="content-text">{{ trendsInfo.content }}</text>
+				
+				<!-- 图片 -->
+				<view v-if="trendsInfo.images.length > 0" class="images-grid">
+					<image 
+						v-for="(img, index) in trendsInfo.images"
+						:key="index"
+						class="image-item"
+						:src="img"
+						mode="aspectFill"
+						@click="previewImage(index)"
+					></image>
+				</view>
+				
+				<!-- 位置 -->
+				<view v-if="trendsInfo.location" class="location">
+					<UniIcons type="location" :size="28" color="#999999" />
+					<text> {{ trendsInfo.location }}</text>
+				</view>
+				
+				<!-- 互动栏 -->
+				<view class="action-bar">
+					<view class="action-item" @click="handleLike">
+						<UniIcons v-if="trendsInfo.isLiked" type="heart-filled" :size="32" color="#FF4757" />
+						<UniIcons v-else type="heart" :size="32" color="#999999" />
+						<text class="action-text">{{ trendsInfo.likeCount }}</text>
+					</view>
+					<view class="action-item">
+						<UniIcons type="chatbubble" :size="32" color="#666666" />
+						<text class="action-text">{{ trendsInfo.commentCount }}</text>
+					</view>
+					<view class="action-item" @click="handleShare">
+						<UniIcons type="paperplane" :size="32" color="#666666" />
+						<text class="action-text">分享</text>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 评论列表 -->
+			<view class="comment-section">
+				<text class="section-title">评论 {{ commentList.length }}</text>
+				<view v-if="commentList.length == 0" class="empty">
+					<text>暂无评论</text>
+				</view>
+				<view v-else class="comment-list">
+					<view v-for="item in commentList" :key="item.id" class="comment-item">
+						<Avatar 
+							:url="item.userAvatar"
+							size="small"
+							:customSize="60"
+							clickMode="none"
+						/>
+						<view class="comment-content">
+							<text class="comment-username">{{ item.userName }}</text>
+							<text class="comment-text">{{ item.content }}</text>
+							<view class="comment-footer">
+								<text class="comment-time">{{ item.createTime }}</text>
+								<view class="comment-like" @click="handleCommentLike(item)">
+									<UniIcons v-if="item.isLiked" type="heart-filled" :size="22" color="#FF4757" />
+									<UniIcons v-else type="heart" :size="22" color="#999999" />
+									<text> {{ item.likeCount }}</text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+		
+		<!-- 评论输入 -->
+		<view class="comment-input-bar">
+			<input 
+				class="comment-input"
+				v-model="commentText"
+				placeholder="说点什么..."
+				confirm-type="send"
+				@confirm="handleComment"
+			/>
+			<view class="send-btn" :class="{ active: commentText }" @click="handleComment">
+				<text>发送</text>
+			</view>
+		</view>
+		
+		<Loading :show="loading" fullscreen />
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import FollowButton from '@/components/base/FollowButton.uvue'
+import Loading from '@/components/base/Loading.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { getStringProp } from '@/common/utils/utsSafe.uts'
+import { addVisitor } from '@/api/behavior.uts'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+const loading = ref(false)
+const trendsId = ref('')
+const commentText = ref('')
+
+const trendsInfo = ref({
+	id: '',
+	userId: '',
+	userName: '',
+	userAvatar: '',
+	content: '',
+	images: [] as string[],
+	video: '',
+	location: '',
+	likeCount: 0,
+	commentCount: 0,
+	isLiked: false,
+	isFollow: false,
+	createTime: ''
+})
+
+const commentList = ref<UTSJSONObject[]>([])
+
+// 获取当前用户ID
+const getCurrentUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 记录访客（支持匿名访客）
+const recordVisitor = async () => {
+	try {
+		// 获取当前用户ID（访问者）
+		let currentUserKid = getCurrentUserKid()
+		
+		// 获取动态作者ID（被访问者）
+		const targetUserKid = trendsInfo.value.userId
+		
+		// 获取动态ID
+		const dynamicKid = trendsId.value
+		
+		if (targetUserKid == '' || targetUserKid == null) {
+			console.log('动态作者ID为空，跳过访客记录')
+			return
+		}
+		
+		// 自己访问自己不记录
+		if (currentUserKid != '' && currentUserKid == targetUserKid) {
+			console.log('自己访问自己，跳过访客记录')
+			return
+		}
+		
+		// 未登录用户记录为匿名访客 '0'
+		if (currentUserKid == '' || currentUserKid == null) {
+			currentUserKid = '0'
+			console.log('未登录用户，使用匿名访客ID: 0')
+		}
+		
+		// 调用访客记录API
+		const params = {
+			userKid: targetUserKid,
+			visitUserKid: currentUserKid,
+			visitType: 'dynamic',
+			targetKid: dynamicKid
+		} as UTSJSONObject
+		await addVisitor(params)
+		
+		console.log('动态详情页面访客记录成功')
+	} catch (error: Error) {
+		handleSilentError(error, '动态详情页面访客记录')
+	}
+}
+
+// 生命周期
+onLoad((options: UTSJSONObject) => {
+	trendsId.value = options.get('id') != null ? options.get('id')!.toString() : ''
+	loadTrendsDetail()
+	loadComments()
+})
+
+// 方法
+const loadTrendsDetail = async () => {
+	loading.value = true
+	
+	try {
+		// TODO: 调用动态详情 API
+		await new Promise<number>((resolve: (value: number) => void) => {
+			setTimeout(() => { resolve(1) }, 1000)
+		})
+		
+		trendsInfo.value = {
+			id: trendsId.value,
+			userId: 'user123',
+			userName: '张三',
+			userAvatar: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+			content: '今天去了九寨沟，风景真的太美了！推荐大家一定要去看看。',
+			images: [
+				'https://jiasu.wyxdapp.com/iconimages/default_cover.jpg',
+				'https://jiasu.wyxdapp.com/iconimages/default_cover.jpg'
+			],
+			video: '',
+			location: '九寨沟',
+			likeCount: 128,
+			commentCount: 45,
+			isLiked: false,
+			isFollow: false,
+			createTime: '2024-11-21 10:00'
+		}
+		
+		// 记录访客（加载完成后记录）
+		recordVisitor()
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载动态详情', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+const loadComments = async () => {
+	try {
+		// TODO: 调用评论列表 API
+		commentList.value = [
+			{
+				id: '1',
+				userId: 'user1',
+				userName: '李四',
+				userAvatar: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+				content: '太美了！',
+				likeCount: 5,
+				isLiked: false,
+				createTime: '2024-11-21 10:30'
+			}
+		]
+	} catch (error) {
+		handleSilentError(error, '加载评论')
+	}
+}
+
+// 关注状态变化处理
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	trendsInfo.value.isFollow = isFollow
+}
+
+const handleLike = async () => {
+	try {
+		// TODO: 调用点赞 API
+		const wasLiked = trendsInfo.value.isLiked
+		trendsInfo.value.isLiked = (wasLiked == false)
+		if (wasLiked == true) {
+			trendsInfo.value.likeCount = trendsInfo.value.likeCount - 1
+		} else {
+			trendsInfo.value.likeCount = trendsInfo.value.likeCount + 1
+		}
+	} catch (error) {
+		handleSilentError(error, '点赞')
+	}
+}
+
+const handleShare = () => {
+	uni.showShareMenu({
+		withShareTicket: true
+	})
+}
+
+const handleComment = async () => {
+	const trimmedText = commentText.value.trim()
+	if (trimmedText == null || trimmedText == '') return
+	
+	try {
+		// TODO: 调用发表评论 API
+		const newComment = {
+			id: Date.now().toString(),
+			userId: 'currentUser',
+			userName: '我',
+			userAvatar: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+			content: commentText.value,
+			likeCount: 0,
+			isLiked: false,
+			createTime: new Date().toLocaleString()
+		}
+		
+		commentList.value.unshift(newComment)
+		trendsInfo.value.commentCount = trendsInfo.value.commentCount + 1
+		commentText.value = ''
+		
+		uni.showToast({
+			title: '评论成功',
+			icon: 'success'
+		})
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '评论', null)
+		}
+	}
+}
+
+const handleCommentLike = async (item: UTSJSONObject) => {
+	try {
+		// TODO: 调用评论点赞 API
+		const wasLiked = item.get('isLiked')
+		item.set('isLiked', wasLiked == false)
+		if (wasLiked == true) {
+			const currentCount = item.get('likeCount') != null ? Number(item.get('likeCount')) : 0
+			item.set('likeCount', currentCount - 1)
+		} else {
+			const currentCount = item.get('likeCount') != null ? Number(item.get('likeCount')) : 0
+			item.set('likeCount', currentCount + 1)
+		}
+	} catch (error) {
+		handleSilentError(error, '评论点赞')
+	}
+}
+
+const previewImage = (index: number) => {
+	uni.previewImage({
+		urls: trendsInfo.value.images,
+		current: index
+	})
+}
+</script>
+
+<style scoped>
+.detail-page {
+	height: 100%;
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.detail-scroll {
+	flex: 1;
+	overflow-y: auto;
+}
+
+.trends-content {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.user-info {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.avatar {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 30rpx;
+	margin-right: 16rpx;
+}
+
+.user-detail {
+	flex: 1;
+	flex-direction: column;
+}
+
+.username {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 6rpx;
+}
+
+.time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.content-text {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.8;
+	margin-bottom: 20rpx;
+}
+
+.images-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 20rpx;
+}
+
+
+.image-item {
+	width: 220rpx;
+	height: 220rpx;
+	border-radius: 8rpx;
+}
+
+.location {
+	margin-bottom: 20rpx;
+}
+
+
+.action-bar {
+	flex-direction: row;
+	padding-top: 20rpx;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.action-item {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-icon {
+	font-size: 36rpx;
+}
+
+.action-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.comment-section {
+	background-color: #ffffff;
+	padding: 28rpx;
+}
+
+.section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 24rpx;
+}
+
+.empty {
+	padding: 80rpx 0;
+	text-align: center;
+}
+
+
+.comment-list {
+	flex-direction: column;
+}
+
+.comment-item {
+	flex-direction: row;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.comment-item:last-child {
+	border-bottom: none;
+}
+
+.comment-avatar {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 30rpx;
+	margin-right: 16rpx;
+}
+
+.comment-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.comment-username {
+	font-size: 26rpx;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.comment-text {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+	margin-bottom: 12rpx;
+}
+
+.comment-footer {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.comment-time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.comment-like {
+	font-size: 22rpx;
+	color: #666666;
+}
+
+.comment-input-bar {
+	background-color: #ffffff;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	flex-direction: row;
+	align-items: center;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #e0e0e0;
+}
+
+
+.comment-input {
+	flex: 1;
+	height: 64rpx;
+	background-color: #f5f5f5;
+	border-radius: 32rpx;
+	padding: 0 24rpx;
+	font-size: 26rpx;
+}
+
+.send-btn {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	background-color: #e0e0e0;
+	border-radius: 32rpx;
+}
+
+.send-btn.active {
+	background-color: #37B1F2;
+}
+
+.send-btn text {
+	font-size: 26rpx;
+	color: #ffffff;
+}
+</style>

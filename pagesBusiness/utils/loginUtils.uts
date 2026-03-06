@@ -1,0 +1,210 @@
+﻿/**
+ * 登录相关工具函数
+ * 提取自 pagesUser/login/index.uvue，用于减少代码重复
+ */
+
+import { SK_WX_CODE, SK_WX_CODE_USED, SK_USER_INFO, SK_TOKEN, SK_LOGIN_PRIVACY_AGREED } from '@/common/config/storageKeys.uts'
+import { saveToken } from '@/common/utils/security/tokenManager.uts'
+
+// ========== API 响应解析 ==========
+
+/**
+ * 从 API 响应中解析状态码
+ * @param res API 响应对象
+ * @returns 状态码数字，解析失败返回 0
+ */
+export function parseApiResponseCode(res: UTSJSONObject): number {
+	if (res == null) return 0
+	try {
+		const resJson = JSON.stringify(res)
+		if (resJson == null || resJson == '') return 0
+		const m = resJson.match(/"code"\s*:\s*(\d+|"([^"]*)")/)
+		if (m != null) {
+			let v = m[1]
+			if (v != null && typeof v == 'string' && v.startsWith('"') == true) {
+				v = (m[2] != null && m[2] != '') ? m[2] : ''
+			}
+			return (v != null && v.toString() != '') ? parseInt(v.toString()) : 0
+		}
+	} catch (e) {}
+	return 0
+}
+
+/**
+ * 从 API 响应 JSON 字符串中提取字段值
+ * @param jsonStr JSON 字符串
+ * @param fieldName 字段名
+ * @returns 字段值字符串，未找到返回空字符串
+ */
+export function extractFieldFromJson(jsonStr: string, fieldName: string): string {
+	if (jsonStr == null || jsonStr == '' || fieldName == null || fieldName == '') return ''
+	try {
+		const pattern = new RegExp('"' + fieldName + '"\\s*:\\s*"([^"]*)"')
+		const m = jsonStr.match(pattern)
+		if (m != null && m[1] != null) {
+			return m[1].toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+/**
+ * 从登录响应中提取用户信息字段
+ * @param res API 响应对象
+ * @returns 包含 kid, token, phone, nickname 的对象
+ */
+export function extractUserInfoFields(res: UTSJSONObject): UTSJSONObject {
+	const result = new UTSJSONObject()
+	result.set('kid', '')
+	result.set('token', '')
+	result.set('phone', '')
+	result.set('nickname', '')
+	
+	if (res == null) return result
+	
+	try {
+		const raw = JSON.stringify(res)
+		if (raw == null || raw == '') return result
+		
+		// 提取各字段
+		const kid = extractFieldFromJson(raw, 'kid')
+		const token = extractFieldFromJson(raw, 'token')
+		const phone = extractFieldFromJson(raw, 'phone')
+		let nickname = extractFieldFromJson(raw, 'nickname')
+		if (nickname == '') {
+			nickname = extractFieldFromJson(raw, 'nickName')
+		}
+		
+		result.set('kid', kid)
+		result.set('token', token)
+		result.set('phone', phone)
+		result.set('nickname', nickname)
+	} catch (e) {}
+	
+	return result
+}
+
+// ========== wxCode 缓存管理 ==========
+
+/**
+ * 清理微信授权 code 缓存
+ */
+export function clearWxCodeCache(): void {
+	try {
+		uni.removeStorageSync(SK_WX_CODE)
+		uni.removeStorageSync(SK_WX_CODE_USED)
+	} catch (e) {}
+}
+
+/**
+ * 从缓存获取微信授权 code
+ * @returns wxCode 字符串，不存在返回空字符串
+ */
+export function getWxCodeFromCache(): string {
+	try {
+		const val = uni.getStorageSync(SK_WX_CODE)
+		if (val != null && val.toString() != '') {
+			return val.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+/**
+ * 检查 wxCode 是否已被使用
+ * @returns true 表示已使用
+ */
+export function isWxCodeUsed(): boolean {
+	try {
+		const val = uni.getStorageSync(SK_WX_CODE_USED)
+		return (val != null && val.toString() == 'true')
+	} catch (e) {}
+	return false
+}
+
+/**
+ * 标记 wxCode 为已使用
+ */
+export function setWxCodeUsed(): void {
+	try {
+		uni.setStorageSync(SK_WX_CODE_USED, 'true')
+	} catch (e) {}
+}
+
+/**
+ * 保存微信授权 code 到缓存
+ * @param code 授权 code
+ */
+export function saveWxCodeToCache(code: string): void {
+	if (code == null || code == '') return
+	try {
+		uni.setStorageSync(SK_WX_CODE, code)
+	} catch (e) {}
+}
+
+// ========== 用户信息存储 ==========
+
+/**
+ * 保存用户信息到 storage
+ * @param userInfo 用户信息对象
+ */
+export function saveUserInfoToStorage(userInfo: UTSJSONObject): void {
+	if (userInfo == null) return
+	try {
+		const json = JSON.stringify(userInfo)
+		if (json != null && json != '') {
+			uni.setStorageSync(SK_USER_INFO, json)
+		}
+	} catch (e) {}
+}
+
+/**
+ * 保存 token 到 storage（通过 Token_Manager 加密存储）
+ * @param token token 字符串
+ */
+export function saveTokenToStorage(token: string): void {
+	if (token == null || token == '') return
+	try {
+		saveToken(token)
+	} catch (e) {}
+}
+
+/**
+ * 保存协议同意状态
+ */
+export function saveAgreementStatus(): void {
+	try {
+		uni.setStorageSync(SK_LOGIN_PRIVACY_AGREED, 'true')
+	} catch (e) {}
+}
+
+/**
+ * 检查协议是否已同意
+ * @returns true 表示已同意
+ */
+export function isAgreementAccepted(): boolean {
+	try {
+		const val = uni.getStorageSync(SK_LOGIN_PRIVACY_AGREED)
+		return (val != null && val.toString() == 'true')
+	} catch (e) {}
+	return false
+}
+
+// ========== 错误检测 ==========
+
+/**
+ * 检查错误信息是否为 code 相关错误（需要重新授权）
+ * @param errorMsg 错误信息
+ * @returns true 表示是 code 相关错误
+ */
+export function isWxCodeError(errorMsg: string): boolean {
+	if (errorMsg == null || errorMsg == '') return false
+	return (errorMsg.indexOf('code') >= 0 || 
+		errorMsg.indexOf('授权') >= 0 || 
+		errorMsg.indexOf('invalid') >= 0 || 
+		errorMsg.indexOf('过期') >= 0 || 
+		errorMsg.indexOf('失效') >= 0 || 
+		errorMsg.indexOf('40029') >= 0 || 
+		errorMsg.indexOf('40163') >= 0 || 
+		errorMsg.indexOf('40125') >= 0)
+}

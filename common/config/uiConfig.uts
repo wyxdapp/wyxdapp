@@ -1,0 +1,36 @@
+/**
+ * UI 常量配置模块
+ * 统一管理 Toast 时长等 UI 相关常量
+ */
+
+// === Toast 时长 ===
+/** 默认 Toast 时长（毫秒） */
+export const TOAST_DURATION_DEFAULT = 2000
+/** 错误提示 Toast 时长（毫秒） */
+export const TOAST_DURATION_ERROR = 2500
+/** 封号提示 Toast 时长（毫秒） */
+export const TOAST_DURATION_BANNED = 3000
+
+// === 页面布局偏移 ===
+/** 我的页面登录框顶部偏移 */
+export const LOGIN_BOX_TOP_MY = 64
+/** 订单页面登录框顶部偏移 */
+export const LOGIN_BOX_TOP_ORDER = 108
+/** 头部区域默认顶部位置 */
+export const HEAD_BOX_TOP_DEFAULT = 240
+/** 头部区域偏移量 */
+export const HEAD_BOX_OFFSET = 110
+
+// === 文本截断 ===
+/** 文本预览截断长度 */
+export const TEXT_PREVIEW_LENGTH = 20
+/** URL 显示最大长度 */
+export const URL_DISPLAY_MAX_LENGTH = 50
+
+// === 内容限制 ===
+/** 导游内容最大长度 */
+export const GUIDE_CONTENT_MAX_LENGTH = 450
+
+// === 徽章显示 ===
+/** 徽章数量最大显示值 */
+export const BADGE_COUNT_MAX_DISPLAY = 99

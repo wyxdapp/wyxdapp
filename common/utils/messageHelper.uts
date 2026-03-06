@@ -1,0 +1,458 @@
+/**
+ * 消息处理工具函数
+ * 用于聊天消息的创建、查找、更新、转换等操作
+ */
+
+import { getCurrentTimeString } from '@/common/utils/dateUtils.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+
+/**
+ * 从 UTSJSONObject 获取字符串属性
+ * @param obj UTSJSONObject 对象
+ * @param key 属性名
+ * @returns 字符串值或空字符串
+ */
+export function getObjString(obj: UTSJSONObject | null, key: string): string {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	return (val != null && val.toString() != '') ? val.toString() : ''
+}
+
+/**
+ * 从 any 对象获取字符串属性
+ * @param obj 任意对象
+ * @param key 属性名
+ * @returns 字符串值或空字符串
+ */
+export function getAnyString(obj: any, key: string): string {
+	if (obj == null) return ''
+	try {
+		const jsonObj = JSON.parse(JSON.stringify(obj)) as UTSJSONObject
+		const val = jsonObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+/**
+ * 获取消息类型字符串
+ * @param messageType 后端消息类型（1:文本 2:图片 3:视频 4:语音 6:分享 7:礼物）
+ * @returns 消息类型字符串
+ */
+export function getMessageType(messageType: number): string {
+	if (messageType == 1) return 'text'
+	if (messageType == 2) return 'image'
+	if (messageType == 3) return 'video'
+	if (messageType == 4) return 'voice'
+	if (messageType == 6) return 'share'
+	if (messageType == 7) return 'gift'
+	if (messageType == 10) return 'system_notification'
+	return 'text'
+}
+
+/**
+ * 获取消息类型数字
+ * @param typeStr 消息类型字符串
+ * @returns 消息类型数字
+ */
+export function getMessageTypeNumber(typeStr: string): number {
+	if (typeStr == 'text') return 1
+	if (typeStr == 'image') return 2
+	if (typeStr == 'video') return 3
+	if (typeStr == 'voice') return 4
+	if (typeStr == 'share') return 6
+	if (typeStr == 'gift') return 7
+	return 1
+}
+
+/**
+ * 创建本地临时消息对象
+ * @param tempId 临时消息ID
+ * @param senderId 发送者ID
+ * @param type 消息类型
+ * @param content 消息内容
+ * @param status 消息状态
+ * @returns 本地消息对象
+ */
+export function createLocalMessage(
+	tempId: string,
+	senderId: string,
+	type: string,
+	content: string,
+	status: string,
+	senderAvatar?: string
+): any {
+	return {
+		id: tempId,
+		senderId: senderId,
+		type: type,
+		content: content,
+		createTime: getCurrentTimeString(),
+		status: status,
+		senderAvatar: (senderAvatar != null && senderAvatar != '') ? senderAvatar : ''
+	} as any
+}
+
+/**
+ * 创建带时长的本地消息对象（用于语音消息）
+ */
+export function createLocalMessageWithDuration(
+	tempId: string,
+	senderId: string,
+	type: string,
+	content: string,
+	status: string,
+	duration: number,
+	senderAvatar?: string
+): any {
+	return {
+		id: tempId,
+		senderId: senderId,
+		type: type,
+		content: content,
+		createTime: getCurrentTimeString(),
+		status: status,
+		duration: duration,
+		senderAvatar: senderAvatar
+	} as any
+}
+
+/**
+ * 在消息列表中查找指定 ID 的消息
+ */
+export function findMessageById(
+	messageList: Array<any>,
+	messageId: string
+): any | null {
+	if (messageList == null || messageId == null || messageId == '') {
+		return null
+	}
+	for (let i = 0; i < messageList.length; i = i + 1) {
+		const msg = messageList[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msgId == messageId) {
+			return msg
+		}
+	}
+	return null
+}
+
+/**
+ * 在消息列表中查找指定 ID 的消息索引
+ */
+export function findMessageIndexById(
+	messageList: Array<any>,
+	messageId: string
+): number {
+	if (messageList == null || messageId == null || messageId == '') {
+		return -1
+	}
+	for (let i = 0; i < messageList.length; i = i + 1) {
+		const msg = messageList[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msgId == messageId) {
+			return i
+		}
+	}
+	return -1
+}
+
+/**
+ * 生成临时消息ID
+ * @param prefix 前缀（如 'temp_', 'temp_img_', 'temp_voice_'）
+ * @returns 临时消息ID
+ */
+export function generateTempMessageId(prefix: string): string {
+	const timestamp = Date.now().toString()
+	const random = Math.random().toString().substring(2, 8)
+	return prefix + timestamp + '_' + random
+}
+
+/**
+ * 更新消息列表中指定消息的状态
+ */
+export function updateMessageStatus(
+	messageList: Array<any>,
+	messageId: string,
+	newStatus: string,
+	newContent: string
+): void {
+	if (messageList == null || messageId == null || messageId == '') {
+		return
+	}
+	for (let i = 0; i < messageList.length; i = i + 1) {
+		const msg = messageList[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msgId == messageId) {
+			// 获取原消息的所有属性
+			const senderId = getAnyString(msg, 'senderId')
+			const type = getAnyString(msg, 'type')
+			const content = (newContent != null && newContent != '') ? newContent : getAnyString(msg, 'content')
+			const createTime = getAnyString(msg, 'createTime')
+			const durationStr = getAnyString(msg, 'duration')
+			const durationNum = parseInt(durationStr)
+			const duration = isNaN(durationNum) == false ? durationNum : 0
+			
+			// 创建新对象替换（确保响应式生效）
+			const updatedMsg = {
+				id: messageId,
+				senderId: senderId,
+				type: type,
+				content: content,
+				createTime: createTime,
+				status: newStatus,
+				duration: duration
+			} as any
+			
+			messageList[i] = updatedMsg
+			break
+		}
+	}
+}
+
+/**
+ * 将后端 API 消息格式转换为本地格式
+ */
+export function convertApiMessageToLocal(msgObj: UTSJSONObject): any {
+	// 消息类型转换
+	const messageTypeStr = getObjString(msgObj, 'messageType')
+	const messageTypeNum = parseInt(messageTypeStr)
+	const msgType = isNaN(messageTypeNum) == false ? getMessageType(messageTypeNum) : 'text'
+	
+	// 发送者ID：兼容 fromUserKid 和 fromUserId
+	let senderIdVal = getObjString(msgObj, 'fromUserKid')
+	if (senderIdVal == '') {
+		senderIdVal = getObjString(msgObj, 'fromUserId')
+	}
+	
+	// 接收者ID：兼容 toUserKid 和 toUserId
+	let receiverIdVal = getObjString(msgObj, 'toUserKid')
+	if (receiverIdVal == '') {
+		receiverIdVal = getObjString(msgObj, 'toUserId')
+	}
+	
+	// 消息ID：优先使用 kid，其次使用 id
+	let msgIdVal = getObjString(msgObj, 'kid')
+	if (msgIdVal == '') {
+		msgIdVal = getObjString(msgObj, 'id')
+	}
+	
+	// 时间字段：优先使用 sendTime，其次使用 createTime
+	let timeVal = getObjString(msgObj, 'sendTime')
+	if (timeVal == '') {
+		timeVal = getObjString(msgObj, 'createTime')
+	}
+	
+	// 时长（语音消息）
+	const durationStr = getObjString(msgObj, 'duration')
+	const durationNum = parseInt(durationStr)
+	const duration = isNaN(durationNum) == false ? durationNum : 0
+	
+	return {
+		id: msgIdVal,
+		senderId: senderIdVal,
+		receiverId: receiverIdVal,
+		fromUserKid: senderIdVal,
+		toUserKid: receiverIdVal,
+		type: msgType,
+		content: getObjString(msgObj, 'content'),
+		createTime: timeVal,
+		status: 'sent',
+		duration: duration
+	} as any
+}
+
+/**
+ * 批量转换后端消息列表为本地格式
+ */
+export function convertApiMessagesToLocal(apiMessages: Array<any>): Array<any> {
+	const localMessages: Array<any> = []
+	if (apiMessages == null) {
+		return localMessages
+	}
+	for (let i = 0; i < apiMessages.length; i = i + 1) {
+		const msgItem = apiMessages[i]
+		if (msgItem != null) {
+			const msgObj = toJsonObj(msgItem)
+			if (msgObj != null) {
+				const localMsg = convertApiMessageToLocal(msgObj)
+				localMessages.push(localMsg)
+			}
+		}
+	}
+	return localMessages
+}
+
+/**
+ * 合并消息列表并去重（新消息追加到现有列表末尾）
+ * 去重逻辑：
+ * 1. 按 ID 去重
+ * 2. 按内容+发送者+时间戳（前10位）去重，避免同一条消息因 ID 不同而重复
+ */
+export function mergeMessagesWithoutDuplicates(
+	newMessages: Array<any>,
+	existingMessages: Array<any>
+): Array<any> {
+	// 创建现有消息的ID集合
+	const existingIds: Array<string> = []
+	// 创建内容指纹集合（用于检测内容相同但ID不同的消息）
+	const existingFingerprints: Array<string> = []
+	
+	for (let i = 0; i < existingMessages.length; i = i + 1) {
+		const msg = existingMessages[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msg != null && msgId != '') {
+			existingIds.push(msgId)
+		}
+		// 生成内容指纹：senderId + content + 时间戳前10位
+		const senderId = getAnyString(msg, 'senderId')
+		const content = getAnyString(msg, 'content')
+		const createTime = getAnyString(msg, 'createTime')
+		const timePrefix = (createTime.length >= 10) ? createTime.substring(0, 10) : createTime
+		const fingerprint = senderId + '|' + content + '|' + timePrefix
+		existingFingerprints.push(fingerprint)
+	}
+	
+	// 过滤掉重复的新消息
+	const uniqueNewMessages: Array<any> = []
+	const newMsgs = Array.isArray(newMessages) == true ? newMessages : []
+	for (let i = 0; i < newMsgs.length; i = i + 1) {
+		const msg = newMsgs[i]
+		if (msg == null) continue
+		const msgId = getAnyString(msg, 'id')
+		if (msgId == '') continue
+		
+		// 检查 ID 是否重复
+		let foundById = false
+		for (let j = 0; j < existingIds.length; j = j + 1) {
+			if (existingIds[j] == msgId) {
+				foundById = true
+				break
+			}
+		}
+		if (foundById == true) continue
+		
+		// 检查内容指纹是否重复
+		const senderId = getAnyString(msg, 'senderId')
+		const content = getAnyString(msg, 'content')
+		const createTime = getAnyString(msg, 'createTime')
+		const timePrefix = (createTime.length >= 10) ? createTime.substring(0, 10) : createTime
+		const fingerprint = senderId + '|' + content + '|' + timePrefix
+		
+		let foundByFingerprint = false
+		for (let j = 0; j < existingFingerprints.length; j = j + 1) {
+			if (existingFingerprints[j] == fingerprint) {
+				foundByFingerprint = true
+				break
+			}
+		}
+		if (foundByFingerprint == true) {
+			console.log('⏸️ [mergeMessages] 跳过内容重复的消息:', msgId, content)
+			continue
+		}
+		
+		uniqueNewMessages.push(msg)
+		// 添加到已存在集合，避免新消息之间重复
+		existingIds.push(msgId)
+		existingFingerprints.push(fingerprint)
+	}
+	
+	// 合并消息：现有消息 + 不重复的新消息
+	const mergedMessages: Array<any> = []
+	for (let i = 0; i < existingMessages.length; i = i + 1) {
+		mergedMessages.push(existingMessages[i])
+	}
+	for (let i = 0; i < uniqueNewMessages.length; i = i + 1) {
+		mergedMessages.push(uniqueNewMessages[i])
+	}
+	
+	return mergedMessages
+}
+
+/**
+ * 合并并去重消息列表（用于加载更多历史消息，旧消息在前）
+ */
+export function mergeAndDeduplicateMessages(
+	oldMessages: Array<any>,
+	newMessages: Array<any>
+): Array<any> {
+	// 创建消息映射，用于去重
+	const messageIds: Array<string> = []
+	const mergedMessages: Array<any> = []
+	
+	// 先添加旧消息（历史消息）
+	for (let i = 0; i < oldMessages.length; i = i + 1) {
+		const msg = oldMessages[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msg != null && msgId != '') {
+			let found = false
+			for (let j = 0; j < messageIds.length; j = j + 1) {
+				if (messageIds[j] == msgId) {
+					found = true
+					break
+				}
+			}
+			if (found == false) {
+				messageIds.push(msgId)
+				mergedMessages.push(msg)
+			}
+		}
+	}
+	
+	// 再添加新消息（如果ID不存在）
+	for (let i = 0; i < newMessages.length; i = i + 1) {
+		const msg = newMessages[i]
+		const msgId = getAnyString(msg, 'id')
+		if (msg != null && msgId != '') {
+			let found = false
+			for (let j = 0; j < messageIds.length; j = j + 1) {
+				if (messageIds[j] == msgId) {
+					found = true
+					break
+				}
+			}
+			if (found == false) {
+				messageIds.push(msgId)
+				mergedMessages.push(msg)
+			}
+		}
+	}
+	
+	return mergedMessages
+}
+
+/**
+ * 安全设置消息对象的属性（UTS兼容）
+ */
+export function setMessageProperty(msg: any, key: string, value: any): any {
+	if (msg == null || key == null || key == '') return msg
+
+	try {
+		// 使用JSON序列化方式安全设置属性
+		const msgJson = JSON.stringify(msg)
+		if (msgJson == null || msgJson == '') return msg
+
+		const msgObj = JSON.parse(msgJson) as UTSJSONObject
+		// UTSJSONObject 的 set 方法
+		msgObj.set(key, value)
+
+		// 转换回普通对象
+		const resultJson = JSON.stringify(msgObj)
+		const parsedResult = (resultJson != null && resultJson != '') ? JSON.parse(resultJson) : null
+		return (parsedResult != null) ? parsedResult : msg
+	} catch (e) {
+		return msg
+	}
+}
+
+/**
+ * 反转消息列表顺序
+ */
+export function reverseMessages(messages: Array<any>): Array<any> {
+	const reversed: Array<any> = []
+	for (let i = messages.length - 1; i >= 0; i = i - 1) {
+		reversed.push(messages[i])
+	}
+	return reversed
+}

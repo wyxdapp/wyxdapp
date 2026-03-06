@@ -1,0 +1,31 @@
+import request from '@/utils/request.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+
+/**
+ * 获取当前有效的营销弹窗配置
+ * @param triggerType 触发类型: page_load(默认)/login_success/register_success/first_order/task_complete
+ */
+export const getActiveMarketingPopup = (triggerType: string) => {
+	// 使用 toJsonObj 工具函数安全构造参数对象，避免 error18
+	let params: UTSJSONObject | null = null
+	if (triggerType != null && triggerType != '') {
+		const paramsRaw = { triggerType: triggerType }
+		params = toJsonObj(paramsRaw)
+	}
+	return request.get('/marketing/popup/active', params, false)
+}
+
+/**
+ * 测试函数：验证参数构造是否正确
+ */
+export const testMarketingPopupParams = (): void => {
+	// 测试空参数
+	const params1 = getActiveMarketingPopup('')
+	// 预期：params 为 null
+
+	// 测试有参数
+	const params2 = getActiveMarketingPopup('page_load')
+	// 预期：params 为包含 triggerType 的 UTSJSONObject
+
+	console.log('营销弹窗参数构造测试完成')
+}

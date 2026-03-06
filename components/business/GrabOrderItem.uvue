@@ -1,0 +1,885 @@
+﻿<template>
+	<view class="grab-order-list">
+		<!-- 空状态 -->
+		<view v-if="list == null || (Array.isArray(list) == true && (list as Array<any>).length === 0)" class="empty-state">
+			<image 
+				src="https://jiasu.wyxdapp.com/iconimages/order_null_list.png" 
+				mode="aspectFit" 
+				class="empty-img"
+			></image>
+			<text class="empty-text">{{ nullText }}</text>
+		</view>
+		
+		<!-- 抢单列表 -->
+		<view v-else class="list">
+			<view 
+				v-for="(item, index) in (list as Array<any>)" 
+				:key="getItemKey(item, index)"
+				class="grab-item"
+				@click="handleItemClick(item)"
+			>
+				<!-- 用户信息 -->
+				<view class="item-header">
+					<view class="user-info" @click.stop="handleUserClick(item)">
+						<Avatar
+							:url="getUserAvatar(item)"
+							:userId="getUserId(item)"
+							:customSize="56"
+							clickMode="none"
+						/>
+						<NicknameWithBadges
+							:nickname="getUserNickname(item)"
+							:vipType="''"
+							:giftLevel="0"
+							size="small"
+						/>
+					</view>
+					<text class="status" :class="getStatusClass(item)">{{ getStatusText(item) }}</text>
+				</view>
+				
+				<!-- 分割线 -->
+				<view class="divider"></view>
+				
+				<!-- 订单编号 -->
+				<view class="order-no-row">
+					<text class="label">订单编号：</text>
+					<text class="value">{{ getOrderNo(item) }}</text>
+					<view class="copy-btn" @click.stop="handleCopyOrderNo(item)">
+						<text class="copy-text">复制</text>
+					</view>
+				</view>
+				
+				<!-- 订单标题和价格 -->
+				<view class="title-row">
+					<text class="title">{{ getOrderTitle(item) }}</text>
+					<view class="price-box">
+						<text class="price-symbol">￥</text>
+						<text class="price">{{ getOrderPrice(item) }}</text>
+					</view>
+				</view>
+				
+				<!-- 出发时间 -->
+				<view class="time-row">
+					<image 
+						class="time-icon" 
+						src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png" 
+						mode="aspectFit"
+					></image>
+					<text class="time-label">出发时间：</text>
+					<text class="time-value">{{ getTravelDate(item) }}</text>
+				</view>
+				
+				<!-- 分割线 -->
+				<view class="divider"></view>
+				
+				<!-- 操作按钮 -->
+				<view class="actions">
+					<view class="btn gray-btn" @click.stop="handleChat(item)">
+						<text class="gray-btn-text">聊天</text>
+					</view>
+					<view 
+						v-if="canGrab(item)" 
+						class="btn blue-btn" 
+						@click.stop="handleGrab(item)"
+					>
+						<text class="blue-btn-text">抢单</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+
+// 订单项接口定义（完全匹配后端返回字段）
+interface GrabOrderItem {
+	orderKid: string           // 订单ID
+	shortKid?: string          // 短订单号
+	touristKid?: string        // 游客ID（后端返回字段名）
+	userKid?: string           // 用户ID（兼容字段）
+	userImg?: string           // 用户头像
+	userNickname?: string      // 用户昵称
+	orderTitle?: string        // 订单标题
+	totalMoney?: string | number  // 订单金额
+	travelDate?: string        // 出发时间
+	travelTotalTime?: string   // 旅行总时长
+	orderStatu?: number        // 订单状态
+	refundStatu?: number       // 退款状态
+	orderType?: number         // 订单类型
+	orderLocation?: string     // 订单地址
+	lineKid?: string           // 线路 ID
+	guideKid?: string          // 导游ID
+	identityLevel?: number     // 认证级别
+	createTime?: string        // 创建时间
+}
+
+class GrabOrderItemClass implements GrabOrderItem {
+	orderKid: string
+	shortKid?: string
+	touristKid?: string
+	userKid?: string
+	userImg?: string
+	userNickname?: string
+	orderTitle?: string
+	totalMoney?: string | number
+	travelDate?: string
+	travelTotalTime?: string
+	orderStatu?: number
+	refundStatu?: number
+	orderType?: number
+	orderLocation?: string
+	lineKid?: string
+	guideKid?: string
+	identityLevel?: number
+	createTime?: string
+	
+	constructor(
+		orderKid: string,
+		shortKid?: string,
+		touristKid?: string,
+		userKid?: string,
+		userImg?: string,
+		userNickname?: string,
+		orderTitle?: string,
+		totalMoney?: string | number,
+		travelDate?: string,
+		travelTotalTime?: string,
+		orderStatu?: number,
+		refundStatu?: number,
+		orderType?: number,
+		orderLocation?: string,
+		lineKid?: string,
+		guideKid?: string,
+		identityLevel?: number,
+		createTime?: string
+	) {
+		this.orderKid = orderKid
+		this.shortKid = shortKid
+		this.touristKid = touristKid
+		this.userKid = userKid
+		this.userImg = userImg
+		this.userNickname = userNickname
+		this.orderTitle = orderTitle
+		this.totalMoney = totalMoney
+		this.travelDate = travelDate
+		this.travelTotalTime = travelTotalTime
+		this.orderStatu = orderStatu
+		this.refundStatu = refundStatu
+		this.orderType = orderType
+		this.orderLocation = orderLocation
+		this.lineKid = lineKid
+		this.guideKid = guideKid
+		this.identityLevel = identityLevel
+		this.createTime = createTime
+	}
+}
+
+// 使用运行时 prop 声明避免编译器问题
+const props = defineProps({
+	list: { type: Array, default: () => [] },
+	nullText: { type: String, default: '暂无数据' }
+})
+
+const emit = defineEmits<{
+	change: [type: string, item: GrabOrderItem]
+	userClick: [item: GrabOrderItem]
+	itemClick: [item: GrabOrderItem]
+}>()
+
+// 简化版用户状态（避免直接依赖外部 store 引发编译问题）
+const userStore = {
+	isLogin: false,
+	userInfo: null as any
+}
+
+
+// 辅助方法：安全访问 item 属性
+const getItemKey = (item: any, index: number): string => {
+	if (item == null) return index.toString()
+	try {
+		const obj = item as GrabOrderItem
+		const orderKid = obj.orderKid
+		if (orderKid != null && orderKid != '') {
+			return orderKid.toString()
+		}
+	} catch (e) {}
+	return index.toString()
+}
+
+const getUserAvatar = (item: any): string => {
+	if (item == null) return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	try {
+		const obj = item as GrabOrderItem
+		const userImg = obj.userImg
+		if (userImg != null && userImg != '') {
+			return userImg.toString()
+		}
+	} catch (e) {}
+	return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+}
+
+const getUserNickname = (item: any): string => {
+	if (item == null) return '用户'
+	try {
+		const obj = item as GrabOrderItem
+		const userNickname = obj.userNickname
+		if (userNickname != null && userNickname != '') {
+			return userNickname.toString()
+		}
+	} catch (e) {}
+	return '用户'
+}
+
+const getUserId = (item: any): string => {
+	if (item == null) return ''
+	try {
+		const obj = item as GrabOrderItem
+		const touristKid = obj.touristKid
+		if (touristKid != null && touristKid != '') {
+			return touristKid.toString()
+		}
+		const userKid = obj.userKid
+		if (userKid != null && userKid != '') {
+			return userKid.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getOrderNo = (item: any): string => {
+	if (item == null) return ''
+	try {
+		const obj = item as GrabOrderItem
+		const shortKid = obj.shortKid
+		if (shortKid != null && shortKid != '') {
+			return shortKid.toString()
+		}
+		const orderKid = obj.orderKid
+		if (orderKid != null && orderKid != '') {
+			return orderKid.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getOrderTitle = (item: any): string => {
+	if (item == null) return '订单详情'
+	try {
+		const obj = item as GrabOrderItem
+		const title = obj.orderTitle
+		if (title != null && title != '') {
+			return title.toString()
+		}
+	} catch (e) {}
+	return '订单详情'
+}
+
+const getOrderPrice = (item: any): string => {
+	if (item == null) return '0'
+	try {
+		const obj = item as GrabOrderItem
+		const totalMoney = obj.totalMoney
+		if (totalMoney != null) {
+			return totalMoney.toString()
+		}
+	} catch (e) {}
+	return '0'
+}
+
+const getTravelDate = (item: any): string => {
+	if (item == null) return '待定'
+	try {
+		const obj = item as GrabOrderItem
+		const travelDate = obj.travelDate
+		if (travelDate != null && travelDate != '') {
+			return travelDate.toString()
+		}
+	} catch (e) {}
+	return '待定'
+}
+
+const canGrab = (item: any): boolean => {
+	if (item == null) return false
+	try {
+		const obj = item as GrabOrderItem
+		const orderStatuValue = obj.orderStatu
+		if (orderStatuValue != null) {
+			const orderStatu = parseInt(orderStatuValue.toString())
+			return orderStatu === 5
+		}
+	} catch (e) {}
+	return false
+}
+
+// 复制订单号 - 先定义 handleCopy，供 handleCopyOrderNo 调用
+const handleCopy = (text: string) => {
+	uni.setClipboardData({
+		data: text,
+		success: () => {
+			uni.showToast({
+				title: '复制成功',
+				icon: 'none'
+			})
+		},
+		fail: () => {
+			uni.showToast({
+				title: '复制失败',
+				icon: 'none'
+			})
+		}
+	})
+}
+
+const handleCopyOrderNo = (item: any) => {
+	const orderNo = getOrderNo(item)
+	if (orderNo != null && orderNo != '') {
+		handleCopy(orderNo)
+	}
+}
+
+// 获取订单状态文本
+const getStatusText = (item: any): string => {
+	if (item == null) return '状态有误'
+	try {
+		const obj = item as GrabOrderItem
+		const orderStatuValue = obj.orderStatu
+		const refundStatuValue = obj.refundStatu
+		
+		const orderStatu = (orderStatuValue != null) ? parseInt(orderStatuValue.toString()) : 0
+		const refundStatu = (refundStatuValue != null) ? parseInt(refundStatuValue.toString()) : 0
+		
+		if (orderStatu === 5) return '待抢单'
+		if (orderStatu === 6) return '待抢单·已付款'
+		if (orderStatu === 7) return '待抢单·已退款'
+		if (orderStatu === 10) return '待付款'
+		if (orderStatu === 20) return '付款中'
+		if (orderStatu === 30) return '支付超时'
+		if (orderStatu === 40) return '待确认'
+		if (orderStatu === 50) return '进行中'
+		if (orderStatu === 60) return '待评价'
+		if (orderStatu === 70) return '已评价'
+		if (orderStatu === 80 && refundStatu === 10) return '退款中'
+		if (orderStatu === 80 && refundStatu === 20) return '退款成功'
+		if (orderStatu === 80 && refundStatu === 30) return '退款失败'
+	} catch (e) {}
+	return '状态缺失'
+}
+
+// 获取状态样式类
+const getStatusClass = (item: any): string => {
+	if (item == null) return ''
+	try {
+		const obj = item as GrabOrderItem
+		const orderStatuValue = obj.orderStatu
+		const refundStatuValue = obj.refundStatu
+		
+		const orderStatu = (orderStatuValue != null) ? parseInt(orderStatuValue.toString()) : 0
+		const refundStatu = (refundStatuValue != null) ? parseInt(refundStatuValue.toString()) : 0
+		
+		// 橙色状态
+		if (orderStatu === 5 || orderStatu === 6 || orderStatu === 10 || orderStatu === 20 || orderStatu === 40 || orderStatu === 50 || orderStatu === 60) {
+			return 'status-orange'
+		}
+		if (orderStatu === 7) {
+			return 'status-gray'
+		}
+		if (orderStatu === 80 && refundStatu === 10) {
+			return 'status-orange'
+		}
+		
+		// 绿色状态
+		if (orderStatu === 70) {
+			return 'status-green'
+		}
+		if (orderStatu === 80 && refundStatu === 20) {
+			return 'status-green'
+		}
+		
+		// 灰色状态
+		if (orderStatu === 30) {
+			return 'status-gray'
+		}
+		if (orderStatu === 80 && refundStatu === 30) {
+			return 'status-gray'
+		}
+	} catch (e) {}
+	
+	return ''
+}
+
+// 构建 GrabOrderItem 对象 - 先定义，供其他函数调用
+const buildGrabOrderItem = (item: any): GrabOrderItem => {
+	const orderKidValue = getItemKey(item, 0)
+	
+	// 安全获取可选字段
+	const getShortKid = (): string | null => {
+		const obj = item as GrabOrderItem
+		const shortKid = obj.shortKid
+		return (shortKid != null && shortKid != '') ? shortKid.toString() : null
+	}
+	const getTouristKid = (): string | null => {
+		const obj = item as GrabOrderItem
+		const touristKid = obj.touristKid
+		return (touristKid != null && touristKid != '') ? touristKid.toString() : null
+	}
+	const getUserKid = (): string | null => {
+		const obj = item as GrabOrderItem
+		const userKid = obj.userKid
+		return (userKid != null && userKid != '') ? userKid.toString() : null
+	}
+	const getUserImg = (): string | null => {
+		const obj = item as GrabOrderItem
+		const userImg = obj.userImg
+		return (userImg != null && userImg != '') ? userImg.toString() : null
+	}
+	const getUserNickname = (): string | null => {
+		const obj = item as GrabOrderItem
+		const userNickname = obj.userNickname
+		return (userNickname != null && userNickname != '') ? userNickname.toString() : null
+	}
+	const getOrderTitle = (): string | null => {
+		const obj = item as GrabOrderItem
+		const orderTitle = obj.orderTitle
+		return (orderTitle != null && orderTitle != '') ? orderTitle.toString() : null
+	}
+	const getTotalMoney = (): string | number | null => {
+		const obj = item as GrabOrderItem
+		const totalMoney = obj.totalMoney
+		if (totalMoney != null) {
+			const moneyStr = totalMoney.toString()
+			const moneyNum = parseFloat(moneyStr)
+			if (!isNaN(moneyNum)) {
+				return moneyNum
+			}
+			return moneyStr
+		}
+		return null
+	}
+	const getTravelDate = (): string | null => {
+		const obj = item as GrabOrderItem
+		const travelDate = obj.travelDate
+		return (travelDate != null && travelDate != '') ? travelDate.toString() : null
+	}
+	const getTravelTotalTime = (): string | null => {
+		const obj = item as GrabOrderItem
+		const travelTotalTime = obj.travelTotalTime
+		return (travelTotalTime != null && travelTotalTime != '') ? travelTotalTime.toString() : null
+	}
+	const getOrderStatu = (): number | null => {
+		const obj = item as GrabOrderItem
+		const orderStatu = obj.orderStatu
+		return (orderStatu != null) ? parseInt(orderStatu.toString()) : null
+	}
+	const getRefundStatu = (): number | null => {
+		const obj = item as GrabOrderItem
+		const refundStatu = obj.refundStatu
+		return (refundStatu != null) ? parseInt(refundStatu.toString()) : null
+	}
+	const getOrderType = (): number | null => {
+		const obj = item as GrabOrderItem
+		const orderType = obj.orderType
+		return (orderType != null) ? parseInt(orderType.toString()) : null
+	}
+	const getOrderLocation = (): string | null => {
+		const obj = item as GrabOrderItem
+		const orderLocation = obj.orderLocation
+		return (orderLocation != null && orderLocation != '') ? orderLocation.toString() : null
+	}
+	const getLineKid = (): string | null => {
+		const obj = item as GrabOrderItem
+		const lineKid = obj.lineKid
+		return (lineKid != null && lineKid != '') ? lineKid.toString() : null
+	}
+	const getGuideKid = (): string | null => {
+		const obj = item as GrabOrderItem
+		const guideKid = obj.guideKid
+		return (guideKid != null && guideKid != '') ? guideKid.toString() : null
+	}
+	const getIdentityLevel = (): number | null => {
+		const obj = item as GrabOrderItem
+		const identityLevel = obj.identityLevel
+		return (identityLevel != null) ? parseInt(identityLevel.toString()) : null
+	}
+	const getCreateTime = (): string | null => {
+		const obj = item as GrabOrderItem
+		const createTime = obj.createTime
+		return (createTime != null && createTime != '') ? createTime.toString() : null
+	}
+	
+	// 构建对象 - 使用对象字面量一次性构建（UTS 不支持动态设置属性和 undefined）
+	// 对于可选字段，如果值为 null，使用空字符串或 0 作为默认值
+	const shortKidVal = getShortKid()
+	const touristKidVal = getTouristKid()
+	const userKidVal = getUserKid()
+	const userImgVal = getUserImg()
+	const userNicknameVal = getUserNickname()
+	const orderTitleVal = getOrderTitle()
+	const totalMoneyVal = getTotalMoney()
+	const travelDateVal = getTravelDate()
+	const travelTotalTimeVal = getTravelTotalTime()
+	const orderStatuVal = getOrderStatu()
+	const refundStatuVal = getRefundStatu()
+	const orderTypeVal = getOrderType()
+	const orderLocationVal = getOrderLocation()
+	const lineKidVal = getLineKid()
+	const guideKidVal = getGuideKid()
+	const identityLevelVal = getIdentityLevel()
+	const createTimeVal = getCreateTime()
+	
+	// 构建完整对象字面量 - 所有字段都设置（可选字段使用 null 或默认值）
+	const routeItem = new GrabOrderItemClass(
+		orderKidValue,
+		(shortKidVal != null) ? shortKidVal : null,
+		(touristKidVal != null) ? touristKidVal : null,
+		(userKidVal != null) ? userKidVal : null,
+		(userImgVal != null) ? userImgVal : null,
+		(userNicknameVal != null) ? userNicknameVal : null,
+		(orderTitleVal != null) ? orderTitleVal : null,
+		(totalMoneyVal != null) ? totalMoneyVal : null,
+		(travelDateVal != null) ? travelDateVal : null,
+		(travelTotalTimeVal != null) ? travelTotalTimeVal : null,
+		(orderStatuVal != null) ? orderStatuVal : null,
+		(refundStatuVal != null) ? refundStatuVal : null,
+		(orderTypeVal != null) ? orderTypeVal : null,
+		(orderLocationVal != null) ? orderLocationVal : null,
+		(lineKidVal != null) ? lineKidVal : null,
+		(guideKidVal != null) ? guideKidVal : null,
+		(identityLevelVal != null) ? identityLevelVal : null,
+		(createTimeVal != null) ? createTimeVal : null
+	)
+	
+	return routeItem
+}
+
+// 点击用户头像
+const handleUserClick = (item: any) => {
+	if (item == null) return
+	try {
+		// 优先使用 touristKid（后端返回字段），其次使用 userKid（兼容字段）
+		const obj = item as GrabOrderItem
+		const touristKid = obj.touristKid
+		const userKid = obj.userKid
+		let userId = ''
+		if (touristKid != null && touristKid != '') {
+			userId = touristKid.toString()
+		} else if (userKid != null && userKid != '') {
+			userId = userKid.toString()
+		}
+		if (userId != null && userId != '') {
+			const routeItem: GrabOrderItem = buildGrabOrderItem(item)
+			emit('userClick', routeItem)
+			uni.navigateTo({
+				url: `/pagesUser/persionInfo/index?id=${userId}`
+			})
+		} else {
+			console.warn('用户ID不存在:', item)
+		}
+	} catch (e) {}
+}
+
+// 点击订单项
+const handleItemClick = (item: any) => {
+	if (item == null) return
+	try {
+		const routeItem: GrabOrderItem = buildGrabOrderItem(item)
+		emit('itemClick', routeItem)
+		const obj = item as GrabOrderItem
+		const orderKid = obj.orderKid
+		if (orderKid != null && orderKid != '') {
+			uni.navigateTo({
+				url: `/pagesTrade/orderDetails/index?orderKid=${orderKid.toString()}&type=1`
+			})
+		}
+	} catch (e) {}
+}
+
+// 聊天
+const handleChat = (item: any) => {
+	if (item == null) return
+	try {
+		// 优先使用 touristKid（后端返回字段），其次使用 userKid（兼容字段）
+		const obj = item as GrabOrderItem
+		const touristKid = obj.touristKid
+		const userKid = obj.userKid
+		let userId = ''
+		if (touristKid != null && touristKid != '') {
+			userId = touristKid.toString()
+		} else if (userKid != null && userKid != '') {
+			userId = userKid.toString()
+		}
+		if (userId == null || userId == '') {
+			uni.showToast({
+				title: '无法获取用户信息',
+				icon: 'none'
+			})
+			console.warn('用户ID不存在:', item)
+			return
+		}
+		
+		uni.navigateTo({
+			url: `/pagesTrade/news/detail?targetUserId=${userId.toString()}`
+		})
+	} catch (e) {}
+}
+
+// 抢单
+const handleGrab = (item: any) => {
+	if (item == null) return
+	try {
+		// 检查登录状态（使用 store 的 isLogin 状态）
+		const isLogin = userStore.isLogin == true
+		
+		if (isLogin == false) {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+			return
+		}
+		
+		uni.showModal({
+			title: '提示',
+			content: '是否确认抢夺该订单?',
+			success: (res) => {
+				if (res.confirm == true) {
+					// 触发抢单事件
+					const routeItem: GrabOrderItem = buildGrabOrderItem(item)
+					emit('change', 'grab', routeItem)
+				}
+			}
+		})
+	} catch (e) {}
+}
+</script>
+
+<style scoped>
+.grab-order-list {
+	padding: 0 24rpx 120rpx 24rpx;  /* 底部添加 120rpx 内边距，避免被 TabBar 遮挡 */
+}
+
+/* 空状态 */
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 120rpx 0;
+}
+
+.empty-img {
+	width: 198rpx;
+	height: 198rpx;
+	margin-bottom: 32rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+/* 列表 */
+.list {
+	display: flex;
+	flex-direction: column;
+}
+
+.grab-item {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 28rpx;
+	margin-top: 20rpx;
+	padding-bottom: 32rpx;
+}
+
+/* 头部 - 用户信息 */
+.item-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-bottom: 32rpx;
+}
+
+.user-info {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.nickname {
+	margin-left: 16rpx;
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.status {
+	font-size: 28rpx;
+}
+
+.status-orange {
+	color: #FF9800;
+}
+
+.status-green {
+	color: #4CAF50;
+}
+
+.status-gray {
+	color: #666666;
+}
+
+/* 分割线 */
+.divider {
+	width: 100%;
+	height: 2rpx;
+	background-color: #F5F5F5;
+}
+
+/* 订单编号 */
+.order-no-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-top: 32rpx;
+}
+
+.label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.value {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.copy-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 96rpx;
+	height: 36rpx;
+	border-radius: 18rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+	margin-left: 32rpx;
+}
+
+.copy-text {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+/* 标题和价格 */
+.title-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: 32rpx;
+}
+
+.title {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+	margin-right: 20rpx;
+}
+
+.price-box {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.price-symbol {
+	font-size: 24rpx;
+	color: #FF9800;
+	margin-top: 6rpx;
+	margin-left: 6rpx;
+}
+
+.price {
+	font-size: 32rpx;
+	color: #FF9800;
+	font-weight: bold;
+}
+
+/* 出发时间 */
+.time-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-top: 24rpx;
+}
+
+.time-icon {
+	width: 40rpx;
+	height: 34rpx;
+	margin-bottom: 6rpx;
+}
+
+.time-label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-left: 16rpx;
+}
+
+.time-value {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+/* 操作按钮 */
+.actions {
+	display: flex;
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	margin-top: 30rpx;
+}
+
+.btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 168rpx;
+	height: 60rpx;
+	border-radius: 30rpx;
+	margin-left: 24rpx;
+}
+
+.btn-text {
+	font-size: 28rpx;
+}
+
+.gray-btn {
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #CFCFCF;
+	background-color: transparent;
+}
+
+.gray-btn-text {
+	color: #666666;
+}
+
+.blue-btn {
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+	background-color: #37B1F2;
+}
+
+.blue-btn-text {
+	color: #FFFFFF;
+}
+</style>

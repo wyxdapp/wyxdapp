@@ -1,0 +1,1489 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<!-- 背景图片 -->
+		<image 
+			:src="cosOrderBgUrl" 
+			class="header-bg"
+			mode="aspectFill"
+		/>
+		
+		<!-- Tab栏 -->
+		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabItems" 
+					:key="index"
+					class="tab-item" 
+					@click="onTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': activeTabIndex == index }">{{ tab.label }}</text>
+					<view v-if="activeTabIndex == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 滚动内容区 -->
+		<scroll-view 
+			scroll-y
+			:show-scrollbar="false"
+			class="scroll-view"
+			:style="{ height: contentHeight + 'px' }"
+			@scrolltolower="loadMore"
+			refresher-enabled
+			:refresher-triggered="refreshing"
+			@refresherrefresh="onRefresh"
+		>
+			<view v-if="loading == true && comments.length == 0" class="loading-container">
+				<view class="skeleton-item modern-skeleton">
+					<view class="skeleton-avatar"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+						<view class="skeleton-text short"></view>
+					</view>
+				</view>
+				<view class="skeleton-item modern-skeleton">
+					<view class="skeleton-avatar"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+						<view class="skeleton-text short"></view>
+					</view>
+				</view>
+			</view>
+			<view v-else-if="error == true && comments.length == 0" class="empty-container">
+				<uni-icons type="info" size="60" color="#999999"></uni-icons>
+				<text class="empty-title">加载失败</text>
+				<text class="empty-desc">网络异常，请稍后重试</text>
+				<view class="retry-btn modern-btn" @click="reload">
+					<text class="retry-text">重新加载</text>
+				</view>
+			</view>
+			<ListStatus 
+				v-else-if="comments.length == 0" 
+				status="empty" 
+				emptyText="暂无相关评论"
+			/>
+			
+			<view v-else>
+				<view 
+					v-for="item in comments" 
+					:key="item.commentKid" 
+					class="comment-card modern-card"
+				>
+					<!-- 评论主体内容 -->
+					<view class="comment-main" @click="gotoDetail(item)">
+						<view class="comment-header">
+							<Avatar 
+								:url="item.image"
+								size="small"
+								:customSize="48"
+								clickMode="none"
+							/>
+							<view class="user-info">
+								<view class="user-name-row">
+									<text class="user-name">{{ item.nickname }}</text>
+									<text class="comment-type" v-if="item.commentType">{{ getCommentTypeText(item.commentType) }}</text>
+								</view>
+								<text class="comment-time">{{ formatTime(item.commentTime) }}</text>
+							</view>
+						</view>
+						<view class="comment-content">
+							<text class="content-text">{{ item.commentContent }}</text>
+						</view>
+						
+						<!-- 评价扩展信息（仅type=1） -->
+						<view v-if="item.commentType == 1 && (item.starLevel > 0 || item.evaluateContent != '' || item.evaluateImages.length > 0)" class="evaluate-card">
+							<!-- 星级评分 -->
+							<view v-if="item.starLevel > 0" class="evaluate-star-row">
+								<text v-if="item.starLevel >= 1" class="star-icon">⭐</text>
+								<text v-if="item.starLevel >= 2" class="star-icon">⭐</text>
+								<text v-if="item.starLevel >= 3" class="star-icon">⭐</text>
+								<text v-if="item.starLevel >= 4" class="star-icon">⭐</text>
+								<text v-if="item.starLevel >= 5" class="star-icon">⭐</text>
+								<text class="star-level-text">{{ item.starLevel }}星</text>
+							</view>
+							<!-- 评价文字内容 -->
+							<view v-if="item.evaluateContent != ''" class="evaluate-text-box">
+								<text class="evaluate-text">{{ item.evaluateContent }}</text>
+							</view>
+							<!-- 评价图片 -->
+							<view v-if="item.evaluateImages.length > 0" class="evaluate-images-grid">
+								<image 
+									v-for="(imgUrl, imgIdx) in item.evaluateImages" 
+									:key="imgIdx"
+									:src="imgUrl"
+									class="evaluate-img"
+									mode="aspectFill"
+									@click.stop="previewEvaluateImage(item.evaluateImages, imgIdx)"
+								/>
+							</view>
+						</view>
+					</view>
+					
+					<!-- 操作按钮区域 -->
+					<view class="comment-actions">
+						<view class="action-btn" @click.stop="openReply(item)">
+							<uni-icons type="chat" size="14" color="#666666"></uni-icons>
+							<text class="action-text">回复</text>
+						</view>
+						<view class="action-btn" @click.stop="toggleReplies(item)">
+							<uni-icons :type="item._showReplies == true ? 'up' : 'down'" size="14" color="#666666"></uni-icons>
+							<text class="action-text">{{ item._showReplies == true ? '收起' : '查看回复' }}</text>
+						</view>
+						<view class="action-btn danger" @click.stop="deleteComment(item)">
+							<uni-icons type="trash" size="14" color="#dc3545"></uni-icons>
+							<text class="action-text">删除</text>
+						</view>
+					</view>
+					<view v-if="item._showReplies == true" class="replies mt-16">
+						<view v-if="item._repliesLoading == true" class="reply-loading">
+							<view class="skeleton-reply">
+								<view class="skeleton-avatar small"></view>
+								<view class="skeleton-content">
+									<view class="skeleton-title short"></view>
+									<view class="skeleton-text"></view>
+								</view>
+							</view>
+						</view>
+						<view v-else>
+							<view v-for="r in item._replies" :key="r.kid" class="reply mb-16">
+								<Avatar 
+									:url="r.image"
+									size="small"
+									:customSize="64"
+									clickMode="none"
+								/>
+								<view class="flex-1 ml-12">
+									<view class="flex-row align-center space-between">
+										<text class="fs-md color-title font-bold">{{ r.nickname }}</text>
+										<text class="fs-sm gray">{{ r.replyTime != '' ? r.replyTime : r.publishTime }}</text>
+									</view>
+									<text class="fs-md color-text mt-8">{{ r.content }}</text>
+									<view class="mt-8">
+										<view class="op-btn small danger" @click.stop="deleteReply(item, r)">
+											<text class="op-text">删除</text>
+										</view>
+									</view>
+								</view>
+							</view>
+							<view v-if="item._replies.length == 0" class="r-empty">
+								<text class="empty-text small">暂无回复</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+			<view class="ptb-32" v-if="comments.length >= 5">
+				<text class="load-text">{{ loadMoreText }}</text>
+			</view>
+		</scroll-view>
+		<view v-if="replyDialogShow == true" class="modal-mask" @click="closeReply">
+			<view class="modal-content" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">回复</text>
+					<view class="modal-close" @click="closeReply">
+						<uni-icons type="close" size="20" color="#999999"></uni-icons>
+					</view>
+				</view>
+				<textarea 
+					v-model="replyDialogText" 
+					class="reply-input"
+					placeholder="请输入回复内容（最多500字）"
+					:maxlength="500"
+				/>
+				<view class="modal-footer">
+					<view class="modal-btn cancel" @click="closeReply">
+						<text class="btn-text">取消</text>
+					</view>
+					<view class="modal-btn confirm" @click="submitReply">
+						<text class="btn-text">确定</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { getUserId } from '@/stores/user.uts'
+import * as commentApi from '@/common/services/commentService.uts'
+import config from '@/utils/config'
+import { RADIX_HEX } from '@/common/config/generatorConfig.uts'
+import request from '@/utils/request'
+import { formatRelativeTime } from '@/common/utils/dateUtils.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+
+// ==================== 布局相关 ====================
+// 头部高度（状态栏 + Tab栏）
+const headerHeight = ref<number>(0)
+// 内容区域高度
+const contentHeight = ref<number>(0)
+
+// 初始化页面布局
+const initPageLayout = () => {
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + Tab栏约 90rpx ≈ 45px）
+	headerHeight.value = pageStatusBarHeight.value + 45
+	
+	// 计算内容区域高度
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+	
+	console.log('[Comment] 布局初始化:', {
+		statusBarHeight: pageStatusBarHeight.value,
+		headerHeight: headerHeight.value,
+		contentHeight: contentHeight.value
+	})
+}
+
+// ==================== 辅助函数 ====================
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+
+// COS 图片 URL
+const cosOrderBgUrl = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_bg.png'
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// ==================== Tab 配置 ====================
+class TabItemData {
+	label: string = ''
+	value: string = ''
+	constructor(label: string, value: string) {
+		this.label = label
+		this.value = value
+	}
+}
+
+// ==================== 评论数据类 ====================
+class ReplyItemData {
+	kid: string = ''
+	image: string = ''
+	nickname: string = ''
+	content: string = ''
+	replyTime: string = ''
+	publishTime: string = ''
+	constructor() {}
+}
+
+class CommentItemData {
+	commentKid: string = ''
+	commentContent: string = ''
+	commentTime: string = ''
+	nickname: string = ''
+	image: string = ''
+	targetKid: string = ''
+	moduleType: number = 0
+	commentType: number = 0
+	starLevel: number = 0
+	evaluateContent: string = ''
+	evaluateImages: Array<string> = []
+	_showReplies: boolean = false
+	_repliesLoading: boolean = false
+	_replies: Array<ReplyItemData> = []
+	constructor() {}
+}
+
+const tabItems = ref<Array<TabItemData>>([
+	new TabItemData('全部', 'all'),
+	new TabItemData('评价', 'evaluate'),
+	new TabItemData('动态', 'dynamic'),
+	new TabItemData('点赞', 'like')
+])
+const activeTabIndex = ref<number>(0)
+
+// 获取当前Tab的value
+const getCurrentTabValue = (): string => {
+	const idx = activeTabIndex.value
+	const items = tabItems.value
+	if (idx >= 0 && idx < items.length) {
+		return items[idx].value
+	}
+	return 'all'
+}
+
+// 计算当前Tab类型
+const currentTabType = computed((): number | null => {
+	const tabValue = getCurrentTabValue()
+	// 转换为后端API需要的type参数
+	if (tabValue == 'evaluate') {
+		return 1  // 订单评价
+	} else if (tabValue == 'dynamic') {
+		return 2   // 动态评论
+	} else if (tabValue == 'like') {
+		return 3      // 点赞记录
+	}
+	return null       // 全部
+})
+
+// 状态
+const comments = ref<Array<CommentItemData>>([])
+const pageNumber = ref<number>(1)
+const pageSize = ref<number>(10)
+const hasMore = ref<boolean>(true)
+const loading = ref<boolean>(false)
+const loadingMore = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const error = ref<boolean>(false)
+const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
+
+// 回复弹窗
+const replyDialogShow = ref<boolean>(false)
+const replyDialogText = ref<string>('')
+const replyDialogComment = ref<CommentItemData | null>(null)
+
+// 计算属性
+const userKid = computed((): string => {
+	return getUserId()
+})
+
+const loadMoreText = computed((): string => {
+	if (loadingMore.value == true) {
+		return 'loading'
+	}
+	return 'loadmore'
+})
+
+// ==================== 方法定义（必须在生命周期之前）====================
+
+// 加载评论（必须在 onMounted 之前定义）
+const loadComments = async (refresh: boolean) => {
+	if (loading.value == true || loadingMore.value == true) return
+	if (refresh == true) {
+		pageNumber.value = 1
+		hasMore.value = true
+		comments.value = []
+		error.value = false
+	}
+	if (hasMore.value == false) return
+	if (refresh == true) {
+		loading.value = true
+	} else {
+		loadingMore.value = true
+	}
+	try {
+		const kid = userKid.value
+		if (kid == '') {
+			throw new Error('用户未登录')
+		}
+		// 🎯 使用新的统一API接口
+		const listParams = {
+			userKid: kid,
+			type: currentTabType.value,
+			page: pageNumber.value,
+			size: pageSize.value
+		} as UTSJSONObject
+		const res = await commentApi.getMyList(listParams)
+		const mapped: Array<CommentItemData> = []
+		const resObj = toJsonObj(res)
+		if (resObj != null) {
+			const itemsVal = resObj.get('items')
+			if (itemsVal != null && Array.isArray(itemsVal) == true) {
+				const itemsArr = itemsVal as Array<UTSJSONObject>
+				for (let i = 0; i < itemsArr.length; i = i + 1) {
+					const row = itemsArr[i]
+					try {
+						const rowObj = toJsonObj(row)
+						if (rowObj == null) continue
+						
+						const userVal = rowObj.get('user')
+						const userObj = toJsonObj(userVal)
+						const targetVal = rowObj.get('target')
+						const targetObj = toJsonObj(targetVal)
+						
+						const nicknameVal = getObjString(userObj, 'nickname')
+						const imageVal = getObjString(userObj, 'avatar')
+						const targetKidVal = getObjString(targetObj, 'kid')
+						const moduleTypeVal = getObjNumber(targetObj, 'type')
+						const commentTypeVal = getObjNumber(rowObj, 'type')
+						
+						const commentItem = new CommentItemData()
+						commentItem.commentKid = getObjString(rowObj, 'commentKid')
+						commentItem.commentContent = getObjString(rowObj, 'content')
+						commentItem.commentTime = getObjString(rowObj, 'time')
+						commentItem.nickname = nicknameVal
+						commentItem.image = imageVal
+						commentItem.targetKid = targetKidVal
+						commentItem.moduleType = moduleTypeVal
+						commentItem.commentType = commentTypeVal
+						commentItem._showReplies = false
+						commentItem._repliesLoading = false
+						commentItem._replies = []
+						
+						// 解析评价扩展字段（type=1时有值）
+						commentItem.starLevel = getObjNumber(rowObj, 'starLevel')
+						commentItem.evaluateContent = getObjString(rowObj, 'commentContent')
+						const imagesStr = getObjString(rowObj, 'images')
+						if (imagesStr != '') {
+							const imgParts = imagesStr.split(',')
+							const imgArr: Array<string> = []
+							for (let k = 0; k < imgParts.length; k = k + 1) {
+								const imgUrl = imgParts[k].trim()
+								if (imgUrl != '') {
+									imgArr.push(imgUrl)
+								}
+							}
+							commentItem.evaluateImages = imgArr
+						}
+						
+						// 如果starLevel为0但content包含星级信息，从content中解析
+						if (commentItem.starLevel == 0 && commentTypeVal == 1) {
+							const contentStr = commentItem.commentContent
+							const starIdx = contentStr.indexOf('给了你')
+							const starEndIdx = contentStr.indexOf('星评价')
+							if (starIdx >= 0 && starEndIdx > starIdx) {
+								const starStr = contentStr.substring(starIdx + 3, starEndIdx)
+								const parsedStar = parseInt(starStr)
+								if (isNaN(parsedStar) == false && parsedStar >= 1 && parsedStar <= 5) {
+									commentItem.starLevel = parsedStar
+								}
+							}
+						}
+						
+						mapped.push(commentItem)
+					} catch (e) {}
+				}
+			}
+		}
+		if (refresh == true) {
+			comments.value = mapped
+		} else {
+			const currentList = comments.value
+			for (let j = 0; j < mapped.length; j = j + 1) {
+				currentList.push(mapped[j])
+			}
+			comments.value = currentList
+		}
+		pageNumber.value = pageNumber.value + 1
+		const totalVal = getObjNumber(resObj, 'total')
+		hasMore.value = comments.value.length < totalVal
+	} catch (e) {
+		error.value = true
+		console.error('加载评论失败:', e)
+	} finally {
+		loading.value = false
+		loadingMore.value = false
+	}
+}
+
+// 加载更多
+const loadMore = () => {
+	loadComments(false)
+}
+
+// 重新加载
+const reload = () => {
+	loadComments(true)
+}
+
+// 页面显示时重置评论提醒
+const resetCommentReminder = async () => {
+	try {
+		const kid = userKid.value
+		if (kid == '') return
+		const markParams = { userKid: kid } as UTSJSONObject
+		await commentApi.markAllRead(markParams)
+	} catch (_) {}
+}
+
+// Tab切换
+const onTabChange = (index: number) => {
+	if (activeTabIndex.value == index) return
+	
+	activeTabIndex.value = index
+	// 切换Tab时重置页码并重新加载数据
+	pageNumber.value = 1
+	comments.value = []
+	loadComments(true)
+}
+
+// 下拉刷新
+const onRefresh = async () => {
+	refreshing.value = true
+	await loadComments(true)
+	refreshing.value = false
+}
+
+// 查找评论索引（必须在 toggleReplies 之前定义）
+const findCommentIndex = (commentKid: string): number => {
+	const commentsArr = comments.value
+	for (let i = 0; i < commentsArr.length; i = i + 1) {
+		const c = commentsArr[i]
+		if (c.commentKid == commentKid) {
+			return i
+		}
+	}
+	return -1
+}
+
+// 切换回复显示
+const toggleReplies = async (item: CommentItemData) => {
+	if (item._showReplies == true) {
+		item._showReplies = false
+		// 更新原对象
+		const idx = findCommentIndex(item.commentKid)
+		if (idx >= 0) {
+			comments.value[idx] = item
+		}
+		return
+	}
+	item._showReplies = true
+	
+	if (item._replies.length > 0) {
+		const idx = findCommentIndex(item.commentKid)
+		if (idx >= 0) {
+			comments.value[idx] = item
+		}
+		return
+	}
+	
+	item._repliesLoading = true
+	// 更新原对象
+	let idx = findCommentIndex(item.commentKid)
+	if (idx >= 0) {
+		comments.value[idx] = item
+	}
+	
+	try {
+		const baseUrl = config.base_url
+		const commentKid = item.commentKid
+		const res = await uni.request({
+			url: `${baseUrl}/behavior/reply/replyList`,
+			method: 'POST',
+			data: { commentKid: commentKid, pageNumber: 1, pageSize: 50 },
+			header: { 'Content-Type': 'application/json' }
+		})
+		const resObj = toJsonObj(res)
+		const resData = (resObj != null) ? resObj.get('data') : null
+		const resDataObj = toJsonObj(resData)
+		if (resDataObj != null) {
+			const codeVal = resDataObj.get('code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : ''
+			if (codeStr == '200') {
+				const dataVal = resDataObj.get('data')
+				const dataObj = toJsonObj(dataVal)
+				if (dataObj != null) {
+					const entitiesVal = dataObj.get('entities')
+					if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+						const entitiesArr = entitiesVal as Array<UTSJSONObject>
+						const repliesList: Array<ReplyItemData> = []
+						for (let j = 0; j < entitiesArr.length; j = j + 1) {
+							const entity = entitiesArr[j]
+							const entityObj = toJsonObj(entity)
+							if (entityObj != null) {
+								const replyItem = new ReplyItemData()
+								replyItem.kid = getObjString(entityObj, 'kid')
+								replyItem.image = getObjString(entityObj, 'image')
+								replyItem.nickname = getObjString(entityObj, 'nickname')
+								replyItem.content = getObjString(entityObj, 'content')
+								replyItem.replyTime = getObjString(entityObj, 'replyTime')
+								replyItem.publishTime = getObjString(entityObj, 'publishTime')
+								repliesList.push(replyItem)
+							}
+						}
+						item._replies = repliesList
+					} else {
+						item._replies = []
+					}
+				} else {
+					item._replies = []
+				}
+			} else {
+				item._replies = []
+			}
+		} else {
+			item._replies = []
+		}
+	} catch (e) {
+		item._replies = []
+	} finally {
+		item._repliesLoading = false
+		// 更新原对象
+		idx = findCommentIndex(item.commentKid)
+		if (idx >= 0) {
+			comments.value[idx] = item
+		}
+	}
+}
+
+// 打开回复弹窗
+const openReply = (item: CommentItemData) => {
+	replyDialogShow.value = true
+	replyDialogText.value = ''
+	replyDialogComment.value = item
+}
+
+// 关闭回复弹窗
+const closeReply = () => {
+	replyDialogShow.value = false
+	replyDialogText.value = ''
+	replyDialogComment.value = null
+}
+
+// 提交回复
+const submitReply = async () => {
+	const textVal = replyDialogText.value
+	const text = textVal.trim()
+	if (text == '') {
+		uni.showToast({ title: '回复内容不能为空', icon: 'none' })
+		return
+	}
+	if (text.length > 500) {
+		uni.showToast({ title: '回复内容过长', icon: 'none' })
+		return
+	}
+	try {
+		const kid = userKid.value
+		if (kid == '') {
+			throw new Error('用户未登录')
+		}
+		const baseUrl = config.base_url
+		const randomPart = Math.random().toString(RADIX_HEX).slice(2)
+		const idem = `${kid}-${Date.now()}-${randomPart}`
+		
+		const currentComment = replyDialogComment.value
+		if (currentComment == null) {
+			uni.showToast({ title: '回复失败', icon: 'none' })
+			return
+		}
+		const commentKid = currentComment.commentKid
+		
+		const res = await uni.request({
+			url: `${baseUrl}/behavior/reply/addReply`,
+			method: 'POST',
+			data: {
+				userKid: kid,
+				commentKid: commentKid,
+				replyContent: text,
+				idempotencyKey: idem
+			},
+			header: { 'Content-Type': 'application/json' }
+		})
+		const resObj = toJsonObj(res)
+		const resData = (resObj != null) ? resObj.get('data') : null
+		const resDataObj = toJsonObj(resData)
+		if (resDataObj != null) {
+			const codeVal = resDataObj.get('code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : ''
+			if (codeStr == '200') {
+				uni.showToast({ title: '回复成功', icon: 'success' })
+				// 强制刷新回复列表：先关闭再重新打开
+				currentComment._showReplies = false
+				currentComment._replies = []
+				const cidx = findCommentIndex(currentComment.commentKid)
+				if (cidx >= 0) {
+					comments.value[cidx] = currentComment
+				}
+				await toggleReplies(currentComment)
+			} else {
+				let errMsg = '回复失败'
+				const msgVal = resDataObj.get('msg')
+				const messageVal = resDataObj.get('message')
+				if (msgVal != null && msgVal.toString() != '') {
+					errMsg = msgVal.toString()
+				} else if (messageVal != null && messageVal.toString() != '') {
+					errMsg = messageVal.toString()
+				}
+				uni.showToast({ title: errMsg, icon: 'none' })
+			}
+		} else {
+			uni.showToast({ title: '回复失败', icon: 'none' })
+		}
+	} catch (e) {
+		uni.showToast({ title: '回复失败', icon: 'none' })
+	}
+	closeReply()
+}
+
+// 删除评论
+const deleteComment = async (item: CommentItemData) => {
+	try {
+		const baseUrl = config.base_url
+		const commentKid = item.commentKid
+		
+		const res = await uni.request({
+			url: `${baseUrl}/behavior/comment/v1/deleteComment`,
+			method: 'POST',
+			data: { commentKid: commentKid },
+			header: { 'Content-Type': 'application/json' }
+		})
+		const resObj = toJsonObj(res)
+		const resData = (resObj != null) ? resObj.get('data') : null
+		const resDataObj = toJsonObj(resData)
+		if (resDataObj != null) {
+			const codeVal = resDataObj.get('code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : ''
+			if (codeStr == '200') {
+				uni.showToast({ title: '删除成功', icon: 'success' })
+				reload()
+			} else {
+				let errMsg = '删除失败'
+				const msgVal = resDataObj.get('msg')
+				const messageVal = resDataObj.get('message')
+				if (msgVal != null && msgVal.toString() != '') {
+					errMsg = msgVal.toString()
+				} else if (messageVal != null && messageVal.toString() != '') {
+					errMsg = messageVal.toString()
+				}
+				uni.showToast({ title: errMsg, icon: 'none' })
+			}
+		} else {
+			uni.showToast({ title: '删除失败', icon: 'none' })
+		}
+	} catch (e) {
+		uni.showToast({ title: '删除失败', icon: 'none' })
+	}
+}
+
+// 删除回复
+const deleteReply = async (item: CommentItemData, r: ReplyItemData) => {
+	try {
+		const baseUrl = config.base_url
+		const replyKid = r.kid
+		const commentKid = item.commentKid
+		
+		const res = await uni.request({
+			url: `${baseUrl}/behavior/comment/v1/deleteComment`,
+			method: 'POST',
+			data: { replyKid: replyKid },
+			header: { 'Content-Type': 'application/json' }
+		})
+		const resObj = toJsonObj(res)
+		const resData = (resObj != null) ? resObj.get('data') : null
+		const resDataObj = toJsonObj(resData)
+		if (resDataObj != null) {
+			const codeVal = resDataObj.get('code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : ''
+			if (codeStr == '200') {
+				uni.showToast({ title: '删除成功', icon: 'success' })
+				// 从回复列表中移除已删除的回复
+				const idx = findCommentIndex(commentKid)
+				if (idx >= 0) {
+					const commentItem = comments.value[idx]
+					const newReplies: Array<ReplyItemData> = []
+					for (let i = 0; i < commentItem._replies.length; i = i + 1) {
+						const reply = commentItem._replies[i]
+						if (reply.kid != replyKid) {
+							newReplies.push(reply)
+						}
+					}
+					commentItem._replies = newReplies
+					comments.value[idx] = commentItem
+				}
+			} else {
+				let errMsg = '删除失败'
+				const msgVal = resDataObj.get('msg')
+				const messageVal = resDataObj.get('message')
+				if (msgVal != null && msgVal.toString() != '') {
+					errMsg = msgVal.toString()
+				} else if (messageVal != null && messageVal.toString() != '') {
+					errMsg = messageVal.toString()
+				}
+				uni.showToast({ title: errMsg, icon: 'none' })
+			}
+		} else {
+			uni.showToast({ title: '删除失败', icon: 'none' })
+		}
+	} catch (e) {
+		uni.showToast({ title: '删除失败', icon: 'none' })
+	}
+}
+
+// 预览评价图片
+const previewEvaluateImage = (images: Array<string>, index: number) => {
+	uni.previewImage({
+		urls: images,
+		current: index
+	})
+}
+
+// 跳转详情（根据评论类型分流）
+const gotoDetail = (item: CommentItemData) => {
+	const kid = item.targetKid
+	if (kid == '') return
+	
+	let url = ''
+	if (item.commentType == 1) {
+		// 订单评价 → 评价详情页
+		url = `/pagesTrade/appraise/detail?id=${kid}`
+	} else {
+		// 动态评论(2) / 点赞(3) / 其他 → 动态详情页
+		url = `/pagesBusiness/commend/index?id=${kid}`
+	}
+	
+	uni.navigateTo({
+		url: url,
+		fail: (_err: any) => {
+			uni.showToast({ title: '页面跳转失败', icon: 'none' })
+		}
+	})
+}
+
+// 获取评论类型文本
+const getCommentTypeText = (type: number): string => {
+	if (type == 1) {
+		return '评价'
+	} else if (type == 2) {
+		return '动态'
+	} else if (type == 3) {
+		return '点赞'
+	}
+	return ''
+}
+
+// 格式化时间显示
+const formatTime = (timeStr: string): string => {
+	return formatRelativeTime(timeStr)
+}
+
+// ==================== 生命周期（必须在所有函数之后）====================
+onMounted(() => {
+	initPageLayout()
+	resetCommentReminder()
+	if (comments.value.length == 0) {
+		loadComments(true)
+	}
+})
+</script>
+
+<style lang="scss" scoped>
+@import '@/common/styles/tabs.css';
+
+/* 页面主容器 */
+.comment-page {
+	flex-direction: column;
+	background-color: #F5F5F5;
+}
+
+.fix-page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+.bg-light-base {
+	background-color: #f5f5f5;
+}
+
+/* 现代化评论卡片 */
+.modern-card {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 24rpx;
+	margin-bottom: 24rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #f0f0f0;
+}
+
+/* 评论主体区域 */
+.comment-main {
+	margin-bottom: 16rpx;
+}
+
+/* 评论头部 */
+.comment-header {
+	flex-direction: row;
+	align-items: flex-start;
+	margin-bottom: 16rpx;
+}
+
+.user-avatar {
+	width: 48rpx;
+	height: 48rpx;
+	border-radius: 24rpx;
+	margin-right: 16rpx;
+	background-color: #f5f5f5;
+}
+
+.user-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.user-name-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 4rpx;
+}
+
+.user-name {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #1a1a1a;
+	margin-right: 12rpx;
+}
+
+.comment-type {
+	font-size: 20rpx;
+	color: #ffffff;
+	background-color: #37B1F2;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 8rpx;
+	padding-right: 8rpx;
+	border-radius: 8rpx;
+	line-height: 1;
+}
+
+.comment-time {
+	font-size: 24rpx;
+	color: #999999;
+	line-height: 1.4;
+}
+
+/* 评论内容 */
+.comment-content {
+	margin-left: 64rpx;
+}
+
+.content-text {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.6;
+	}
+
+/* 操作按钮区域 */
+.comment-actions {
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	padding-top: 16rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f5f5f5;
+	margin-left: 64rpx;
+}
+
+.action-btn {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	margin-left: 24rpx;
+	border-radius: 16rpx;
+	background-color: #f8f9fa;
+}
+
+.action-text {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 1;
+	margin-left: 8rpx;
+}
+
+.action-btn.danger .action-text {
+	color: #dc3545;
+}
+
+/* 加载容器 */
+.loading-container {
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+/* 现代化骨架屏 */
+.modern-skeleton {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 24rpx;
+	margin-bottom: 24rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #f0f0f0;
+}
+
+.skeleton-item {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.skeleton-avatar {
+	width: 48rpx;
+	height: 48rpx;
+	border-radius: 24rpx;
+	margin-right: 16rpx;
+	background-color: #f0f0f0;
+}
+
+.skeleton-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.skeleton-title {
+	width: 120rpx;
+	height: 32rpx;
+	background-color: #f0f0f0;
+	border-radius: 8rpx;
+	margin-bottom: 12rpx;
+}
+
+.skeleton-text {
+	width: 600rpx;
+	height: 28rpx;
+	background-color: #f0f0f0;
+	border-radius: 6rpx;
+	margin-bottom: 8rpx;
+}
+
+.skeleton-text.short {
+	width: 360rpx;
+}
+
+/* 空状态容器 */
+.empty-container {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	text-align: center;
+}
+
+.empty-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-top: 24rpx;
+	margin-bottom: 12rpx;
+	line-height: 1.4;
+}
+
+.empty-desc {
+	font-size: 28rpx;
+	color: #999999;
+	margin-bottom: 40rpx;
+	line-height: 1.4;
+}
+
+/* 现代化按钮 */
+.modern-btn {
+	background-color: #37B1F2;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	border-radius: 24rpx;
+}
+
+.retry-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: normal;
+	line-height: 1;
+}
+
+/* 背景图片 */
+.header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 300rpx;
+}
+
+/* Tab栏 */
+.tabs-wrapper {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+/* 滚动区域 */
+.scroll-view {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+	background-color: transparent;
+	z-index: 1;
+}
+
+.skeleton-item {
+	flex-direction: row;
+	align-items: flex-start;
+	padding: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin-bottom: 20rpx;
+}
+
+.skeleton-avatar {
+	width: 96rpx;
+	height: 96rpx;
+	border-radius: 48rpx;
+	background-color: #f0f0f0;
+}
+
+.skeleton-avatar.small {
+	width: 64rpx;
+	height: 64rpx;
+}
+
+.skeleton-content {
+	flex: 1;
+	margin-left: 20rpx;
+	flex-direction: column;
+}
+
+.skeleton-title {
+	width: 200rpx;
+	height: 32rpx;
+	background-color: #f0f0f0;
+	border-radius: 4rpx;
+	margin-bottom: 16rpx;
+}
+
+.skeleton-title.short {
+	width: 120rpx;
+}
+
+.skeleton-text {
+	width: 600rpx;
+	height: 24rpx;
+	background-color: #f0f0f0;
+	border-radius: 4rpx;
+	margin-bottom: 12rpx;
+}
+
+.skeleton-text.short {
+	width: 360rpx;
+}
+
+.empty-box {
+	height: 400rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-top: 0;
+}
+
+.empty-box .empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.empty-box .empty-text.small {
+	font-size: 24rpx;
+}
+
+.empty-box .retry-btn {
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	background-color: #667eea;
+	border-radius: 32rpx;
+	margin-top: 20rpx;
+}
+
+.empty-box .retry-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.comment-card {
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	
+	.avatar {
+		width: 96rpx;
+		height: 96rpx;
+		border-radius: 48rpx;
+	}
+	
+	.content-text {
+		line-height: 1.6;
+	}
+	
+	.origin-box {
+		background-color: #F7F8FA;
+		border-radius: 12rpx;
+		padding: 16rpx;
+		
+		.origin-text {
+			flex-direction: row;
+			overflow: hidden;
+		}
+	}
+	
+	.ops-bar {
+		flex-direction: row;
+	}
+}
+
+.op-btn {
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #f0f0f0;
+	border-radius: 32rpx;
+	margin-right: 12rpx;
+}
+
+.op-btn.small {
+	padding-top: 3rpx;
+	padding-bottom: 3rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.op-btn.danger {
+	background-color: #ffebee;
+}
+
+.op-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.op-btn.danger .op-text {
+	color: #f44336;
+}
+
+.replies {
+	background-color: #F7F8FA;
+	border-radius: 12rpx;
+	padding: 16rpx;
+	
+	.reply {
+		flex-direction: row;
+		align-items: flex-start;
+		
+		.r-avatar {
+			width: 64rpx;
+			height: 64rpx;
+			border-radius: 32rpx;
+		}
+	}
+	
+	.reply-loading {
+		padding-top: 20rpx;
+		padding-bottom: 20rpx;
+	}
+	
+	.skeleton-reply {
+		flex-direction: row;
+		align-items: flex-start;
+	}
+	
+	.r-empty {
+		text-align: center;
+		padding-top: 20rpx;
+		padding-bottom: 20rpx;
+	}
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+	text-align: center;
+}
+
+.modal-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 1334rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.modal-content {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	overflow: hidden;
+}
+
+.modal-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.modal-close {
+	padding: 8rpx;
+}
+
+.reply-input {
+	width: 600rpx;
+	min-height: 200rpx;
+	padding: 28rpx;
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.6;
+}
+
+.modal-footer {
+	flex-direction: row;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.modal-btn {
+	flex: 1;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.modal-btn.cancel {
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.modal-btn.confirm {
+	background-color: #667eea;
+}
+
+.btn-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.modal-btn.confirm .btn-text {
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 重复的全局工具类已移除，使用 common/styles/components.css 中的全局样式 */
+
+/* 已使用全局样式：fs-sm, fs-md, fs-lg, color-title, color-text */
+
+.title-font {
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.font-bold {
+	font-weight: bold;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+/* 评价卡片扩展样式 */
+.evaluate-card {
+	margin-left: 64rpx;
+	margin-top: 16rpx;
+	background-color: #f8f9fa;
+	border-radius: 12rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.evaluate-star-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.star-icon {
+	font-size: 28rpx;
+	margin-right: 4rpx;
+}
+
+.star-level-text {
+	font-size: 24rpx;
+	color: #ff9800;
+	margin-left: 8rpx;
+	font-weight: bold;
+}
+
+.evaluate-text-box {
+	margin-bottom: 12rpx;
+}
+
+.evaluate-text {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.6;
+}
+
+.evaluate-images-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.evaluate-img {
+	width: 160rpx;
+	height: 160rpx;
+	border-radius: 8rpx;
+	margin-right: 12rpx;
+	margin-bottom: 12rpx;
+}
+</style>

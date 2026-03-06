@@ -1,0 +1,103 @@
+/**
+ * 通知模块 API 类型定义
+ * 对应 API 文件: api/notification.uts
+ */
+
+// ========== 请求参数类型 ==========
+
+// 获取通知列表参数
+export class GetNotificationListParams {
+	userId: string = ''
+	type: string = 'all'
+	page: number = 1
+	size: number = 20
+}
+
+// 获取通知历史参数
+export class GetNotificationHistoryParams {
+	userId: string = ''
+	page: number = 1
+	size: number = 20
+}
+
+// 按类型获取订单通知未读数参数
+export class GetOrderNotificationsUnreadCountByTypeParams {
+	userId: string = ''
+	type: string = ''
+}
+
+// 按类型标记订单通知为已读参数
+export class MarkOrderNotificationsReadByTypeParams {
+	userId: string = ''
+	type: string = ''
+}
+
+// 通知配置
+export class NotificationConfigParams {
+	userId: string = ''
+	orderNotificationEnabled: boolean = true
+	chatNotificationEnabled: boolean = true
+	systemNotificationEnabled: boolean = true
+}
+
+// ========== 响应数据类型 ==========
+
+// 订单通知信息
+export class OrderNotificationData {
+	kid: string = ''
+	notificationId: string = ''
+	userId: string = ''
+	notificationType: string = ''
+	notificationTitle: string = ''
+	notificationContent: string = ''
+	orderKid: string = ''
+	isRead: number = 0
+	createTime: string = ''
+}
+
+// 通知 VO
+export class NotificationVOData {
+	id: string = ''
+	type: string = ''
+	subType: string = ''
+	title: string = ''
+	content: string = ''
+	sourceId: string = ''
+	sourceUserId: string = ''
+	read: boolean = false
+	createTime: string = ''
+	readTime: string = ''
+}
+
+// 未读数统计
+export class UnreadCountVOData {
+	all: number = 0
+	order: number = 0
+	system: number = 0
+	interact: number = 0
+}
+
+// 通知列表响应
+export class NotificationListResponseData {
+	total: number = 0
+	unread: number = 0
+	page: number = 1
+	size: number = 20
+	pages: number = 0
+}
+
+// 获取通知历史响应
+export class NotificationHistoryResponseData {
+	count: number = 0
+}
+
+// 获取订单通知未读数响应
+export class OrderNotificationsUnreadCountData {
+	unreadCount: number = 0
+}
+
+// 获取未完成订单数响应
+export class PendingOrderCountData {
+	count: number = 0
+	userKid: string = ''
+}

@@ -1,0 +1,111 @@
+<template>
+	<view class="chat-list">
+		<view v-if="list.length === 0" class="empty">
+			<text>暂无消息</text>
+		</view>
+		
+		<view v-else>
+			<view 
+				v-for="item in list" 
+				:key="item.conversationId"
+				class="chat-item"
+				@click="$emit('itemClick', item)"
+			>
+				<Avatar
+					:url="item.targetUserAvatar"
+					:userId="item.targetUserId"
+					size="medium"
+					clickMode="none"
+				/>
+				
+				<view class="content">
+					<view class="top-row">
+						<text class="username">{{ item.targetUserName }}</text>
+						<text class="time">{{ item.lastMessageTime }}</text>
+					</view>
+					<view class="bottom-row">
+						<text class="message">{{ item.lastMessage }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import Avatar from '@/components/base/Avatar.uvue'
+
+interface ChatItem {
+	conversationId: string
+	targetUserAvatar: string
+	targetUserId: string
+	targetUserName: string
+	lastMessage: string
+	lastMessageTime: string
+	unreadCount: number
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	list: { type: Array, required: true }
+})
+
+const emit = defineEmits<{
+	itemClick: [item: ChatItem]
+}>()
+</script>
+
+<style scoped>
+.chat-list {
+	flex-direction: column;
+}
+
+.empty {
+	padding: 80rpx 0;
+	text-align: center;
+	color: #999999;
+}
+
+.chat-item {
+	flex-direction: row;
+	padding: 24rpx;
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	margin-bottom: 20rpx;
+}
+
+.content {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 20rpx;
+}
+
+.top-row {
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 10rpx;
+}
+
+.username {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.time {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.bottom-row {
+	flex-direction: row;
+}
+
+.message {
+	font-size: 26rpx;
+	color: #666666;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	lines: 1;
+}
+</style>

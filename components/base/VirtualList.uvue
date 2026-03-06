@@ -1,0 +1,293 @@
+<template>
+	<scroll-view
+		class="virtual-list-container"
+		:style="containerStyle"
+		scroll-y="true"
+		:refresher-enabled="refresherEnabled"
+		:refresher-triggered="refresherTriggered"
+		@refresherrefresh="onRefresh"
+		@scroll="onScroll"
+		@scrolltolower="onScrollToLower"
+	>
+		<!-- 顶部占位 -->
+		<view class="top-placeholder" :style="topPlaceholderStyle"></view>
+		
+		<!-- 可见列表项 -->
+		<view 
+			v-for="(item, index) in visibleItems" 
+			:key="getItemKey(item, index)"
+			class="virtual-list-item"
+			:style="itemStyle"
+		>
+			<slot :item="item" :index="getActualIndex(index)"></slot>
+		</view>
+		
+		<!-- 底部占位 -->
+		<view class="bottom-placeholder" :style="bottomPlaceholderStyle"></view>
+		
+		<!-- 加载状态 -->
+		<view v-if="showLoadMore == true" class="load-more-box">
+			<text v-if="loading == true" class="load-more-text">加载中...</text>
+			<text v-else-if="hasMore == false" class="load-more-text">没有更多了</text>
+		</view>
+	</scroll-view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { getStringProp } from '@/common/utils/utsSafe.uts'
+
+// Props 定义
+const props = defineProps({
+	// 数据列表
+	list: { type: Array, default: () => [] as Array<any> },
+	// 列表项高度（rpx）
+	itemHeight: { type: Number, default: 200 },
+	// 容器高度
+	containerHeight: { type: String, default: '100%' },
+	// 缓冲区大小（额外渲染的项数）
+	bufferSize: { type: Number, default: 5 },
+	// 是否启用下拉刷新
+	refresherEnabled: { type: Boolean, default: false },
+	// 下拉刷新状态
+	refresherTriggered: { type: Boolean, default: false },
+	// 是否正在加载
+	loading: { type: Boolean, default: false },
+	// 是否还有更多数据
+	hasMore: { type: Boolean, default: true },
+	// 是否显示加载更多
+	showLoadMore: { type: Boolean, default: true },
+	// 列表项唯一键字段
+	keyField: { type: String, default: 'kid' }
+})
+
+// Emits 定义
+const emit = defineEmits(['refresh', 'loadMore', 'scroll'])
+
+// 滚动位置
+const scrollTop = ref<number>(0)
+// 容器实际高度（px）
+const containerHeightPx = ref<number>(600)
+// 开始渲染的索引
+const startIndex = ref<number>(0)
+// 结束渲染的索引
+const endIndex = ref<number>(0)
+
+// 列表长度
+const listLength = computed((): number => {
+	try {
+		const arr = props.list
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 列表项高度（px）- 假设 1rpx = 0.5px
+const itemHeightPx = computed((): number => {
+	return props.itemHeight * 0.5
+})
+
+// 可见区域能容纳的项数
+const visibleCount = computed((): number => {
+	if (itemHeightPx.value <= 0) return 10
+	const count = Math.ceil(containerHeightPx.value / itemHeightPx.value)
+	return count + props.bufferSize * 2
+})
+
+// 总高度
+const totalHeight = computed((): number => {
+	return listLength.value * itemHeightPx.value
+})
+
+// 可见的列表项
+const visibleItems = computed((): Array<any> => {
+	const result: Array<any> = []
+	const list = props.list as Array<any>
+	
+	if (list == null || listLength.value == 0) {
+		return result
+	}
+	
+	const start = startIndex.value
+	const end = endIndex.value
+	
+	for (let i = start; i <= end && i < listLength.value; i = i + 1) {
+		result.push(list[i])
+	}
+	
+	return result
+})
+
+// 容器样式
+const containerStyle = computed((): string => {
+	return 'height: ' + props.containerHeight + ';'
+})
+
+// 列表项样式
+const itemStyle = computed((): string => {
+	return 'height: ' + props.itemHeight.toString() + 'rpx;'
+})
+
+// 顶部占位样式
+const topPlaceholderStyle = computed((): string => {
+	const height = startIndex.value * itemHeightPx.value
+	return 'height: ' + height.toString() + 'px;'
+})
+
+// 底部占位样式
+const bottomPlaceholderStyle = computed((): string => {
+	const renderedHeight = (endIndex.value - startIndex.value + 1) * itemHeightPx.value
+	const topHeight = startIndex.value * itemHeightPx.value
+	const bottomHeight = totalHeight.value - topHeight - renderedHeight
+	const finalHeight = bottomHeight > 0 ? bottomHeight : 0
+	return 'height: ' + finalHeight.toString() + 'px;'
+})
+
+// 获取列表项的 key
+const getItemKey = (item: any, index: number): string => {
+	if (item == null) {
+		return 'item-' + index.toString()
+	}
+	
+	const keyVal = getStringProp(item, props.keyField)
+	if (keyVal != '') {
+		return keyVal
+	}
+	
+	return 'item-' + (startIndex.value + index).toString()
+}
+
+// 获取实际索引
+const getActualIndex = (visibleIndex: number): number => {
+	return startIndex.value + visibleIndex
+}
+
+// 计算可见范围
+const calculateVisibleRange = () => {
+	const scrollY = scrollTop.value
+	const itemH = itemHeightPx.value
+	
+	if (itemH <= 0) {
+		startIndex.value = 0
+		endIndex.value = Math.min(visibleCount.value - 1, listLength.value - 1)
+		return
+	}
+	
+	// 计算开始索引
+	let start = Math.floor(scrollY / itemH) - props.bufferSize
+	if (start < 0) {
+		start = 0
+	}
+	
+	// 计算结束索引
+	let end = start + visibleCount.value
+	if (end >= listLength.value) {
+		end = listLength.value - 1
+	}
+	
+	startIndex.value = start
+	endIndex.value = end
+}
+
+// 滚动事件
+const onScroll = (e: any) => {
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const detailVal = eObj.getAny('detail')
+		
+		if (detailVal != null) {
+			const detailStr = JSON.stringify(detailVal)
+			const detailObj = JSON.parse(detailStr) as UTSJSONObject
+			const scrollTopVal = detailObj.getNumber('scrollTop')
+			
+			if (scrollTopVal != null) {
+				scrollTop.value = scrollTopVal as number
+				calculateVisibleRange()
+			}
+		}
+	} catch (err) {
+		// 忽略解析错误
+	}
+	
+	emit('scroll', e)
+}
+
+// 下拉刷新
+const onRefresh = () => {
+	emit('refresh')
+}
+
+// 滚动到底部
+const onScrollToLower = () => {
+	if (props.loading == false && props.hasMore == true) {
+		emit('loadMore')
+	}
+}
+
+// 初始化容器高度
+const initContainerHeight = () => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+		const windowHeightVal = systemInfoObj.get('windowHeight')
+		if (windowHeightVal != null) {
+			const windowHeight = parseInt(windowHeightVal.toString())
+			if (isNaN(windowHeight) == false && windowHeight > 0) {
+				containerHeightPx.value = windowHeight
+			}
+		}
+	} catch (e) {
+		containerHeightPx.value = 600
+	}
+	
+	calculateVisibleRange()
+}
+
+// 监听列表变化
+watch(() => props.list, () => {
+	calculateVisibleRange()
+})
+
+// 组件挂载
+onMounted(() => {
+	initContainerHeight()
+})
+</script>
+
+<style scoped>
+.virtual-list-container {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+.top-placeholder {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+.bottom-placeholder {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+.virtual-list-item {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+.load-more-box {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	height: 80rpx;
+	width: 750rpx;
+}
+
+.load-more-text {
+	font-size: 26rpx;
+	color: #999999;
+}
+</style>

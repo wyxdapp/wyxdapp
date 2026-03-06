@@ -1,0 +1,277 @@
+/* ==================== Vue3 Uni-app X 间距样式 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：统一的间距系统，基于 8rpx 网格 */
+
+/* ==================== Margin Top ==================== */
+.mt-xs { margin-top: 8rpx; }
+.mt-sm { margin-top: 16rpx; }
+.mt-md { margin-top: 24rpx; }
+.mt-lg { margin-top: 32rpx; }
+.mt-xl { margin-top: 40rpx; }
+
+/* 常用特殊值 */
+.mt-12 { margin-top: 12rpx; }
+.mt-20 { margin-top: 20rpx; }
+.mt-28 { margin-top: 28rpx; }
+.mt-48 { margin-top: 48rpx; }
+.mt-64 { margin-top: 64rpx; }
+
+/* 向后兼容 */
+.mt-4 { margin-top: 4rpx; }
+.mt-6 { margin-top: 6rpx; }
+.mt-8 { margin-top: 8rpx; }
+.mt-10 { margin-top: 10rpx; }
+.mt-16 { margin-top: 16rpx; }
+.mt-18 { margin-top: 18rpx; }
+.mt-22 { margin-top: 22rpx; }
+.mt-24 { margin-top: 24rpx; }
+.mt-26 { margin-top: 26rpx; }
+.mt-30 { margin-top: 30rpx; }
+.mt-32 { margin-top: 32rpx; }
+.mt-36 { margin-top: 36rpx; }
+.mt-40 { margin-top: 40rpx; }
+.mt-44 { margin-top: 44rpx; }
+.mt-60 { margin-top: 60rpx; }
+
+/* ==================== Margin Bottom ==================== */
+.mb-xs { margin-bottom: 8rpx; }
+.mb-sm { margin-bottom: 16rpx; }
+.mb-md { margin-bottom: 24rpx; }
+.mb-lg { margin-bottom: 32rpx; }
+.mb-xl { margin-bottom: 40rpx; }
+
+/* 向后兼容 */
+.mb-6 { margin-bottom: 6rpx; }
+.mb-10 { margin-bottom: 10rpx; }
+.mb-12 { margin-bottom: 12rpx; }
+.mb-15 { margin-bottom: 15rpx; }
+.mb-16 { margin-bottom: 16rpx; }
+.mb-18 { margin-bottom: 18rpx; }
+.mb-20 { margin-bottom: 20rpx; }
+.mb-24 { margin-bottom: 24rpx; }
+.mb-28 { margin-bottom: 28rpx; }
+.mb-32 { margin-bottom: 32rpx; }
+.mb-48 { margin-bottom: 48rpx; }
+
+/* ==================== Margin Left ==================== */
+.ml-xs { margin-left: 8rpx; }
+.ml-sm { margin-left: 16rpx; }
+.ml-md { margin-left: 24rpx; }
+.ml-lg { margin-left: 32rpx; }
+.ml-xl { margin-left: 40rpx; }
+
+/* 向后兼容 */
+.ml-6 { margin-left: 6rpx; }
+.ml-8 { margin-left: 8rpx; }
+.ml-10 { margin-left: 10rpx; }
+.ml-12 { margin-left: 12rpx; }
+.ml-14 { margin-left: 14rpx; }
+.ml-16 { margin-left: 16rpx; }
+.ml-18 { margin-left: 18rpx; }
+.ml-20 { margin-left: 20rpx; }
+.ml-22 { margin-left: 22rpx; }
+.ml-24 { margin-left: 24rpx; }
+.ml-26 { margin-left: 26rpx; }
+.ml-28 { margin-left: 28rpx; }
+.ml-32 { margin-left: 32rpx; }
+.ml-36 { margin-left: 36rpx; }
+.ml-40 { margin-left: 40rpx; }
+.ml-48 { margin-left: 48rpx; }
+.ml-64 { margin-left: 64rpx; }
+
+/* ==================== Margin Right ==================== */
+.mr-xs { margin-right: 8rpx; }
+.mr-sm { margin-right: 16rpx; }
+.mr-md { margin-right: 24rpx; }
+.mr-lg { margin-right: 32rpx; }
+.mr-xl { margin-right: 40rpx; }
+
+/* 向后兼容 */
+.mr-8 { margin-right: 8rpx; }
+.mr-10 { margin-right: 10rpx; }
+.mr-12 { margin-right: 12rpx; }
+.mr-15 { margin-right: 15rpx; }
+.mr-16 { margin-right: 16rpx; }
+.mr-18 { margin-right: 18rpx; }
+.mr-20 { margin-right: 20rpx; }
+.mr-24 { margin-right: 24rpx; }
+.mr-32 { margin-right: 32rpx; }
+.mr-40 { margin-right: 40rpx; }
+.mr-48 { margin-right: 48rpx; }
+
+/* ==================== Margin 组合 ==================== */
+.mlr-xs { margin-left: 8rpx; margin-right: 8rpx; }
+.mlr-sm { margin-left: 16rpx; margin-right: 16rpx; }
+.mlr-md { margin-left: 24rpx; margin-right: 24rpx; }
+.mlr-lg { margin-left: 32rpx; margin-right: 32rpx; }
+.mlr-xl { margin-left: 40rpx; margin-right: 40rpx; }
+
+/* 向后兼容 */
+.mlr-24 { margin-left: 24rpx; margin-right: 24rpx; }
+.mlr-28 { margin-left: 28rpx; margin-right: 28rpx; }
+.mlr-40 { margin-left: 40rpx; margin-right: 40rpx; }
+
+/* ==================== Padding Top ==================== */
+.pt-xs { padding-top: 8rpx; }
+.pt-sm { padding-top: 16rpx; }
+.pt-md { padding-top: 24rpx; }
+.pt-lg { padding-top: 32rpx; }
+.pt-xl { padding-top: 40rpx; }
+
+/* 向后兼容 */
+.pt-10 { padding-top: 10rpx; }
+.pt-12 { padding-top: 12rpx; }
+.pt-14 { padding-top: 14rpx; }
+.pt-16 { padding-top: 16rpx; }
+.pt-20 { padding-top: 20rpx; }
+.pt-24 { padding-top: 24rpx; }
+.pt-26 { padding-top: 26rpx; }
+.pt-28 { padding-top: 28rpx; }
+.pt-30 { padding-top: 30rpx; }
+.pt-32 { padding-top: 32rpx; }
+.pt-36 { padding-top: 36rpx; }
+.pt-40 { padding-top: 40rpx; }
+.pt-48 { padding-top: 48rpx; }
+
+/* ==================== Padding Bottom ==================== */
+.pb-xs { padding-bottom: 8rpx; }
+.pb-sm { padding-bottom: 16rpx; }
+.pb-md { padding-bottom: 24rpx; }
+.pb-lg { padding-bottom: 32rpx; }
+.pb-xl { padding-bottom: 40rpx; }
+
+/* 向后兼容 */
+.pb-2 { padding-bottom: 2rpx; }
+.pb-4 { padding-bottom: 4rpx; }
+.pb-6 { padding-bottom: 6rpx; }
+.pb-8 { padding-bottom: 8rpx; }
+.pb-12 { padding-bottom: 12rpx; }
+.pb-18 { padding-bottom: 18rpx; }
+.pb-20 { padding-bottom: 20rpx; }
+.pb-22 { padding-bottom: 22rpx; }
+.pb-24 { padding-bottom: 24rpx; }
+.pb-28 { padding-bottom: 28rpx; }
+.pb-32 { padding-bottom: 32rpx; }
+.pb-40 { padding-bottom: 40rpx; }
+.pb-48 { padding-bottom: 48rpx; }
+
+/* ==================== Padding Left ==================== */
+.pl-xs { padding-left: 8rpx; }
+.pl-sm { padding-left: 16rpx; }
+.pl-md { padding-left: 24rpx; }
+.pl-lg { padding-left: 32rpx; }
+.pl-xl { padding-left: 40rpx; }
+
+/* 向后兼容 */
+.pl-16 { padding-left: 16rpx; }
+.pl-20 { padding-left: 20rpx; }
+.pl-24 { padding-left: 24rpx; }
+.pl-26 { padding-left: 26rpx; }
+.pl-28 { padding-left: 28rpx; }
+.pl-32 { padding-left: 32rpx; }
+
+/* ==================== Padding Right ==================== */
+.pr-xs { padding-right: 8rpx; }
+.pr-sm { padding-right: 16rpx; }
+.pr-md { padding-right: 24rpx; }
+.pr-lg { padding-right: 32rpx; }
+.pr-xl { padding-right: 40rpx; }
+
+/* 向后兼容 */
+.pr-12 { padding-right: 12rpx; }
+.pr-16 { padding-right: 16rpx; }
+.pr-20 { padding-right: 20rpx; }
+.pr-24 { padding-right: 24rpx; }
+.pr-28 { padding-right: 28rpx; }
+.pr-32 { padding-right: 32rpx; }
+.pr-48 { padding-right: 48rpx; }
+
+/* ==================== Padding 全方向 ==================== */
+.p-xs { padding: 8rpx; }
+.p-sm { padding: 16rpx; }
+.p-md { padding: 24rpx; }
+.p-lg { padding: 32rpx; }
+.p-xl { padding: 40rpx; }
+
+/* 向后兼容 */
+.p-10 { padding: 10rpx; }
+.p-12 { padding: 12rpx; }
+.p-24 { padding: 24rpx; }
+
+/* ==================== Padding 左右组合 ==================== */
+.plr-xs { padding-left: 8rpx; padding-right: 8rpx; }
+.plr-sm { padding-left: 16rpx; padding-right: 16rpx; }
+.plr-md { padding-left: 24rpx; padding-right: 24rpx; }
+.plr-lg { padding-left: 32rpx; padding-right: 32rpx; }
+.plr-xl { padding-left: 40rpx; padding-right: 40rpx; }
+
+/* 向后兼容 */
+.plr-10 { padding-left: 10rpx; padding-right: 10rpx; }
+.plr-12 { padding-left: 12rpx; padding-right: 12rpx; }
+.plr-14 { padding-left: 14rpx; padding-right: 14rpx; }
+.plr-18 { padding-left: 18rpx; padding-right: 18rpx; }
+.plr-20 { padding-left: 20rpx; padding-right: 20rpx; }
+.plr-22 { padding-left: 22rpx; padding-right: 22rpx; }
+.plr-24 { padding-left: 24rpx; padding-right: 24rpx; }
+.plr-28 { padding-left: 28rpx; padding-right: 28rpx; }
+.plr-32 { padding-left: 32rpx; padding-right: 32rpx; }
+.plr-36 { padding-left: 36rpx; padding-right: 36rpx; }
+.plr-40 { padding-left: 40rpx; padding-right: 40rpx; }
+.plr-48 { padding-left: 48rpx; padding-right: 48rpx; }
+.plr-60 { padding-left: 60rpx; padding-right: 60rpx; }
+
+/* ==================== Padding 上下组合 ==================== */
+.ptb-xs { padding-top: 8rpx; padding-bottom: 8rpx; }
+.ptb-sm { padding-top: 16rpx; padding-bottom: 16rpx; }
+.ptb-md { padding-top: 24rpx; padding-bottom: 24rpx; }
+.ptb-lg { padding-top: 32rpx; padding-bottom: 32rpx; }
+.ptb-xl { padding-top: 40rpx; padding-bottom: 40rpx; }
+
+/* 向后兼容 */
+.ptb-2 { padding-top: 2rpx; padding-bottom: 2rpx; }
+.ptb-6 { padding-top: 6rpx; padding-bottom: 6rpx; }
+.ptb-8 { padding-top: 8rpx; padding-bottom: 8rpx; }
+.ptb-10 { padding-top: 10rpx; padding-bottom: 10rpx; }
+.ptb-12 { padding-top: 12rpx; padding-bottom: 12rpx; }
+.ptb-14 { padding-top: 14rpx; padding-bottom: 14rpx; }
+.ptb-16 { padding-top: 16rpx; padding-bottom: 16rpx; }
+.ptb-20 { padding-top: 20rpx; padding-bottom: 20rpx; }
+.ptb-24 { padding-top: 24rpx; padding-bottom: 24rpx; }
+.ptb-28 { padding-top: 28rpx; padding-bottom: 28rpx; }
+.ptb-30 { padding-top: 30rpx; padding-bottom: 30rpx; }
+.ptb-32 { padding-top: 32rpx; padding-bottom: 32rpx; }
+.ptb-48 { padding-top: 48rpx; padding-bottom: 48rpx; }
+.ptb-64 { padding-top: 64rpx; padding-bottom: 64rpx; }
+
+/* ==================== Margin 上下组合 ==================== */
+.mtb-xs { margin-top: 8rpx; margin-bottom: 8rpx; }
+.mtb-sm { margin-top: 16rpx; margin-bottom: 16rpx; }
+.mtb-md { margin-top: 24rpx; margin-bottom: 24rpx; }
+.mtb-lg { margin-top: 32rpx; margin-bottom: 32rpx; }
+.mtb-xl { margin-top: 40rpx; margin-bottom: 40rpx; }
+
+/* 向后兼容 */
+.mtb-8 { margin-top: 8rpx; margin-bottom: 8rpx; }
+.mtb-12 { margin-top: 12rpx; margin-bottom: 12rpx; }
+.mtb-16 { margin-top: 16rpx; margin-bottom: 16rpx; }
+.mtb-20 { margin-top: 20rpx; margin-bottom: 20rpx; }
+.mtb-24 { margin-top: 24rpx; margin-bottom: 24rpx; }
+.mtb-32 { margin-top: 32rpx; margin-bottom: 32rpx; }
+
+/* ==================== 间距 0 值 ==================== */
+.m-0 { margin: 0; }
+.mt-0 { margin-top: 0; }
+.mb-0 { margin-bottom: 0; }
+.ml-0 { margin-left: 0; }
+.mr-0 { margin-right: 0; }
+
+.p-0 { padding: 0; }
+.pt-0 { padding-top: 0; }
+.pb-0 { padding-bottom: 0; }
+.pl-0 { padding-left: 0; }
+.pr-0 { padding-right: 0; }
+
+/* ==================== 自动间距 ==================== */
+.ml-auto { margin-left: auto; }
+.mr-auto { margin-right: auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }

@@ -1,0 +1,672 @@
+/**
+ * 网络请求封装
+ * 基于 uni.request 封装
+ * 
+ * 功能特性：
+ * - 统一错误处理（401/500/2000）
+ * - 请求防抖
+ * - 请求取消
+ * - 自动重试（网络错误）
+ * - 响应缓存
+ */
+
+import { API_BASE_URL, REQUEST_TIMEOUT, wyxdkey } from './config'
+import { disconnectWebSocket } from '@/stores/websocket.uts'
+import {
+	isRequestCancelled,
+	clearCancelMark,
+	getCachedResponse,
+	setCachedResponse,
+	isNetworkError,
+	delayMs,
+	CODE_SUCCESS,
+	CODE_UNAUTHORIZED,
+	CODE_FORBIDDEN,
+	CODE_BANNED,
+	CODE_BUSINESS_ERROR,
+	CODE_VALIDATION_ERROR,
+	getFriendlyErrorMessage,
+	getNetworkErrorMessage,
+	getBannedMessage,
+	generateCacheKey
+} from '@/common/utils/requestHelper.uts'
+import { SK_TOKEN, SK_USER_INFO } from '@/common/config/storageKeys.uts'
+import { getToken, clearToken } from '@/common/utils/security/tokenManager.uts'
+import { secureError } from '@/common/utils/security/secureLogger.uts'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+import { TOAST_DURATION_DEFAULT, TOAST_DURATION_ERROR, TOAST_DURATION_BANNED } from '@/common/config/uiConfig.uts'
+import { HTTP_OK, HTTP_UNAUTHORIZED, HTTP_FORBIDDEN, BUSINESS_SUCCESS, BUSINESS_BANNED, getHttp5xxMessage } from '@/common/config/httpCodes.uts'
+import { REQUEST_RETRY_BASE_DELAY } from '@/common/config/timeoutConfig.uts'
+
+// 请求配置类
+class RequestConfig {
+	url: string = ''
+	method: string = 'GET'
+	data: any | null = null
+	header: UTSJSONObject | null = null
+	timeout: number = REQUEST_TIMEOUT
+	showLoading: boolean = true
+	loadingText: string = '加载中...'
+	// 新增配置项
+	retry: number = 0           // 重试次数（默认不重试）
+	retryDelay: number = REQUEST_RETRY_BASE_DELAY   // 重试延迟（毫秒）
+	cache: boolean = false      // 是否启用缓存
+	cacheTTL: number = 60000    // 缓存过期时间（毫秒，默认1分钟）
+	
+	constructor(url: string, method: string = 'GET', data: any | null = null, showLoading: boolean = true) {
+		this.url = url
+		this.method = method
+		this.data = data
+		this.showLoading = showLoading
+	}
+}
+
+// 响应数据类
+class ResponseData {
+	code: number = 0
+	msg: string = ''
+	message: string = ''
+	data: UTSJSONObject | null = null
+}
+
+/**
+ * 请求类
+ */
+class Request {
+	private baseURL: string = API_BASE_URL
+	private timeout: number = REQUEST_TIMEOUT
+	
+	constructor() {
+		// Request initialized
+	}
+	
+	/**
+	 * 发起请求（带重试机制）
+	 */
+	async request(config: RequestConfig): Promise<UTSJSONObject> {
+		const url = config.url
+		const method = config.method
+		const data = config.data
+		const timeout = config.timeout
+		const showLoading = config.showLoading
+		const loadingText = config.loadingText
+		const retryCount = config.retry
+		const retryDelayMs = config.retryDelay
+		const enableCache = config.cache
+		const cacheTTLMs = config.cacheTTL
+		
+		// 生成请求标识
+		const requestId = method + ':' + url
+		const cacheKey = generateCacheKey(url, method, data)
+		
+		// 检查请求是否已取消
+		if (isRequestCancelled(requestId) == true) {
+			clearCancelMark(requestId)
+			throw new Error('请求已取消')
+		}
+		
+		// 检查缓存（仅 GET 请求）
+		if (enableCache == true && method == 'GET') {
+			const cachedData = getCachedResponse(cacheKey)
+			if (cachedData != null) {
+				return cachedData
+			}
+		}
+		
+		// 🔧 新增：带重试的请求执行
+		return this.requestWithRetry(config, 0, retryCount, retryDelayMs)
+	}
+	
+	/**
+	 * 带重试机制的请求执行
+	 * @param config 请求配置
+	 * @param currentAttempt 当前尝试次数（从 0 开始）
+	 * @param maxRetries 最大重试次数
+	 * @param retryDelay 重试延迟（毫秒）
+	 */
+	private async requestWithRetry(
+		config: RequestConfig,
+		currentAttempt: number,
+		maxRetries: number,
+		retryDelay: number
+	): Promise<UTSJSONObject> {
+		try {
+			// 执行实际请求
+			return await this.executeRequest(config)
+		} catch (error: any) {
+			// 检查是否是 502 错误
+			let is502Error = false
+			if (error.message != null) {
+				const errorMsg = error.message.toString()
+				if (errorMsg.indexOf('502') >= 0) {
+					is502Error = true
+				}
+			}
+			
+			// 如果是 502 错误且还有重试次数
+			if (is502Error == true && currentAttempt < maxRetries) {
+				const nextAttempt = currentAttempt + 1
+				// 指数退避：1秒、2秒、4秒
+				const delayMs = retryDelay * (1 << currentAttempt)
+				
+				console.log('⚠️ [Request] HTTP 502 错误，' + delayMs.toString() + 'ms 后进行第 ' + nextAttempt.toString() + ' 次重试')
+				
+				// 等待后重试
+				await this.delay(delayMs)
+				return this.requestWithRetry(config, nextAttempt, maxRetries, retryDelay)
+			}
+			
+			// 不是 502 错误或重试次数用尽，抛出错误
+			throw error
+		}
+	}
+	
+	/**
+	 * 延迟函数
+	 */
+	private delay(ms: number): Promise<number> {
+		return new Promise<number>((resolve: (value: number) => void) => {
+			setTimeout(() => {
+				resolve(0)
+			}, ms)
+		})
+	}
+	
+	/**
+	 * 执行实际的 HTTP 请求
+	 */
+	private async executeRequest(config: RequestConfig): Promise<UTSJSONObject> {
+		const url = config.url
+		const method = config.method
+		const data = config.data
+		const timeout = config.timeout
+		const showLoading = config.showLoading
+		const loadingText = config.loadingText
+		const enableCache = config.cache
+		const cacheTTLMs = config.cacheTTL
+		
+		const cacheKey = generateCacheKey(url, method, data)
+		
+		// 显示加载提示
+		if (showLoading == true) {
+			uni.showLoading({
+				title: loadingText,
+				mask: true
+			})
+		}
+		
+		// 获取 token - 通过 Token_Manager 安全读取
+		let tokenValue = ''
+		try {
+			const storedToken = getToken()
+			if (storedToken != null && storedToken != '') {
+				tokenValue = storedToken
+			}
+		} catch (e) {
+			secureError('Request', '获取token失败', '')
+		}
+		
+		// 构建请求头 - 使用 UTSJSONObject
+		let requestHeader = new UTSJSONObject()
+		requestHeader.set('Content-Type', 'application/json')
+		
+		// 添加 token
+		if (tokenValue != '') {
+			requestHeader.set('Authorization', 'Bearer ' + tokenValue)
+		}
+
+		// 添加租户标识（留空时后端自动使用默认演示密钥）
+		if (wyxdkey != null && wyxdkey != '') {
+			requestHeader.set('X-Partner-Id', wyxdkey)
+		}
+		
+		const fullUrl = this.baseURL + url
+		
+		// 🔧 内存泄漏修复：减少闭包捕获的变量
+		// 只保留必要的引用，避免捕获整个 this 和 config 对象
+		const self = this
+		const configUrl = config.url
+		const configMethod = config.method
+		const shouldShowLoading = showLoading
+		const shouldCache = enableCache
+		const cacheKeyVal = cacheKey
+		const cacheTTLVal = cacheTTLMs
+		
+		// 检查是否有有效数据（API 层已确保参数格式正确）
+		let hasData = false
+		if (data != null) {
+			try {
+				const dataStr = JSON.stringify(data)
+				if (dataStr != '' && dataStr != '{}' && dataStr != 'null') {
+					hasData = true
+				}
+			} catch (e) {
+				// 序列化失败，视为无数据
+			}
+		}
+
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: any) => void) => {
+			// 🔧 修复：使用标志位跟踪 loading 状态，确保 hideLoading 只调用一次
+			let loadingHidden = false
+			
+			// 定义成功回调 - 🔧 减少闭包捕获
+			const successCallback = (res: any) => {
+				// 隐藏加载提示（确保只调用一次）
+				if (shouldShowLoading == true && loadingHidden == false) {
+					uni.hideLoading()
+					loadingHidden = true
+				}
+				
+				// 优化：使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+				const resObj = toUTSJSON(res)
+				
+				const statusCodeVal = resObj != null ? resObj.getNumber('statusCode') : null
+				const statusCode = (statusCodeVal != null) ? Math.floor(statusCodeVal as number) : 0
+				const dataValRaw = resObj != null ? resObj.getAny('data') : null
+				let dataVal: any = ''
+				if (dataValRaw != null) {
+					dataVal = dataValRaw
+				}
+				
+				// 处理响应 - 🔧 使用 self 引用和最小化的 config 信息
+				try {
+					const minimalConfig = new RequestConfig(configUrl, configMethod, null, false)
+					const result = self.handleResponseCallback(statusCode, dataVal, minimalConfig)
+					
+					// 写入缓存（仅 GET 请求成功时）
+					if (shouldCache == true && configMethod == 'GET') {
+						setCachedResponse(cacheKeyVal, result, cacheTTLVal)
+					}
+					
+					resolve(result)
+				} catch (e: any) {
+					// 🔧 修复：异常时也要确保 hideLoading
+					if (shouldShowLoading == true && loadingHidden == false) {
+						uni.hideLoading()
+						loadingHidden = true
+					}
+					reject(e)
+				}
+			}
+			
+			// 定义失败回调 - 🔧 减少闭包捕获 + 增强错误处理
+			const failCallback = (err: any) => {
+				// 隐藏加载提示（确保只调用一次）
+				if (shouldShowLoading == true && loadingHidden == false) {
+					uni.hideLoading()
+					loadingHidden = true
+				}
+				
+				// 优化：使用 toUTSJSON + getString/getNumber 替代 JSON.stringify + JSON.parse
+				let errMsgStr = ''
+				let errCode = 0
+				try {
+					const errObj = toUTSJSON(err)
+					if (errObj != null) {
+						errMsgStr = getString(errObj, 'errMsg')
+						errCode = Math.floor(getNumber(errObj, 'errCode'))
+					}
+				} catch (e) {
+					// 忽略解析错误
+				}
+				
+				// 🔧 增强日志：记录完整错误信息和设备信息
+				console.error('❌ [REQUEST] 请求失败详情:', {
+					url: configUrl,
+					method: configMethod,
+					errMsg: errMsgStr,
+					errCode: errCode,
+					timestamp: new Date().toISOString()
+				})
+				
+				// 🔧 优化错误消息：更友好的提示
+				let errorMsg = '网络请求失败，请重试'
+				let errorType = 'UNKNOWN'
+				
+				if (errMsgStr != '') {
+					// 超时错误
+					if (errMsgStr.indexOf('timeout') >= 0 || errMsgStr.indexOf('超时') >= 0) {
+						errorMsg = '网络请求超时，请检查网络连接'
+						errorType = 'TIMEOUT'
+					}
+					// SSL 证书错误
+					else if (errMsgStr.indexOf('ssl') >= 0 || errMsgStr.indexOf('SSL') >= 0 || errMsgStr.indexOf('certificate') >= 0) {
+						errorMsg = 'SSL证书验证失败，请检查系统时间'
+						errorType = 'SSL'
+					}
+					// 网络连接失败
+					else if (errMsgStr.indexOf('fail') >= 0 || errMsgStr.indexOf('abort') >= 0) {
+						// 进一步细分网络错误
+						if (errMsgStr.indexOf('connect') >= 0 || errMsgStr.indexOf('连接') >= 0) {
+							errorMsg = '无法连接到服务器，请检查网络'
+							errorType = 'CONNECT'
+						} else if (errMsgStr.indexOf('dns') >= 0 || errMsgStr.indexOf('DNS') >= 0) {
+							errorMsg = 'DNS解析失败，请检查网络'
+							errorType = 'DNS'
+						} else {
+							errorMsg = '网络连接失败，请检查网络设置'
+							errorType = 'NETWORK'
+						}
+					}
+					// 其他错误，显示原始消息
+					else {
+						errorMsg = errMsgStr
+						errorType = 'OTHER'
+					}
+				}
+				
+				console.error('❌ [REQUEST] 错误类型:', errorType, '错误消息:', errorMsg)
+				
+				uni.showToast({
+					title: errorMsg,
+					icon: 'none',
+					duration: TOAST_DURATION_ERROR
+				})
+				
+				reject(new Error(errorMsg))
+			}
+			
+			// 根据是否有数据分别调用 uni.request
+			// APP 端不能传 data: null 或 data: {}，会报 "data parameter type is invalid"
+			// API 层已确保参数格式正确，直接使用原始 data
+			if (hasData == true) {
+				uni.request({
+					url: fullUrl,
+					method: method,
+					data: data,
+					header: requestHeader,
+					timeout: timeout,
+					success: successCallback,
+					fail: failCallback
+				})
+			} else {
+				// 无数据时，完全不传 data 参数
+				uni.request({
+					url: fullUrl,
+					method: method,
+					header: requestHeader,
+					timeout: timeout,
+					success: successCallback,
+					fail: failCallback
+				})
+			}
+		})
+	}
+
+	/**
+	 * 处理响应（回调方式）
+	 */
+	private handleResponseCallback(
+		statusCode: number,
+		data: any,
+		config: RequestConfig
+	): UTSJSONObject {
+		// HTTP 状态码检查
+		if (statusCode != HTTP_OK) {
+			console.error('HTTP状态码错误:', statusCode)
+			// 🔧 修复：401/403 错误不弹出 toast，直接抛出错误让调用方处理
+			if (statusCode == HTTP_UNAUTHORIZED || statusCode == HTTP_FORBIDDEN) {
+				// 检查响应体是否包含封号业务码 4031
+				try {
+					const bodyStr = JSON.stringify(data)
+					if (bodyStr.indexOf(BUSINESS_BANNED.toString()) >= 0) {
+						this.handleBanResponse()
+						throw new Error(getBannedMessage())
+					}
+				} catch (banCheckError: any) {
+					// 如果是封号错误，直接抛出
+					if (banCheckError.message != null && banCheckError.message.toString().indexOf('封禁') >= 0) {
+						throw banCheckError
+					}
+				}
+				// Token 过期或无效，静默处理
+				this.redirectToLogin()
+				throw new Error('登录已过期，请重新登录')
+			}
+			// HTTP 5xx 服务端错误处理
+			if (statusCode >= 500 && statusCode < 600) {
+				console.error('🔴 [Request] HTTP 5xx 错误', {
+					statusCode: statusCode,
+					url: config.url,
+					timestamp: new Date().toISOString()
+				})
+				const friendlyMsg = getHttp5xxMessage(statusCode)
+				uni.showToast({ title: friendlyMsg, icon: 'none' })
+				throw new Error('HTTP_' + statusCode.toString() + ': ' + friendlyMsg)
+			}
+			throw new Error('HTTP ' + statusCode.toString() + ': 请求失败')
+		}
+		
+		// 检查响应数据（data 参数类型为 any，需要检查空字符串和空对象）
+		const dataStr = JSON.stringify(data)
+		if (dataStr == '' || dataStr == '{}' || dataStr == 'null') {
+			console.error('响应数据为空')
+			throw new Error('响应数据为空')
+		}
+		
+		// 优化：使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+		let dataObj: UTSJSONObject
+		try {
+			if (typeof data == 'string') {
+				const dataStr = data as string
+				dataObj = JSON.parse(dataStr) as UTSJSONObject
+			} else {
+				const converted = toUTSJSON(data)
+				if (converted == null) {
+					console.error('响应数据转换失败')
+					throw new Error('响应数据解析失败')
+				}
+				dataObj = converted
+			}
+		} catch (parseError) {
+			console.error('JSON解析失败:', parseError)
+			throw new Error('响应数据解析失败')
+		}
+		
+		// 从 UTSJSONObject 中提取字段
+		const codeVal = dataObj.getAny('code')
+		let code = 0
+		if (codeVal != null) {
+			if (typeof codeVal == 'string') {
+				code = parseInt(codeVal.toString())
+			} else if (typeof codeVal == 'number') {
+				code = codeVal as number
+			}
+		}
+		
+		if (code == BUSINESS_SUCCESS) {
+			return dataObj
+		}
+		
+		// 封号检查（优先于 401/403）
+		if (code == CODE_BANNED) {
+			this.handleBanResponse()
+			throw new Error(getBannedMessage())
+		}
+		
+		// Token 过期
+		if (code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN) {
+			this.redirectToLogin()
+			throw new Error('登录已过期，请重新登录')
+		}
+		
+		// 其他业务错误
+		let errorMsg = '请求失败'
+		const msgVal = dataObj.getString('msg')
+		const messageVal = dataObj.getString('message')
+		if (msgVal != null && msgVal != '') {
+			errorMsg = msgVal
+		} else if (messageVal != null && messageVal != '') {
+			errorMsg = messageVal
+		}
+		
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none',
+			duration: TOAST_DURATION_DEFAULT
+		})
+		
+		throw new Error(errorMsg)
+	}
+	
+	/**
+	 * 处理封号响应
+	 */
+	private handleBanResponse() {
+		console.warn('⛔ [Request] 账号已被封禁，执行清理')
+		
+		// 清除本地存储
+		try {
+			uni.removeStorageSync(SK_USER_INFO)
+			clearToken()
+		} catch (e) {
+			console.error('清除存储失败:', e)
+		}
+		
+		// 断开 WebSocket
+		try {
+			disconnectWebSocket()
+		} catch (e) {
+			console.error('断开WebSocket失败:', e)
+		}
+		
+		// 显示封号提示
+		uni.showToast({
+			title: getBannedMessage(),
+			icon: 'none',
+			duration: TOAST_DURATION_BANNED
+		})
+		
+		// 跳转到登录页
+		uni.reLaunch({
+			url: '/pagesUser/login/index'
+		})
+	}
+	
+	/**
+	 * 跳转到登录页
+	 */
+	private redirectToLogin() {
+		try {
+			uni.removeStorageSync(SK_USER_INFO)
+			clearToken()
+		} catch (e) {
+			console.error('清除存储失败:', e)
+		}
+		
+		uni.reLaunch({
+			url: '/pagesUser/login/index'
+		})
+	}
+	
+	/**
+	 * GET 请求
+	 */
+	get(url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const config = new RequestConfig(url, 'GET', dataVal, loading)
+		return this.request(config)
+	}
+	
+	/**
+	 * GET 请求（带重试）
+	 * @param url 请求地址
+	 * @param data 请求参数
+	 * @param showLoading 是否显示加载提示
+	 * @param retryCount 重试次数（默认 3 次）
+	 */
+	getWithRetry(url: string, data?: any, showLoading?: boolean, retryCount?: number): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const retries = (retryCount != null) ? retryCount : 3
+		const config = new RequestConfig(url, 'GET', dataVal, loading)
+		config.retry = retries
+		config.retryDelay = REQUEST_RETRY_BASE_DELAY  // 基础延迟
+		return this.request(config)
+	}
+	
+	/**
+	 * POST 请求
+	 */
+	post(url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const config = new RequestConfig(url, 'POST', dataVal, loading)
+		return this.request(config)
+	}
+	
+	/**
+	 * POST 请求（带重试）
+	 * @param url 请求地址
+	 * @param data 请求参数
+	 * @param showLoading 是否显示加载提示
+	 * @param retryCount 重试次数（默认 3 次）
+	 */
+	postWithRetry(url: string, data?: any, showLoading?: boolean, retryCount?: number): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const retries = (retryCount != null) ? retryCount : 3
+		const config = new RequestConfig(url, 'POST', dataVal, loading)
+		config.retry = retries
+		config.retryDelay = REQUEST_RETRY_BASE_DELAY  // 基础延迟
+		return this.request(config)
+	}
+	
+	/**
+	 * PUT 请求
+	 */
+	put(url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const config = new RequestConfig(url, 'PUT', dataVal, loading)
+		return this.request(config)
+	}
+	
+	/**
+	 * DELETE 请求
+	 */
+	delete(url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> {
+		const loading = (showLoading != null) ? showLoading : true
+		const dataVal: any | null = (data != null) ? data : null
+		const config = new RequestConfig(url, 'DELETE', dataVal, loading)
+		return this.request(config)
+	}
+}
+
+// 创建请求实例
+const requestInstance = new Request()
+
+// 导出快捷方法
+const get = (url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> => {
+	return requestInstance.get(url, data, showLoading)
+}
+
+const getWithRetry = (url: string, data?: any, showLoading?: boolean, retryCount?: number): Promise<UTSJSONObject> => {
+	return requestInstance.getWithRetry(url, data, showLoading, retryCount)
+}
+
+const post = (url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> => {
+	return requestInstance.post(url, data, showLoading)
+}
+
+const postWithRetry = (url: string, data?: any, showLoading?: boolean, retryCount?: number): Promise<UTSJSONObject> => {
+	return requestInstance.postWithRetry(url, data, showLoading, retryCount)
+}
+
+const put = (url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> => {
+	return requestInstance.put(url, data, showLoading)
+}
+
+const del = (url: string, data?: any, showLoading?: boolean): Promise<UTSJSONObject> => {
+	return requestInstance.delete(url, data, showLoading)
+}
+
+// 导出快捷方法
+export { get, getWithRetry, post, postWithRetry, put, del }
+
+// 导出 request 别名
+export const request = requestInstance
+
+// 导出请求实例作为默认导出
+export default requestInstance

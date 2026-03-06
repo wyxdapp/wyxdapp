@@ -1,0 +1,106 @@
+<template>
+	<!-- #ifdef H5 -->
+	<view class="h5-top-bar">
+		<view class="top-bar-content flex-row align-center space-between">
+			<view class="logo-section flex-row align-center">
+				<image class="logo-img" :src="logo" mode="aspectFit"></image>
+				<text class="app-name fs-md ml-8">{{ titleText }}</text>
+			</view>
+			<view v-if="showOpenApp == true" class="open-app-btn" @click="onOpenApp">
+				<text class="btn-text fs-sm">打开APP</text>
+			</view>
+		</view>
+	</view>
+	<!-- 微信引导蒙层 -->
+	<WechatGuideOverlay 
+		v-model:show="showWechatGuide"
+		@close="onWechatGuideClose"
+	/>
+	<!-- #endif -->
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { isWechatBrowser } from '@/common/composables/useShareAndDeepLink.uts'
+import WechatGuideOverlay from '@/components/base/WechatGuideOverlay.uvue'
+
+// Props must be runtime-declared in UTS
+const props = defineProps({
+	titleText: { type: String, default: '网约向导趣游玩' },
+	logo: { type: String, default: '/static/images/icon/logo.png' },
+	showOpenApp: { type: Boolean, default: true }
+})
+
+const emit = defineEmits(['open-app', 'wechat-detected'])
+
+// 微信引导蒙层显示状态
+const showWechatGuide = ref<boolean>(false)
+
+// 点击打开APP按钮
+const onOpenApp = () => {
+	try {
+		// 检测微信环境
+		if (isWechatBrowser() == true) {
+			showWechatGuide.value = true
+			emit('wechat-detected')
+			return
+		}
+		emit('open-app')
+	} catch (e) {
+		// 发生错误时仍然触发 open-app 事件
+		emit('open-app')
+	}
+}
+
+// 微信引导蒙层关闭
+const onWechatGuideClose = () => {
+	showWechatGuide.value = false
+}
+
+</script>
+
+<style scoped>
+.h5-top-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 90rpx;
+	background-color: #ffffff;
+	z-index: 999;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+}
+.top-bar-content {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 100%;
+	padding: 0 24rpx;
+}
+.logo-section {
+	display: flex;
+	align-items: center;
+}
+.logo-img {
+	width: 60rpx;
+	height: 60rpx;
+}
+.app-name {
+	color: #333333;
+	font-weight: 400;
+}
+.open-app-btn {
+	padding: 12rpx 28rpx;
+	background-color: #37B1F2;
+	border-radius: 28rpx;
+	height: 56rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+.btn-text {
+	color: #ffffff;
+}
+</style>
+
+

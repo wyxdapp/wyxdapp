@@ -1,0 +1,222 @@
+<template>
+	<view class="lazy-image-container" :style="containerStyle">
+		<!-- 占位图/加载中 -->
+		<view v-if="imageStatus == 'loading'" class="placeholder-box" :style="placeholderStyle">
+			<image 
+				v-if="placeholder != ''" 
+				:src="placeholder" 
+				class="placeholder-image"
+				mode="aspectFill"
+			/>
+			<view v-else class="loading-indicator">
+				<text class="loading-text">加载中</text>
+			</view>
+		</view>
+		
+		<!-- 错误图 -->
+		<view v-if="imageStatus == 'error'" class="error-box" :style="placeholderStyle">
+			<image 
+				v-if="errorImage != ''" 
+				:src="errorImage" 
+				class="error-image"
+				mode="aspectFill"
+			/>
+			<view v-else class="error-indicator">
+				<text class="error-text">加载失败</text>
+			</view>
+		</view>
+		
+		<!-- 实际图片 -->
+		<image 
+			v-if="shouldLoad == true"
+			:src="src"
+			:mode="mode"
+			class="lazy-image"
+			:class="{ 'image-loaded': imageStatus == 'loaded', 'image-hidden': imageStatus != 'loaded' }"
+			:style="imageStyle"
+			@load="onImageLoad"
+			@error="onImageError"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+
+// Props 定义
+const props = defineProps({
+	src: { type: String, default: '' },
+	placeholder: { type: String, default: '' },
+	errorImage: { type: String, default: '/static/images/default-image.png' },
+	mode: { type: String, default: 'aspectFill' },
+	width: { type: String, default: '100%' },
+	height: { type: String, default: '100%' },
+	radius: { type: String, default: '0' },
+	threshold: { type: Number, default: 100 },
+	lazyLoad: { type: Boolean, default: true }
+})
+
+// Emits 定义
+const emit = defineEmits(['load', 'error'])
+
+// 状态：loading | loaded | error
+const imageStatus = ref<string>('loading')
+// 是否应该加载图片
+const shouldLoad = ref<boolean>(false)
+// 组件是否在可视区域
+const isInViewport = ref<boolean>(false)
+
+// 容器样式
+const containerStyle = computed((): string => {
+	let style = 'width: ' + props.width + '; height: ' + props.height + ';'
+	if (props.radius != '0' && props.radius != '') {
+		style = style + ' border-radius: ' + props.radius + ';'
+	}
+	return style
+})
+
+// 占位图样式
+const placeholderStyle = computed((): string => {
+	return 'width: 100%; height: 100%;'
+})
+
+// 图片样式
+const imageStyle = computed((): string => {
+	let style = 'width: 100%; height: 100%;'
+	if (props.radius != '0' && props.radius != '') {
+		style = style + ' border-radius: ' + props.radius + ';'
+	}
+	return style
+})
+
+// 图片加载成功
+const onImageLoad = () => {
+	imageStatus.value = 'loaded'
+	emit('load')
+}
+
+// 图片加载失败
+const onImageError = () => {
+	imageStatus.value = 'error'
+	emit('error')
+}
+
+// 检查是否应该加载
+const checkShouldLoad = () => {
+	// 如果不启用懒加载，直接加载
+	if (props.lazyLoad == false) {
+		shouldLoad.value = true
+		return
+	}
+	
+	// 如果已经加载过，不重复加载
+	if (shouldLoad.value == true) {
+		return
+	}
+	
+	// 如果 src 为空，不加载
+	if (props.src == null || props.src == '') {
+		return
+	}
+	
+	// 简化处理：直接加载（uni-app x 中 IntersectionObserver 支持有限）
+	// 实际项目中可以使用 scroll-view 的 @scroll 事件配合计算
+	shouldLoad.value = true
+}
+
+// 监听 src 变化
+watch(() => props.src, (newVal: string) => {
+	if (newVal != null && newVal != '') {
+		imageStatus.value = 'loading'
+		checkShouldLoad()
+	}
+})
+
+// 组件挂载
+onMounted(() => {
+	checkShouldLoad()
+})
+</script>
+
+<style scoped>
+.lazy-image-container {
+	position: relative;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.placeholder-box {
+	position: absolute;
+	top: 0;
+	left: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #f5f5f5;
+}
+
+.placeholder-image {
+	width: 100%;
+	height: 100%;
+}
+
+.loading-indicator {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	background-color: #f0f0f0;
+}
+
+.loading-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.error-box {
+	position: absolute;
+	top: 0;
+	left: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #f5f5f5;
+}
+
+.error-image {
+	width: 100%;
+	height: 100%;
+}
+
+.error-indicator {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	background-color: #f0f0f0;
+}
+
+.error-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.lazy-image {
+	width: 100%;
+	height: 100%;
+}
+
+.image-loaded {
+	opacity: 1;
+}
+
+.image-hidden {
+	opacity: 0;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+</style>

@@ -1,0 +1,264 @@
+<!--
+  NicknameWithBadges 昵称+徽章组件
+
+  显示样式：昵称 + VIP图标 + 礼物等级图标
+
+  使用示例：
+
+  1. 向导卡片昵称显示
+  <NicknameWithBadges
+    :nickname="guideData.nickname"
+    :vipType="guideData.vipType"
+    :giftLevel="guideData.giftLevel"
+    size="medium"
+  />
+
+  2. 用户信息昵称显示
+  <NicknameWithBadges
+    :nickname="userInfo.nickname"
+    :vipType="userInfo.vipType"
+    :giftLevel="userInfo.giftLevel"
+    size="large"
+  />
+
+  Props:
+  - nickname: string - 昵称文本（必填）
+  - vipType: string - VIP类型 'normal'(普通会员) | 'year'(年会员) | ''(非会员)，默认 ''
+  - giftLevel: number - 礼物等级 1-50，默认 0
+  - size: string - 尺寸 'small' | 'medium' | 'large'，默认 'medium'
+-->
+<template>
+  <view class="nickname-container" :class="sizeClass">
+    <!-- 昵称文本 -->
+    <text class="nickname-text" :class="textSizeClass">{{ nickname }}</text>
+
+    <!-- VIP图标 - 确保与礼物等级图标高度完全一致 -->
+    <image
+      v-if="vipIcon != ''"
+      :src="vipIcon"
+      class="vip-badge"
+      :class="vipSizeClass"
+      mode="heightFix"
+      @click.stop="handleVipClick"
+    />
+
+    <!-- 礼物等级图标 - 与VIP图标使用相同的尺寸类 -->
+    <image
+      v-if="giftIcon != ''"
+      :src="giftIcon"
+      class="gift-badge"
+      :class="badgeSizeClass"
+      mode="heightFix"
+      @click.stop="handleGiftClick"
+    />
+  </view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// ==================== Props 定义 ====================
+
+const props = defineProps({
+  // 基础属性
+  nickname: { type: String, required: true },
+  vipType: { type: String, default: '' },
+  giftLevel: { type: Number, default: 0 },
+
+  // 样式
+  size: { type: String, default: 'medium' },
+
+  // 交互属性
+  targetUserKid: { type: String, default: '' }  // 目标用户ID，用于礼物发送
+})
+
+// ==================== Emits 定义 ====================
+
+const emit = defineEmits<{
+  vipClick: []                           // VIP图标点击事件
+  giftClick: [targetUserKid: string]     // 礼物图标点击事件，携带目标用户ID
+}>()
+
+// ==================== 常量定义 ====================
+
+// VIP图标路径（已移除）
+const VIP_NORMAL_ICON = ''
+const VIP_YEAR_ICON = ''
+
+// 礼物等级图标前缀（已移除）
+const GIFT_BADGE_PREFIX = ''
+
+// 礼物等级图标最大等级（1-50 的图标文件都已存在）
+const MAX_GIFT_LEVEL = 50
+
+// ==================== 计算属性 ====================
+
+// 尺寸样式类
+const sizeClass = computed((): string => {
+  return `nickname-container-${props.size}`
+})
+
+// 文本尺寸样式类
+const textSizeClass = computed((): string => {
+  return `nickname-text-${props.size}`
+})
+
+// 徽章尺寸类名（确保VIP图标和礼物等级图标使用相同的尺寸）
+const badgeSizeClass = computed((): string => {
+  return `badge-size-${props.size}`
+})
+
+// VIP 单独尺寸类（允许单独缩小 VIP 图标高度）
+const vipSizeClass = computed((): string => {
+  return `vip-size-${props.size}`
+})
+
+// VIP图标路径
+const vipIcon = computed((): string => {
+  if (props.vipType == 'year') return VIP_YEAR_ICON
+  if (props.vipType == 'normal') return VIP_NORMAL_ICON
+  return ''
+})
+
+// 礼物等级图标路径（所有 1-50 等级的图标文件都已存在）
+const giftIcon = computed((): string => {
+  const level = props.giftLevel
+  if (level <= 0) return ''
+  
+  // 如果等级超过最大值，使用最大等级
+  if (level > MAX_GIFT_LEVEL) return GIFT_BADGE_PREFIX + MAX_GIFT_LEVEL.toString() + '.png'
+  
+  return GIFT_BADGE_PREFIX + level.toString() + '.png'
+})
+
+// ==================== 事件处理函数 ====================
+
+// VIP图标点击处理
+const handleVipClick = () => {
+  emit('vipClick')
+}
+
+// 礼物图标点击处理
+const handleGiftClick = () => {
+  emit('giftClick', props.targetUserKid)
+}
+</script>
+
+<style scoped>
+/* ==================== 基础样式 ==================== */
+
+.nickname-container {
+  flex-direction: row;
+  align-items: center;
+}
+
+.nickname-text {
+  font-size: 28rpx;
+  color: #333333;
+  font-weight: normal;
+  line-height: 40rpx;
+}
+
+/* VIP徽章 - 基础样式 */
+.vip-badge {
+  margin-left: 8rpx;
+}
+
+/* 礼物等级徽章 - 基础样式 */
+.gift-badge {
+  margin-left: 4rpx;
+}
+
+/* ==================== 徽章尺寸类（统一高度：与文字行高一致）==================== */
+
+/* 小尺寸徽章 - 与 line-height: 34rpx 对齐 */
+.badge-size-small {
+  height: 28rpx;
+  width: auto;
+}
+
+/* 中等尺寸徽章（默认）- 与 line-height: 40rpx 对齐 */
+.badge-size-medium {
+  height: 32rpx;
+  width: auto;
+}
+
+/* 大尺寸徽章 - 与 line-height: 46rpx 对齐 */
+.badge-size-large {
+  height: 38rpx;
+  width: auto;
+}
+
+/* ==================== VIP 专用尺寸（比礼物徽章略矮，视觉对齐）===================== */
+.vip-size-small {
+  height: 24rpx;
+  width: auto;
+}
+
+.vip-size-medium {
+  height: 28rpx;
+  width: auto;
+}
+
+.vip-size-large {
+  height: 32rpx;
+  width: auto;
+}
+
+/* ==================== 文本尺寸变体（使用独立类名，确保 APP 端兼容）==================== */
+
+/* 小尺寸文本 - 高度与图标 28rpx 视觉对齐 */
+.nickname-text-small {
+  font-size: 24rpx;
+  line-height: 28rpx;
+  height: 28rpx;
+}
+
+/* 中等尺寸文本（默认）- 高度与图标 32rpx 视觉对齐 */
+.nickname-text-medium {
+  font-size: 28rpx;
+  line-height: 32rpx;
+  height: 32rpx;
+}
+
+/* 大尺寸文本 - 高度与图标 38rpx 视觉对齐 */
+.nickname-text-large {
+  font-size: 32rpx;
+  line-height: 38rpx;
+  height: 38rpx;
+}
+
+/* ==================== 响应式调整 ==================== */
+
+/* 确保图标不换行 */
+.vip-badge,
+.gift-badge {
+  flex-shrink: 0;
+}
+
+/* 确保所有尺寸类的图标都不换行 */
+.badge-size-small,
+.badge-size-medium,
+.badge-size-large {
+  flex-shrink: 0;
+}
+
+/* 垂直对齐：按底部对齐所有元素，保证昵称、VIP、礼物底部一致 */
+.vip-badge,
+.gift-badge,
+.nickname-text {
+  align-self: center;
+}
+
+/* 取消基于 margin 的下移微调，改为底部对齐。如需微调，请按 ±1rpx 精细调整 translateY */
+.vip-badge.badge-size-small,
+.vip-badge.badge-size-medium,
+.vip-badge.badge-size-large {
+  margin-top: 0rpx;
+}
+
+/* 昵称文本 - 不设置 flex: 1，让文本只占据实际宽度 */
+.nickname-text {
+  lines: 1;
+}
+</style>

@@ -1,0 +1,725 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<!-- 头部背景 -->
+		<image class="header-bg" src="https://jiasu.wyxdapp.com/iconimages/order_bg.png" mode="widthFix"></image>
+		
+		<!-- Tab 栏 -->
+		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabItems" 
+					:key="index"
+					class="tab-item" 
+					@click="onTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': activeTabIndex == index }">{{ tab.label }}</text>
+					<view v-if="activeTabIndex == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 滚动内容区 -->
+		<scroll-view 
+			scroll-y
+			:show-scrollbar="false"
+			class="scroll-view"
+			:style="{ height: contentHeight + 'px' }"
+			@scrolltolower="loadMore"
+			refresher-enabled
+			:refresher-triggered="refreshing"
+			@refresherrefresh="onRefresh"
+		>
+			<ListStatus 
+				v-if="filteredVisitors.length == 0 && loading == false" 
+				status="empty" 
+				emptyText="暂无访客"
+			/>
+			<view v-else class="visitor-list">
+				<view 
+					v-for="(v, idx) in filteredVisitors" 
+					:key="getVisitorKey(v, idx)" 
+					class="visitor-card"
+					:class="{ 'new-visitor': v.unread == true }"
+					@click="gotoUserProfile(v)"
+				>
+					<view class="card-content">
+						<Avatar 
+							:url="v.avatar"
+							:userId="v.visitorKid"
+							size="medium"
+							:customSize="96"
+							clickMode="none"
+						/>
+						<view class="visitor-info">
+							<NicknameWithBadges
+								:nickname="getVisitorName(v)"
+								:vipType="getVipType(v)"
+								:giftLevel="v.giftLevel"
+								:targetUserKid="v.visitorKid"
+								size="medium"
+								@vipClick="handleVipClick"
+								@giftClick="handleGiftIconClick"
+							/>
+							<text class="visitor-desc">Ta 查看了你的{{ getVisitTypeName(v) }}{{ getVisitCount(v) }}次</text>
+							<text class="visitor-time">最后时间：{{ formatTime(getLastVisitTime(v)) }}</text>
+						</view>
+						<text class="arrow-icon">›</text>
+					</view>
+				</view>
+			</view>
+			<view class="load-more" v-if="visitors.length >= 5">
+				<text class="load-text">{{ loadStatusText }}</text>
+			</view>
+		</scroll-view>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="selectedUserKid"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { getUserId } from '@/stores/user.uts'
+import { markAllRead, getVisitorsWithType } from '@/common/services/visitorService.uts'
+import { resetMessageReminderCount, ResetMessageReminderParams } from '@/api/chat'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper'
+import { formatFullDateTime } from '@/common/utils/dateUtils.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { requireLoginReliable } from '@/common/utils/loginHelper.uts'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+
+// ==================== 礼物选择相关 ====================
+const showGiftSelector = ref<boolean>(false)
+const selectedUserKid = ref<string>('')
+const currentUserId = computed((): string => {
+	return getCurrentUserIdReliable()
+})
+
+// ==================== 布局相关 ====================
+// 头部高度（状态栏 + Tab栏）
+const headerHeight = ref<number>(0)
+// 内容区域高度
+const contentHeight = ref<number>(0)
+
+// 初始化页面布局
+const initPageLayout = () => {
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + Tab栏约 90rpx ≈ 45px）
+	headerHeight.value = pageStatusBarHeight.value + 45
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+	
+	console.log('[Visitor] 布局初始化:', {
+		statusBarHeight: pageStatusBarHeight.value,
+		headerHeight: headerHeight.value,
+		contentHeight: contentHeight.value,
+		windowHeight: pageWindowHeight.value
+	})
+}
+
+// ==================== 辅助函数 ====================
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+const getObjBoolean = (obj: UTSJSONObject | null, key: string): boolean => {
+	if (obj == null) return false
+	const val = obj.get(key)
+	if (val != null) {
+		const str = val.toString()
+		return str == 'true' || str == '1'
+	}
+	return false
+}
+
+// ==================== Tab 数据类 ====================
+class TabItemData {
+	label: string = ''
+	value: string = ''
+	unread: number = 0
+	badge: boolean = false
+	constructor(label: string, value: string, unread: number, badge: boolean) {
+		this.label = label
+		this.value = value
+		this.unread = unread
+		this.badge = badge
+	}
+}
+
+// ==================== 访客数据类 ====================
+class VisitorItem {
+	visitorKid: string = ''
+	nickname: string = ''
+	avatar: string = ''
+	visitType: string = ''
+	visitTypeName: string = ''
+	// ⭐ 新字段：适配 trip_visitor_summary 表
+	historyVisitCount: number = 0
+	newVisitCount: number = 0
+	totalVisitCount: number = 0
+	// 兼容旧字段
+	typeVisitCount: number = 0
+	count: number = 0
+	lastVisitTime: string = ''
+	time: string = ''
+	unread: boolean = false
+	// VIP 和礼物等级字段
+	vip: number = 10
+	vipType: number = 0
+	giftLevel: number = 0
+	constructor() {}
+}
+
+// Tab 配置
+const tabItems = ref<Array<TabItemData>>([
+	new TabItemData('全部', 'all', 0, false),
+	new TabItemData('主页', 'profile', 0, false),
+	new TabItemData('动态', 'dynamic', 0, false),
+	new TabItemData('定制', 'custom', 0, false)
+])
+
+const activeTabIndex = ref<number>(0)
+
+// 获取当前 Tab 值
+const getCurrentTabValue = (): string => {
+	if (activeTabIndex.value >= 0 && activeTabIndex.value < tabItems.value.length) {
+		return tabItems.value[activeTabIndex.value].value
+	}
+	return 'all'
+}
+
+// 状态
+const pageNum = ref<number>(1)
+const size = ref<number>(20)
+const total = ref<number>(0)
+const visitors = ref<Array<VisitorItem>>([])
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
+
+// 计算属性
+const userKid = computed((): string => {
+	return getUserId()
+})
+
+const loadStatusText = computed((): string => {
+	if (visitors.value.length >= total.value && total.value > 0) {
+		return '没有更多了'
+	}
+	if (loading.value == true) {
+		return '加载中...'
+	}
+	return '上拉加载更多'
+})
+
+// 过滤访客列表
+const filteredVisitors = computed((): Array<VisitorItem> => {
+	const currentTabVal = getCurrentTabValue()
+	if (currentTabVal == 'all') {
+		return visitors.value
+	}
+	const result: Array<VisitorItem> = []
+	for (let i = 0; i < visitors.value.length; i = i + 1) {
+		if (visitors.value[i].visitType == currentTabVal) {
+			result.push(visitors.value[i])
+		}
+	}
+	return result
+})
+
+// 获取访客 key
+const getVisitorKey = (v: VisitorItem, idx: number): string => {
+	if (v.visitorKid != '') {
+		return v.visitorKid
+	}
+	return idx.toString()
+}
+
+// 获取访客头像
+const getVisitorAvatar = (v: VisitorItem): string => {
+	if (v.avatar != '' && v.avatar.length > 0) {
+		return v.avatar
+	}
+	return defaultAvatar
+}
+
+// 获取访客名称
+const getVisitorName = (v: VisitorItem): string => {
+	if (v.visitorKid == '0') {
+		return '匿名访客'
+	}
+	if (v.nickname != '') {
+		return v.nickname
+	}
+	if (v.visitorKid != '' && v.visitorKid.length > 4) {
+		return '访客' + v.visitorKid.substring(v.visitorKid.length - 4)
+	}
+	return '访客'
+}
+
+// 获取访问类型名称
+const getVisitTypeName = (v: VisitorItem): string => {
+	if (v.visitTypeName != '') {
+		return v.visitTypeName
+	}
+	return '主页'
+}
+
+// 获取访问次数 - 优先使用 totalVisitCount
+const getVisitCount = (v: VisitorItem): number => {
+	// ⭐ 优先使用新字段 totalVisitCount
+	if (v.totalVisitCount > 0) {
+		return v.totalVisitCount
+	}
+	// 兼容旧字段
+	if (v.typeVisitCount > 0) {
+		return v.typeVisitCount
+	}
+	if (v.count > 0) {
+		return v.count
+	}
+	return 1
+}
+
+// 获取最后访问时间
+const getLastVisitTime = (v: VisitorItem): string => {
+	if (v.lastVisitTime != '') {
+		return v.lastVisitTime
+	}
+	return v.time
+}
+
+// VIP 类型转换函数
+const getVipType = (v: VisitorItem): string => {
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (v.vip != 20) return ''
+	// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+	if (v.vipType == 20) return 'year'
+	return 'normal'
+}
+
+// ==================== 方法定义 ====================
+
+// 标记所有访客为已读
+const clearUnread = () => {
+	const kid = userKid.value
+	console.log('[Visitor] clearUnread 开始, userKid:', kid)
+	if (kid == '') {
+		console.log('[Visitor] clearUnread 跳过: userKid 为空')
+		return
+	}
+
+	// ⭐ 更新：使用统一的resetMessageReminderCount API
+	const params = new ResetMessageReminderParams()
+	params.userKid = kid
+	params.reminderType = 40 // REMINDER_TYPE_VISITOR
+
+	resetMessageReminderCount(params).then(() => {
+		// 移除：不要调用 updateUnreadCountsDirect({})
+		// resetMessageReminderCount API会在后端推送WebSocket更新，前端会自动更新UI
+	}).catch((error: any | null): void => {
+		console.error('❌ 清零访客未读数失败:', error)
+	})
+
+	// 原有的markAllRead调用（保留用于标记访客记录为已读）
+	const markParams = new UTSJSONObject()
+	markParams['userKid'] = kid
+	markAllRead(markParams).then((res: any) => {
+		console.log('[Visitor] clearUnread 成功:', JSON.stringify(res))
+	}).catch((error: any | null): void => {
+		console.error('[Visitor] clearUnread 失败:', error)
+	})
+}
+
+// 获取访客列表
+const fetchVisitors = () => {
+	const kid = userKid.value
+	console.log('[Visitor] fetchVisitors 开始, userKid:', kid)
+	if (kid == '') {
+		console.log('[Visitor] fetchVisitors 跳过: userKid 为空')
+		return
+	}
+	loading.value = true
+	
+	const params = {
+		userKid: kid,
+		page: pageNum.value,
+		size: size.value
+	} as UTSJSONObject
+	console.log('[Visitor] fetchVisitors 请求参数:', JSON.stringify(params))
+	
+	getVisitorsWithType(params).then((res: UTSJSONObject) => {
+		console.log('[Visitor] fetchVisitors 响应:', JSON.stringify(res))
+		const resObj = toJsonObj(res)
+		if (resObj != null) {
+			const totalVal = getObjNumber(resObj, 'total')
+			const pageVal = getObjNumber(resObj, 'page')
+			const sizeVal = getObjNumber(resObj, 'size')
+			const itemsVal = resObj.get('items')
+			
+			console.log('[Visitor] fetchVisitors 解析: total=', totalVal, ', page=', pageVal, ', size=', sizeVal)
+			
+			if (totalVal > 0) {
+				total.value = totalVal
+			}
+			if (pageVal > 0) {
+				pageNum.value = pageVal
+			}
+			if (sizeVal > 0) {
+				size.value = sizeVal
+			}
+			
+			if (itemsVal != null && Array.isArray(itemsVal) == true) {
+				const itemsArr = itemsVal as Array<UTSJSONObject>
+				console.log('[Visitor] fetchVisitors 访客数量:', itemsArr.length)
+				for (let i = 0; i < itemsArr.length; i = i + 1) {
+					const itemVal = itemsArr[i]
+					const itemObj = toJsonObj(itemVal)
+					if (itemObj != null) {
+						const visitor = new VisitorItem()
+						visitor.visitorKid = getObjString(itemObj, 'visitorKid')
+						visitor.nickname = getObjString(itemObj, 'nickname')
+						visitor.avatar = getObjString(itemObj, 'avatar')
+						visitor.visitType = getObjString(itemObj, 'visitType')
+						visitor.visitTypeName = getObjString(itemObj, 'visitTypeName')
+						// ⭐ 解析新字段
+						visitor.historyVisitCount = getObjNumber(itemObj, 'historyVisitCount')
+						visitor.newVisitCount = getObjNumber(itemObj, 'newVisitCount')
+						visitor.totalVisitCount = getObjNumber(itemObj, 'totalVisitCount')
+						// 兼容旧字段
+						visitor.typeVisitCount = getObjNumber(itemObj, 'typeVisitCount')
+						visitor.count = getObjNumber(itemObj, 'count')
+						visitor.lastVisitTime = getObjString(itemObj, 'lastVisitTime')
+						visitor.time = getObjString(itemObj, 'time')
+						// ⭐ unread 判断：优先使用 isUnread，或根据 newVisitCount > 0 判断
+						visitor.unread = getObjBoolean(itemObj, 'unread')
+						if (visitor.unread == false && visitor.newVisitCount > 0) {
+							visitor.unread = true
+						}
+						// VIP 和礼物等级字段
+						visitor.vip = getObjNumber(itemObj, 'vip')
+						visitor.vipType = getObjNumber(itemObj, 'vipType')
+						visitor.giftLevel = getObjNumber(itemObj, 'giftLevel')
+						visitors.value.push(visitor)
+					}
+				}
+				console.log('[Visitor] fetchVisitors 完成, visitors.length:', visitors.value.length)
+			} else {
+				console.log('[Visitor] fetchVisitors: items 为空或不是数组')
+			}
+		} else {
+			console.log('[Visitor] fetchVisitors: resObj 为 null')
+		}
+	}).catch((error: any | null): void => {
+		console.error('[Visitor] fetchVisitors 失败:', error)
+	}).finally(() => {
+		loading.value = false
+	})
+}
+
+// 刷新
+const refresh = () => {
+	console.log('[Visitor] refresh 开始')
+	pageNum.value = 1
+	visitors.value = []
+	fetchVisitors()
+}
+
+// Tab切换
+const onTabChange = (index: number) => {
+	activeTabIndex.value = index
+	console.log('切换到Tab:', tabItems.value[index].label)
+}
+
+// 加载更多
+const loadMore = () => {
+	if (loading.value == true) return
+	if (visitors.value.length >= total.value && total.value > 0) return
+	pageNum.value = pageNum.value + 1
+	fetchVisitors()
+}
+
+// 下拉刷新
+const onRefresh = () => {
+	refreshing.value = true
+	pageNum.value = 1
+	visitors.value = []
+	fetchVisitors()
+	// 延迟关闭刷新状态
+	setTimeout(() => {
+		refreshing.value = false
+	}, 500)
+}
+
+// 格式化时间
+const formatTime = (time: string): string => {
+	return formatFullDateTime(time)
+}
+
+// 跳转用户主页
+const gotoUserProfile = (v: VisitorItem) => {
+	if (v.visitorKid == '' || v.visitorKid == '0') return
+	uni.navigateTo({
+		url: '/pagesUser/persionInfo/index?id=' + v.visitorKid
+	})
+}
+
+// VIP图标点击 - 跳转VIP页面
+const handleVipClick = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+// 礼物图标点击 - 打开礼物选择面板
+const handleGiftIconClick = (targetUserKid: string) => {
+	if (requireLoginReliable(true, '/pages/news/visitor/index') == false) return
+	selectedUserKid.value = targetUserKid
+	showGiftSelector.value = true
+}
+
+// 处理选择礼物
+const handleSelectGift = (gift: UTSJSONObject | null) => {
+	showGiftSelector.value = false
+	if (gift != null) {
+		const giftObj = toJsonObj(gift)
+		if (giftObj != null) {
+			const giftIdVal = giftObj.get('id')
+			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
+			if (giftId != '' && selectedUserKid.value != '') {
+				const userId = currentUserId.value
+				const sendParams = {
+					userKid: userId,
+					receiveUserKid: selectedUserKid.value,
+					lotteryRecordKid: giftId
+				} as UTSJSONObject
+				sendGiftFromBag(sendParams).then(() => {
+					uni.showToast({
+						title: '礼物发送成功',
+						icon: 'success'
+					})
+				}).catch((error: any | null): void => {
+					uni.showToast({
+						title: '发送失败',
+						icon: 'none'
+					})
+				})
+			}
+		}
+	}
+}
+
+// 初始化函数
+const initPage = () => {
+	console.log('[Visitor] initPage 开始')
+	initPageLayout()
+	clearUnread()
+	refresh()
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	console.log('[Visitor] onMounted 触发')
+	initPage()
+})
+
+onShow(() => {
+	// ⭐ 新增：页面显示时自动清零访客未读数
+	clearUnread()
+})
+</script>
+
+<style scoped>
+@import '@/common/styles/tabs.css';
+
+.visitor-page {
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.fix-page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+.bg-light-base {
+	background-color: #f5f5f5;
+}
+
+.header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 300rpx;
+}
+
+.tabs-wrapper {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.scroll-view {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+	background-color: transparent;
+	z-index: 1;
+}
+
+.visitor-list {
+	flex-direction: column;
+}
+
+.visitor-card {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 20rpx;
+}
+
+.visitor-card.new-visitor {
+	background-color: #e6f3ff;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #b3d9ff;
+}
+
+.card-content {
+	flex-direction: row;
+	align-items: center;
+}
+
+.avatar {
+	width: 96rpx;
+	height: 96rpx;
+	border-radius: 48rpx;
+}
+
+.visitor-info {
+	flex: 1;
+	flex-direction: column;
+	justify-content: center;
+	margin-left: 20rpx;
+}
+
+.visitor-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.visitor-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.visitor-time {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 4rpx;
+}
+
+.arrow-icon {
+	font-size: 48rpx;
+	color: #999999;
+	font-weight: 400;
+}
+
+.empty-box {
+	height: 400rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.empty-icon {
+	font-size: 80rpx;
+	margin-bottom: 20rpx;
+}
+
+.load-more {
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+	text-align: center;
+}
+</style>

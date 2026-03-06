@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>富文本编辑器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+
+        .editor-container {
+            max-width: 100%;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .editor-toolbar {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #f8f8f8;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .toolbar-btn {
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .toolbar-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .toolbar-btn.active {
+            background: #007AFF;
+            color: white;
+            border-color: #007AFF;
+        }
+
+        .editor-content {
+            min-height: 300px;
+            padding: 16px;
+            outline: none;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        .action-buttons {
+            padding: 16px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #007AFF;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="editor-container">
+        <div class="editor-toolbar">
+            <button class="toolbar-btn" onclick="execCommand('bold')">
+                <strong>B</strong>
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('italic')">
+                <em>I</em>
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('underline')">
+                <u>U</u>
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('insertUnorderedList')">
+                • 列表
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('insertOrderedList')">
+                1. 列表
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('justifyLeft')">
+                左对齐
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('justifyCenter')">
+                居中
+            </button>
+            <button class="toolbar-btn" onclick="execCommand('justifyRight')">
+                右对齐
+            </button>
+            <button class="toolbar-btn" onclick="insertImage()">
+                📷 图片
+            </button>
+        </div>
+
+        <div class="editor-content" contenteditable="true" id="editor"></div>
+
+        <div class="action-buttons">
+            <button class="btn btn-secondary" onclick="cancelEdit()">取消</button>
+            <button class="btn btn-primary" onclick="saveContent()">保存</button>
+        </div>
+    </div>
+
+    <!-- uni-app x webview SDK -->
+    <script type="text/javascript">
+    !function(e,n){"object"==typeof exports&&"undefined"!=typeof module?module.exports=n():"function"==typeof define&&define.amd?define(n):(e=e||self).uni=n()}(this,(function(){"use strict";try{var e={};Object.defineProperty(e,"passive",{get:function(){!0}}),window.addEventListener("test-passive",null,e)}catch(e){}var n=Object.prototype.hasOwnProperty;function i(e,i){return n.call(e,i)}var t=[];function o(){return window.__dcloud_weex_postMessage||window.__dcloud_weex_}function a(){return window.__uniapp_x_postMessage||window.__uniapp_x_}var r=function(e,n){var i={options:{timestamp:+new Date},name:e,arg:n};if(a()){if("postMessage"===e){var r={data:n};return window.__uniapp_x_postMessage?window.__uniapp_x_postMessage(r):window.__uniapp_x_.postMessage(JSON.stringify(r))}var d={type:"WEB_INVOKE_APPSERVICE",args:{data:i,webviewIds:t}};window.__uniapp_x_postMessage?window.__uniapp_x_postMessageToService(d):window.__uniapp_x_.postMessageToService(JSON.stringify(d))}else if(o()){if("postMessage"===e){var s={data:[n]};return window.__dcloud_weex_postMessage?window.__dcloud_weex_postMessage(s):window.__dcloud_weex_.postMessage(JSON.stringify(s))}var w={type:"WEB_INVOKE_APPSERVICE",args:{data:i,webviewIds:t}};window.__dcloud_weex_postMessage?window.__dcloud_weex_postMessageToService(w):window.__dcloud_weex_.postMessageToService(JSON.stringify(w))}else{if(!window.plus)return window.parent.postMessage({type:"WEB_INVOKE_APPSERVICE",data:i,pageId:""},"*");if(0===t.length){var u=plus.webview.currentWebview();if(!u)throw new Error("plus.webview.currentWebview() is undefined");var g=u.parent(),v="";v=g?g.id:u.id,t.push(v)}if(plus.webview.getWebviewById("__uniapp__service"))plus.webview.postMessageToUniNView({type:"WEB_INVOKE_APPSERVICE",args:{data:i,webviewIds:t}},"__uniapp__service");else{var c=JSON.stringify(i);plus.webview.getLaunchWebview().evalJS('UniPlusBridge.subscribeHandler("'.concat("WEB_INVOKE_APPSERVICE",'",').concat(c,",").concat(JSON.stringify(t),");"))}}},d={navigateTo:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.url;r("navigateTo",{url:encodeURI(n)})},navigateBack:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.delta;r("navigateBack",{delta:parseInt(n)||1})},switchTab:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.url;r("switchTab",{url:encodeURI(n)})},reLaunch:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.url;r("reLaunch",{url:encodeURI(n)})},redirectTo:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.url;r("redirectTo",{url:encodeURI(n)})},getEnv:function(e){a()?e({uvue:!0}):o()?e({nvue:!0}):window.plus?e({plus:!0}):e({h5:!0})},postMessage:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};r("postMessage",e.data||{})}},s=/uni-app/i.test(navigator.userAgent),w=/Html5Plus/i.test(navigator.userAgent),u=/complete|loaded|interactive/;var g=window.my&&navigator.userAgent.indexOf(["t","n","e","i","l","C","y","a","p","i","l","A"].reverse().join(""))>-1;var v=window.swan&&window.swan.webView&&/swan/i.test(navigator.userAgent);var c=window.qq&&window.qq.miniProgram&&/QQ/i.test(navigator.userAgent)&&/miniProgram/i.test(navigator.userAgent);var p=window.tt&&window.tt.miniProgram&&/toutiaomicroapp/i.test(navigator.userAgent);var _=window.wx&&window.wx.miniProgram&&/micromessenger/i.test(navigator.userAgent)&&/miniProgram/i.test(navigator.userAgent);var m=window.qa&&/quickapp/i.test(navigator.userAgent);var f=window.ks&&window.ks.miniProgram&&/micromessenger/i.test(navigator.userAgent)&&/miniProgram/i.test(navigator.userAgent);var l=window.tt&&window.tt.miniProgram&&/Lark|Feishu/i.test(navigator.userAgent);var E=window.jd&&window.jd.miniProgram&&/micromessenger/i.test(navigator.userAgent)&&/miniProgram/i.test(navigator.userAgent);var x=window.xhs&&window.xhs.miniProgram&&/xhsminiapp/i.test(navigator.userAgent);for(var S,h=function(){window.UniAppJSBridge=!0,document.dispatchEvent(new CustomEvent("UniAppJSBridgeReady",{bubbles:!0,cancelable:!0}))},y=[function(e){if(s||w)return window.__uniapp_x_postMessage||window.__uniapp_x_||window.__dcloud_weex_postMessage||window.__dcloud_weex_?document.addEventListener("DOMContentLoaded",e):window.plus&&u.test(document.readyState)?setTimeout(e,0):document.addEventListener("plusready",e),d},function(e){if(_)return window.WeixinJSBridge&&window.WeixinJSBridge.invoke?setTimeout(e,0):document.addEventListener("WeixinJSBridgeReady",e),window.wx.miniProgram},function(e){if(c)return window.QQJSBridge&&window.QQJSBridge.invoke?setTimeout(e,0):document.addEventListener("QQJSBridgeReady",e),window.qq.miniProgram},function(e){if(g){document.addEventListener("DOMContentLoaded",e);var n=window.my;return{navigateTo:n.navigateTo,navigateBack:n.navigateBack,switchTab:n.switchTab,reLaunch:n.reLaunch,redirectTo:n.redirectTo,postMessage:n.postMessage,getEnv:n.getEnv}}},function(e){if(v)return document.addEventListener("DOMContentLoaded",e),window.swan.webView},function(e){if(p)return document.addEventListener("DOMContentLoaded",e),window.tt.miniProgram},function(e){if(m){window.QaJSBridge&&window.QaJSBridge.invoke?setTimeout(e,0):document.addEventListener("QaJSBridgeReady",e);var n=window.qa;return{navigateTo:n.navigateTo,navigateBack:n.navigateBack,switchTab:n.switchTab,reLaunch:n.reLaunch,redirectTo:n.redirectTo,postMessage:n.postMessage,getEnv:n.getEnv}}},function(e){if(f)return window.WeixinJSBridge&&window.WeixinJSBridge.invoke?setTimeout(e,0):document.addEventListener("WeixinJSBridgeReady",e),window.ks.miniProgram},function(e){if(l)return document.addEventListener("DOMContentLoaded",e),window.tt.miniProgram},function(e){if(E)return window.JDJSBridgeReady&&window.JDJSBridgeReady.invoke?setTimeout(e,0):document.addEventListener("JDJSBridgeReady",e),window.jd.miniProgram},function(e){if(x)return window.xhs.miniProgram},function(e){return document.addEventListener("DOMContentLoaded",e),d}],M=0;M<y.length&&!(S=y[M](h));M++);S||(S={});var P="undefined"!=typeof uni?uni:{};if(!P.navigateTo)for(var b in S)i(S,b)&&(P[b]=S[b]);return P.webView=S,P}));
+    </script>
+
+    <script>
+        var editor = null;
+        var isUniAppReady = false;
+
+        // 获取URL参数
+        function getUrlParam(name) {
+            var urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name) || '';
+        }
+
+        // 初始化编辑器
+        function initEditor() {
+            editor = document.getElementById('editor');
+
+            // 加载初始内容
+            var content = decodeURIComponent(getUrlParam('content') || '');
+            if (content) {
+                editor.innerHTML = content;
+            }
+
+            // 处理待插入的图片（从 URL 参数获取）
+            var pendingImagesStr = getUrlParam('pendingImages');
+            if (pendingImagesStr) {
+                try {
+                    var decodedStr = decodeURIComponent(pendingImagesStr);
+                    var pendingImages = JSON.parse(decodedStr);
+                    if (Array.isArray(pendingImages) && pendingImages.length > 0) {
+                        // 延迟插入图片，确保编辑器已完全初始化
+                        setTimeout(function() {
+                            for (var i = 0; i < pendingImages.length; i++) {
+                                var imageUrl = pendingImages[i];
+                                if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+                                    insertImageToEditor(imageUrl);
+                                }
+                            }
+                        }, 100);
+                    }
+                } catch (e) {
+                    console.error('解析待插入图片失败:', e);
+                }
+            }
+
+            // 监听内容变化
+            editor.addEventListener('input', updateToolbarState);
+            editor.addEventListener('keyup', updateToolbarState);
+            editor.addEventListener('mouseup', updateToolbarState);
+
+            // 防止默认粘贴行为
+            editor.addEventListener('paste', function(e) {
+                e.preventDefault();
+                var text = (e.clipboardData || window.clipboardData).getData('text');
+                document.execCommand('insertText', false, text);
+            });
+        }
+
+        // 执行命令
+        function execCommand(command, value) {
+            value = value || null;
+            document.execCommand(command, false, value);
+            editor.focus();
+            updateToolbarState();
+        }
+
+        // 插入图片 - 通知 uni-app 端打开图片选择器
+        function insertImage() {
+            console.log('点击图片按钮，准备发送消息到 uni-app');
+            sendMessageToUniApp({
+                type: 'selectImage'
+            });
+        }
+
+        // 插入图片到编辑器
+        function insertImageToEditor(imageUrl) {
+            var img = document.createElement('img');
+            img.src = imageUrl;
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.borderRadius = '4px';
+            img.style.margin = '8px 0';
+
+            var selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                var range = selection.getRangeAt(0);
+                range.insertNode(img);
+                range.setStartAfter(img);
+                range.setEndAfter(img);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } else {
+                editor.appendChild(img);
+            }
+
+            editor.focus();
+        }
+
+        // 向 uni-app 发送消息
+        function sendMessageToUniApp(data) {
+            console.log('sendMessageToUniApp:', data);
+            
+            // 优先使用 uni-app x 的 postMessage
+            if (typeof uni !== 'undefined' && uni.postMessage) {
+                console.log('使用 uni.postMessage 发送消息');
+                uni.postMessage({
+                    data: data
+                });
+            }
+            
+            // 同时使用 window.parent.postMessage 直接发送（H5 环境兜底）
+            // uni.postMessage 在 H5 端也是通过 parent.postMessage 发送，但会被 uni 运行时拦截
+            // 这里额外发送一份不带 WEB_INVOKE_APPSERVICE 包装的消息，确保父组件能收到
+            try {
+                if (window.parent && window.parent !== window && window.parent.postMessage) {
+                    console.log('使用 window.parent.postMessage 直接发送消息');
+                    window.parent.postMessage(data, '*');
+                }
+            } catch(e) {
+                console.error('window.parent.postMessage 发送失败:', e);
+            }
+        }
+
+        // 更新工具栏状态
+        function updateToolbarState() {
+            var buttons = document.querySelectorAll('.toolbar-btn');
+            buttons.forEach(function(btn) {
+                var onclickStr = btn.onclick ? btn.onclick.toString() : '';
+                var match = onclickStr.match(/execCommand\('([^']+)'/);
+                if (match && match[1]) {
+                    if (document.queryCommandState(match[1])) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                }
+            });
+        }
+
+        // 保存内容
+        function saveContent() {
+            var content = editor.innerHTML;
+            console.log('保存内容:', content);
+            sendMessageToUniApp({
+                type: 'editorContent',
+                content: content
+            });
+        }
+
+        // 取消编辑
+        function cancelEdit() {
+            console.log('取消编辑');
+            sendMessageToUniApp({
+                type: 'editorCancel'
+            });
+        }
+
+        // 监听来自父页面的消息（H5 环境）
+        window.addEventListener('message', function(event) {
+            if (event.data) {
+                if (event.data.type === 'setContent') {
+                    editor.innerHTML = event.data.content || '';
+                } else if (event.data.type === 'insertImage') {
+                    insertImageToEditor(event.data.imageUrl);
+                }
+            }
+        });
+
+        // 监听 UniAppJSBridgeReady 事件
+        document.addEventListener('UniAppJSBridgeReady', function() {
+            console.log('UniAppJSBridgeReady 事件触发');
+            isUniAppReady = true;
+        });
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', initEditor);
+    </script>
+</body>
+</html>

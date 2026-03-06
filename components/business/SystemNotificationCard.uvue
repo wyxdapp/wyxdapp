@@ -1,0 +1,148 @@
+<template>
+	<view 
+		class="notification-card"
+		:class="{ unread: !props.read }"
+		@click="$emit('click')"
+	>
+		<view class="card-icon-wrapper">
+			<UniIcons type="notification-filled" :size="48" color="#FF9800" />
+			<view v-if="!props.read" class="unread-dot"></view>
+		</view>
+		
+		<view class="card-content">
+			<view class="card-header">
+				<view class="title-row">
+					<text class="card-title">{{ props.title }}</text>
+					<view v-if="props.official" class="official-badge">
+						<text class="badge-text">官方</text>
+					</view>
+				</view>
+				<text class="card-time">{{ props.time }}</text>
+			</view>
+			
+			<text class="card-text">{{ props.content }}</text>
+		</view>
+		
+		<text class="delete-btn" @click.stop="$emit('delete')">✕</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+const props = defineProps({
+	title: { type: String, required: true },
+	content: { type: String, required: true },
+	time: { type: String, required: true },
+	official: { type: Boolean, default: true },
+	read: { type: Boolean, default: false }
+})
+
+const emit = defineEmits<{
+	click: []
+	delete: []
+}>()
+</script>
+
+<style scoped>
+.notification-card {
+	display: flex;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.04);
+	position: relative;
+}
+
+.notification-card.unread {
+	background-color: #F0F9FF;
+}
+
+.card-icon-wrapper {
+	position: relative;
+	width: 80rpx;
+	height: 80rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+	flex-shrink: 0;
+}
+
+.card-icon {
+	font-size: 48rpx;
+}
+
+.unread-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #FF5252;
+	border-radius: 8rpx;
+}
+
+.card-content {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	margin-bottom: 12rpx;
+}
+
+.title-row {
+	display: flex;
+	align-items: center;
+	flex: 1;
+}
+
+.card-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-right: 12rpx;
+}
+
+.official-badge {
+	padding: 2rpx 12rpx;
+	background-color: #FFD700;
+	border-radius: 8rpx;
+}
+
+.badge-text {
+	font-size: 20rpx;
+	color: #ffffff;
+}
+
+.card-time {
+	font-size: 22rpx;
+	color: #999999;
+	flex-shrink: 0;
+}
+
+.card-text {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+}
+
+.delete-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	font-size: 30rpx;
+	color: #cccccc;
+	padding: 4rpx 8rpx;
+}
+
+.delete-btn:active {
+	color: #ff5252;
+}
+</style>

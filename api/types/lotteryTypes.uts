@@ -1,0 +1,53 @@
+/**
+ * 抽奖模块类型定义
+ * 对应 API 文件: api/lottery.uts
+ */
+
+// 执行抽奖请求参数
+export class DrawLotteryParams {
+	userKid: string = ''
+	lotteryType: number = 0
+	drawCount: number = 1
+}
+
+// 根据订单ID查询抽奖记录请求参数
+export class LotteryRecordsByOrderParams {
+	userKid: string = ''
+	orderKid: string = ''
+}
+
+// 使用/赠送虚拟礼物请求参数
+export class UseGiftParams {
+	userKid: string = ''
+	lotteryRecordKid: string = ''
+	actionType: number = 0
+	receiveUserKid: string = ''
+}
+
+// 处理现金奖励请求参数
+export class HandleCashRewardParams {
+	userKid: string = ''
+	lotteryRecordKid: string = ''
+	actionType: number = 0
+	withdrawMethod: number = 0
+}
+
+// 赠送礼物（从背包）请求参数
+export class SendGiftFromBagParams {
+	userKid: string = ''
+	lotteryRecordKid: string = ''
+	receiveUserKid: string = ''
+}
+
+// 付费赠送礼物（从商店）请求参数
+export class SendGiftFromShopParams {
+	userKid: string = ''
+	giftKid: string = ''
+	receiveUserKid: string = ''
+}
+
+// 完成任务并领取奖励请求参数
+export class CompleteTaskParams {
+	userKid: string = ''
+	taskType: number = 0
+}

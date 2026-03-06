@@ -1,0 +1,1103 @@
+<template>
+	<view class="page">
+		<!-- 背景图片 -->
+		<image 
+			class="bg-index-header" 
+			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
+			mode="aspectFill"
+		></image>
+		
+		<!-- 顶部搜索栏 -->
+		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="search-bar" :style="{ paddingRight: (menuButtonRight > 0 ? menuButtonRight + 6 : 28) + 'px' }">
+				<view class="location" @click="openCityPicker">
+					<image class="location-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_location.png" mode="aspectFit"></image>
+					<text class="location-text">{{ cityName }}</text>
+					<text class="arrow">▼</text>
+				</view>
+				<view class="search-input" @click="goToSearch">
+					<image class="search-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png" mode="aspectFit"></image>
+					<text class="search-placeholder">搜索昵称或定制</text>
+				</view>
+			</view>
+			
+			<!-- Tab 切换 -->
+			<view class="tabs-row">
+				<view class="tabs-left">
+					<view class="tab-item" @click="switchTab(0)">
+						<text class="tab-text" :class="{ 'tab-text-active': currentTab == 0 }">向导</text>
+						<view v-if="currentTab == 0" class="tab-underline"></view>
+					</view>
+					<view class="tab-item" @click="switchTab(1)">
+						<text class="tab-text" :class="{ 'tab-text-active': currentTab == 1 }">定制</text>
+						<view v-if="currentTab == 1" class="tab-underline"></view>
+					</view>
+				</view>
+				<view class="publish-btn" @click="goToPublish">
+					<image class="publish-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_send.png" mode="aspectFit"></image>
+					<text class="publish-text">发布</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- Swiper 内容区域 -->
+		<swiper 
+			class="swiper-container"
+			:style="{ marginTop: headerHeight + 'px', height: contentHeight + 'px' }"
+			:current="currentTab"
+			@change="onSwiperChange"
+		>
+			<!-- 向导列表 -->
+			<swiper-item>
+				<scroll-view 
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					scroll-y="true"
+					refresher-enabled="true"
+					:refresher-triggered="guiderRefreshing"
+					:show-scrollbar="false"
+					@refresherrefresh="onRefresh"
+					@scrolltolower="loadMore"
+				>
+					<ListStatus 
+						v-if="guiderLoading == true && guiderListLength == 0" 
+						status="loading" 
+					/>
+					<ListStatus 
+						v-else-if="guiderListLength == 0" 
+						status="empty" 
+						emptyText="暂无向导" 
+					/>
+					<view v-else class="guider-list">
+						<guider-card 
+							v-for="(item, index) in guiderList" 
+							:key="getGuiderKey(item, index)"
+							:data="item"
+							:isOnline="getGuiderOnlineStatus(item)"
+							@click="goToGuiderDetail"
+						/>
+					</view>
+					<ListStatus 
+						v-if="guiderHasMore == true && guiderLoading == false && guiderListLength > 0" 
+						status="loadMore" 
+					/>
+					<ListStatus 
+						v-if="guiderHasMore == false && guiderListLength > 0" 
+						status="noMore" 
+					/>
+				</scroll-view>
+			</swiper-item>
+			
+			<!-- 定制列表 -->
+			<!-- #ifdef H5 -->
+			<swiper-item>
+				<scroll-view 
+					class="scroll-view scroll-view-h5"
+					:style="{ height: contentHeight + 'px' }"
+					scroll-y="true"
+					refresher-enabled="true"
+					:refresher-triggered="routeRefreshing"
+					:show-scrollbar="false"
+					@refresherrefresh="onRefresh"
+					@scrolltolower="loadMore"
+				>
+			<!-- #endif -->
+			<!-- #ifndef H5 -->
+			<swiper-item>
+				<scroll-view 
+					class="scroll-view"
+					scroll-y="true"
+					refresher-enabled="true"
+					:refresher-triggered="routeRefreshing"
+					:show-scrollbar="false"
+					@refresherrefresh="onRefresh"
+					@scrolltolower="loadMore"
+				>
+			<!-- #endif -->
+					<ListStatus 
+						v-if="routeLoading == true && routeListLength == 0" 
+						status="loading" 
+					/>
+					<ListStatus 
+						v-else-if="routeListLength == 0" 
+						status="empty" 
+						emptyText="暂无定制" 
+					/>
+					<view v-else class="route-list">
+						<route-card 
+							v-for="(item, index) in routeList" 
+							:key="getRouteKey(item, index)"
+							:data="item"
+							@click="goToRouteDetail"
+						/>
+					</view>
+					<ListStatus 
+						v-if="routeHasMore == true && routeLoading == false && routeListLength > 0" 
+						status="loadMore" 
+					/>
+					<ListStatus 
+						v-if="routeHasMore == false && routeListLength > 0" 
+						status="noMore" 
+					/>
+				</scroll-view>
+			</swiper-item>
+		</swiper>
+		
+		<!-- 找向导悬浮按钮 -->
+		<view v-if="currentTab == 0" class="find-guide-btn" @click="goToFindGuide">
+			<text class="btn-text">找向导</text>
+		</view>
+		
+		<!-- 营销活动弹窗 -->
+		<MarketingPopup 
+			:visible="marketingPopupVisible"
+			:popupData="marketingPopupData"
+			@close="handlePopupClose"
+			@buttonClick="handlePopupButtonClick"
+		/>
+		
+		<!-- 🔒 隐私政策弹窗（首次启动时显示，必须在敏感API调用前获得用户同意） -->
+		<PrivacyPopup 
+			:visible="privacyPopupVisible"
+			@agree="handlePrivacyAgree"
+			@disagree="handlePrivacyDisagree"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import GuiderCard from '@/components/guider-card/index.uvue'
+import RouteCard from '@/components/route-card/index.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import MarketingPopup from '@/components/common/MarketingPopup.uvue'
+import PrivacyPopup from '@/components/common/PrivacyPopup.uvue'
+import { getGuiderList, getRouteList } from '@/common/services/homeService.uts'
+import { isSharedDataDisplayEnabled, isFeatureTogglesLoaded } from '@/common/composables/useFeatureToggles.uts'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { isPrivacyAgreed, PRIVACY_AGREED_EVENT, broadcastPrivacyAgreed } from '@/common/utils/privacyManager.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	getStringProp, 
+	getResponseCode, 
+	getResponseData, 
+	getEntities, 
+	getDataCount,
+	getItemKey,
+	getItemKeyByField 
+} from '@/common/utils/utsSafe.uts'
+import {
+	MARKETING_POPUP_TRIGGER,
+	TRIGGER_TYPE_PAGE_LOAD,
+	fetchActivePopup,
+	shouldShowPopup,
+	saveDisplayRecord,
+	navigateToUrl
+} from '@/common/services/marketingPopupService.uts'
+import { 
+	fetchOnlineStatus, 
+	getOnlineStatusDirect, 
+	setOnlineStatusDirect 
+} from '@/stores/onlineStatus.uts'
+
+// ==================== 类型定义 ====================
+
+// 不再使用 class，改用独立的 ref 变量
+
+// ==================== 响应式状态 ====================
+
+// 布局相关
+const headerHeight = ref<number>(0)
+const contentHeight = ref<number>(0)
+const menuButtonRight = ref<number>(0)  // 胶囊按钮右边距（屏幕宽度 - 胶囊左边界，即胶囊宽度+右间距）
+
+// Tab 相关
+const currentTab = ref<number>(0)
+const cityName = ref<string>('中国')
+
+// 位置信息
+const latitude = ref<number>(0)
+const longitude = ref<number>(0)
+
+// 营销弹窗状态
+const marketingPopupVisible = ref<boolean>(false)
+const marketingPopupData = ref<UTSJSONObject | null>(null)
+
+// 🔒 隐私弹窗状态
+const privacyPopupVisible = ref<boolean>(false)
+
+// 向导列表状态（独立 ref）
+const guiderList = ref<Array<UTSJSONObject>>([])
+const guiderPage = ref<number>(1)
+const guiderTotal = ref<number>(0)
+const guiderLoading = ref<boolean>(false)
+const guiderRefreshing = ref<boolean>(false)
+const guiderHasMore = ref<boolean>(true)
+
+// 定制列表状态（独立 ref）
+const routeList = ref<Array<UTSJSONObject>>([])
+const routePage = ref<number>(1)
+const routeTotal = ref<number>(0)
+const routeLoading = ref<boolean>(false)
+const routeRefreshing = ref<boolean>(false)
+const routeHasMore = ref<boolean>(true)
+
+// ==================== 计算属性 ====================
+
+// 列表长度计算属性
+const guiderListLength = computed((): number => {
+	try {
+		const list = guiderList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const routeListLength = computed((): number => {
+	try {
+		const list = routeList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 模板辅助函数 ====================
+
+const getGuiderKey = (item: UTSJSONObject | null, index: number): string => {
+	return getItemKeyByField(item as any, index, 'memberGuideKid')
+}
+
+const getRouteKey = (item: UTSJSONObject | null, index: number): string => {
+	return getItemKey(item as any, index)
+}
+
+// 获取向导在线状态
+const getGuiderOnlineStatus = (item: UTSJSONObject | null): boolean => {
+	const guideKid = getStringProp(item as any, 'memberGuideKid')
+	if (guideKid == '') return false
+	return getOnlineStatusDirect(guideKid)
+}
+
+// 处理在线状态变更事件
+const handleOnlineStatusChange = (data: UTSJSONObject | null) => {
+	console.log('[Index] 收到在线状态变更事件:', data)
+	try {
+		const dataJson = JSON.stringify(data)
+		const dataObj = JSON.parse(dataJson) as UTSJSONObject
+		
+		const userId = dataObj.getString('userId')
+		const isOnlineVal = dataObj.getBoolean('isOnline')
+		const isOnline = isOnlineVal == true
+		
+		if (userId == null || userId == '') {
+			return
+		}
+		
+		// 更新本地缓存
+		setOnlineStatusDirect(userId, isOnline)
+		
+		// 强制触发列表重新渲染（通过修改列表引用）
+		// 由于 guiderList 中的 item 是原始对象，在线状态通过 getGuiderOnlineStatus 动态获取
+		// 需要触发组件重新渲染
+		const tempList = guiderList.value
+		guiderList.value = []
+		for (let i = 0; i < tempList.length; i = i + 1) {
+			guiderList.value.push(tempList[i])
+		}
+		
+		console.log('[Index] 更新向导在线状态: userId=' + userId + ', isOnline=' + isOnline.toString())
+	} catch (e) {
+		console.error('[Index] 处理在线状态变更事件失败:', e)
+	}
+}
+
+// 获取城市名（用于 API）
+const getCityNameForApi = (): string => {
+	const city = cityName.value
+	if (city == '中国' || city == '全部') {
+		return ''
+	}
+	return city
+}
+
+// ==================== 数据加载函数 ====================
+
+// 加载向导列表
+const loadGuiderList = async (refresh: boolean) => {
+	if (refresh == true) {
+		guiderPage.value = 1
+		guiderList.value = []
+	}
+	
+	if (guiderLoading.value == true) return
+	guiderLoading.value = true
+	
+	try {
+		const params = {
+			pageNumber: guiderPage.value,
+			pageSize: 10,
+			latitude: latitude.value,
+			longitude: longitude.value,
+			userCityName: getCityNameForApi()
+		} as UTSJSONObject
+		// 功能开关已加载时才传递 sharedDataEnabled，否则让后端从数据库查询商户配置
+		if (isFeatureTogglesLoaded() == true) {
+			params['sharedDataEnabled'] = isSharedDataDisplayEnabled()
+		}
+		
+		const res = await getGuiderList(params)
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const items = getEntities(dataObj)
+			const totalCount = getDataCount(dataObj)
+			
+			guiderTotal.value = totalCount
+			
+			// 转换数组类型
+			const typedItems: UTSJSONObject[] = []
+			for (let i = 0; i < items.length; i = i + 1) {
+				typedItems.push(items[i] as UTSJSONObject)
+			}
+			
+			if (refresh == true) {
+				guiderList.value = typedItems
+			} else {
+				for (let i = 0; i < typedItems.length; i = i + 1) {
+					guiderList.value.push(typedItems[i])
+				}
+			}
+			
+			guiderHasMore.value = guiderList.value.length < guiderTotal.value
+			
+			// ⭐ 新增：批量查询在线状态
+			const userIdsToQuery: Array<string> = []
+			for (let j = 0; j < typedItems.length; j = j + 1) {
+				const item = typedItems[j]
+				const guideKid = getStringProp(item as any, 'memberGuideKid')
+				if (guideKid != '') {
+					userIdsToQuery.push(guideKid)
+				}
+			}
+			if (userIdsToQuery.length > 0) {
+				fetchOnlineStatus(userIdsToQuery)
+			}
+		}
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载向导列表', guiderLoading)
+		}
+	} finally {
+		guiderLoading.value = false
+		guiderRefreshing.value = false
+	}
+}
+
+// 加载定制列表
+const loadRouteList = async (refresh: boolean) => {
+	if (refresh == true) {
+		routePage.value = 1
+		routeList.value = []
+	}
+	
+	if (routeLoading.value == true) return
+	routeLoading.value = true
+	
+	try {
+		const params = {
+			pageNumber: routePage.value,
+			pageSize: 10,
+			userCityName: getCityNameForApi()
+		} as UTSJSONObject
+		// 功能开关已加载时才传递 sharedDataEnabled，否则让后端从数据库查询商户配置
+		if (isFeatureTogglesLoaded() == true) {
+			params['sharedDataEnabled'] = isSharedDataDisplayEnabled()
+		}
+		
+		const res = await getRouteList(params)
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const items = getEntities(dataObj)
+			const totalCount = getDataCount(dataObj)
+			
+			routeTotal.value = totalCount
+			
+			// 转换数组类型
+			const typedItems: UTSJSONObject[] = []
+			for (let i = 0; i < items.length; i = i + 1) {
+				typedItems.push(items[i] as UTSJSONObject)
+			}
+			
+			if (refresh == true) {
+				routeList.value = typedItems
+			} else {
+				for (let i = 0; i < typedItems.length; i = i + 1) {
+					routeList.value.push(typedItems[i])
+				}
+			}
+			
+			routeHasMore.value = routeList.value.length < routeTotal.value
+		}
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载定制列表', routeLoading)
+		}
+	} finally {
+		routeLoading.value = false
+		routeRefreshing.value = false
+	}
+}
+
+// 加载当前 Tab 数据
+const loadTabData = (index: number, refresh: boolean) => {
+	if (index == 0) {
+		if (refresh == true || guiderListLength.value == 0) {
+			loadGuiderList(refresh)
+		}
+	} else if (index == 1) {
+		if (refresh == true || routeListLength.value == 0) {
+			loadRouteList(refresh)
+		}
+	}
+}
+
+// 刷新所有列表
+const refreshAllLists = () => {
+	// 重置向导列表
+	guiderList.value = []
+	guiderPage.value = 1
+	guiderTotal.value = 0
+	guiderLoading.value = false
+	guiderRefreshing.value = false
+	guiderHasMore.value = true
+	
+	// 重置定制列表
+	routeList.value = []
+	routePage.value = 1
+	routeTotal.value = 0
+	routeLoading.value = false
+	routeRefreshing.value = false
+	routeHasMore.value = true
+	
+	loadTabData(currentTab.value, true)
+}
+
+// 🔧 修复：防止重复定位调用
+let isLocating = false
+
+// 获取定位
+const getLocation = async () => {
+	// 防止重复调用
+	if (isLocating == true) {
+		console.log('📍 [Index] 定位进行中，跳过重复调用')
+		return
+	}
+	
+	isLocating = true
+	console.log('📍 [Index] getLocation 开始执行')
+	
+	// 保存定位前的城市名称
+	const oldCity = cityName.value
+	
+	try {
+		console.log('📍 [Index] 调用 getLocationInfo...')
+		const location = await getLocationInfo()
+		console.log('📍 [Index] getLocationInfo 返回:', location.city, location.latitude, location.longitude)
+		
+		// 更新位置信息
+		latitude.value = location.latitude
+		longitude.value = location.longitude
+		cityName.value = location.city
+		
+		console.log('📍 [Index] 城市更新为:', cityName.value)
+		
+		// 只有城市变化时才刷新列表
+		if (oldCity != location.city) {
+			console.log('📍 [Index] 城市变化，刷新列表')
+			refreshAllLists()
+		}
+	} catch (err) {
+		console.error('❌ [Index] 定位失败:', err)
+		// 定位失败时不刷新列表，保持当前数据
+		// 用户可以手动选择城市
+	} finally {
+		// 重置标记
+		isLocating = false
+	}
+}
+
+// ==================== 营销弹窗相关函数 ====================
+
+// 检查并展示弹窗
+const checkAndShowPopup = (triggerType: string) => {
+	fetchActivePopup(triggerType).then((config: UTSJSONObject | null) => {
+		if (config != null && shouldShowPopup(config) == true) {
+			marketingPopupData.value = config
+			marketingPopupVisible.value = true
+		}
+	}).catch((error: any | null): void => {
+		// 静默处理
+		console.error('检查营销弹窗失败:', error)
+	})
+}
+
+// 处理弹窗关闭
+const handlePopupClose = () => {
+	marketingPopupVisible.value = false
+	// 保存关闭记录
+	const popupData = marketingPopupData.value
+	if (popupData != null) {
+		const kid = getStringProp(popupData, 'kid')
+		if (kid != '') {
+			saveDisplayRecord(kid, 'close')
+		}
+	}
+	// 清空弹窗数据，防止闪现
+	marketingPopupData.value = null
+}
+
+// 处理弹窗按钮点击
+const handlePopupButtonClick = (buttonType: string, url: string) => {
+	// 保存点击记录
+	const popupData = marketingPopupData.value
+	if (popupData != null) {
+		const kid = getStringProp(popupData, 'kid')
+		if (kid != '') {
+			saveDisplayRecord(kid, 'click')
+		}
+	}
+	
+	// 关闭弹窗并清空数据
+	marketingPopupVisible.value = false
+	marketingPopupData.value = null
+	
+	// 执行跳转
+	if (url != null && url != '') {
+		navigateToUrl(url)
+	}
+}
+
+// ==================== 🔒 移除自定义隐私弹窗相关函数 ====================
+// 系统隐私声明会自动处理，无需自定义弹窗
+
+// 🔒 隐私同意后定位的防重复标记
+let privacyLocationHandled = false
+
+// 🔒 隐私同意后的定位处理函数
+const handlePrivacyAgreedForLocation = () : void => {
+	if (privacyLocationHandled == true) return
+	privacyLocationHandled = true
+	console.log('📍 [Index] 收到隐私同意事件，开始定位')
+	privacyPopupVisible.value = false
+	getLocation()
+}
+
+// 🔒 隐私弹窗 - 用户点击"同意"
+const handlePrivacyAgree = () : void => {
+	privacyPopupVisible.value = false
+	// 广播隐私同意事件，通知 App.uvue 初始化敏感服务 + 触发定位
+	broadcastPrivacyAgreed()
+}
+
+// 🔒 隐私弹窗 - 用户点击"不继续"
+const handlePrivacyDisagree = () : void => {
+	// #ifdef APP-ANDROID
+	uni.exit()
+	// #endif
+}
+
+// 初始化
+const initPage = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
+	headerHeight.value = pageStatusBarHeight.value + 87
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	console.log('状态栏高度:', pageStatusBarHeight.value, '头部高度:', headerHeight.value, '内容高度:', contentHeight.value)
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 600
+	}
+	
+	// 🔧 微信小程序：获取胶囊按钮信息，计算右侧安全区域
+	// #ifdef MP-WEIXIN
+	try {
+		const menuButtonInfo = uni.getMenuButtonBoundingClientRect()
+		if (menuButtonInfo != null) {
+			const menuButtonObj = JSON.parse(JSON.stringify(menuButtonInfo)) as UTSJSONObject
+			const leftVal = menuButtonObj.get('left')
+			if (leftVal != null) {
+				const leftPx = parseFloat(leftVal.toString())
+				if (isNaN(leftPx) == false) {
+					// 获取屏幕宽度
+					const systemInfo = uni.getSystemInfoSync()
+					const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+					const screenWidthVal = systemInfoObj.get('screenWidth')
+					if (screenWidthVal != null) {
+						const screenWidth = parseFloat(screenWidthVal.toString())
+						if (isNaN(screenWidth) == false && screenWidth > 0) {
+							// 计算右边距（屏幕宽度 - 胶囊左边界），确保搜索栏不会被胶囊按钮遮挡
+							menuButtonRight.value = screenWidth - leftPx
+							console.log('微信小程序胶囊按钮右侧占用宽度:', menuButtonRight.value, 'px')
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {
+		console.error('获取胶囊按钮信息失败:', e)
+		menuButtonRight.value = 0
+	}
+	// #endif
+	
+	// 1. 先立即加载当前Tab数据（城市为"中国"，API参数为空，获取全部数据）
+	loadTabData(currentTab.value, true)
+	
+	// 2. 🔒 隐私合规：检查隐私状态后再定位（防止腾讯定位SDK在同意前被调用）
+	if (isPrivacyAgreed() == true) {
+		// 已同意，正常定位
+		console.log('📍 [Index] 用户已同意隐私政策，开始定位')
+		getLocation()
+	} else {
+		// 未同意，显示隐私弹窗，监听同意事件后再定位
+		console.log('📍 [Index] 用户未同意隐私政策，显示隐私弹窗，延迟定位')
+		privacyPopupVisible.value = true
+		uni.$on(PRIVACY_AGREED_EVENT, handlePrivacyAgreedForLocation)
+	}
+	
+	// 检查并展示营销弹窗（页面加载触发）
+	checkAndShowPopup(TRIGGER_TYPE_PAGE_LOAD)
+}
+
+// 处理营销弹窗触发事件
+const handleMarketingPopupTrigger = (data: UTSJSONObject | null) => {
+	if (data != null) {
+		try {
+			const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+			const triggerTypeVal = dataObj.get('triggerType')
+			if (triggerTypeVal != null && triggerTypeVal.toString() != '') {
+				checkAndShowPopup(triggerTypeVal.toString())
+			}
+		} catch (e) {
+			console.error('解析弹窗触发数据失败:', e)
+		}
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+// Tab 切换
+const switchTab = (index: number) => {
+	if (currentTab.value != index) {
+		currentTab.value = index
+	}
+	loadTabData(index, false)
+}
+
+// Swiper 切换
+const onSwiperChange = (e: UTSJSONObject | null) => {
+	if (e == null) return
+	try {
+		const eObj = JSON.parse(JSON.stringify(e)) as UTSJSONObject
+		const detailVal = eObj.get('detail')
+		if (detailVal != null) {
+			const detailObj = JSON.parse(JSON.stringify(detailVal)) as UTSJSONObject
+			const currentVal = detailObj.get('current')
+			if (currentVal != null) {
+				const index = parseInt(currentVal.toString())
+				if (isNaN(index) == false && currentTab.value != index) {
+					currentTab.value = index
+				}
+				loadTabData(index, false)
+			}
+		}
+	} catch (err) {}
+}
+
+// 下拉刷新
+const onRefresh = async () => {
+	if (currentTab.value == 0) {
+		guiderRefreshing.value = true
+		await loadGuiderList(true)
+	} else if (currentTab.value == 1) {
+		routeRefreshing.value = true
+		await loadRouteList(true)
+	}
+}
+
+// 加载更多
+const loadMore = () => {
+	if (currentTab.value == 0 && guiderLoading.value == false && guiderHasMore.value == true) {
+		guiderPage.value = guiderPage.value + 1
+		loadGuiderList(false)
+	} else if (currentTab.value == 1 && routeLoading.value == false && routeHasMore.value == true) {
+		routePage.value = routePage.value + 1
+		loadRouteList(false)
+	}
+}
+
+// 打开城市选择器 - 跳转到城市选择页面
+// 打开城市选择器
+const openCityPicker = () => {
+	const currentCity = cityName.value
+	const locationCityVal = cityName.value
+	
+	uni.navigateTo({
+		url: '/pagesBusiness/citySelect/index?currentCity=' + encodeURIComponent(currentCity) + '&locationCity=' + encodeURIComponent(locationCityVal)
+	})
+}
+
+// 监听城市选择事件
+const handleCitySelected = (data: UTSJSONObject | null) => {
+	if (data != null) {
+		try {
+			const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+			const cityVal = dataObj.get('city')
+			if (cityVal != null && cityVal.toString() != '') {
+				const selectedCity = cityVal.toString()
+				cityName.value = selectedCity
+				refreshAllLists()
+			}
+		} catch (e) {
+			console.error('解析城市数据失败:', e)
+		}
+	}
+}
+
+// 跳转搜索
+const goToSearch = () => {
+	uni.navigateTo({ url: '/pagesBusiness/search/search' })
+}
+
+// 跳转发布 - 根据当前Tab决定跳转目标
+const goToPublish = () => {
+	if (currentTab.value == 0) {
+		// 向导Tab - 跳转到添加向导页面
+		uni.navigateTo({ url: '/pages/index/components/addGuide' })
+	} else {
+		// 定制Tab - 跳转到添加定制路线页面
+		uni.navigateTo({ url: '/pages/index/components/addRoute' })
+	}
+}
+
+// 跳转找向导
+const goToFindGuide = () => {
+	uni.navigateTo({ url: '/pagesUser/submitOrder/index' })
+}
+
+// 跳转向导详情
+const goToGuiderDetail = (item: UTSJSONObject | null) => {
+	const kid = getStringProp(item as any, 'memberGuideKid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + kid })
+	}
+}
+
+// 跳转定制详情
+const goToRouteDetail = (item: UTSJSONObject | null) => {
+	const kid = getStringProp(item as any, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?lineKid=' + kid })
+	}
+}
+
+// ==================== 生命周期 ====================
+
+onMounted(() => {
+	// 注册城市选择事件监听
+	uni.$on('onCitySelected', handleCitySelected)
+	
+	// 注册营销弹窗触发事件监听
+	uni.$on(MARKETING_POPUP_TRIGGER, handleMarketingPopupTrigger)
+	
+	// ⭐ 新增：注册在线状态变更事件监听
+	uni.$on('online:statusChange', handleOnlineStatusChange)
+	console.log('[Index] 已注册在线状态变更监听')
+	
+	initPage()
+})
+
+onUnmounted(() => {
+	// 注销城市选择事件监听
+	uni.$off('onCitySelected', handleCitySelected)
+	
+	// 注销营销弹窗触发事件监听
+	uni.$off(MARKETING_POPUP_TRIGGER, handleMarketingPopupTrigger)
+	
+	// ⭐ 新增：注销在线状态变更事件监听
+	uni.$off('online:statusChange', handleOnlineStatusChange)
+	
+	// 🔒 注销隐私同意事件监听
+	uni.$off(PRIVACY_AGREED_EVENT, handlePrivacyAgreedForLocation)
+})
+
+// 🔧 修复：优化页面显示时的定位逻辑
+onShow(() => {
+	console.log('📍 [Index] onShow - 页面显示，检查定位状态')
+	
+	// 🔒 隐私合规：未同意隐私政策时不尝试定位
+	if (isPrivacyAgreed() == false) {
+		console.log('📍 [Index] onShow - 用户未同意隐私政策，跳过定位')
+		return
+	}
+	
+	// 如果还没有获取到精确定位，且没有正在定位，尝试重新获取
+	if (latitude.value === 0 && longitude.value === 0 && isLocating == false) {
+		console.log('📍 [Index] onShow - 检测到未获取定位，重新尝试')
+		// 延迟执行，确保页面完全显示
+		setTimeout(() => {
+			getLocation()
+		}, 500)
+	}
+})
+</script>
+
+
+<style>
+/* ==================== 页面基础样式 ==================== */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+/* ==================== 背景图片 ==================== */
+.bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+/* ==================== 顶部固定区域 ==================== */
+.header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	z-index: 100;
+	/* 微信小程序：使用 box-sizing 确保 padding 不影响宽度 */
+	/* #ifdef MP-WEIXIN */
+	box-sizing: border-box;
+	/* #endif */
+}
+
+/* ==================== 搜索栏 ==================== */
+.search-bar {
+	flex-direction: row;
+	align-items: center;
+	width: 100%;
+	height: 84rpx;
+}
+
+.location {
+	flex-direction: row;
+	align-items: center;
+	margin-right: 16rpx;
+}
+
+.location-icon {
+	width: 44rpx;
+	height: 44rpx;
+	margin-right: 4rpx;
+}
+
+.location-text {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.arrow {
+	font-size: 20rpx;
+	color: #333333;
+	margin-left: 6rpx;
+}
+
+.search-input {
+	flex: 1;
+	height: 64rpx;
+	background-color: #FFFFFF;
+	border-radius: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+	padding-left: 26rpx;
+	padding-right: 26rpx;
+	padding-top: 0;
+	padding-bottom: 0;
+	margin-left: 24rpx;
+}
+
+.search-icon {
+	width: 30rpx;
+	height: 30rpx;
+	margin-right: 22rpx;
+}
+
+.search-placeholder {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+/* ==================== Tab 栏 ==================== */
+.tabs-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	height: 90rpx;
+	background-color: transparent;
+}
+
+.tabs-left {
+	flex-direction: row;
+	align-items: center;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-right: 48rpx;
+	height: 90rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.tab-text-active {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 6rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-top: 8rpx;
+}
+
+/* ==================== 发布按钮（移到 Tab 栏右侧） ==================== */
+.publish-btn {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-left: 24rpx;
+}
+
+.publish-icon {
+	width: 30rpx;
+	height: 30rpx;
+	margin-bottom: 6rpx;
+}
+
+.publish-text {
+	font-size: 22rpx;
+	color: #333333;
+}
+
+/* ==================== Swiper 容器 ==================== */
+.swiper-container {
+	width: 750rpx;
+	background-color: transparent;
+	z-index: 10;
+}
+
+/* APP 端：使用 flex: 1 自动填充 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+/* #endif */
+
+/* H5 端：使用明确高度 */
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+/* #endif */
+
+/* ==================== 列表容器 ==================== */
+.guider-list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 0;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 120rpx;
+	background-color: transparent;
+}
+
+.route-list {
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	width: 750rpx;
+	padding-top: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 120rpx;
+	background-color: transparent;
+}
+
+/* ==================== 找向导悬浮按钮 ==================== */
+.find-guide-btn {
+	position: fixed;
+	bottom: 180rpx;
+	right: 32rpx;
+	width: 168rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 52rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 999;
+}
+
+.btn-text {
+	font-size: 28rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+</style>

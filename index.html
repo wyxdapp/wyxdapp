@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="UTF-8" />
+		<script>
+			var coverSupport = 'CSS' in window && typeof CSS.supports === 'function' && (CSS.supports('top: env(a)') ||
+				CSS.supports('top: constant(a)'))
+			document.write(
+				'<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0' +
+				(coverSupport ? ', viewport-fit=cover' : '') + '" />')
+		</script>
+		<title>网约向导</title>
+		<!-- 支付宝回跳重定向：解析 /alipay-return/{orderKid} 路径并跳转到 hash 路由 -->
+		<!-- 支付宝回跳 URL 格式：https://m.wyxdapp.com/alipay-return/{orderKid}?out_trade_no=xxx&trade_no=xxx -->
+		<!-- returnUrl 中不能包含 # 和 & 字符，否则支付宝网关验签会失败 -->
+		<script>
+			(function() {
+				try {
+					var path = window.location.pathname;
+					var match = path.match(/^\/alipay-return\/(.+)$/);
+					if (match) {
+						var orderKid = match[1];
+						// 收集支付宝回跳附加的查询参数（out_trade_no, trade_no, total_amount 等）
+						var extraParams = '';
+						var search = window.location.search;
+						if (search && search.length > 1) {
+							extraParams = '&' + search.substring(1);
+						}
+						// 跳转到 hash 路由的支付结果页
+						var hashUrl = '#/pagesTrade/payment/payResult/index?orderKid=' + orderKid + extraParams;
+						window.location.replace(window.location.origin + '/' + hashUrl);
+					}
+				} catch(e) {}
+			})();
+		</script>
+		<!-- 微信 JS-SDK -->
+		<script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+		<!--preload-links-->
+		<!--app-context-->
+	</head>
+	<body>
+		<div id="app"><!--app-html--></div>
+		<script type="module" src="/main"></script>
+	</body>
+</html>

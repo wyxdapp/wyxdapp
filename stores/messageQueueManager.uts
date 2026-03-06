@@ -1,0 +1,528 @@
+/**
+ * 🌟 消息队列管理器
+ * 负责管理待发送消息队列，支持重试机制和失败处理
+ */
+
+import { messageStateManager, MessageStatus, MessageType, ChatMessage, AddTempMessageParams } from './messageStateManager'
+import { webSocketEventHandler, WebSocketEventType } from './webSocketEventHandler'
+
+// 重试配置（UTS 规范：接口不能用对象字面量初始化，改为类）
+export class RetryConfig {
+  maxRetries: number = 3
+  baseDelay: number = 1000
+  maxDelay: number = 10000
+  backoffFactor: number = 2
+}
+
+// 队列项类
+export class QueueItem {
+  id: string = ''
+  message: AddTempMessageParams = new AddTempMessageParams()
+  retryCount: number = 0
+  nextRetryTime: number = 0
+  priority: number = 0
+}
+
+// 队列状态
+export enum QueueStatus {
+  IDLE = 'idle',
+  SENDING = 'sending',
+  WAITING_RETRY = 'waiting_retry',
+  PAUSED = 'paused'
+}
+
+// 队列统计类
+export class QueueStats {
+  total: number = 0
+  pending: number = 0
+  sending: number = 0
+  failed: number = 0
+  status: QueueStatus = QueueStatus.IDLE
+}
+
+/**
+ * 消息队列管理器
+ */
+export class MessageQueueManager {
+  // 发送队列（按优先级排序）
+  private sendQueue: QueueItem[] = []
+  // 队列状态
+  private queueStatus: QueueStatus = QueueStatus.IDLE
+  // 重试配置（使用类实例）
+  private retryConfig: RetryConfig = new RetryConfig()
+  // 定时器
+  private retryTimer: number | null = null
+  // WebSocket连接状态
+  private isConnected: boolean = false
+  // WebSocket实例（UTS 规范：SocketTask 类型）
+  private webSocketTask: SocketTask | null = null
+  // 状态监听器
+  private statusListeners: Set<(status: QueueStatus) => void> = new Set()
+
+  constructor() {
+    // 监听WebSocket连接状态
+    this.setupWebSocketListeners()
+    // 恢复待发送消息
+    this.restorePendingMessages()
+  }
+
+  /**
+   * 设置WebSocket监听器
+   */
+  private setupWebSocketListeners(): void {
+    webSocketEventHandler.addEventListener(WebSocketEventType.CONNECTED, () => {
+      this.isConnected = true
+      this.resumeQueue()
+      console.log('🔗 [MessageQueue] WebSocket已连接，恢复队列')
+    })
+
+    webSocketEventHandler.addEventListener(WebSocketEventType.DISCONNECTED, () => {
+      this.isConnected = false
+      this.pauseQueue()
+      console.log('🔌 [MessageQueue] WebSocket已断开，暂停队列')
+    })
+  }
+
+  /**
+   * 添加消息到队列
+   */
+  enqueue(message: AddTempMessageParams, priority: number = 0): string {
+    // 先添加到状态管理器获取临时ID
+    const tempId = messageStateManager.addTempMessage(message)
+    
+    // 更新状态为发送中（UTS 规范：需传入 realId 参数）
+    messageStateManager.updateMessageStatus(tempId, MessageStatus.SENDING, '')
+    
+    // 创建队列项
+    const queueItem = new QueueItem()
+    queueItem.id = tempId
+    queueItem.message = message
+    queueItem.retryCount = 0
+    queueItem.nextRetryTime = Date.now()
+    queueItem.priority = priority
+    
+    // 添加到队列并排序
+    this.sendQueue.push(queueItem)
+    this.sortQueue()
+    
+    // 开始处理队列
+    this.processQueue()
+    
+    console.log('📤 [MessageQueue] 消息已入队:', tempId)
+    return tempId
+  }
+
+  /**
+   * 处理队列
+   */
+  private async processQueue(): Promise<void> {
+    if (this.queueStatus === QueueStatus.SENDING || this.queueStatus === QueueStatus.PAUSED) {
+      return
+    }
+
+    if (this.isConnected == false) {
+      console.log('⏸️ [MessageQueue] WebSocket未连接，等待')
+      return
+    }
+
+    if (this.sendQueue.length == 0) {
+      this.setQueueStatus(QueueStatus.IDLE)
+      return
+    }
+
+    this.setQueueStatus(QueueStatus.SENDING)
+
+    const queueItem = this.sendQueue[0]
+    
+    try {
+      await this.sendMessage(queueItem)
+      // 发送成功，从队列移除
+      this.sendQueue.shift()
+      
+      // ⭐ 优化：不再立即标记 SENT，保持 SENDING 状态
+      // 等待服务端 type="sent" 确认后，由 WebSocketEventHandler.handleMessageSent() 统一处理
+      // 这样可以正确完成 tempId → realId 的映射
+      
+    } catch (error) {
+      console.error('❌ [MessageQueue] 消息发送失败:', queueItem.id, error)
+      await this.handleSendFailure(queueItem, error)
+    }
+
+    // 继续处理下一个（UTS 规范：setTimeout 回调不能返回 Promise）
+    this.setQueueStatus(QueueStatus.IDLE)
+    const self = this
+    setTimeout(function() {
+      self.processQueue()
+    }, 100)
+  }
+
+  /**
+   * 发送消息
+   */
+  private async sendMessage(queueItem: QueueItem): Promise<void> {
+    const { message } = queueItem
+    
+    // 构造WebSocket消息
+    const wsMessage = {
+      type: 'chat_message',
+      toUserKid: message.receiverId,
+      messageType: this.mapMessageTypeToparseFloat(message.type),
+      content: message.content,
+      mediaUrl: message.mediaUrl,
+      thumbUrl: message.thumbUrl,
+      duration: message.duration
+    }
+
+    // 发送WebSocket消息
+    await this.sendWebSocketMessage(wsMessage)
+  }
+
+  /**
+   * 发送WebSocket消息
+   */
+  private async sendWebSocketMessage(message: UTSJSONObject): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const socketTask = this.getWebSocketTask()
+      
+      // 🔄 增强WebSocket实例验证
+      if (socketTask == null) {
+        console.error('❌ [MessageQueue] WebSocket未连接：socketTask为空')
+        reject(new Error('WebSocket未连接'))
+        return
+      }
+      
+      // 🔄 验证socketTask的有效性（UTS 规范：不能直接访问 any 类型的属性）
+      // 使用 uni.sendSocketMessage 替代直接调用 socketTask.send
+
+      // 发送消息
+      try {
+        uni.sendSocketMessage({
+          data: JSON.stringify(message),
+          success: () => {
+            resolve()
+          },
+          fail: (error: any) => {
+            console.error('❌ [MessageQueue] WebSocket消息发送失败:', error)
+            reject(error)
+          }
+        })
+      } catch (error) {
+        console.error('❌ [MessageQueue] WebSocket发送异常:', error)
+        reject(error)
+      }
+    })
+  }
+
+  /**
+   * 处理发送失败
+   */
+  private async handleSendFailure(queueItem: QueueItem, error: any): Promise<void> {
+    queueItem.retryCount++
+    
+    if (queueItem.retryCount >= this.retryConfig.maxRetries) {
+      // 超过最大重试次数，标记为失败（UTS 规范：需传入 realId 参数）
+      messageStateManager.updateMessageStatus(queueItem.id, MessageStatus.FAILED, '')
+      this.sendQueue.shift()
+      console.error('💀 [MessageQueue] 消息发送失败，超过最大重试次数:', queueItem.id)
+    } else {
+      // 计算下次重试时间
+      const delay = Math.min(
+        this.retryConfig.baseDelay * Math.pow(this.retryConfig.backoffFactor, queueItem.retryCount - 1),
+        this.retryConfig.maxDelay
+      )
+      queueItem.nextRetryTime = Date.now() + delay
+      
+      // 更新状态为待发送（UTS 规范：需传入 realId 参数）
+      messageStateManager.updateMessageStatus(queueItem.id, MessageStatus.PENDING, '')
+      
+      // 重新排序队列
+      this.sortQueue()
+      
+      // 设置重试定时器
+      this.scheduleRetry(delay)
+      
+      console.log(`⏰ [MessageQueue] 消息将在${delay}ms后重试:`, queueItem.id)
+    }
+  }
+
+  /**
+   * 安排重试
+   */
+  private scheduleRetry(delay: number): void {
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const existingTimer = this.retryTimer
+    if (existingTimer != null) {
+      clearTimeout(existingTimer)
+    }
+    
+    this.setQueueStatus(QueueStatus.WAITING_RETRY)
+    
+    // UTS 规范：setTimeout 回调不能返回 Promise
+    const self = this
+    this.retryTimer = setTimeout(function() {
+      self.retryTimer = null
+      self.setQueueStatus(QueueStatus.IDLE)
+      self.processQueue()
+    }, delay)
+  }
+
+  /**
+   * 排序队列
+   */
+  private sortQueue(): void {
+    // UTS 规范：sort 回调需显式指定参数类型和返回类型
+    this.sendQueue.sort((a: QueueItem, b: QueueItem): number => {
+      // 先按优先级排序
+      if (a.priority != b.priority) {
+        return b.priority - a.priority
+      }
+      // 再按重试时间排序
+      return a.nextRetryTime - b.nextRetryTime
+    })
+  }
+
+  /**
+   * 暂停队列
+   */
+  private pauseQueue(): void {
+    this.setQueueStatus(QueueStatus.PAUSED)
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const existingTimer = this.retryTimer
+    if (existingTimer != null) {
+      clearTimeout(existingTimer)
+      this.retryTimer = null
+    }
+  }
+
+  /**
+   * 恢复队列
+   */
+  private resumeQueue(): void {
+    if (this.queueStatus === QueueStatus.PAUSED) {
+      this.setQueueStatus(QueueStatus.IDLE)
+      this.processQueue()
+    }
+  }
+
+  /**
+   * 恢复待发送消息
+   */
+  private restorePendingMessages(): void {
+    // UTS 规范：使用 for 循环替代 filter + forEach
+    const allMessages = messageStateManager.getAllMessages()
+    const pendingMessages: ChatMessage[] = []
+    for (let i = 0; i < allMessages.length; i++) {
+      const msg = allMessages[i]
+      const isPending = msg.status === MessageStatus.PENDING
+      const isSending = msg.status === MessageStatus.SENDING
+      const isFailed = msg.status === MessageStatus.FAILED
+      if (isPending || isSending || isFailed) {
+        pendingMessages.push(msg)
+      }
+    }
+
+    for (let j = 0; j < pendingMessages.length; j++) {
+      const message = pendingMessages[j]
+      const isTempVal = message.isTemp
+      const isTemp = isTempVal == true
+      if (isTemp) {
+        // UTS 规范：不能使用对象字面量赋值给类实例
+        const queueItem = new QueueItem()
+        queueItem.id = message.id
+        
+        const msgParams = new AddTempMessageParams()
+        msgParams.content = message.content
+        msgParams.type = message.type
+        msgParams.senderId = message.senderId
+        msgParams.receiverId = message.receiverId
+        msgParams.mediaUrl = message.mediaUrl
+        msgParams.thumbUrl = message.thumbUrl
+        const durationVal = message.duration
+        msgParams.duration = durationVal != null ? durationVal : 0
+        msgParams.conversationId = message.conversationId
+        
+        queueItem.message = msgParams
+        const retryCountVal = message.retryCount
+        queueItem.retryCount = retryCountVal != null ? retryCountVal : 0
+        queueItem.nextRetryTime = Date.now()
+        queueItem.priority = 0
+        
+        this.sendQueue.push(queueItem)
+      }
+    }
+
+    this.sortQueue()
+    console.log('🔄 [MessageQueue] 恢复了', pendingMessages.length, '条待发送消息')
+  }
+
+  /**
+   * 映射消息类型到数字
+   */
+  private mapMessageTypeToparseFloat(type: MessageType): number {
+    switch (type) {
+      case MessageType.TEXT:
+        return 1
+      case MessageType.IMAGE:
+        return 2
+      case MessageType.VIDEO:
+        return 3
+      case MessageType.VOICE:
+        return 4
+      case MessageType.SHARE:
+        return 6
+      case MessageType.GIFT:
+        return 7
+      case MessageType.SYSTEM_NOTIFICATION:
+        return 10
+      default:
+        return 1
+    }
+    return 1
+  }
+
+  /**
+   * 设置WebSocket实例（依赖注入）
+   */
+  setWebSocketTask(webSocketTask: SocketTask): void {
+    this.webSocketTask = webSocketTask
+    console.log('🔌 [MessageQueue] WebSocket实例已注入')
+  }
+
+  /**
+   * 获取WebSocket实例
+   */
+  private getWebSocketTask(): SocketTask | null {
+    return this.webSocketTask
+  }
+
+  /**
+   * 设置队列状态
+   */
+  private setQueueStatus(status: QueueStatus): void {
+    this.queueStatus = status
+    // UTS 规范：forEach 回调需显式指定参数类型
+    this.statusListeners.forEach((listener: (status: QueueStatus) => void) => {
+      try {
+        listener(status)
+      } catch (error) {
+        console.error('❌ [MessageQueue] 状态监听器错误:', error)
+      }
+    })
+  }
+
+  /**
+   * 添加状态监听器
+   */
+  addStatusListener(listener: (status: QueueStatus) => void): () => void {
+    this.statusListeners.add(listener)
+    return () => {
+      this.statusListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 获取队列统计
+   */
+  getQueueStats(): QueueStats {
+    const messages = messageStateManager.getAllMessages()
+    
+    // UTS 规范：使用 for 循环替代 filter
+    let pendingCount = 0
+    let sendingCount = 0
+    let failedCount = 0
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i]
+      if (m.status === MessageStatus.PENDING) {
+        pendingCount++
+      } else if (m.status === MessageStatus.SENDING) {
+        sendingCount++
+      } else if (m.status === MessageStatus.FAILED) {
+        failedCount++
+      }
+    }
+    
+    const stats = new QueueStats()
+    stats.total = this.sendQueue.length
+    stats.pending = pendingCount
+    stats.sending = sendingCount
+    stats.failed = failedCount
+    stats.status = this.queueStatus
+    
+    return stats
+  }
+
+  /**
+   * 清空队列
+   */
+  clearQueue(): void {
+    this.sendQueue = []
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const existingTimer = this.retryTimer
+    if (existingTimer != null) {
+      clearTimeout(existingTimer)
+      this.retryTimer = null
+    }
+    this.setQueueStatus(QueueStatus.IDLE)
+    console.log('🗑️ [MessageQueue] 队列已清空')
+  }
+
+  /**
+   * 重试失败的消息
+   */
+  retryFailedMessages(): void {
+    // UTS 规范：Boolean? 不能直接用于条件判断，使用 for 循环
+    const allMessages = messageStateManager.getAllMessages()
+    const failedMessages: ChatMessage[] = []
+    for (let i = 0; i < allMessages.length; i++) {
+      const msg = allMessages[i]
+      const isTempVal = msg.isTemp
+      const isTemp = isTempVal == true
+      const isFailed = msg.status === MessageStatus.FAILED
+      if (isFailed && isTemp) {
+        failedMessages.push(msg)
+      }
+    }
+
+    for (let j = 0; j < failedMessages.length; j++) {
+      const message = failedMessages[j]
+      // UTS 规范：需传入 realId 参数
+      messageStateManager.updateMessageStatus(message.id, MessageStatus.PENDING, '')
+      
+      const queueItem = new QueueItem()
+      queueItem.id = message.id
+      // UTS 规范：对象字面量不能赋值给类实例，逐个赋值
+      const msgParams = new AddTempMessageParams()
+      msgParams.content = message.content
+      msgParams.type = message.type
+      msgParams.senderId = message.senderId
+      msgParams.receiverId = message.receiverId
+      msgParams.mediaUrl = message.mediaUrl
+      msgParams.thumbUrl = message.thumbUrl
+      const durationVal = message.duration
+      msgParams.duration = durationVal != null ? durationVal : 0
+      msgParams.conversationId = message.conversationId
+      queueItem.message = msgParams
+      queueItem.retryCount = 0
+      queueItem.nextRetryTime = Date.now()
+      queueItem.priority = 0
+      
+      this.sendQueue.push(queueItem)
+    }
+
+    this.sortQueue()
+    this.processQueue()
+    console.log('🔄 [MessageQueue] 重试', failedMessages.length, '条失败消息')
+  }
+
+  /**
+   * 清理资源
+   */
+  cleanup(): void {
+    this.clearQueue()
+    this.statusListeners.clear()
+    console.log('🧹 [MessageQueue] 资源已清理')
+  }
+}
+
+// 创建全局单例
+export const messageQueueManager = new MessageQueueManager()

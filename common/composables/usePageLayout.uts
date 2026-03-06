@@ -1,0 +1,110 @@
+/**
+ * 页面布局工具
+ * 提供状态栏高度、窗口高度等布局相关的数据
+ * 
+ * 使用方法：
+ * import { 
+ *   pageStatusBarHeight, 
+ *   pageWindowHeight, 
+ *   initPageLayout 
+ * } from '@/common/composables/usePageLayout.uts'
+ * 
+ * onLoad(() => {
+ *   initPageLayout()
+ * })
+ * 
+ * 模板中使用：
+ * <!-- APP端状态栏占位 -->
+ * <!-- #ifndef H5 -->
+ * <view class="status-bar-placeholder" :style="{ height: pageStatusBarHeight + 'px' }"></view>
+ * <!-- #endif -->
+ */
+
+import { ref } from 'vue'
+import { getStatusBarHeight, getWindowHeight } from '@/common/utils/systemInfo.uts'
+
+// ==================== 响应式状态（模块级别）====================
+
+// 状态栏高度（px）
+export const pageStatusBarHeight = ref<number>(0)
+
+// 窗口高度（px）
+export const pageWindowHeight = ref<number>(667)
+
+// 内容区域高度（px）- 窗口高度减去状态栏高度
+export const pageContentHeight = ref<number>(667)
+
+// 是否已初始化
+let layoutInitialized = false
+
+// ==================== 导出函数 ====================
+
+/**
+ * 初始化布局数据
+ * 建议在 onLoad 或 onMounted 中调用
+ */
+export function initPageLayout(): void {
+	if (layoutInitialized == true) {
+		return
+	}
+	
+	// 获取状态栏高度
+	pageStatusBarHeight.value = getStatusBarHeight()
+	
+	// 获取窗口高度
+	pageWindowHeight.value = getWindowHeight()
+	
+	// 计算内容区域高度
+	pageContentHeight.value = pageWindowHeight.value - pageStatusBarHeight.value
+	
+	layoutInitialized = true
+	
+	console.log('📐 [Layout] 初始化完成:', {
+		statusBarHeight: pageStatusBarHeight.value,
+		windowHeight: pageWindowHeight.value,
+		contentHeight: pageContentHeight.value
+	})
+}
+
+/**
+ * 获取状态栏高度值（非响应式）
+ * @returns 状态栏高度（px）
+ */
+export function getPageStatusBarHeight(): number {
+	if (layoutInitialized == false) {
+		initPageLayout()
+	}
+	return pageStatusBarHeight.value
+}
+
+/**
+ * 获取窗口高度值（非响应式）
+ * @returns 窗口高度（px）
+ */
+export function getPageWindowHeight(): number {
+	if (layoutInitialized == false) {
+		initPageLayout()
+	}
+	return pageWindowHeight.value
+}
+
+/**
+ * 获取内容区域高度值（非响应式）
+ * @returns 内容区域高度（px）
+ */
+export function getPageContentHeight(): number {
+	if (layoutInitialized == false) {
+		initPageLayout()
+	}
+	return pageContentHeight.value
+}
+
+/**
+ * 重置布局（用于测试或强制刷新）
+ */
+export function resetPageLayout(): void {
+	layoutInitialized = false
+	pageStatusBarHeight.value = 0
+	pageWindowHeight.value = 667
+	pageContentHeight.value = 667
+}

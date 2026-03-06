@@ -1,0 +1,1172 @@
+<template>
+	<view class="sign-record-page">
+		<!-- 搜索框 -->
+		<view class="search-container">
+			<view class="search-box">
+				<text class="search-icon">🔍</text>
+				<input 
+					type="text" 
+					class="search-input" 
+					placeholder="搜索向导昵称" 
+					v-model="searchKeyword"
+					@input="handleSearch"
+				/>
+			</view>
+		</view>
+
+		<!-- 统计卡片 -->
+		<view v-if="loading == false && guidesList.length > 0" class="stats-cards">
+			<view class="stats-card">
+				<view 
+					class="stat-item"
+					:class="{ active: selectedStatus == 'all' }"
+					@click="handleStatusFilter('all')"
+				>
+					<text class="stat-number" style="color: #37B1F2;">{{ totalCount }}</text>
+					<text class="stat-label">全部</text>
+				</view>
+				<view 
+					class="stat-item"
+					:class="{ active: selectedStatus == '30' }"
+					@click="handleStatusFilterNum(SIGN_STATUS_PASS_SIGN)"
+				>
+					<text class="stat-number" style="color: #52C41A;">{{ signedCount }}</text>
+					<text class="stat-label">已签约</text>
+				</view>
+				<view 
+					class="stat-item"
+					:class="{ active: selectedStatus == '10' }"
+					@click="handleStatusFilterNum(SIGN_STATUS_TO_SIGN)"
+				>
+					<text class="stat-number" style="color: #FAAD14;">{{ pendingCount }}</text>
+					<text class="stat-label">待签约</text>
+				</view>
+				<view 
+					class="stat-item"
+					:class="{ active: selectedStatus == '20' }"
+					@click="handleStatusFilterNum(SIGN_STATUS_SIGNING)"
+				>
+					<text class="stat-number" style="color: #FF4D4F;">{{ reviewingCount }}</text>
+					<text class="stat-label">待审核</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 加载状态 -->
+		<view v-if="loading == true" class="loading-container">
+			<view class="loading-spinner"></view>
+			<text class="loading-text">加载中...</text>
+		</view>
+
+		<!-- 向导列表 -->
+		<scroll-view 
+			v-if="loading == false && filteredGuidesList.length > 0"
+			class="guide-list"
+			scroll-y
+			:show-scrollbar="false"
+			@scrolltolower="loadMore"
+		>
+			<view v-for="(guide, index) in filteredGuidesList" :key="index" class="guide-item">
+				<view class="guide-content" @click="viewGuideDetail(guide)">
+					<!-- 头像 -->
+					<Avatar 
+						:url="getGuideAvatar(guide)"
+						:customSize="80"
+						clickMode="none"
+					/>
+					
+					<!-- 向导信息 -->
+					<view class="guide-info">
+						<text class="guide-name">{{ guide.nickname }}</text>
+						
+						<!-- 费率信息（已签约状态显示） -->
+						<view v-if="guide.singStatus == SIGN_STATUS_PASS_SIGN && (guide.lineOrderRate > 0 || guide.guideOrderRate > 0)" 
+							  class="rate-info">
+							<text class="rate-item">导服 {{ formatPercentage(guide.guideOrderRate) }}%</text>
+							<text class="rate-item">定制 {{ formatPercentage(guide.lineOrderRate) }}%</text>
+						</view>
+						
+						<!-- 暂无签约比例文本 -->
+						<text v-else class="no-rate-text">暂无签约比例</text>
+					</view>
+					
+					<!-- 操作按钮 -->
+					<view class="action-button">
+						<!-- 待签约状态 -->
+						<view v-if="guide.singStatus == SIGN_STATUS_TO_SIGN" 
+							  class="btn btn-primary" @click.stop="handleSignGuide(guide)">
+							<text class="btn-text">签约</text>
+						</view>
+						
+						<!-- 已签约状态 -->
+						<view v-else-if="guide.singStatus == SIGN_STATUS_PASS_SIGN" 
+							  class="btn btn-signed" @click.stop="viewContract(guide)">
+							<text class="btn-text">查看</text>
+						</view>
+						
+						<!-- 审核中状态 - 运营可审核 -->
+						<view v-else-if="guide.singStatus == SIGN_STATUS_SIGNING" 
+							  class="btn btn-review" @click.stop="handleReviewSign(guide)">
+							<text class="btn-text">审核</text>
+						</view>
+						
+						<!-- 已驳回状态 -->
+						<view v-else-if="guide.singStatus == SIGN_STATUS_REFUSE_SIGN" 
+							  class="btn btn-primary" @click.stop="handleSignGuide(guide)">
+							<text class="btn-text">重新签约</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 空状态 -->
+		<view v-if="loading == false && filteredGuidesList.length == 0" class="empty-container">
+			<UniIcons type="list" :size="60" color="#CCCCCC" />
+			<text class="empty-text">{{ emptyText }}</text>
+			<view v-if="selectedStatus != 'all'" class="reset-filter" @click="handleStatusFilter('all')">
+				<text class="reset-text">查看全部向导</text>
+			</view>
+		</view>
+
+		<!-- 费率设置弹窗 -->
+		<view v-if="showRateModal == true" class="modal-mask" @click="closeRateModal">
+			<view class="rate-modal" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">{{ modalTitle }}</text>
+					<text class="modal-close" @click="closeRateModal">✕</text>
+				</view>
+				
+				<view class="modal-content">
+					<view class="rate-item-input">
+						<text class="rate-label">导服费率</text>
+						<view class="input-wrapper">
+							<input 
+								type="digit" 
+								v-model="rateFormGuideOrderRate" 
+								placeholder="请输入导服费率"
+								class="rate-input"
+							/>
+							<text class="rate-unit">%</text>
+						</view>
+					</view>
+					
+					<view class="rate-item-input">
+						<text class="rate-label">定制费率</text>
+						<view class="input-wrapper">
+							<input 
+								type="digit" 
+								v-model="rateFormLineOrderRate" 
+								placeholder="请输入定制费率"
+								class="rate-input"
+							/>
+							<text class="rate-unit">%</text>
+						</view>
+					</view>
+				</view>
+				
+				<view class="modal-actions">
+					<view class="btn-cancel" @click="closeRateModal">
+						<text class="btn-text">取消</text>
+					</view>
+					<view class="btn-confirm" @click="confirmRateSettings">
+						<text class="btn-text">确定</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 审核弹窗 -->
+		<view v-if="showReviewModal == true" class="modal-mask" @click="closeReviewModal">
+			<view class="review-modal" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">审核签约申请</text>
+					<text class="modal-close" @click="closeReviewModal">✕</text>
+				</view>
+				
+				<view class="modal-content">
+					<view class="review-info">
+						<text class="review-label">向导昵称</text>
+						<text class="review-value">{{ reviewGuideName }}</text>
+					</view>
+					
+					<view class="review-info">
+						<text class="review-label">申请费率</text>
+						<text class="review-value">导服 {{ reviewGuideRate }}% / 定制 {{ reviewLineRate }}%</text>
+					</view>
+					
+					<view class="review-reason-box">
+						<text class="review-label">拒绝原因（可选）</text>
+						<textarea 
+							class="review-reason-input"
+							v-model="reviewReason"
+							placeholder="如拒绝请填写原因"
+							maxlength="200"
+						/>
+					</view>
+				</view>
+				
+				<view class="modal-actions">
+					<view class="btn-reject" @click="handleRejectSign">
+						<text class="btn-text-reject">拒绝</text>
+					</view>
+					<view class="btn-approve" @click="handleApproveSign">
+						<text class="btn-text">通过</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+import { auditSignRequest } from '@/pagesBusiness/api/operator.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+
+// 向导数据类
+class GuideItemData {
+	userKid: string = ''
+	nickname: string = ''
+	image: string = ''
+	singStatus: number = 0
+	guideOrderRate: number = 0
+	lineOrderRate: number = 0
+	
+	constructor(userKid: string, nickname: string, image: string, singStatus: number, guideOrderRate: number, lineOrderRate: number) {
+		this.userKid = userKid
+		this.nickname = nickname
+		this.image = image
+		this.singStatus = singStatus
+		this.guideOrderRate = guideOrderRate
+		this.lineOrderRate = lineOrderRate
+	}
+}
+
+// 签约状态常量
+const SIGN_STATUS_TO_SIGN = 10      // 待签约
+const SIGN_STATUS_SIGNING = 20      // 待审核
+const SIGN_STATUS_PASS_SIGN = 30    // 审核通过
+const SIGN_STATUS_REFUSE_SIGN = 40  // 审核不通过
+
+// 默认头像
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// ==================== 状态定义 ====================
+const loading = ref<boolean>(false)
+const searchKeyword = ref<string>('')
+const selectedStatus = ref<string>('all')
+const guidesList = ref<Array<GuideItemData>>([])
+const filteredGuidesList = ref<Array<GuideItemData>>([])
+const showRateModal = ref<boolean>(false)
+const modalTitle = ref<string>('')
+const rateFormGuideOrderRate = ref<string>('')
+const rateFormLineOrderRate = ref<string>('')
+const currentGuideUserKid = ref<string>('')
+const currentGuideOrderRate = ref<number>(0)
+const currentGuideLineOrderRate = ref<number>(0)
+const currentAction = ref<string>('')
+
+// 登录状态
+const isLoginValue = ref<boolean>(false)
+const currentUserId = ref<string>('')
+
+// 统计数据
+const totalCount = ref<number>(0)
+const signedCount = ref<number>(0)
+const pendingCount = ref<number>(0)
+const reviewingCount = ref<number>(0)
+const emptyText = ref<string>('暂无签约向导')
+
+// 审核弹窗状态
+const showReviewModal = ref<boolean>(false)
+const reviewSignKid = ref<string>('')
+const reviewGuideName = ref<string>('')
+const reviewGuideRate = ref<string>('0')
+const reviewLineRate = ref<string>('0')
+const reviewReason = ref<string>('')
+
+// ==================== 辅助函数 ====================
+
+// 获取向导头像
+const getGuideAvatar = (guide: GuideItemData): string => {
+	if (guide.image != null && guide.image != '') {
+		return guide.image
+	}
+	return defaultAvatar
+}
+
+// 格式化百分比
+const formatPercentage = (value: number): string => {
+	return (value * 100).toFixed(1)
+}
+
+// 更新统计数据
+const updateStats = () => {
+	const list = guidesList.value
+	totalCount.value = list.length
+	
+	let signed = 0
+	let pending = 0
+	let reviewing = 0
+	
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		if (item.singStatus == SIGN_STATUS_PASS_SIGN) {
+			signed = signed + 1
+		} else if (item.singStatus == SIGN_STATUS_TO_SIGN) {
+			pending = pending + 1
+		} else if (item.singStatus == SIGN_STATUS_SIGNING) {
+			reviewing = reviewing + 1
+		}
+	}
+	
+	signedCount.value = signed
+	pendingCount.value = pending
+	reviewingCount.value = reviewing
+}
+
+// 更新空状态文本
+const updateEmptyText = () => {
+	if (searchKeyword.value != null && searchKeyword.value != '') {
+		emptyText.value = '未找到匹配的向导'
+	} else if (selectedStatus.value != 'all') {
+		emptyText.value = '暂无该状态的向导'
+	} else {
+		emptyText.value = '暂无签约向导'
+	}
+}
+
+// 更新过滤后的列表
+const updateFilteredList = () => {
+	const list = guidesList.value
+	const keyword = searchKeyword.value
+	const status = selectedStatus.value
+	
+	const result: Array<GuideItemData> = []
+	
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		let match = true
+		
+		// 状态筛选
+		if (status != 'all') {
+			const statusNum = parseInt(status)
+			if (item.singStatus != statusNum) {
+				match = false
+			}
+		}
+		
+		// 关键词筛选
+		if (match == true && keyword != null && keyword != '') {
+			const keywordLower = keyword.toLowerCase()
+			const nicknameLower = item.nickname.toLowerCase()
+			if (nicknameLower.indexOf(keywordLower) == -1) {
+				match = false
+			}
+		}
+		
+		if (match == true) {
+			result.push(item)
+		}
+	}
+	
+	filteredGuidesList.value = result
+	updateEmptyText()
+}
+
+// 解析响应数据
+const getResponseCode = (res: UTSJSONObject | null): number => {
+	if (res == null) return 0
+	try {
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		if (codeVal != null) {
+			return parseInt(codeVal.toString())
+		}
+		return 0
+	} catch (e) {
+		return 0
+	}
+}
+
+const getResponseDataList = (res: UTSJSONObject | null): Array<UTSJSONObject> => {
+	if (res == null) return []
+	try {
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const dataVal = resObj.get('data')
+		if (dataVal != null) {
+			const dataStr = JSON.stringify(dataVal)
+			const dataObj = JSON.parse(dataStr) as UTSJSONObject
+			const listVal = dataObj.get('list')
+			if (listVal != null && Array.isArray(listVal) == true) {
+				return listVal as Array<UTSJSONObject>
+			}
+			// 如果没有 list，尝试直接返回 data
+			if (Array.isArray(dataVal) == true) {
+				return dataVal as Array<UTSJSONObject>
+			}
+		}
+		return []
+	} catch (e) {
+		return []
+	}
+}
+
+// 解析向导数据
+const parseGuideItem = (item: UTSJSONObject | null): GuideItemData => {
+	if (item == null) {
+		return new GuideItemData('', '', '', 0, 0, 0)
+	}
+	try {
+		const itemStr = JSON.stringify(item)
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		
+		const userKidVal = itemObj.get('userKid')
+		const nicknameVal = itemObj.get('nickname')
+		const imageVal = itemObj.get('image')
+		const singStatusVal = itemObj.get('singStatus')
+		const guideOrderRateVal = itemObj.get('guideOrderRate')
+		const lineOrderRateVal = itemObj.get('lineOrderRate')
+		
+		const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+		const nickname = (nicknameVal != null) ? nicknameVal.toString() : ''
+		const image = (imageVal != null) ? imageVal.toString() : ''
+		const singStatus = (singStatusVal != null) ? parseInt(singStatusVal.toString()) : 0
+		const guideOrderRate = (guideOrderRateVal != null) ? parseFloat(guideOrderRateVal.toString()) : 0
+		const lineOrderRate = (lineOrderRateVal != null) ? parseFloat(lineOrderRateVal.toString()) : 0
+		
+		return new GuideItemData(userKid, nickname, image, singStatus, guideOrderRate, lineOrderRate)
+	} catch (e) {
+		return new GuideItemData('', '', '', 0, 0, 0)
+	}
+}
+
+// ==================== 核心方法 ====================
+
+// 加载向导列表
+const loadGuides = async () => {
+	loading.value = true
+	
+	try {
+		// 使用 loginHelper 获取用户ID
+		const userKid = getCurrentUserIdReliable()
+		if (userKid == '') {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			loading.value = false
+			return
+		}
+		
+		// 模拟数据（实际应调用 API）
+		const mockData: Array<GuideItemData> = []
+		mockData.push(new GuideItemData('1', '张三', '', SIGN_STATUS_PASS_SIGN, 0.1, 0.15))
+		mockData.push(new GuideItemData('2', '李四', '', SIGN_STATUS_TO_SIGN, 0, 0))
+		mockData.push(new GuideItemData('3', '王五', '', SIGN_STATUS_SIGNING, 0, 0))
+		mockData.push(new GuideItemData('4', '赵六', '', SIGN_STATUS_REFUSE_SIGN, 0, 0))
+		
+		guidesList.value = mockData
+		updateStats()
+		updateFilteredList()
+		
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载签约向导', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 搜索处理
+const handleSearch = () => {
+	updateFilteredList()
+}
+
+// 状态筛选（字符串）
+const handleStatusFilter = (status: string) => {
+	selectedStatus.value = status
+	updateFilteredList()
+}
+
+// 状态筛选（数字）
+const handleStatusFilterNum = (status: number) => {
+	selectedStatus.value = status.toString()
+	updateFilteredList()
+}
+
+// 签约向导
+const handleSignGuide = (guide: GuideItemData) => {
+	currentGuideUserKid.value = guide.userKid
+	currentGuideOrderRate.value = guide.guideOrderRate
+	currentGuideLineOrderRate.value = guide.lineOrderRate
+	currentAction.value = 'sign'
+	modalTitle.value = '设置签约费率'
+	rateFormGuideOrderRate.value = ''
+	rateFormLineOrderRate.value = ''
+	showRateModal.value = true
+}
+
+// 查看合同
+const viewContract = (guide: GuideItemData) => {
+	currentGuideUserKid.value = guide.userKid
+	currentGuideOrderRate.value = guide.guideOrderRate
+	currentGuideLineOrderRate.value = guide.lineOrderRate
+	currentAction.value = 'update'
+	modalTitle.value = '签约信息'
+	rateFormGuideOrderRate.value = (guide.guideOrderRate * 100).toFixed(1)
+	rateFormLineOrderRate.value = (guide.lineOrderRate * 100).toFixed(1)
+	showRateModal.value = true
+}
+
+// 查看向导详情
+const viewGuideDetail = (guide: GuideItemData) => {
+	uni.navigateTo({
+		url: '/pagesBusiness/guideInfo/index?userKid=' + guide.userKid
+	})
+}
+
+// 关闭费率弹窗
+const closeRateModal = () => {
+	showRateModal.value = false
+	currentGuideUserKid.value = ''
+	currentAction.value = ''
+}
+
+// 确认费率设置
+const confirmRateSettings = async () => {
+	const guideOrderRateVal = rateFormGuideOrderRate.value
+	const lineOrderRateVal = rateFormLineOrderRate.value
+	
+	if (guideOrderRateVal == null || guideOrderRateVal == '' || lineOrderRateVal == null || lineOrderRateVal == '') {
+		uni.showToast({
+			title: '请填写完整的费率信息',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const guideRate = parseFloat(guideOrderRateVal)
+	const lineRate = parseFloat(lineOrderRateVal)
+	
+	if (guideRate < 0 || guideRate > 100 || lineRate < 0 || lineRate > 100) {
+		uni.showToast({
+			title: '费率范围应在0-100之间',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 使用 loginHelper 获取用户ID
+		const userKid = getCurrentUserIdReliable()
+		
+		// 模拟 API 调用
+		if (currentAction.value == 'sign') {
+			// 签约
+			uni.showToast({
+				title: '签约成功',
+				icon: 'success'
+			})
+		} else {
+			// 更新费率
+			uni.showToast({
+				title: '费率更新成功',
+				icon: 'success'
+			})
+		}
+		
+		closeRateModal()
+		loadGuides()
+		
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '签约费率设置', null)
+		}
+	}
+}
+
+// 加载更多
+const loadMore = () => {
+	// TODO: 实现分页加载
+}
+
+// 打开审核弹窗
+const handleReviewSign = (guide: GuideItemData) => {
+	reviewSignKid.value = guide.userKid
+	reviewGuideName.value = guide.nickname
+	reviewGuideRate.value = (guide.guideOrderRate * 100).toFixed(1)
+	reviewLineRate.value = (guide.lineOrderRate * 100).toFixed(1)
+	reviewReason.value = ''
+	showReviewModal.value = true
+}
+
+// 关闭审核弹窗
+const closeReviewModal = () => {
+	showReviewModal.value = false
+	reviewSignKid.value = ''
+	reviewGuideName.value = ''
+	reviewReason.value = ''
+}
+
+// 通过签约申请
+const handleApproveSign = () => {
+	if (reviewSignKid.value == '') {
+		uni.showToast({ title: '数据异常', icon: 'none' })
+		return
+	}
+	
+	const params = {
+		kid: reviewSignKid.value,
+		auditStatus: 30  // 30=审核通过
+	} as UTSJSONObject
+	
+	auditSignRequest(params).then((res: UTSJSONObject) => {
+		if (res == null) {
+			uni.showToast({ title: '操作失败', icon: 'none' })
+			return
+		}
+		const code = getResponseCode(res)
+		if (code == 200) {
+			uni.showToast({ title: '已通过', icon: 'success' })
+			closeReviewModal()
+			loadGuides()
+		} else {
+			uni.showToast({ title: '操作失败', icon: 'none' })
+		}
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '审核签约申请', null)
+		}
+	})
+}
+
+// 拒绝签约申请
+const handleRejectSign = () => {
+	if (reviewSignKid.value == '') {
+		uni.showToast({ title: '数据异常', icon: 'none' })
+		return
+	}
+	
+	const params = {
+		kid: reviewSignKid.value,
+		auditStatus: 40,  // 40=审核不通过
+		auditReason: reviewReason.value
+	} as UTSJSONObject
+	
+	auditSignRequest(params).then((res: UTSJSONObject) => {
+		if (res == null) {
+			uni.showToast({ title: '操作失败', icon: 'none' })
+			return
+		}
+		const code = getResponseCode(res)
+		if (code == 200) {
+			uni.showToast({ title: '已拒绝', icon: 'success' })
+			closeReviewModal()
+			loadGuides()
+		} else {
+			uni.showToast({ title: '操作失败', icon: 'none' })
+		}
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '拒绝签约申请', null)
+		}
+	})
+}
+
+// 登录状态变化回调（必须在 onMounted 之前定义）
+const handleLoginStatusChange = (data: UTSJSONObject | null) => {
+	if (data == null) return
+	
+	const dataObj = parseLoginStatusData(data)
+	if (dataObj == null) return
+	
+	const isLogin = getIsLoginFromData(dataObj)
+	const userId = getUserIdFromData(dataObj)
+	
+	isLoginValue.value = isLogin
+	currentUserId.value = userId
+	
+	// 登录状态变化后重新加载数据
+	if (isLogin == true) {
+		loadGuides()
+	}
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	// 注册登录状态变化监听
+	onLoginStatusChange(handleLoginStatusChange)
+	
+	// 等待登录状态初始化
+	waitForLoginStatus(2000).then((result: number) => {
+		isLoginValue.value = (result == 1)
+		currentUserId.value = getCurrentUserIdReliable()
+		
+		if (isLoginValue.value == true) {
+			loadGuides()
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '等待登录状态初始化')
+	})
+})
+
+onShow(() => {
+	// 每次页面显示时更新登录状态
+	isLoginValue.value = checkUserLoginReliable()
+	currentUserId.value = getCurrentUserIdReliable()
+})
+
+onUnmounted(() => {
+	// 取消登录状态变化监听
+	offLoginStatusChange(handleLoginStatusChange)
+})
+</script>
+
+<style scoped>
+.sign-record-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+/* 搜索框 */
+.search-container {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+.search-box {
+	flex-direction: row;
+	align-items: center;
+	background-color: #ffffff;
+	border-radius: 50rpx;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+}
+
+.search-icon {
+	font-size: 32rpx;
+	margin-right: 16rpx;
+}
+
+.search-input {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+/* 统计卡片 */
+.stats-cards {
+	margin-top: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.stats-card {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	flex-direction: row;
+	justify-content: space-around;
+}
+
+.stat-item {
+	flex-direction: column;
+	align-items: center;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	border-radius: 12rpx;
+}
+
+.stat-item.active {
+	background-color: #f0f9ff;
+}
+
+.stat-number {
+	font-size: 40rpx;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.stat-label {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+/* 加载状态 */
+.loading-container {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+}
+
+.loading-spinner {
+	width: 60rpx;
+	height: 60rpx;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: #f0f0f0;
+	border-radius: 30rpx;
+}
+
+.loading-text {
+	margin-top: 20rpx;
+	font-size: 28rpx;
+	color: #999999;
+}
+
+/* 向导列表 */
+.guide-list {
+	flex: 1;
+}
+
+.guide-item {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	margin-bottom: 20rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+}
+
+.guide-content {
+	flex-direction: row;
+	align-items: center;
+}
+
+.guide-content :deep(.avatar-container) {
+	margin-right: 20rpx;
+}
+
+.guide-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.guide-name {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: 400;
+	margin-bottom: 8rpx;
+}
+
+.rate-info {
+	flex-direction: row;
+	margin-top: 8rpx;
+}
+
+.rate-item {
+	font-size: 24rpx;
+	color: #666666;
+	background-color: #f5f5f5;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	border-radius: 8rpx;
+	margin-right: 12rpx;
+}
+
+.no-rate-text {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.action-button {
+	margin-left: 20rpx;
+}
+
+.btn {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	border-radius: 50rpx;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-primary {
+	background-color: #37B1F2;
+}
+
+.btn-signed {
+	background-color: #52C41A;
+}
+
+.btn-pending {
+	background-color: #d9d9d9;
+}
+
+.btn-text {
+	font-size: 26rpx;
+	color: #ffffff;
+	font-weight: 400;
+}
+
+/* 空状态 */
+.empty-container {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+}
+
+.empty-icon {
+	font-size: 100rpx;
+	margin-bottom: 20rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+	margin-bottom: 30rpx;
+}
+
+.reset-filter {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	background-color: #37B1F2;
+	border-radius: 50rpx;
+}
+
+.reset-text {
+	font-size: 26rpx;
+	color: #ffffff;
+}
+
+/* 费率弹窗 */
+.modal-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.rate-modal {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	overflow: hidden;
+}
+
+.modal-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.modal-close {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.modal-content {
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.rate-item-input {
+	margin-bottom: 32rpx;
+}
+
+.rate-label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 16rpx;
+}
+
+.input-wrapper {
+	flex-direction: row;
+	align-items: center;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 12rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	background-color: #fafafa;
+}
+
+.rate-input {
+	flex: 1;
+	height: 80rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.rate-unit {
+	font-size: 28rpx;
+	color: #666666;
+	margin-left: 10rpx;
+}
+
+.modal-actions {
+	flex-direction: row;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.btn-cancel,
+.btn-confirm {
+	flex: 1;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-cancel {
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.btn-cancel .btn-text {
+	color: #666666;
+}
+
+.btn-confirm {
+	background-color: #37B1F2;
+}
+
+.btn-confirm .btn-text {
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 审核按钮样式 */
+.btn-review {
+	background-color: #FF9500;
+}
+
+/* 审核弹窗样式 */
+.review-modal {
+	width: 620rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	overflow: hidden;
+}
+
+.review-info {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f5f5f5;
+}
+
+.review-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.review-value {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.review-reason-box {
+	margin-top: 24rpx;
+}
+
+.review-reason-input {
+	width: 100%;
+	height: 160rpx;
+	margin-top: 16rpx;
+	padding: 20rpx;
+	font-size: 28rpx;
+	color: #333333;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+}
+
+.btn-reject {
+	flex: 1;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.btn-text-reject {
+	font-size: 28rpx;
+	color: #FF4D4F;
+	font-weight: normal;
+}
+
+.btn-approve {
+	flex: 1;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #52C41A;
+}
+</style>

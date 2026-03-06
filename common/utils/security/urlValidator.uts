@@ -1,0 +1,256 @@
+/**
+ * URL 安全验证工具模块
+ * 
+ * 提供 URL 参数安全解析、XSS 防护、域名白名单验证等功能。
+ * 所有从 window.location 获取的参数应通过本模块进行安全过滤后使用。
+ * 
+ * 使用方法：
+ * import { getUrlParams, safeRedirect, isUrlTrusted } from '@/common/utils/security/urlValidator.uts'
+ * const params = getUrlParams()
+ * const value = params.get('key') ?? ''
+ * if (isUrlTrusted(url)) { safeRedirect(url) }
+ */
+
+/**
+ * 可信域名白名单（匹配域名后缀）
+ */
+const TRUSTED_DOMAINS: string[] = [
+	'wyxdapp.com',
+	'api.wyxdapp.com',
+	'm.wyxdapp.com',
+	'cos.wyxdapp.com',
+	'jiasu.wyxdapp.com',
+	'open.weixin.qq.com',
+	'wx.tenpay.com',
+	'openapi.alipay.com',
+	'apps.apple.com',
+	'tenpay.com'
+]
+
+/**
+ * 可信 URL scheme 白名单
+ */
+const TRUSTED_SCHEMES: string[] = [
+	'qy://',
+	'qylv://',
+	'itms-apps://',
+	'weixin://',
+	'alipays://'
+]
+
+/**
+ * XSS 危险模式正则列表
+ * 用于检测和过滤常见的 XSS 攻击向量
+ */
+const XSS_PATTERNS: string[] = [
+	'<script',
+	'javascript:',
+	'data:',
+	'vbscript:'
+]
+
+
+/**
+ * 匹配 on* 事件处理器属性的正则表达式
+ * 例如: onerror=, onload=, onclick= 等
+ */
+const EVENT_HANDLER_REGEX = /\bon[a-z]+\s*=/gi
+
+/**
+ * 对 URL 参数值进行 XSS 特征字符过滤
+ * 过滤: <script, javascript:, data:, vbscript:, on* 事件处理器, <, >, ", ', &
+ * 
+ * @param value 待过滤的参数值
+ * @returns 过滤后的安全字符串
+ */
+export function sanitizeUrlParam(value: string): string {
+	if (value.length === 0) {
+		return value
+	}
+
+	let result = value
+
+	// 过滤 XSS 危险模式（不区分大小写）
+	for (let i = 0; i < XSS_PATTERNS.length; i++) {
+		const pattern = XSS_PATTERNS[i]
+		// 循环移除直到不再包含该模式
+		let lowerResult = result.toLowerCase()
+		while (lowerResult.indexOf(pattern) >= 0) {
+			const idx = lowerResult.indexOf(pattern)
+			result = result.substring(0, idx) + result.substring(idx + pattern.length)
+			lowerResult = result.toLowerCase()
+		}
+	}
+
+	// 过滤 on* 事件处理器属性（如 onerror=, onload=, onclick= 等）
+	result = result.replace(EVENT_HANDLER_REGEX, '')
+
+	// 过滤危险字符: <, >, ", ', &
+	let sanitized = ''
+	for (let i = 0; i < result.length; i++) {
+		const ch = result.charAt(i)
+		if (ch !== '<' && ch !== '>' && ch !== '"' && ch !== "'" && ch !== '&') {
+			sanitized += ch
+		}
+	}
+
+	return sanitized
+}
+
+/**
+ * 安全地从 URL 中解析查询参数
+ * 解析 window.location.search 和 hash 中的参数，并自动对每个值进行 XSS 过滤
+ * 
+ * @returns 安全过滤后的参数 Map
+ */
+export function getUrlParams(): Map<string, string> {
+	const params = new Map<string, string>()
+
+	// #ifdef H5
+	try {
+		const search = window.location.search
+		const hash = window.location.hash
+
+		// 解析 search 参数 (?key=value&key2=value2)
+		if (search.length > 1) {
+			parseQueryString(search.substring(1), params)
+		}
+
+		// 解析 hash 中的参数 (#/path?key=value)
+		if (hash.length > 0) {
+			const hashQueryIndex = hash.indexOf('?')
+			if (hashQueryIndex >= 0 && hashQueryIndex < hash.length - 1) {
+				parseQueryString(hash.substring(hashQueryIndex + 1), params)
+			}
+		}
+	} catch (_e: any) {
+		// 非浏览器环境或解析失败，返回空 Map
+	}
+	// #endif
+
+	return params
+}
+
+/**
+ * 解析查询字符串并将结果存入 Map
+ * 
+ * @param queryString 不含 ? 前缀的查询字符串
+ * @param params 存储结果的 Map
+ */
+function parseQueryString(queryString: string, params: Map<string, string>): void {
+	const pairs = queryString.split('&')
+	for (let i = 0; i < pairs.length; i++) {
+		const pair = pairs[i]
+		if (pair.length === 0) {
+			continue
+		}
+		const eqIndex = pair.indexOf('=')
+		if (eqIndex >= 0) {
+			const key = pair.substring(0, eqIndex)
+			const rawValue = pair.substring(eqIndex + 1)
+			const decodedValue = safeDecodeURIComponent(rawValue)
+			params.set(key, decodedValue)
+		} else {
+			params.set(pair, '')
+		}
+	}
+}
+
+/**
+ * 安全的 decodeURIComponent 包装
+ * 先解码，再进行 XSS 过滤；解码失败时返回原始字符串经过 XSS 过滤的结果
+ * 
+ * @param value 待解码的字符串
+ * @returns 解码并过滤后的安全字符串
+ */
+export function safeDecodeURIComponent(value: string): string {
+	try {
+		const decoded = decodeURIComponent(value)
+		return sanitizeUrlParam(decoded)
+	} catch (_e: any) {
+		// URIError: 解码失败，返回原始字符串经过过滤
+		return sanitizeUrlParam(value)
+	}
+}
+
+/**
+ * 验证 URL 是否属于可信域名或可信 scheme
+ * 
+ * @param url 待验证的 URL
+ * @returns 是否可信
+ */
+export function isUrlTrusted(url: string): boolean {
+	if (url.length === 0) {
+		return false
+	}
+
+	const lowerUrl = url.toLowerCase()
+
+	// 检查可信 scheme
+	for (let i = 0; i < TRUSTED_SCHEMES.length; i++) {
+		if (lowerUrl.indexOf(TRUSTED_SCHEMES[i]) === 0) {
+			return true
+		}
+	}
+
+	// 提取域名并检查可信域名
+	const domain = extractDomain(lowerUrl)
+	if (domain.length === 0) {
+		return false
+	}
+
+	for (let i = 0; i < TRUSTED_DOMAINS.length; i++) {
+		const trusted = TRUSTED_DOMAINS[i]
+		// 精确匹配或子域名匹配（域名以 .trustedDomain 结尾）
+		if (domain === trusted || domain.endsWith('.' + trusted)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+/**
+ * 从 URL 中提取域名
+ * 
+ * @param url 小写的 URL 字符串
+ * @returns 域名字符串
+ */
+function extractDomain(url: string): string {
+	let start = 0
+
+	// 跳过协议部分 (http://, https://)
+	const protocolEnd = url.indexOf('://')
+	if (protocolEnd >= 0) {
+		start = protocolEnd + 3
+	}
+
+	// 提取域名（到 / 或 : 或 ? 或 # 为止）
+	let end = url.length
+	for (let i = start; i < url.length; i++) {
+		const ch = url.charAt(i)
+		if (ch === '/' || ch === ':' || ch === '?' || ch === '#') {
+			end = i
+			break
+		}
+	}
+
+	return url.substring(start, end)
+}
+
+/**
+ * 安全跳转
+ * 验证目标 URL 属于可信域名或可信 scheme 后执行跳转
+ * 不在白名单中的 URL 将被阻止并记录警告
+ * 
+ * @param url 跳转目标 URL
+ */
+export function safeRedirect(url: string): void {
+	// #ifdef H5
+	if (isUrlTrusted(url)) {
+		window.location.href = url
+	} else {
+		console.warn('[urlValidator] 阻止不可信 URL 跳转:', url)
+	}
+	// #endif
+}

@@ -1,0 +1,744 @@
+<template>
+	<view class="mass-message-page">
+		<!-- 消息编辑区 -->
+		<view class="message-editor">
+			<text class="editor-label">消息内容</text>
+			<textarea 
+				v-model="messageContent"
+				placeholder="请输入要群发的消息内容..."
+				maxlength="500"
+				class="message-textarea"
+				@input="handleInput"
+			></textarea>
+			<text class="char-count">{{ messageContentLength }}/500</text>
+		</view>
+		
+		<!-- 接收对象选择卡片 -->
+		<view class="recipient-section">
+			<view class="section-header">
+				<text class="section-title">接收对象</text>
+				<view class="header-actions">
+					<view class="select-all-btn" @click="handleSelectAll">
+						<text class="select-all-text">全选</text>
+					</view>
+					<text class="selected-count-text">已选 {{ selectedCount }} 人</text>
+				</view>
+			</view>
+			
+			<!-- Tab栏 -->
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabs" 
+					:key="index"
+					class="tab-item" 
+					@click="handleTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': currentTab == index }">{{ tab }}</text>
+					<view v-if="currentTab == index" class="tab-underline"></view>
+				</view>
+			</view>
+			
+			<!-- 用户列表 -->
+			<scroll-view 
+				class="user-scroll-view"
+				scroll-y="true"
+				refresher-enabled="true"
+				:refresher-triggered="refreshing"
+				@refresherrefresh="handleRefresh"
+				@scrolltolower="handleLoadMore"
+			>
+				<!-- 空状态 -->
+				<view v-if="listLength == 0 && loading == false" class="empty-box">
+					<text class="empty-text">{{ currentTab == 0 ? '暂无关注' : '暂无粉丝' }}</text>
+				</view>
+				
+				<!-- 用户列表 -->
+				<view v-else class="user-list">
+					<view 
+						v-for="(user, index) in userList" 
+						:key="getUserKey(user, index)"
+						class="user-item"
+						@click="handleToggleSelect(user)"
+					>
+						<view class="checkbox-box">
+							<view class="checkbox" :class="{ 'checkbox-checked': user.isSelected == true }">
+								<text v-if="user.isSelected == true" class="check-icon">✓</text>
+							</view>
+						</view>
+						<image class="user-avatar" :src="user.avatar" mode="aspectFill" />
+						<view class="user-info">
+							<text class="user-name">{{ user.nickname }}</text>
+							<text v-if="user.mutual == true" class="mutual-tag">互相关注</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 加载状态 -->
+				<view v-if="listLength > 0" class="load-more">
+					<text class="load-text">{{ loadStatusText }}</text>
+				</view>
+			</scroll-view>
+		</view>
+		
+		<!-- 底部按钮 -->
+		<view class="footer-bar">
+			<view 
+				class="send-btn" 
+				:class="{ 'send-btn-disabled': canSend == false }"
+				@click="handleSend"
+			>
+				<text class="send-btn-text">{{ sending == true ? '发送中...' : '立即发送' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { getUserId } from '@/stores/user.uts'
+import { sendMassMessage } from '@/pagesBusiness/api/massMessage.uts'
+import * as followApi from '@/common/services/followService.uts'
+import { toJsonObj, getNumberProp, getStringProp, getBoolProp } from '@/common/utils/utsSafe.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 用户数据类 ====================
+class UserItemData {
+	userKid: string = ''
+	nickname: string = ''
+	avatar: string = ''
+	isFollow: boolean = false
+	mutual: boolean = false
+	isSelected: boolean = false
+	
+	constructor() {}
+}
+
+// ==================== 响应式数据 ====================
+const messageContent = ref<string>('')
+const messageContentLength = ref<number>(0)
+const sending = ref<boolean>(false)
+const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
+
+// Tab 和列表相关
+const currentTab = ref<number>(0)
+const tabs = ref<Array<string>>(['关注', '粉丝'])
+const userList = ref<Array<UserItemData>>([])
+const page = ref<number>(1)
+const size = ref<number>(20)
+const total = ref<number>(0)
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+
+// 已选择的用户（跨 Tab 保持）
+const selectedFollowUsers = ref<Array<UserItemData>>([])
+const selectedFansUsers = ref<Array<UserItemData>>([])
+
+// ==================== 计算属性 ====================
+const userKid = computed((): string => {
+	return getUserId()
+})
+
+const listLength = computed((): number => {
+	try {
+		const arr = userList.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UserItemData>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const selectedCount = computed((): number => {
+	// 合并两个列表，去重计算
+	const allKids: Array<string> = []
+	
+	for (let i = 0; i < selectedFollowUsers.value.length; i = i + 1) {
+		allKids.push(selectedFollowUsers.value[i].userKid)
+	}
+	
+	for (let i = 0; i < selectedFansUsers.value.length; i = i + 1) {
+		const kid = selectedFansUsers.value[i].userKid
+		let exists = false
+		for (let j = 0; j < allKids.length; j = j + 1) {
+			if (allKids[j] == kid) {
+				exists = true
+				break
+			}
+		}
+		if (exists == false) {
+			allKids.push(kid)
+		}
+	}
+	
+	return allKids.length
+})
+
+const loadStatusText = computed((): string => {
+	if (userList.value.length >= total.value && total.value > 0) {
+		return '没有更多了'
+	}
+	if (loading.value == true) {
+		return '加载中...'
+	}
+	return '上拉加载更多'
+})
+
+const canSend = computed((): boolean => {
+	if (sending.value == true) return false
+	if (selectedCount.value == 0) return false
+	if (messageContent.value.trim() == '') return false
+	return true
+})
+
+// ==================== 辅助函数 ====================
+const getUserKey = (item: UserItemData, index: number): string => {
+	if (item.userKid != '') {
+		return item.userKid
+	}
+	return 'item_' + index.toString()
+}
+
+const handleInput = () => {
+	messageContentLength.value = messageContent.value.length
+}
+
+// ==================== 数据加载 ====================
+const loadUserList = (refresh: boolean) => {
+	const kid = userKid.value
+	console.log('[massMessage] loadUserList - userKid:', kid)
+	
+	if (kid == '') {
+		console.log('[massMessage] loadUserList - userKid 为空，用户可能未登录')
+		loading.value = false
+		refreshing.value = false
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (refresh == true) {
+		page.value = 1
+		userList.value = []
+	}
+	
+	if (loading.value == true) return
+	loading.value = true
+	
+	const params = {
+		userKid: kid,
+		page: page.value,
+		size: size.value
+	} as UTSJSONObject
+	
+	console.log('[massMessage] loadUserList - params:', JSON.stringify(params))
+	
+	// 处理 API 响应的回调函数
+	const handleApiResponse = (res: UTSJSONObject) => {
+		console.log('[massMessage] handleApiResponse - res:', JSON.stringify(res))
+		const resObj = toJsonObj(res)
+		if (resObj != null) {
+			total.value = getNumberProp(resObj, 'total')
+			
+			const itemsVal = resObj.get('items')
+			if (itemsVal != null && Array.isArray(itemsVal) == true) {
+				const itemsArr = itemsVal as Array<UTSJSONObject>
+				
+				// 获取当前 Tab 的已选用户列表
+				const selectedList = (currentTab.value == 0) ? selectedFollowUsers.value : selectedFansUsers.value
+				
+				for (let i = 0; i < itemsArr.length; i = i + 1) {
+					const item = itemsArr[i]
+					const itemObj = toJsonObj(item)
+					if (itemObj != null) {
+						const userItem = new UserItemData()
+						userItem.userKid = getStringProp(itemObj, 'userKid')
+						userItem.nickname = getStringProp(itemObj, 'nickname')
+						userItem.avatar = getStringProp(itemObj, 'avatar')
+						userItem.isFollow = getBoolProp(itemObj, 'isFollow')
+						userItem.mutual = getBoolProp(itemObj, 'mutual')
+						
+						// 检查是否已选中
+						userItem.isSelected = false
+						for (let j = 0; j < selectedList.length; j = j + 1) {
+							if (selectedList[j].userKid == userItem.userKid) {
+								userItem.isSelected = true
+								break
+							}
+						}
+						
+						// 设置默认头像
+						if (userItem.avatar == '') {
+							userItem.avatar = defaultAvatar
+						}
+						
+						userList.value.push(userItem)
+					}
+				}
+			}
+		}
+		loading.value = false
+		refreshing.value = false
+	}
+	
+	const handleApiError = (error: any | null): void => {
+		loading.value = false
+		refreshing.value = false
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '加载用户列表', loading)
+		}
+	}
+	
+	// 根据当前 Tab 调用不同接口
+	if (currentTab.value == 1) {
+		followApi.getFollowers(params).then(handleApiResponse).catch(handleApiError)
+	} else {
+		followApi.getFollowings(params).then(handleApiResponse).catch(handleApiError)
+	}
+}
+
+// ==================== 事件处理 ====================
+const handleTabChange = (index: number) => {
+	if (currentTab.value == index) return
+	currentTab.value = index
+	loadUserList(true)
+}
+
+const handleRefresh = () => {
+	refreshing.value = true
+	loadUserList(true)
+}
+
+const handleLoadMore = () => {
+	if (loading.value == true) return
+	if (userList.value.length >= total.value && total.value > 0) return
+	page.value = page.value + 1
+	loadUserList(false)
+}
+
+const handleToggleSelect = (user: UserItemData) => {
+	// 切换选中状态
+	user.isSelected = (user.isSelected == false)
+	
+	// 更新已选列表
+	const selectedList = (currentTab.value == 0) ? selectedFollowUsers : selectedFansUsers
+	
+	if (user.isSelected == true) {
+		// 添加到已选列表（避免重复）
+		let exists = false
+		for (let i = 0; i < selectedList.value.length; i = i + 1) {
+			if (selectedList.value[i].userKid == user.userKid) {
+				exists = true
+				break
+			}
+		}
+		if (exists == false) {
+			selectedList.value.push(user)
+		}
+	} else {
+		// 从已选列表移除
+		const newList: Array<UserItemData> = []
+		for (let i = 0; i < selectedList.value.length; i = i + 1) {
+			if (selectedList.value[i].userKid != user.userKid) {
+				newList.push(selectedList.value[i])
+			}
+		}
+		selectedList.value = newList
+	}
+}
+
+const handleSelectAll = () => {
+	const selectedList = (currentTab.value == 0) ? selectedFollowUsers : selectedFansUsers
+	
+	// 全选当前列表
+	for (let i = 0; i < userList.value.length; i = i + 1) {
+		const user = userList.value[i]
+		if (user.isSelected == false) {
+			user.isSelected = true
+			
+			// 添加到已选列表
+			let exists = false
+			for (let j = 0; j < selectedList.value.length; j = j + 1) {
+				if (selectedList.value[j].userKid == user.userKid) {
+					exists = true
+					break
+				}
+			}
+			if (exists == false) {
+				selectedList.value.push(user)
+			}
+		}
+	}
+	
+	uni.showToast({
+		title: '已全选当前列表',
+		icon: 'none'
+	})
+}
+
+const handleSend = () => {
+	if (canSend.value == false) {
+		if (selectedCount.value == 0) {
+			uni.showToast({
+				title: '请选择接收对象',
+				icon: 'none'
+			})
+			return
+		}
+		if (messageContent.value.trim() == '') {
+			uni.showToast({
+				title: '请输入消息内容',
+				icon: 'none'
+			})
+			return
+		}
+		return
+	}
+	
+	sending.value = true
+	
+	// 合并两个列表的已选用户（去重）
+	const allSelected: Array<UserItemData> = []
+	
+	for (let i = 0; i < selectedFollowUsers.value.length; i = i + 1) {
+		allSelected.push(selectedFollowUsers.value[i])
+	}
+	
+	for (let i = 0; i < selectedFansUsers.value.length; i = i + 1) {
+		let exists = false
+		for (let j = 0; j < allSelected.length; j = j + 1) {
+			if (allSelected[j].userKid == selectedFansUsers.value[i].userKid) {
+				exists = true
+				break
+			}
+		}
+		if (exists == false) {
+			allSelected.push(selectedFansUsers.value[i])
+		}
+	}
+	
+	// 构建接收者ID列表
+	const recipientKids: Array<string> = []
+	for (let i = 0; i < allSelected.length; i = i + 1) {
+		recipientKids.push(allSelected[i].userKid)
+	}
+	
+	const params = {
+		senderKid: userKid.value,
+		recipientKids: recipientKids,
+		content: messageContent.value.trim(),
+		messageType: 1
+	} as UTSJSONObject
+	
+	sendMassMessage(params).then((res: UTSJSONObject) => {
+		const resObj = toJsonObj(res)
+		if (resObj != null) {
+			const code = getNumberProp(resObj, 'code')
+			if (code == 200) {
+				const dataObj = resObj.get('data')
+				if (dataObj != null) {
+					const dataJson = toJsonObj(dataObj)
+					if (dataJson != null) {
+						const successVal = getNumberProp(dataJson, 'success')
+						const failed = getNumberProp(dataJson, 'failed')
+						
+						let resultMsg = '发送成功'
+						if (failed > 0) {
+							resultMsg = '发送完成：成功 ' + successVal.toString() + ' 人，失败 ' + failed.toString() + ' 人'
+						} else {
+							resultMsg = '发送成功：' + successVal.toString() + ' 人'
+						}
+						
+						uni.showToast({
+							title: resultMsg,
+							icon: 'none',
+							duration: 2000
+						})
+						
+						// 清空输入和选择
+						messageContent.value = ''
+						messageContentLength.value = 0
+						selectedFollowUsers.value = []
+						selectedFansUsers.value = []
+						
+						// 刷新列表以更新选中状态
+						loadUserList(true)
+					}
+				}
+			} else {
+				const msg = getStringProp(resObj, 'msg')
+				uni.showToast({
+					title: msg != '' ? msg : '发送失败',
+					icon: 'none'
+				})
+			}
+		}
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '群发消息', sending)
+		}
+	}).finally(() => {
+		sending.value = false
+	})
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	loadUserList(true)
+})
+</script>
+
+<style scoped>
+.mass-message-page {
+	flex-direction: column;
+	flex: 1;
+	background-color: #f5f5f5;
+	padding-top: 20rpx;
+	padding-bottom: 120rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.message-editor {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+	flex-direction: column;
+}
+
+.editor-label {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.message-textarea {
+	width: 100%;
+	min-height: 200rpx;
+	padding: 20rpx;
+	background-color: #f8f9fa;
+	border-radius: 8rpx;
+	font-size: 26rpx;
+	margin-bottom: 12rpx;
+}
+
+.char-count {
+	font-size: 22rpx;
+	color: #999999;
+	text-align: right;
+}
+
+.recipient-section {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+	flex-direction: column;
+	flex: 1;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 20rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.header-actions {
+	flex-direction: row;
+	align-items: center;
+}
+
+.select-all-btn {
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	margin-right: 16rpx;
+}
+
+.select-all-text {
+	font-size: 26rpx;
+	color: #37B1F2;
+}
+
+.selected-count-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.tabs-row {
+	flex-direction: row;
+	justify-content: center;
+	padding-bottom: 20rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	margin-left: 40rpx;
+	margin-right: 40rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	padding-bottom: 12rpx;
+}
+
+.tab-text-active {
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 4rpx;
+	background-color: #37B1F2;
+	border-radius: 2rpx;
+}
+
+.user-scroll-view {
+	flex: 1;
+	flex-direction: column;
+	min-height: 400rpx;
+	max-height: 600rpx;
+}
+
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.user-list {
+	flex-direction: column;
+	padding-top: 20rpx;
+}
+
+.user-item {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f5f5f5;
+}
+
+.checkbox-box {
+	margin-right: 20rpx;
+}
+
+.checkbox {
+	width: 40rpx;
+	height: 40rpx;
+	border-radius: 20rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #cccccc;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.checkbox-checked {
+	background-color: #37B1F2;
+	border-color: #37B1F2;
+}
+
+.check-icon {
+	font-size: 22rpx;
+	color: #ffffff;
+}
+
+.user-avatar {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 36rpx;
+	margin-right: 20rpx;
+}
+
+.user-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.user-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.mutual-tag {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 6rpx;
+}
+
+.load-more {
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.footer-bar {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #ffffff;
+}
+
+.send-btn {
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.send-btn-disabled {
+	background-color: #cccccc;
+}
+
+.send-btn-text {
+	font-size: 30rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+</style>

@@ -1,0 +1,357 @@
+<template>
+	<view class="skeleton-container">
+		<!-- 列表类型骨架屏 -->
+		<view v-if="type == 'list'" class="skeleton-list">
+			<view v-for="(item, index) in rowsArray" :key="getRowKey(index)" class="skeleton-list-item">
+				<view v-if="avatar == true" class="skeleton-avatar"></view>
+				<view class="skeleton-list-content">
+					<view class="skeleton-title"></view>
+					<view class="skeleton-text skeleton-text-80"></view>
+					<view class="skeleton-text skeleton-text-60"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 卡片类型骨架屏 -->
+		<view v-else-if="type == 'card'" class="skeleton-card">
+			<view class="skeleton-card-image"></view>
+			<view class="skeleton-card-content">
+				<view class="skeleton-title"></view>
+				<view class="skeleton-text skeleton-text-full"></view>
+				<view class="skeleton-text skeleton-text-80"></view>
+				<view class="skeleton-tags-row">
+					<view class="skeleton-tag"></view>
+					<view class="skeleton-tag"></view>
+					<view class="skeleton-tag"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 头像类型骨架屏 -->
+		<view v-else-if="type == 'avatar'" class="skeleton-avatar-wrapper">
+			<view :class="avatarClass"></view>
+			<view v-if="showText == true" class="skeleton-avatar-text">
+				<view class="skeleton-title skeleton-title-sm"></view>
+				<view class="skeleton-text skeleton-text-60"></view>
+			</view>
+		</view>
+		
+		<!-- 文本类型骨架屏 -->
+		<view v-else-if="type == 'text'" class="skeleton-paragraph">
+			<view v-for="(item, index) in rowsArray" :key="getRowKey(index)" :class="getTextRowClass(index)"></view>
+		</view>
+		
+		<!-- 图片类型骨架屏 -->
+		<view v-else-if="type == 'image'" class="skeleton-image-wrapper">
+			<view :class="imageClass"></view>
+		</view>
+		
+		<!-- 按钮类型骨架屏 -->
+		<view v-else-if="type == 'button'" class="skeleton-button-wrapper">
+			<view :class="buttonClass"></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed, ref } from 'vue'
+
+/**
+ * 骨架屏组件
+ * 用于在数据加载时显示占位内容，提升用户体验
+ * 
+ * @example
+ * <Skeleton type="list" :rows="3" :avatar="true" />
+ * <Skeleton type="card" />
+ * <Skeleton type="avatar" size="lg" />
+ * <Skeleton type="text" :rows="4" />
+ */
+
+// Props
+const props = defineProps({
+	// 骨架屏类型：list | card | avatar | text | image | button
+	type: { type: String, default: 'text' },
+	// 文本行数（用于 list 和 text 类型）
+	rows: { type: Number, default: 3 },
+	// 是否显示头像（用于 list 类型）
+	avatar: { type: Boolean, default: false },
+	// 头像/图片/按钮尺寸：sm | md | lg | xl
+	size: { type: String, default: 'md' },
+	// 是否显示文本（用于 avatar 类型）
+	showText: { type: Boolean, default: true }
+})
+
+// 生成行数数组
+const rowsArray = computed((): Array<number> => {
+	const arr: Array<number> = []
+	let i = 0
+	const count = props.rows
+	while (i < count) {
+		arr.push(i)
+		i = i + 1
+	}
+	return arr
+})
+
+// 获取行 key
+const getRowKey = (index: number): string => {
+	return 'row-' + index.toString()
+}
+
+// 获取文本行样式类
+const getTextRowClass = (index: number): string => {
+	const rowCount = props.rows
+	if (index == rowCount - 1) {
+		return 'skeleton-text skeleton-text-60'
+	}
+	if (index == rowCount - 2 && rowCount > 2) {
+		return 'skeleton-text skeleton-text-80'
+	}
+	return 'skeleton-text skeleton-text-full'
+}
+
+// 头像样式类
+const avatarClass = computed((): string => {
+	const sizeVal = props.size
+	if (sizeVal == 'sm') {
+		return 'skeleton-avatar skeleton-avatar-sm'
+	}
+	if (sizeVal == 'lg') {
+		return 'skeleton-avatar skeleton-avatar-lg'
+	}
+	if (sizeVal == 'xl') {
+		return 'skeleton-avatar skeleton-avatar-xl'
+	}
+	return 'skeleton-avatar'
+})
+
+// 图片样式类
+const imageClass = computed((): string => {
+	const sizeVal = props.size
+	if (sizeVal == 'sm') {
+		return 'skeleton-image skeleton-image-sm'
+	}
+	if (sizeVal == 'lg') {
+		return 'skeleton-image skeleton-image-lg'
+	}
+	if (sizeVal == 'banner') {
+		return 'skeleton-image skeleton-image-banner'
+	}
+	return 'skeleton-image'
+})
+
+// 按钮样式类
+const buttonClass = computed((): string => {
+	const sizeVal = props.size
+	if (sizeVal == 'sm') {
+		return 'skeleton-button skeleton-button-sm'
+	}
+	if (sizeVal == 'lg') {
+		return 'skeleton-button skeleton-button-lg'
+	}
+	return 'skeleton-button'
+})
+</script>
+
+<style scoped>
+.skeleton-container {
+	flex-direction: column;
+	width: 100%;
+}
+
+/* ==================== 列表骨架屏 ==================== */
+.skeleton-list {
+	flex-direction: column;
+}
+
+.skeleton-list-item {
+	flex-direction: row;
+	align-items: flex-start;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #FFFFFF;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F5F5F5;
+}
+
+.skeleton-list-content {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 20rpx;
+}
+
+/* ==================== 卡片骨架屏 ==================== */
+.skeleton-card {
+	flex-direction: row;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	margin-bottom: 20rpx;
+}
+
+.skeleton-card-image {
+	width: 196rpx;
+	height: 274rpx;
+	background-color: #F0F0F0;
+	border-radius: 24rpx;
+}
+
+.skeleton-card-content {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 20rpx;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+}
+
+.skeleton-tags-row {
+	flex-direction: row;
+	margin-top: 16rpx;
+}
+
+/* ==================== 头像骨架屏 ==================== */
+.skeleton-avatar-wrapper {
+	flex-direction: row;
+	align-items: center;
+}
+
+.skeleton-avatar {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	background-color: #F0F0F0;
+}
+
+.skeleton-avatar-sm {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 30rpx;
+}
+
+.skeleton-avatar-lg {
+	width: 120rpx;
+	height: 120rpx;
+	border-radius: 60rpx;
+}
+
+.skeleton-avatar-xl {
+	width: 160rpx;
+	height: 160rpx;
+	border-radius: 80rpx;
+}
+
+.skeleton-avatar-text {
+	flex-direction: column;
+	margin-left: 16rpx;
+}
+
+/* ==================== 文本骨架屏 ==================== */
+.skeleton-paragraph {
+	flex-direction: column;
+}
+
+.skeleton-title {
+	height: 32rpx;
+	background-color: #F0F0F0;
+	border-radius: 4rpx;
+	width: 200rpx;
+	margin-bottom: 16rpx;
+}
+
+.skeleton-title-sm {
+	height: 28rpx;
+	width: 120rpx;
+}
+
+.skeleton-text {
+	height: 24rpx;
+	background-color: #F0F0F0;
+	border-radius: 4rpx;
+	margin-top: 12rpx;
+}
+
+.skeleton-text-full {
+	width: 100%;
+}
+
+.skeleton-text-80 {
+	width: 80%;
+}
+
+.skeleton-text-60 {
+	width: 60%;
+}
+
+.skeleton-text-40 {
+	width: 40%;
+}
+
+/* ==================== 图片骨架屏 ==================== */
+.skeleton-image-wrapper {
+	flex-direction: column;
+}
+
+.skeleton-image {
+	width: 196rpx;
+	height: 274rpx;
+	background-color: #F0F0F0;
+	border-radius: 24rpx;
+}
+
+.skeleton-image-sm {
+	width: 160rpx;
+	height: 160rpx;
+	border-radius: 16rpx;
+}
+
+.skeleton-image-lg {
+	width: 240rpx;
+	height: 320rpx;
+	border-radius: 24rpx;
+}
+
+.skeleton-image-banner {
+	width: 100%;
+	height: 300rpx;
+	border-radius: 16rpx;
+}
+
+/* ==================== 按钮骨架屏 ==================== */
+.skeleton-button-wrapper {
+	flex-direction: column;
+}
+
+.skeleton-button {
+	height: 80rpx;
+	background-color: #F0F0F0;
+	border-radius: 44rpx;
+	width: 200rpx;
+}
+
+.skeleton-button-sm {
+	height: 56rpx;
+	width: 140rpx;
+	border-radius: 28rpx;
+}
+
+.skeleton-button-lg {
+	height: 88rpx;
+	width: 100%;
+	border-radius: 52rpx;
+}
+
+/* ==================== 标签骨架屏 ==================== */
+.skeleton-tag {
+	height: 36rpx;
+	width: 80rpx;
+	background-color: #F0F0F0;
+	border-radius: 18rpx;
+	margin-right: 12rpx;
+}
+</style>

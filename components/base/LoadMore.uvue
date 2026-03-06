@@ -1,0 +1,167 @@
+<template>
+	<view class="load-more-container">
+		<view class="load-more-content" :class="statusClass">
+			<!-- 加载中状态 -->
+			<view v-if="status === 'loading'" class="loading-section">
+				<view class="loading-spinner"></view>
+				<text class="load-text">{{ loadingText }}</text>
+			</view>
+			
+			<!-- 加载更多状态 -->
+			<view v-else-if="status === 'loadmore'" class="loadmore-section" @click="handleLoadMore">
+				<text class="load-text">{{ loadmoreText }}</text>
+				<text class="load-icon">›</text>
+			</view>
+			
+			<!-- 没有更多数据状态 -->
+			<view v-else-if="status === 'nomore'" class="nomore-section">
+				<view class="divider-line"></view>
+				<text class="load-text">{{ nomoreText }}</text>
+				<view class="divider-line"></view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	status: { type: String, default: 'loadmore' },
+	loadingText: { type: String, default: '加载中...' },
+	loadmoreText: { type: String, default: '加载更多' },
+	nomoreText: { type: String, default: '没有更多了' },
+	color: { type: String, default: '#999999' },
+	fontSize: { type: [Number, String], default: 28 },
+	iconSize: { type: [Number, String], default: 32 },
+	marginTop: { type: [Number, String], default: 20 },
+	marginBottom: { type: [Number, String], default: 20 }
+})
+
+// Emits定义
+const emit = defineEmits<{
+	loadmore: []
+}>()
+
+// 计算属性
+const statusClass = computed(() => {
+	return `status-${props.status}`
+})
+
+// 方法
+const handleLoadMore = () => {
+	if (props.status === 'loadmore') {
+		emit('loadmore')
+	}
+}
+</script>
+
+<style scoped>
+.load-more-container {
+	width: 100%;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	padding: 20rpx 0;
+}
+
+.load-more-content {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+/* 加载中状态 */
+.loading-section {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-spinner {
+	width: 32rpx;
+	height: 32rpx;
+	border-width: 3rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-top-color: #2EAEF2;
+	border-radius: 16rpx;
+	margin-right: 16rpx;
+}
+
+
+/* 加载更多状态 */
+.loadmore-section {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16rpx 32rpx;
+	background-color: #f8f9fa;
+	border-radius: 40rpx;
+	transition: all 0.3s;
+}
+
+.loadmore-section:active {
+	background-color: #e9ecef;
+	transform: scale(0.98);
+}
+
+.load-icon {
+	font-size: 32rpx;
+	color: #999999;
+	margin-left: 8rpx;
+	font-weight: bold;
+}
+
+/* 没有更多数据状态 */
+.nomore-section {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	padding: 0 60rpx;
+}
+
+.divider-line {
+	flex: 1;
+	height: 2rpx;
+	background-color: #e0e0e0;
+}
+
+.load-text {
+	font-size: 28rpx;
+	color: #999999;
+	padding: 0 24rpx;
+	white-space: nowrap;
+}
+
+/* 状态类 */
+.status-loading .load-text {
+	color: #2EAEF2;
+}
+
+.status-loadmore .load-text {
+	color: #2EAEF2;
+}
+
+.status-nomore .load-text {
+	color: #999999;
+}
+
+/* 响应式设计 */
+@media (max-width: 750rpx) {
+	.loading-spinner {
+		width: 28rpx;
+		height: 28rpx;
+	}
+	
+	.load-text {
+		font-size: 24rpx;
+	}
+	
+	.load-icon {
+		font-size: 28rpx;
+	}
+}
+</style>

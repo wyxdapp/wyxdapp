@@ -1,0 +1,83 @@
+/* ==================== Vue3 Uni-app X 颜色样式 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：统一的颜色样式类，遵循设计规范 */
+
+/* ==================== 文字颜色 ==================== */
+/* 主题色 */
+.color-primary { color: #37B1F2; }      /* 主题蓝 */
+.color-success { color: #22AA76; }      /* 成功绿 */
+.color-warning { color: #FFC300; }      /* 警告黄 */
+.color-error { color: #F83535; }        /* 错误红 */
+.color-price { color: #FF6B6B; }        /* 价格橙 */
+
+/* 中性色 */
+.color-title { color: #333333; }        /* 标题黑 */
+.color-text { color: #666666; }         /* 正文灰 */
+.color-placeholder { color: #999999; }  /* 辅助灰 */
+.color-white { color: #FFFFFF; }        /* 白色 */
+
+/* ==================== 语义化文字颜色 ==================== */
+/* 主要文字 - 标题、重要内容 */
+.text-primary { color: #333333; }
+/* 次要文字 - 正文、描述 */
+.text-secondary { color: #666666; }
+/* 辅助文字 - 提示、说明 */
+.text-tertiary { color: #999999; }
+/* 禁用文字 */
+.text-disabled { color: #CCCCCC; }
+/* 白色文字 */
+.text-white { color: #FFFFFF; }
+/* 链接文字 */
+.text-link { color: #2EAEF2; }
+/* 危险/错误文字 */
+.text-danger { color: #F83535; }
+/* 成功文字 */
+.text-success { color: #22AA76; }
+/* 警告文字 */
+.text-warning { color: #FFC300; }
+/* 价格文字 */
+.text-price { color: #FF6B6B; }
+/* 品牌色文字 */
+.text-brand { color: #2DCAC2; }
+
+/* ==================== 背景颜色 ==================== */
+/* 主题色背景 */
+.bg-primary { background-color: #37B1F2; }
+.bg-success { background-color: #22AA76; }
+.bg-warning { background-color: #FFC300; }
+.bg-error { background-color: #F83535; }
+
+/* 中性色背景 */
+.bg-white { background-color: #FFFFFF; }
+.bg-page { background-color: #F5F5F5; }
+.bg-divider { background-color: #EEEEEE; }
+.bg-transparent { background-color: transparent; }
+
+/* 渐变背景 */
+.bg-gradient-primary {
+  background: linear-gradient(90deg, #2DCAC2 0%, #0187F5 100%);
+}
+
+/* ==================== 向后兼容（旧类名别名）==================== */
+/* 文字颜色兼容 */
+.white { color: #FFFFFF; }
+.title-font { color: #333333; }
+.light-black { color: #666666; }
+.gray { color: #999999; }
+.grey { color: #999999; }
+.orange { color: #FF6B6B; }
+.red { color: #F83535; }
+.green { color: #22AA76; }
+.blue { color: #37B1F2; }
+.light-blue { color: #2EAEF2; }
+
+/* 背景颜色兼容 */
+.bg-light-base { background-color: #F5F5F5; }
+.bg-base { background-color: #EDEDED; }
+.bg-F2 { background-color: #F2F2F2; }
+.bg-light-gray { background-color: #E5E5E5; }
+.bg-light-black { background-color: #666666; }
+.bg-green { background-color: #22AA76; }
+.bg-yellow { background-color: #FFC300; }
+.bg-pink { background-color: #FA5251; }
+.bg-hint { background-color: #F83535; }

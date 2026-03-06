@@ -1,0 +1,259 @@
+/**
+ * APP 端微信登录服务
+ * 使用 tt-wechat-pro 插件实现原生微信 SDK 调用
+ * 
+ * 注意：需要使用自定义基座运行
+ * H5 环境下提供空实现，避免编译错误
+ */
+
+// 从配置模块导入微信常量
+import { WX_OPEN_APP_ID, WX_UNIVERSAL_LINK, WX_ERR_USER_CANCEL, WX_ERR_AUTH_DENIED, WX_ERR_NOT_INSTALLED, WX_ERR_SDK_NOT_INIT } from '@/common/config/wechatConfig'
+import { WX_AUTH_TIMEOUT } from '@/common/config/timeoutConfig'
+import { SK_WX_CODE } from '@/common/config/storageKeys.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// #ifdef APP-ANDROID || APP-IOS
+import { 
+	getTTWeChatSDK, 
+	TTWeChatSDK, 
+	TTWeChatRegisterOptions,
+	TTWeChatRegisterSuccess,
+	TTWeChatRegisterFail,
+	TTWeChatLoginOptions,
+	TTWeChatLoginSuccess,
+	TTWeChatLoginFail
+} from "@/uni_modules/tt-wechat-pro"
+
+// 微信 SDK 状态（仅 APP 端）
+let weChatSDKInstance: TTWeChatSDK | null = null
+let isWeChatSDKReady = false
+// #endif
+
+/**
+ * 初始化微信 SDK
+ */
+export function initWeChatSDK(): void {
+	// #ifdef H5
+	console.log('📱 [WX-SDK-APP] H5环境，跳过微信SDK初始化')
+	// #endif
+	
+	// #ifdef APP-ANDROID || APP-IOS
+	console.log('📱 [WX-SDK-APP] 初始化微信SDK...')
+	
+	try {
+		const sdk = getTTWeChatSDK()
+		if (sdk == null) {
+			console.error('❌ [WX-SDK-APP] 获取微信SDK实例失败')
+			return
+		}
+		weChatSDKInstance = sdk
+		
+		// 检查微信是否安装
+		const isInstalled = sdk.isInstall()
+		console.log('📱 [WX-SDK-APP] 微信安装状态:', isInstalled)
+		
+		// 注册 SDK
+		sdk.register({
+			appid: WX_OPEN_APP_ID,
+			universalLink: WX_UNIVERSAL_LINK,
+			success: (res: TTWeChatRegisterSuccess) => {
+				isWeChatSDKReady = true
+			},
+			fail: (err: TTWeChatRegisterFail) => {
+				console.error('❌ [WX-SDK-APP] 微信SDK注册失败:', err)
+				isWeChatSDKReady = false
+			},
+			complete: null
+		} as TTWeChatRegisterOptions)
+	} catch (e) {
+		handleSilentError(e, '初始化微信SDK')
+	}
+	// #endif
+}
+
+// #ifdef APP-ANDROID || APP-IOS
+/**
+ * 执行微信登录（内部函数，仅 APP 端）
+ * 添加超时处理，防止用户长时间不操作导致卡住
+ */
+function doWeChatLoginInternal(
+	sdk: TTWeChatSDK,
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	console.log('🔐 [WX-SDK-APP] 调用微信授权登录...')
+	
+	// 标记是否已处理回调，防止超时和正常回调重复触发
+	let isCallbackHandled = false
+	
+	// 设置超时定时器
+	let timeoutTimer: number = 0
+	timeoutTimer = setTimeout(() => {
+		if (isCallbackHandled == false) {
+			isCallbackHandled = true
+			console.error('❌ [WX-SDK-APP] 微信授权超时（' + WX_AUTH_TIMEOUT / 1000 + '秒）')
+			onError('微信授权超时，请重试')
+		}
+	}, WX_AUTH_TIMEOUT)
+	
+	sdk.login({
+		state: Date.now().toString(),
+		success: (result: TTWeChatLoginSuccess) => {
+			// 清除超时定时器
+			if (timeoutTimer != 0) {
+				clearTimeout(timeoutTimer)
+				timeoutTimer = 0
+			}
+			
+			if (isCallbackHandled == true) {
+				console.log('⚠️ [WX-SDK-APP] 授权成功但已超时处理，忽略')
+				return
+			}
+			isCallbackHandled = true
+			
+			const authCode = result.code
+			if (authCode != null && authCode != '') {
+				onSuccess(authCode)
+			} else {
+				console.error('❌ [WX-SDK-APP] 授权成功但code为空')
+				onError('获取授权码失败，请重试')
+			}
+		},
+		fail: (err: TTWeChatLoginFail) => {
+			// 清除超时定时器
+			if (timeoutTimer != 0) {
+				clearTimeout(timeoutTimer)
+				timeoutTimer = 0
+			}
+			
+			if (isCallbackHandled == true) {
+				console.log('⚠️ [WX-SDK-APP] 授权失败但已超时处理，忽略')
+				return
+			}
+			isCallbackHandled = true
+			
+			console.error('❌ [WX-SDK-APP] 微信授权失败:', err)
+			let errMsg = '微信授权失败'
+			if (err != null) {
+				const errCode = err.errCode
+				if (errCode == WX_ERR_USER_CANCEL) {
+					errMsg = '用户取消授权'
+				} else if (errCode == WX_ERR_AUTH_DENIED) {
+					errMsg = '授权被拒绝'
+				} else if (errCode == WX_ERR_NOT_INSTALLED) {
+					errMsg = '请先安装微信客户端'
+				} else if (errCode == WX_ERR_SDK_NOT_INIT) {
+					errMsg = '微信SDK未初始化'
+				} else if (err.errMsg != null && err.errMsg != '') {
+					errMsg = err.errMsg.toString()
+				}
+			}
+			onError(errMsg)
+		},
+		complete: null
+	} as TTWeChatLoginOptions)
+}
+// #endif
+
+/**
+ * 获取微信授权 code
+ */
+export function getWechatAuthCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	// #ifdef H5
+	console.log('📱 [WX-SDK-APP] H5环境，不支持APP端微信登录')
+	onError('H5环境不支持APP端微信登录，请使用H5微信登录')
+	// #endif
+	
+	// #ifdef APP-ANDROID || APP-IOS
+	console.log('📱 [WX-SDK-APP] 开始获取微信授权code')
+	
+	uni.removeStorageSync(SK_WX_CODE)
+	console.log('🧹 [WX-SDK-APP] 已清理旧的微信授权code')
+	
+	// 获取或初始化 SDK 实例
+	let sdk = weChatSDKInstance
+	if (sdk == null) {
+		console.log('⚠️ [WX-SDK-APP] 微信SDK未初始化，尝试初始化...')
+		sdk = getTTWeChatSDK()
+		if (sdk == null) {
+			console.error('❌ [WX-SDK-APP] 获取微信SDK实例失败')
+			onError('微信SDK初始化失败，请重试')
+			return
+		}
+		weChatSDKInstance = sdk
+	}
+	
+	// 使用临时变量避免 smart cast 问题
+	const sdkInstance = sdk
+	
+	const isInstalled = sdkInstance.isInstall()
+	if (isInstalled == false) {
+		console.error('❌ [WX-SDK-APP] 未安装微信客户端')
+		onError('请先安装微信客户端')
+		return
+	}
+	
+	if (isWeChatSDKReady == false) {
+		console.log('📝 [WX-SDK-APP] 注册微信SDK...')
+		sdkInstance.register({
+			appid: WX_OPEN_APP_ID,
+			universalLink: WX_UNIVERSAL_LINK,
+			success: (res: TTWeChatRegisterSuccess) => {
+				isWeChatSDKReady = true
+				doWeChatLoginInternal(sdkInstance, onSuccess, onError)
+			},
+			fail: (err: TTWeChatRegisterFail) => {
+				console.error('❌ [WX-SDK-APP] 微信SDK注册失败:', err)
+				let errMsg = '微信SDK注册失败'
+				if (err != null && err.errMsg != null && err.errMsg != '') {
+					errMsg = err.errMsg.toString()
+				}
+				onError(errMsg)
+			},
+			complete: null
+		} as TTWeChatRegisterOptions)
+	} else {
+		doWeChatLoginInternal(sdkInstance, onSuccess, onError)
+	}
+	// #endif
+}
+
+/**
+ * 检查微信是否安装
+ */
+export function isWeChatInstalled(): boolean {
+	// #ifdef H5
+	return false
+	// #endif
+	
+	// #ifdef APP-ANDROID || APP-IOS
+	let sdk = weChatSDKInstance
+	if (sdk == null) {
+		sdk = getTTWeChatSDK()
+		if (sdk == null) {
+			return false
+		}
+		weChatSDKInstance = sdk
+	}
+	return sdk.isInstall()
+	// #endif
+}
+
+/**
+ * 🔧 内存泄漏修复：清理微信 SDK 状态
+ * 在页面卸载或登录失败时调用，释放 SDK 相关资源
+ */
+export function cleanupWeChatSDK(): void {
+	// #ifdef H5
+	console.log('📱 [WX-SDK-APP] H5环境，跳过SDK清理')
+	// #endif
+	
+	// #ifdef APP-ANDROID || APP-IOS
+	console.log('🧹 [WX-SDK-APP] 清理微信SDK状态')
+	weChatSDKInstance = null
+	isWeChatSDKReady = false
+	// #endif
+}

@@ -1,0 +1,281 @@
+<template>
+	<view class="route-card" @click="handleClick">
+		<!-- 封面图片 -->
+		<view class="image-box">
+			<image 
+				:src="coverImage" 
+				class="cover-image"
+				mode="aspectFill"
+			/>
+			<!-- 底部统计 -->
+			<view class="bottom-mask">
+				<view class="stat-item">
+					<uni-icons type="heart-filled" size="14" color="#ffffff" />
+					<text class="stat-number">{{ getLikeCount() }}</text>
+				</view>
+				<view class="stat-item stat-item-margin">
+					<uni-icons type="eye" size="14" color="#ffffff" />
+					<text class="stat-number">{{ getReadCount() }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 信息区域 -->
+		<view class="info-box">
+			<!-- 标题 -->
+			<text class="title">{{ getLineTitle() }}</text>
+			
+			<!-- 标签 -->
+			<view class="tags">
+				<view class="card-tag-blue">
+					<text class="card-tag-blue-text">{{ lineTypeText }}</text>
+				</view>
+				<view class="card-tag-blue">
+					<text class="card-tag-blue-text">{{ departureText }}</text>
+				</view>
+			</view>
+
+			<!-- 价格 -->
+			<view class="price-row">
+				<text class="price">{{ priceText }}</text>
+				<text class="price-unit">起/人</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp as safeGetStringProp, getArrayProp } from '@/common/utils/utsSafe.uts'
+
+// Props
+const props = defineProps({
+	data: { type: Object, required: true }
+})
+const emit = defineEmits<{
+	click: [data: any]
+}>()
+
+// 辅助方法：安全访问data属性（使用公共工具函数）
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.data, key)
+}
+
+// 获取封面图片从homePics数组
+const getCoverImageFromHomePics = (): string => {
+	const data = props.data
+	if (data == null) return ''
+	try {
+		const dataStr = JSON.stringify(data)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		const homePicsVal = dataObj.get('homePics')
+		if (homePicsVal != null && Array.isArray(homePicsVal) == true) {
+			const homePics = homePicsVal as Array<any>
+			if (homePics.length > 0) {
+				const firstPic = homePics[0]
+				if (firstPic != null) {
+					const picStr = JSON.stringify(firstPic)
+					const picObj = JSON.parse(picStr) as UTSJSONObject
+					const picUrl = picObj.get('picUrl')
+					if (picUrl != null && picUrl.toString() != '') {
+						return picUrl.toString()
+					}
+				}
+			}
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getLikeCount = (): number => {
+	let count = getDataProp('likeCount')
+	if (count == '') {
+		count = getDataProp('likeNum')
+	}
+	if (count == '') return 0
+	const num = parseInt(count)
+	return isNaN(num) == false ? num : 0
+}
+
+const getReadCount = (): number => {
+	let count = getDataProp('readCount')
+	if (count == '') {
+		count = getDataProp('readNum')
+	}
+	if (count == '') {
+		count = getDataProp('viewCount')
+	}
+	if (count == '') return 0
+	const num = parseInt(count)
+	return isNaN(num) == false ? num : 0
+}
+
+const getLineTitle = (): string => {
+	let title = getDataProp('lineTitle')
+	if (title != '') return title
+	
+	title = getDataProp('title')
+	if (title != '') return title
+	
+	title = getDataProp('name')
+	if (title != '') return title
+	
+	return '未命名路线'
+}
+
+const coverImage = computed((): string => {
+	// 先尝试从homePics获取
+	const homePicUrl = getCoverImageFromHomePics()
+	if (homePicUrl != '') return homePicUrl
+	
+	// 尝试多个可能的字段名
+	let img = getDataProp('picUrl')
+	if (img != '') return img
+	
+	img = getDataProp('coverImage')
+	if (img != '') return img
+	
+	img = getDataProp('image')
+	if (img != '') return img
+	
+	img = getDataProp('lineImage')
+	if (img != '') return img
+	
+	return ''
+})
+
+const lineTypeText = computed((): string => {
+	const lineType = getDataProp('lineType')
+	if (lineType == '10') return '组团游'
+	return '自由行'
+})
+
+const departureText = computed((): string => {
+	let address = getDataProp('lineAddress')
+	if (address != '') return address + '出发'
+	
+	address = getDataProp('departureCity')
+	if (address != '') return address + '出发'
+	
+	address = getDataProp('city')
+	if (address != '') return address + '出发'
+	
+	address = getDataProp('lineCity')
+	if (address != '') return address + '出发'
+	
+	return '未知地点'
+})
+
+const priceText = computed((): string => {
+	let price = getDataProp('tripPrice')
+	if (price == '') {
+		price = getDataProp('price')
+	}
+	if (price == '') {
+		price = getDataProp('linePrice')
+	}
+	if (price != '') {
+		const priceNum = parseFloat(price)
+		if (isNaN(priceNum) == false && priceNum > 0) {
+			return '￥' + price
+		}
+	}
+	return '待定'
+})
+
+const handleClick = () => {
+	emit('click', props.data)
+}
+</script>
+
+<style scoped>
+@import '@/common/styles/card.css';
+
+.route-card {
+	width: 338rpx;
+	margin-bottom: 20rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	overflow: hidden;
+	flex-direction: column;
+}
+
+.image-box {
+	position: relative;
+	width: 338rpx;
+	height: 338rpx;
+}
+
+.cover-image {
+	width: 338rpx;
+	height: 338rpx;
+	background-color: #f0f0f0;
+}
+
+.bottom-mask {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	background-color: rgba(0, 0, 0, 0.4);
+	flex-direction: row;
+	align-items: center;
+}
+
+.stat-item {
+	flex-direction: row;
+	align-items: center;
+}
+
+.stat-item-margin {
+	margin-left: 24rpx;
+}
+
+.stat-number {
+	font-size: 22rpx;
+	color: #ffffff;
+	margin-left: 6rpx;
+}
+
+.info-box {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	flex-direction: column;
+}
+
+.title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	lines: 2;
+}
+
+.tags {
+	flex-direction: row;
+	margin-top: 12rpx;
+}
+
+.price-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 12rpx;
+}
+
+.price {
+	font-size: 32rpx;
+	color: #FF9800;
+	font-weight: bold;
+}
+
+.price-unit {
+	font-size: 20rpx;
+	color: #FF9800;
+	margin-left: 4rpx;
+}
+</style>

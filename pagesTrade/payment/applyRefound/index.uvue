@@ -1,0 +1,608 @@
+<template>
+	<view class="refund-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">申请退款</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 订单信息卡片 -->
+		<view class="order-card">
+			<view class="order-content">
+				<!-- 向导预约/会员订单：显示向导形象照 -->
+				<image v-if="orderType == 20 || orderType == 30" class="order-image" :src="orderImage" mode="aspectFill"></image>
+				<!-- 路线订单：显示路线主图 -->
+				<image v-else class="order-image" :src="orderImage" mode="aspectFill"></image>
+				<view class="order-info">
+					<text class="order-title">{{ orderTitle }}</text>
+					<text v-if="(orderType == 20 || orderType == 30) && guideName != ''" class="order-guide">向导：{{ guideName }}</text>
+					<text class="order-date">出发时间：{{ travelDate }}</text>
+					<text class="order-price">¥{{ totalMoney }}</text>
+				</view>
+			</view>
+			<view class="order-total">
+				<text class="total-label">实付款：</text>
+				<text class="total-value">¥{{ totalMoney }}</text>
+			</view>
+		</view>
+		
+		<!-- 退款原因 -->
+		<view class="section-card">
+			<view class="section-header">
+				<view class="title-indicator"></view>
+				<text class="section-title">退款原因</text>
+			</view>
+			<textarea 
+				v-model="refundReason"
+				placeholder="请输入退款原因"
+				maxlength="120"
+				class="textarea"
+			></textarea>
+		</view>
+		
+		<!-- 订单信息 -->
+		<view class="section-card">
+			<view class="section-header">
+				<view class="title-indicator"></view>
+				<text class="section-title">订单信息</text>
+			</view>
+			<view class="info-list">
+				<view class="info-item">
+					<text class="info-label">订单编号</text>
+					<text class="info-value">{{ orderNo }}</text>
+					<text class="copy-btn" @click="copyOrderNo">复制</text>
+				</view>
+				<view class="info-item">
+					<text class="info-label">订单备注</text>
+					<text class="info-value">{{ orderRemark }}</text>
+				</view>
+				<view class="info-item">
+					<text class="info-label">创建时间</text>
+					<text class="info-value">{{ createTime }}</text>
+				</view>
+				<view class="info-item">
+					<text class="info-label">支付时间</text>
+					<text class="info-value">{{ payTime }}</text>
+				</view>
+				<view class="info-item">
+					<text class="info-label">退款方式</text>
+					<text class="info-value">{{ refundAccountText }}</text>
+				</view>
+			</view>
+		</view>
+		
+		</view>
+		
+		<!-- 底部按钮 -->
+		<view class="footer-bar">
+			<Button type="primary" block :loading="submitting" @click="handleSubmit">
+				提交
+			</Button>
+		</view>
+	</view>
+</template>
+
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import Button from '@/components/base/Button.uvue'
+import { getGuiderOrderInfo, applyOrderRefound } from '@/common/services/orderService.uts'
+import { getUserId } from '@/stores/user.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+// ==================== 辅助函数（必须在使用前定义）====================
+
+// 从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// 延迟函数
+const delay = (ms: number) => {
+	let timer: number = 0
+	return new Promise<number>((resolve: (value: number) => void) => {
+		timer = setTimeout(() => {
+			resolve(timer)
+		}, ms)
+	})
+}
+
+// ==================== 导航栏 ====================
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/order/index' })
+		}
+	})
+}
+
+// ==================== 响应式数据 ====================
+const refundReason = ref<string>('')
+const submitting = ref<boolean>(false)
+const orderId = ref<string>('')
+
+// 订单数据字段（拆分为独立 ref）
+const orderImage = ref<string>('')
+const orderTitle = ref<string>('')
+const travelDate = ref<string>('')
+const totalMoney = ref<string>('0.00')
+const orderNo = ref<string>('')
+const orderRemark = ref<string>('无')
+const createTime = ref<string>('')
+const payTime = ref<string>('')
+
+// 新增：订单类型与退款渠道相关
+const orderType = ref<number>(0)
+const firstPicUrl = ref<string>('')
+const guideName = ref<string>('')
+const payMethod = ref<number>(0)
+const refundAccount = ref<number>(10)
+const refundAccountText = ref<string>('退款至余额')
+
+// ==================== 退款渠道映射函数 ====================
+
+// 支付方式 → 退款渠道
+const getRefundAccountFromPayMethod = (pm: number): number => {
+	if (pm == 20) return 20
+	if (pm == 30) return 30
+	return 10
+}
+
+// 退款渠道 → 显示文案
+const getRefundAccountText = (ra: number): string => {
+	if (ra == 20) return '退款至微信'
+	if (ra == 30) return '退款至支付宝'
+	return '退款至余额'
+}
+
+
+// ==================== 业务函数（必须在调用前定义）====================
+
+// 加载订单信息
+const loadOrderInfo = async (orderKid: string) => {
+	try {
+		const params = { orderKid: orderKid } as UTSJSONObject
+		const res = await getGuiderOrderInfo(params)
+		const resObj = toJsonObj(res)
+		
+		if (resObj == null) {
+			uni.showToast({ title: '获取订单信息失败', icon: 'none' })
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code == 200) {
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataObj = toJsonObj(dataVal)
+				if (dataObj != null) {
+					// 提取订单类型和支付方式
+					orderType.value = getObjNumber(dataObj, 'orderType')
+					payMethod.value = getObjNumber(dataObj, 'payMethod')
+					guideName.value = getObjString(dataObj, 'guideName')
+					
+					// 提取路线主图（picUrls 数组第一张）
+					const picUrlsVal = dataObj.get('picUrls')
+					if (picUrlsVal != null) {
+						const picUrlsArr = picUrlsVal as UTSJSONObject[]
+						if (countArrayItems(picUrlsArr) > 0) {
+							const firstPic = picUrlsArr[0]
+							if (firstPic != null) {
+								firstPicUrl.value = getObjString(firstPic, 'picUrl')
+							}
+						}
+					}
+					
+					// 根据 orderType 设置正确的订单图片
+					const defaultImg = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+					if (orderType.value == 10) {
+						// 路线订单：使用路线主图
+						orderImage.value = (firstPicUrl.value != '') ? firstPicUrl.value : defaultImg
+					} else {
+						// 向导预约/会员订单：优先 guideAvatar，其次 guideImg
+						let guideAvatarVal = getObjString(dataObj, 'guideAvatar')
+						if (guideAvatarVal == '') {
+							guideAvatarVal = getObjString(dataObj, 'guideImg')
+						}
+						orderImage.value = (guideAvatarVal != '') ? guideAvatarVal : defaultImg
+					}
+					// 如果路线订单图片仍为默认，尝试使用向导头像兜底
+					if (orderImage.value == defaultImg) {
+						let fallbackAvatar = getObjString(dataObj, 'guideAvatar')
+						if (fallbackAvatar == '') {
+							fallbackAvatar = getObjString(dataObj, 'guideImg')
+						}
+						if (fallbackAvatar != '') {
+							orderImage.value = fallbackAvatar
+						}
+					}
+					
+					// 根据 payMethod 计算退款渠道
+					refundAccount.value = getRefundAccountFromPayMethod(payMethod.value)
+					refundAccountText.value = getRefundAccountText(refundAccount.value)
+					
+					// 更新其他订单字段
+					orderTitle.value = getObjString(dataObj, 'orderTitle')
+					travelDate.value = getObjString(dataObj, 'travelDate')
+					totalMoney.value = getObjString(dataObj, 'totalMoney')
+					orderNo.value = getObjString(dataObj, 'shortKid')
+					const remarkVal = getObjString(dataObj, 'orderRemarks')
+					orderRemark.value = (remarkVal != '') ? remarkVal : '无'
+					createTime.value = getObjString(dataObj, 'createTime')
+					payTime.value = getObjString(dataObj, 'payTime')
+					if (payTime.value == '') {
+						payTime.value = createTime.value
+					}
+				}
+			}
+		} else {
+			const msg = getObjString(resObj, 'msg')
+			uni.showToast({ title: (msg != '') ? msg : '获取订单信息失败', icon: 'none' })
+		}
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载订单信息', null)
+		}
+	}
+}
+
+// 复制订单号
+const copyOrderNo = () => {
+	const orderNoVal = orderNo.value
+	if (orderNoVal == '') {
+		uni.showToast({ title: '订单号为空', icon: 'none' })
+		return
+	}
+	uni.setClipboardData({
+		data: orderNoVal,
+		success: () => {
+			uni.showToast({ title: '订单号已复制', icon: 'success' })
+		}
+	})
+}
+
+
+// 提交退款申请
+const handleSubmit = async () => {
+	const trimmedReason = refundReason.value.trim()
+	if (trimmedReason == '') {
+		uni.showToast({ title: '请输入退款原因', icon: 'none' })
+		return
+	}
+	
+	if (orderId.value == '') {
+		uni.showToast({ title: '订单信息错误', icon: 'none' })
+		return
+	}
+	
+	// 获取用户ID并校验
+	const userKid = getUserId()
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	submitting.value = true
+	try {
+		// 解析退款金额
+		let refundAmount = 0
+		const moneyVal = parseFloat(totalMoney.value)
+		if (isNaN(moneyVal) == false) {
+			refundAmount = moneyVal
+		}
+		
+		const params = {
+			orderKid: orderId.value,
+			refundReason: trimmedReason,
+			refundAmount: refundAmount,
+			refundAccount: refundAccount.value
+		} as UTSJSONObject
+		
+		const res = await applyOrderRefound(params, userKid)
+		const resObj = toJsonObj(res)
+		
+		if (resObj != null) {
+			const code = getObjNumber(resObj, 'code')
+			if (code == 200) {
+				uni.showToast({ title: '申请成功', icon: 'success' })
+				await delay(1500)
+				uni.navigateBack()
+			} else {
+				const msg = getObjString(resObj, 'msg')
+				uni.showToast({ title: (msg != '') ? msg : '申请失败', icon: 'none' })
+			}
+		} else {
+			uni.showToast({ title: '申请失败', icon: 'none' })
+		}
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '申请退款', submitting)
+		} else {
+			submitting.value = false
+		}
+	} finally {
+		submitting.value = false
+	}
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	
+	if (options == null) {
+		uni.showToast({ title: '参数错误', icon: 'error' })
+		return
+	}
+	
+	const optionsStr = JSON.stringify(options)
+	const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+	
+	// 支持 orderId 和 orderKid 两种参数名
+	let orderIdVal = optionsObj.get('orderId')
+	if (orderIdVal == null || orderIdVal.toString() == '') {
+		orderIdVal = optionsObj.get('orderKid')
+	}
+	
+	if (orderIdVal != null && orderIdVal.toString() != '') {
+		orderId.value = orderIdVal.toString()
+		loadOrderInfo(orderId.value)
+	} else {
+		uni.showToast({ title: '订单ID不能为空', icon: 'error' })
+	}
+})
+</script>
+
+
+<style scoped>
+.refund-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	padding-bottom: 120rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.order-card {
+	background-color: #ffffff;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	margin-bottom: 20rpx;
+}
+
+.order-content {
+	flex-direction: row;
+	margin-bottom: 32rpx;
+}
+
+.order-image {
+	width: 122rpx;
+	height: 122rpx;
+	border-radius: 8rpx;
+	margin-right: 24rpx;
+}
+
+.order-info {
+	flex: 1;
+	flex-direction: column;
+	justify-content: space-between;
+}
+
+.order-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.order-date {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.order-guide {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.order-price {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.order-total {
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	padding-top: 24rpx;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.total-label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-right: 16rpx;
+}
+
+.total-value {
+	font-size: 36rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.section-card {
+	background-color: #ffffff;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	margin-bottom: 20rpx;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.title-indicator {
+	width: 6rpx;
+	height: 28rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-right: 12rpx;
+}
+
+.section-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.textarea {
+	width: 100%;
+	min-height: 196rpx;
+	padding: 20rpx;
+	background-color: #f8f9fa;
+	border-radius: 8rpx;
+	font-size: 26rpx;
+	line-height: 1.6;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+}
+
+.info-list {
+	flex-direction: column;
+}
+
+.info-item {
+	flex-direction: row;
+	align-items: center;
+	padding: 24rpx 0;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.info-item:last-child {
+	border-bottom-width: 0;
+}
+
+.info-label {
+	font-size: 28rpx;
+	color: #333333;
+	width: 160rpx;
+}
+
+.info-value {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.copy-btn {
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	background-color: #f8f9fa;
+	color: #37B1F2;
+	font-size: 24rpx;
+	border-radius: 8rpx;
+	margin-left: 20rpx;
+}
+
+.footer-bar {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	background-color: #ffffff;
+}
+</style>

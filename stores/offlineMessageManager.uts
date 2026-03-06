@@ -1,0 +1,97 @@
+import { SK_OFFLINE_MESSAGES } from '@/common/config/storageKeys.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 🌟 离线消息管理器
+ * 处理离线消息存储和同步机制
+ */
+
+export interface OfflineMessage {
+  id: string
+  content: string
+  type: 'text' | 'image' | 'voice' | 'video'
+  receiverId: string
+  senderId: string
+  timestamp: number
+  synced: boolean
+}
+
+// 添加离线消息的参数类（UTS 不支持 Omit 工具类型）
+export class AddOfflineMessageParams {
+  content: string = ''
+  type: string = 'text'
+  receiverId: string = ''
+  senderId: string = ''
+  timestamp: number = 0
+}
+
+export class OfflineMessageManager {
+  private offlineMessages: OfflineMessage[] = []
+  private isOnline: boolean = true
+
+  /**
+   * 添加离线消息
+   */
+  addOfflineMessage(message: AddOfflineMessageParams): void {
+    // UTS 规范：不支持展开运算符，手动构建对象
+    const offlineMessageRaw = {
+      id: `offline_${Date.now()}`,
+      content: message.content,
+      type: message.type,
+      receiverId: message.receiverId,
+      senderId: message.senderId,
+      timestamp: message.timestamp,
+      synced: false
+    } as UTSJSONObject
+    const offlineMessage = offlineMessageRaw as OfflineMessage
+    
+    this.offlineMessages.push(offlineMessage)
+    this.persistToStorage()
+    
+    console.log('📴 [OfflineManager] 消息已保存到离线队列:', offlineMessage.id)
+  }
+
+  /**
+   * 同步离线消息
+   */
+  async syncOfflineMessages(): Promise<void> {
+    if (this.isOnline == null || this.isOnline == false) return
+    
+    const unsyncedMessages = this.offlineMessages.filter(msg => !msg.synced)
+    
+    for (const message of unsyncedMessages) {
+      try {
+        // 发送到服务器
+        await this.sendToServer(message)
+        message.synced = true
+      } catch (error: any) {
+        handleSilentError(error, '同步离线消息')
+        break // 同步失败时停止继续同步
+      }
+    }
+    
+    this.persistToStorage()
+  }
+
+  private async sendToServer(message: OfflineMessage): Promise<void> {
+    // 实现发送到服务器的逻辑
+    return Promise.resolve()
+  }
+
+  private persistToStorage(): void {
+    try {
+      uni.setStorageSync(SK_OFFLINE_MESSAGES, this.offlineMessages)
+    } catch (error: any) {
+      handleSilentError(error, '持久化离线消息')
+    }
+  }
+
+  setOnlineStatus(isOnline: boolean): void {
+    this.isOnline = isOnline
+    if (isOnline) {
+      this.syncOfflineMessages()
+    }
+  }
+}
+
+export const offlineMessageManager = new OfflineMessageManager()

@@ -1,0 +1,2663 @@
+<template>
+	<view class="page bg-base animation-fade relative" v-if="initFinish">
+		<!-- #ifdef H5 -->
+		<H5TopBar @open-app="handleOpenApp" />
+		<!-- #endif -->
+		
+		<!-- 返回按钮（固定在顶部） -->
+		<!-- #ifdef H5 -->
+		<view class="page-back-fixed absolute flex-row align-center flex-center" :style="{top: (pageStatusBarHeight + 45) + 'px'}" @click.stop="handlePageBack">
+			<Icon name="back" :size="44" />
+		</view>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<view class="page-back-fixed absolute flex-row align-center flex-center" :style="{top: pageStatusBarHeight + 'px'}" @click.stop="handlePageBack">
+			<Icon name="back" :size="44" />
+		</view>
+		<!-- #endif -->
+		<!-- 分享按钮（固定在顶部） -->
+		<!-- #ifdef H5 -->
+		<view class="share-btn-fixed absolute flex-row align-center flex-center" :style="{top: (pageStatusBarHeight + 45) + 'px'}" @click.stop="handleShare">
+			<Icon name="share" :size="44" />
+		</view>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<view class="share-btn-fixed absolute flex-row align-center flex-center" :style="{top: pageStatusBarHeight + 'px'}" @click.stop="handleShare">
+			<Icon name="share" :size="44" />
+		</view>
+		<!-- #endif -->
+		
+		<!-- 整页滚动容器 -->
+		<!-- #ifdef H5 -->
+		<scroll-view 
+			class="page-scroll-view page-scroll-view-h5" 
+			:scroll-y="true" 
+			:bounces="true"
+			:show-scrollbar="false"
+			@scrolltolower="scrolltolower"
+			:lower-threshold="100"
+			:style="{ height: scrollViewHeight + 'px', marginTop: '45px' }"
+		>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<scroll-view 
+			class="page-scroll-view" 
+			:scroll-y="true" 
+			:bounces="true"
+			:show-scrollbar="false"
+			@scrolltolower="scrolltolower"
+			:lower-threshold="100"
+			:style="{ height: scrollViewHeight + 'px' }"
+		>
+		<!-- #endif -->
+		<!-- 背景图 -->
+		<view class="head-bg" @click="handleBackgroundClick">
+			<image class="head-bg-image" 
+				:src="(infoBackground != '') ? infoBackground : bg_image"
+				mode="aspectFill" />
+		</view>
+		
+		<!-- 用户信息区域 -->
+		<view class="user-info-container ptb-28 plr-32 relative">
+			<!-- 彩色渐变背景图 -->
+			<image class="user-info-bg" src="https://jiasu.wyxdapp.com/iconimages/n_persionInfo_bg.png" mode="scaleToFill" />
+			
+			<view class="flex-row align-center relative z-10">
+				<view class="profile-avatar-wrapper relative">
+					<Avatar 
+						:url="infoImage"
+						:userId="infoKid"
+						:customSize="160"
+						:isOnline="infoOnLineStatu == 20"
+						clickMode="preview"
+					/>
+					<!-- 头像上传中提示 -->
+					<view v-if="avatarLoading" class="avatar-loading-overlay absolute">
+						<Loading color="#FFFFFF" size="28"></Loading>
+					</view>
+				</view>
+				<view class="flex-1 pl-24">
+					<view class="flex-row align-center space-between">
+						<NicknameWithBadges
+							:nickname="infoNickname"
+							:vipType="infoVipType"
+							:giftLevel="infoGiftLevel"
+							:targetUserKid="infoKid"
+							size="large"
+							@vipClick="handleVipClick"
+							@giftClick="handleGiftIconClick"
+						/>
+						<!-- 访问自己的主页：显示编辑按钮 -->
+						<view 
+							v-if="showSelf" 
+							class="follow-btn follow-btn--unfollow"
+							hover-class="follow-btn--active"
+							@click="handleEditProfile">
+							<text class="follow-btn__text follow-btn__text--unfollow">编辑</text>
+						</view>
+						<!-- 访问别人的主页：显示关注按钮 -->
+						<FollowButton 
+							v-else
+							:targetUserKid="infoKid"
+							:isFollow="isFollowingCurrentUser"
+							@change="onFollowChange"
+						/>
+					</view>
+					<!-- 性别年龄 + 认证图标行 -->
+					<view class="info-row">
+						<!-- 性别年龄组件 -->
+						<view class="gender-age-box">
+							<GenderAge :sex="infoSex" :age="infoAge" />
+						</view>
+						<!-- 官方认证 -->
+						<view v-if="infoOfficialAuth == 20 || infoOfficialAuth == 30" class="official-certification">
+							<image src="https://jiasu.wyxdapp.com/iconimages/n_index_officialAuthor.png" class="cert-icon" mode="aspectFill" />
+						</view>
+						<!-- 实名认证 -->
+						<view v-if="infoIdAuth == 30" class="name-authentication">
+							<image src="https://jiasu.wyxdapp.com/iconimages/n_index_realName.png" class="auth-icon" mode="aspectFill" />
+						</view>
+					</view>
+				</view>
+			</view>
+			<text class="mt-36 u-line-2 fs-sm" color-text relative z-10>{{ (infoSignature != '') ? infoSignature : '这个人很懒,什么都没留下' }}</text>
+			
+			<!-- 认证标签（手机、微信、向导、司机） -->
+			<view class="certification-tags-container flex-row flex-wrap align-start flex-start mt-32 relative z-10">
+				<image v-if="infoPhone != '' && infoPhone.length > 0" class="auth-img mr-12" src="https://jiasu.wyxdapp.com/iconimages/n_index_mobile.png" mode="heightFix" />
+				<image v-if="infoWeixinAuth == 20 || infoWeixinAuth == 30" class="auth-img mr-12" src="https://jiasu.wyxdapp.com/iconimages/n_index_wechat.png" mode="heightFix" />
+				<image v-if="infoGuideAuthenticatStatu == 30" class="auth-img mr-12" src="https://jiasu.wyxdapp.com/iconimages/n_index_tourGuide.png" mode="heightFix" />
+				<image v-if="infoDriverAuthenticatStatu == 30" class="auth-img mr-12" src="https://jiasu.wyxdapp.com/iconimages/n_index_driver.png" mode="heightFix" />
+			</view>
+			
+			<!-- 语言 / 个性标签 -->
+			<view class="profile-tags-block mt-12">
+				<!-- 语言标签：有标签时才显示 -->
+				<view v-if="languageTagsLength > 0" class="speciality-section">
+					<view class="speciality-tags">
+						<view
+							v-for="(item, idx) in languageDisplayTags"
+							:key="getTagKey(item, idx)"
+							class="card-tag-blue"
+						>
+							<text class="card-tag-blue-text">{{ item.name }}</text>
+						</view>
+					</view>
+				</view>
+				<!-- 个性标签：有标签或可编辑时才显示 -->
+				<view v-if="labelTagsLength > 0 || canEditTags == true" class="speciality-section mt-12">
+					<view class="speciality-tags">
+						<view
+							v-for="(item, idx) in labelDisplayTags"
+							:key="getTagKey(item, idx)"
+							class="card-tag-blue"
+						>
+							<text class="card-tag-blue-text">{{ item.name }}</text>
+						</view>
+						<view v-if="canEditTags" class="add-chip" @click.stop="handleEditTags">
+							<text class="speciality-add-icon">＋</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 统计信息 -->
+			<view class="flex-row align-center mt-22">
+				<view class="relative flex-row align-center pr-16 mr-16" v-for="(item, index) in infoData" :key="index">
+					<text class="fs-md" color-text>
+						{{ item.label }}{{ item.value }}{{ index != infoDataLength - 1 ? ' ｜ ' : '' }}
+					</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 服务信息 -->
+		<view class="plr-32 ptb-12 bg-white" @click="goToGuideInfo">
+			<view class="flex-row ptb-12 align-center">
+				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_cost.png" mode="aspectFit"></image>
+				<text class="ml-16 fs-sm" color-title>费用</text>
+				<text class="color-price fs-sm">　{{infoServicePrice}}</text>
+			</view>
+			<view class="flex-row ptb-12 align-center">
+				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_Range.png" mode="aspectFit"></image>
+				<text class="ml-16 fs-sm" color-title>范围</text>
+				<text class="color-text fs-sm">　{{infoAccessiblePlace}}</text>
+			</view>
+			<view class="flex-row ptb-12 align-start">
+				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_deal.png" mode="aspectFit"></image>
+				<text class="ml-16 fs-sm" color-title special>擅长</text>
+				<text class="color-text fs-sm">　{{ userFortesText }}</text>
+			</view>
+			<view class="flex-row ptb-12 align-center">
+				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_score.png" mode="aspectFit"></image>
+				<text class="ml-16 fs-sm" color-title>评分</text>
+				<text class="color-text fs-sm" v-if="infoStarLevel != 0">　{{infoStarLevel}}分</text>
+				<text class="color-text fs-sm" v-else>　暂无评分</text>
+			</view>
+			<view class="flex-row ptb-12 align-start">
+				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_introduce.png" mode="aspectFit"></image>
+				<text class="ml-16 fs-sm" color-title special>介绍</text>
+				<text class="color-text fs-sm">　{{ (infoServiceFeature != '') ? infoServiceFeature : '这个导游很懒,什么也没留下' }}</text>
+			</view>
+			<view class="flex-row ptb-12 align-center space-between">
+				<view class="flex-row align-center">
+					<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_comment.png" mode="aspectFit"></image>
+					<text class="ml-16 fs-sm" color-title>评论</text>
+					<text class="color-text fs-sm" v-if="infoBeEvaluateCount != 0">　{{infoBeEvaluateCount}}人评价</text>
+					<text class="color-text fs-sm" v-else>　暂无评价</text>
+				</view>
+				<view class="flex-row align-center" @click.stop="goGuideComments">
+					<text class="view-more-text">查看更多</text>
+					<text class="view-more-arrow">›</text>
+				</view>
+			</view>
+		</view>
+		
+		<view class="border-line bg-base"></view>
+	
+		<!-- Tab切换区域 -->
+		<view class="tabs-container bg-white">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabList" 
+					:key="index"
+					class="tab-item" 
+					@click="handleTab(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': tabIndex == index }">{{ tab.label }}</text>
+					<view v-if="tabIndex == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 动态列表（tabIndex == 0 时显示） -->
+		<view v-if="tabIndex == 0" class="list-container bg-white">
+			<view class="trends-list">
+				<DynamicItem 
+					v-for="(item, index) in trendsPageInfo.list" 
+					:key="index"
+					:item="item"
+					moreIcon="dots"
+					@user-click="onUserClick"
+					@content-click="onContentClick"
+					@play="onVideoPlay"
+					@like="onLike"
+					@comment="onComment"
+					@video-click="onVideoClick"
+					@more-click="onMoreClick"
+				/>
+			</view>
+			<view class="ptb-32" v-if="trendsListLength >= 5">
+				<LoadMore :status="trendsPageInfo.status" />
+			</view>
+			<view class="zoom-box bg-white" v-if="trendsListLength > 0"></view>
+			<!-- 空状态 -->
+			<view v-if="trendsListLength == 0 && trendsPageInfo.status != 'loading'" class="empty-state ptb-64">
+				<text class="color-text fs-sm">暂无动态</text>
+			</view>
+		</view>
+		
+		<!-- 定制列表（tabIndex == 1 时显示） -->
+		<view v-if="tabIndex == 1" class="list-container bg-white">
+			<!-- 空状态 -->
+			<view v-if="routeListLength == 0 && routePageInfo.status != 'loading'" class="empty-state ptb-64">
+				<text class="color-text fs-sm">暂无定制</text>
+			</view>
+			<!-- 定制列表 - 双列瀑布流布局 -->
+			<view v-else class="route-grid">
+				<route-card 
+					v-for="(item, index) in routePageInfo.list" 
+					:key="getRouteKey(item, index)"
+					:data="item"
+					@click="goToRouteDetail"
+				/>
+			</view>
+			<view class="ptb-32" v-if="routeListLength >= 5">
+				<LoadMore :status="routePageInfo.status" />
+			</view>
+			<view class="zoom-box bg-white" v-if="routeListLength > 0"></view>
+		</view>
+		
+		<!-- 底部占位，避免被固定底栏遮挡 -->
+		<view class="footer-placeholder"></view>
+		
+		</scroll-view>
+		
+		<!-- 底部操作栏 -->
+		<view class="footer-box plr-32 flex-row align-center space-between">
+			<template v-if="showSelf">
+				<view class="publish-btn-wrapper">
+					<Button 
+						mode="single"
+						@click="handlePublishClick"
+						class="publish-button">
+						<text style="color: #ffffff; font-size: 32rpx; font-weight: bold;">{{ publishButtonText }}</text>
+					</Button>
+				</view>
+			</template>
+			<template v-else>
+				<view class="btn btn-subscribe flex-row align-center flex-center" @click="handleGoToSubmitOrder">
+					<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_subscribe.png" mode="aspectFit"></image>
+					<text class="ml-16 fs-lg" text-blue>预约</text>
+				</view>
+				<view class="btn btn-chat chat flex-row align-center flex-center" @click="handleChat">
+					<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_chat.png" mode="aspectFit"></image>
+					<text class="ml-16 fs-lg chat-btn-text">聊天</text>
+				</view>
+			</template>
+		</view>
+		
+		<!-- 动态操作菜单（仅自己主页显示） -->
+		<view v-if="showTrendsActionSheet == true" class="action-sheet-mask" @click="handleTrendsActionCancel">
+			<view class="action-sheet-popup" @click.stop>
+				<view class="action-list">
+					<view class="action-item" @click="handleTrendsActionSelect(0)">
+						<view class="action-item-content">
+							<text class="action-text">{{ trendsTopActionText }}</text>
+							<view class="vip-badge">
+								<text class="vip-text">会员专享</text>
+							</view>
+						</view>
+					</view>
+					<view class="action-item" @click="handleTrendsActionSelect(1)">
+						<text class="action-text">分享</text>
+					</view>
+					<view class="action-item" @click="handleTrendsActionSelect(2)">
+						<text class="action-text">{{ trendsPrivateActionText }}</text>
+					</view>
+					<view class="action-item action-item-danger" @click="handleTrendsActionSelect(3)">
+						<text class="action-text-danger">删除</text>
+					</view>
+				</view>
+				<view class="cancel-section">
+					<view class="cancel-btn" @click="handleTrendsActionCancel">
+						<text class="cancel-text">取消</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="selectedUserKid"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+	</view>
+</template>
+
+
+<script setup lang="uts">
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
+// #endif
+
+// ==================== 公共工具导入 ====================
+import { 
+	getStringProp, 
+	getNumberProp, 
+	getArrayProp,
+	getItemKey,
+	goToHome
+} from '@/common/utils/utsSafe.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable,
+	requireLoginReliable
+} from '@/common/utils/loginHelper.uts'
+import { handlePromotionLink } from '@/common/utils/promotionTracker.uts'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { getUrlParams } from '@/common/utils/security/urlValidator.uts'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+
+// ==================== Store 导入 ====================
+import { useUserStore, initUserInfoAction, getUserShortKid, getUserVipStatus, getUserVipExpireTime, updateUserInfoAction } from '@/stores/user.uts'
+import { VIP_ACTIVATED, VIP_TYPE_YEARLY } from '@/common/config/businessCodes.uts'
+import { 
+	isFollowing as isFollowingFn, 
+	isProcessing as isProcessingFn, 
+	setFollowStatus as setFollowStatusFn, 
+	toggleFollow as toggleFollowFn 
+} from '@/stores/follow.uts'
+import { 
+	isLikeProcessing, 
+	getLikeStatus, 
+	getLikeCount, 
+	toggleLike as toggleLikeFn, 
+	setLikeStatus 
+} from '@/stores/like.uts'
+import { setVideoFeedData } from '@/stores/videoFeed.uts'
+
+// ==================== 组件导入 ====================
+import FollowButton from '@/components/base/FollowButton.uvue'
+
+// ==================== Composable 导入 ====================
+import { 
+	pageStatusBarHeight,
+	pageWindowHeight,
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	SpecialityItem,
+	specialityLoading,
+	specialityLanguageTags,
+	specialityLabelTags,
+	getLanguageDisplayTags,
+	getLabelDisplayTags,
+	loadProfileSpecialities
+} from '@/pagesUser/composables/useProfileSpeciality.uts'
+import {
+	PageInfoData,
+	InfoDataItem,
+	createDefaultUserInfo,
+	createDefaultInfoData,
+	updateInfoDataFromUserInfo,
+	loadUserTrends,
+	loadUserRoutes,
+	getInfoProperty,
+	getInfoStringProperty,
+	getInfoNumberProperty,
+	setInfoProperty,
+	formatUserFortesText
+} from '@/pagesUser/composables/useProfileData.uts'
+import { getUserLines } from '@/api/home.uts'
+import { GetUserLinesParams } from '@/api/types/homeTypes.uts'
+import { 
+	getUserProfile, 
+	updateUserProfile, 
+	getCachedProfile, 
+	DEFAULT_TTL 
+} from '@/common/composables/useUserProfileCache.uts'
+import type { PartialUserHomePageInfo } from '@/common/composables/useUserProfileCache.uts'
+import { 
+	prepareShareData as prepareShareDataFn, 
+	handleAutoJumpToApp as handleAutoJumpToAppFn, 
+	handleApp as handleAppFn, 
+	setupH5Share as setupH5ShareFn, 
+	setShareMetaTags as setShareMetaTagsFn,
+	initWechatShare as initWechatShareFn
+} from '@/common/composables/useShareAndDeepLink.uts'
+import { 
+	getChatListRef, 
+	getChatList as getChatListFn, 
+	handleShareToChat as handleShareToChatFn 
+} from '@/common/composables/useChatAndShare.uts'
+import { recordVisitor } from '@/common/composables/useVisitor.uts'
+import { 
+	handleShareWechat as handleShareWechatFn, 
+	handleShareMoments as handleShareMomentsFn, 
+	handleCopyLink as handleCopyLinkFn, 
+	handleShowQrcode as handleShowQrcodeFn 
+} from '@/common/composables/useShareUi.uts'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+
+// ==================== 组件导入 ====================
+import Loading from '@/components/base/Loading.uvue'
+import Icon from '@/components/base/Icon.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import GenderAge from '@/components/base/GenderAge.uvue'
+import LoadMore from '@/components/base/LoadMore.uvue'
+import DynamicItem from '@/components/business/DynamicItem.uvue'
+import RouteCard from '@/components/route-card/index.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import Button from '@/components/base/Button.uvue'
+import H5TopBar from '@/components/base/H5TopBar.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { deleteTrends, setTrendsTop, setTrendsPrivate } from '@/common/services/trendsService.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+
+// ==================== Store 实例 ====================
+const userStore = useUserStore()
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 辅助函数 - 登录状态（必须在 computed 之前定义）====================
+
+/**
+ * 获取当前用户 ID（使用 loginHelper 可靠版本）
+ */
+const getCurrentUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+/**
+ * 检查用户登录状态（使用 loginHelper 可靠版本）
+ */
+const checkUserLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 页面状态 ====================
+const guiderKid = ref<string>('')
+const initFinish = ref<boolean>(false)
+const isLoadingUserInfo = ref<boolean>(false)
+const backgroundLoading = ref<boolean>(false)
+const avatarLoading = ref<boolean>(false)
+const showSharePopup = ref<boolean>(false)
+// 提前准备一个临时会话列表，确保在打开 SharePopup 时能立即传入已解析的数组，避免时序问题
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const scrollViewHeight = ref<number>(0)
+
+// 🎯 礼物选择弹窗相关
+const showGiftSelector = ref<boolean>(false)
+const selectedUserKid = ref<string>('')
+
+// 🎯 动态操作菜单相关（仅自己主页）
+const showTrendsActionSheet = ref<boolean>(false)
+const selectedTrendsItem = ref<UTSJSONObject | null>(null)
+
+// 当前用户ID（用于礼物发送）
+const currentUserId = computed((): string => {
+	return getCurrentUserIdReliable()
+})
+
+// 位置信息
+const latitude = ref<number>(0)
+const longitude = ref<number>(0)
+const hasLocation = ref<boolean>(false)
+
+// 默认背景图
+const bg_image = 'https://gimg2.baidu.com/image_search/src=http%3A%2F%2Fpic.616pic.com%2Fbg_w1180%2F00%2F05%2F65%2FOuBwxE5sua.jpg&refer=http%3A%2F%2Fpic.616pic.com&app=2002&size=f9999,10000&q=a80&n=0&g=0n&fmt=jpeg?sec=1617810333&t=fd114ed1561980fc456a8c043ba54482'
+
+// ==================== Tab 配置 ====================
+
+class TabItemData {
+	label: string = ''
+	value: number = 0
+	constructor(label: string, value: number) {
+		this.label = label
+		this.value = value
+	}
+}
+
+// #ifdef H5
+const tabList = ref<Array<TabItemData>>([new TabItemData('动态', 0), new TabItemData('定制', 1)])
+// #endif
+// #ifdef MP-WEIXIN
+const tabList = ref<Array<TabItemData>>([new TabItemData('动态', 0)])
+// #endif
+// #ifndef H5 || MP-WEIXIN
+const tabList = ref<Array<TabItemData>>([new TabItemData('动态', 0), new TabItemData('定制', 1)])
+// #endif
+
+const tabIndex = ref<number>(0)
+
+// ==================== 分页信息 ====================
+const routePageInfo = ref<PageInfoData>(new PageInfoData())
+const trendsPageInfo = ref<PageInfoData>(new PageInfoData())
+
+// ==================== 发布按钮文字计算属性 ====================
+const publishButtonText = computed((): string => {
+	if (tabIndex.value == 0) {
+		return '动态发布'
+	} else if (tabIndex.value == 1) {
+		return '定制发布'
+	}
+	return '发布'
+})
+
+// ==================== 用户信息 ====================
+const info = ref<UTSJSONObject>(createDefaultUserInfo())
+const infoData = ref<InfoDataItem[]>(createDefaultInfoData())
+
+// ==================== 分享数据 ====================
+const shareData = ref({
+	title: '',
+	summary: '',
+	imageUrl: '',
+	link: '',
+	userId: '',
+	referrerShortKid: ''  // 用户的推广短号
+})
+
+// 平台安全的 plain 分享负载，用于在弹窗打开时传递给子组件（避免 ref 属性未及时展开导致空白）
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	summary: '',
+	desc: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+})
+
+// ==================== 辅助函数 - 安全访问分享数据 ====================
+const getShareDataValue = (): UTSJSONObject => {
+	// 使用JSON序列化方式安全访问，避免直接访问ref属性
+	const shareDataJson = JSON.stringify(shareData.value)
+	const shareDataObj = JSON.parse(shareDataJson) as UTSJSONObject
+
+	const titleVal = shareDataObj.get('title')
+	const summaryVal = shareDataObj.get('summary')
+	const linkVal = shareDataObj.get('link')
+	const imageUrlVal = shareDataObj.get('imageUrl')
+	const userIdVal = shareDataObj.get('userId')
+	const referrerShortKidVal = shareDataObj.get('referrerShortKid')
+
+	return {
+		title: (titleVal != null) ? titleVal.toString() : '',
+		summary: (summaryVal != null) ? summaryVal.toString() : '',
+		desc: (summaryVal != null) ? summaryVal.toString() : '',
+		link: (linkVal != null) ? linkVal.toString() : '',
+		url: (linkVal != null) ? linkVal.toString() : '',
+		imageUrl: (imageUrlVal != null) ? imageUrlVal.toString() : '',
+		userId: (userIdVal != null) ? userIdVal.toString() : '',
+		referrerShortKid: (referrerShortKidVal != null) ? referrerShortKidVal.toString() : ''
+	}
+}
+
+// ==================== 微信小程序分享数据构建 ====================
+// #ifdef MP-WEIXIN
+/**
+ * 同步构建微信小程序分享所需的数据
+ * 从页面已有的响应式数据中读取用户信息，返回分享标题、路径、图片和描述
+ */
+const buildMpShareData = (): UTSJSONObject => {
+	const result = new UTSJSONObject()
+	try {
+		const infoVal = info.value
+		const userKid = guiderKid.value
+
+		// 昵称：为空时使用默认值
+		const nicknameVal = infoVal.get('nickname')
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : '用户'
+
+		// 头像：为空时使用默认头像，http 自动转 https
+		const imageVal = infoVal.get('image')
+		let imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		if (imageStr.indexOf('http://') == 0) {
+			imageStr = imageStr.replace('http://', 'https://')
+		}
+
+		// 描述：优先使用个性签名，否则使用城市+性别组合
+		const signatureVal = infoVal.get('signature')
+		const signatureStr = (signatureVal != null && signatureVal.toString() != '') ? signatureVal.toString() : ''
+		let descStr = ''
+		if (signatureStr != '') {
+			descStr = signatureStr
+		} else {
+			const liveCityVal = infoVal.get('liveCity')
+			const liveCityStr = (liveCityVal != null && liveCityVal.toString() != '') ? liveCityVal.toString() : ''
+			const birthPlaceVal = infoVal.get('birthPlace')
+			const birthPlaceStr = (birthPlaceVal != null && birthPlaceVal.toString() != '') ? birthPlaceVal.toString() : ''
+			const cityPart = (liveCityStr != '') ? liveCityStr : ((birthPlaceStr != '') ? birthPlaceStr : '远方')
+			const sexVal = infoVal.get('sex')
+			const sexStr = (sexVal != null) ? sexVal.toString() : ''
+			const genderPart = (sexStr == '女') ? '女生' : ((sexStr == '男') ? '男生' : 'TA')
+			descStr = '来自' + cityPart + '的' + genderPart + '，欢迎关注！'
+		}
+
+		// 页面路径
+		let pathStr = '/pagesUser/persionInfo/index'
+		if (userKid != '') {
+			pathStr = pathStr + '?id=' + userKid
+		}
+
+		result.set('title', nicknameStr + '的个人主页')
+		result.set('path', pathStr)
+		result.set('imageUrl', imageStr)
+		result.set('desc', descStr)
+	} catch (e) {
+		handleSilentError(e, '[MP-SHARE] buildMpShareData 构建')
+		result.set('title', '网约向导 - 个人主页')
+		result.set('path', '/pagesUser/persionInfo/index')
+		result.set('imageUrl', 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png')
+		result.set('desc', '发现有趣的向导，欢迎关注！')
+	}
+	return result
+}
+// #endif
+
+// ==================== 聊天列表 ====================
+const chatList = getChatListRef()
+
+// ==================== 计算属性 - 用户信息 ====================
+const infoBackground = computed((): string => getInfoStringProperty(info.value, 'background'))
+const infoImage = computed((): string => getInfoStringProperty(info.value, 'image'))
+const infoNickname = computed((): string => getInfoStringProperty(info.value, 'nickname'))
+const infoKid = computed((): string => getInfoStringProperty(info.value, 'kid'))
+const infoSex = computed((): string => getInfoStringProperty(info.value, 'sex'))
+const infoAge = computed((): number => getInfoNumberProperty(info.value, 'age'))
+const infoBirthPlace = computed((): string => getInfoStringProperty(info.value, 'birthPlace'))
+const infoOnLineStatu = computed((): number => getInfoNumberProperty(info.value, 'onLineStatu'))
+const infoSignature = computed((): string => getInfoStringProperty(info.value, 'signature'))
+const infoOfficialAuth = computed((): number => getInfoNumberProperty(info.value, 'officialAuth'))
+const infoIdAuth = computed((): number => getInfoNumberProperty(info.value, 'idAuth'))
+const infoPhone = computed((): string => getInfoStringProperty(info.value, 'phone'))
+const infoWeixinAuth = computed((): number => getInfoNumberProperty(info.value, 'weixinAuth'))
+const infoGuideAuthenticatStatu = computed((): number => getInfoNumberProperty(info.value, 'guideAuthenticatStatu'))
+const infoDriverAuthenticatStatu = computed((): number => getInfoNumberProperty(info.value, 'driverAuthenticatStatu'))
+const infoServicePrice = computed((): string => {
+	const val = getInfoProperty(info.value, 'servicePrice')
+	return (val != null) ? val.toString() : ''
+})
+const infoAccessiblePlace = computed((): string => getInfoStringProperty(info.value, 'accessiblePlace'))
+const infoStarLevel = computed((): number => getInfoNumberProperty(info.value, 'starLevel'))
+const infoServiceFeature = computed((): string => getInfoStringProperty(info.value, 'serviceFeature'))
+const infoBeEvaluateCount = computed((): number => getInfoNumberProperty(info.value, 'beEvaluateCount'))
+
+// ==================== 计算属性 - VIP 和礼物等级（用于 NicknameWithBadges 组件）====================
+const infoVipType = computed((): string => {
+	const vip = getInfoNumberProperty(info.value, 'vip')
+	const vipExpireTime = getInfoStringProperty(info.value, 'vipExpireTime')
+	const vipTypeNum = getInfoNumberProperty(info.value, 'vipType')
+	
+	// 检查 VIP 是否有效
+	if (vip == VIP_ACTIVATED) {
+		if (vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate > now) {
+				// 根据 VIP 类型返回图标类型：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				if (vipTypeNum == VIP_TYPE_YEARLY) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 没有到期时间，认为是永久有效的
+			if (vipTypeNum == VIP_TYPE_YEARLY) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+})
+
+const infoGiftLevel = computed((): number => getInfoNumberProperty(info.value, 'giftLevel'))
+
+// ==================== 计算属性 - 擅长文本 ====================
+const userFortesText = computed((): string => {
+	const fortesVal = getInfoProperty(info.value, 'userFortes')
+	if (fortesVal == null) return '暂无'
+	return formatUserFortesText(fortesVal)
+})
+
+// ==================== 计算属性 - 关注状态 ====================
+const isFollowingCurrentUser = computed((): boolean => {
+	const kidVal = getInfoStringProperty(info.value, 'kid')
+	if (kidVal == '') return false
+	return isFollowingFn(kidVal)
+})
+
+// ==================== 计算属性 - 是否自己的主页 ====================
+const viewerKid = computed((): string => {
+	return getCurrentUserKid()
+})
+
+const showSelf = computed((): boolean => {
+	const userKid = getCurrentUserKid()
+	if (userKid == '') return false
+	const infoKidVal = getInfoStringProperty(info.value, 'kid')
+	if (infoKidVal == '') return false
+	return infoKidVal == userKid
+})
+
+const canEditTags = computed((): boolean => showSelf.value)
+
+// ==================== 计算属性 - 动态操作菜单文本 ====================
+const trendsTopActionText = computed((): string => {
+	if (selectedTrendsItem.value == null) return '顶置'
+	const onTop = getNumberProp(selectedTrendsItem.value as any, 'onTop')
+	return onTop == 10 ? '取消顶置' : '顶置'
+})
+
+const trendsPrivateActionText = computed((): string => {
+	if (selectedTrendsItem.value == null) return '私密'
+	const privatel = getNumberProp(selectedTrendsItem.value as any, 'privatel')
+	return privatel == 20 ? '取消私密' : '私密'
+})
+
+// ==================== 计算属性 - 列表长度（避免模板直接访问 .length） ====================
+const languageDisplayTags = computed((): SpecialityItem[] => getLanguageDisplayTags())
+const labelDisplayTags = computed((): SpecialityItem[] => getLabelDisplayTags())
+
+const languageTagsLength = computed((): number => {
+	return specialityLanguageTags.value.length
+})
+
+const labelTagsLength = computed((): number => {
+	return specialityLabelTags.value.length
+})
+
+const trendsListLength = computed((): number => {
+	return trendsPageInfo.value.list.length
+})
+
+const routeListLength = computed((): number => {
+	return routePageInfo.value.list.length
+})
+
+const infoDataLength = computed((): number => {
+	return infoData.value.length
+})
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 获取标签的唯一 key
+ */
+const getTagKey = (item: SpecialityItem, index: number): string => {
+	return (item.kid != '') ? item.kid : index.toString()
+}
+
+/**
+ * 获取定制路线的唯一 key
+ */
+const getRouteKey = (item: UTSJSONObject | null, index: number): string => {
+	return getItemKey(item as any, index)
+}
+
+/**
+ * 跳转到定制详情页
+ */
+const goToRouteDetail = (item: UTSJSONObject | null) => {
+	const kid = getStringProp(item as any, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?lineKid=' + kid })
+	}
+}
+
+/**
+ * 判断是否为自己的资料页
+ */
+const isSelfProfile = (profileUserId: string): boolean => {
+	const currentUserKid = getCurrentUserKid()
+	return currentUserKid != '' && currentUserKid == profileUserId
+}
+
+/**
+ * 安全获取 options 参数
+ */
+const getOptionsStringProp = (options: UTSJSONObject | null, key: string): string => {
+	return getStringProp(options as any, key)
+}
+
+// ==================== 用户信息加载 ====================
+
+/**
+ * 更新用户信息显示
+ */
+const updateUserInfoDisplay = (userInfo: UTSJSONObject | null) => {
+	const converted = toUTSJSON(userInfo)
+	if (converted == null) {
+		console.error('updateUserInfoDisplay: 转换用户信息失败')
+		return
+	}
+	info.value = converted
+	
+	// 更新统计信息
+	updateInfoDataFromUserInfo(infoData.value, info.value)
+	
+	// 同步关注状态到全局 store
+	const userInfoKid = getInfoStringProperty(info.value, 'kid')
+	const userInfoIsFocus = getInfoProperty(info.value, 'isFocus')
+	if (userInfoKid != '') {
+		const isFollowed = (userInfoIsFocus == true) || (userInfoIsFocus == 10)
+		setFollowStatusFn(userInfoKid, isFollowed)
+	}
+	
+	initFinish.value = true
+	
+	// 🔧 缓存当前用户的 shortKid（用于分享推广链接的 fallback）
+	const userInfoKidForCache = getInfoStringProperty(info.value, 'kid')
+	const shortKidForCache = getInfoStringProperty(info.value, 'shortKid')
+	console.log('[PersionInfo] shortKid缓存检查 - userInfoKid:', userInfoKidForCache, 'shortKid:', shortKidForCache)
+	if (userInfoKidForCache != '' && shortKidForCache != '') {
+		const currentUserKidForCache = getCurrentUserKid()
+		if (currentUserKidForCache == userInfoKidForCache) {
+			try {
+				uni.setStorageSync('user_shortKid_' + currentUserKidForCache, shortKidForCache)
+				// 同步 shortKid 到 userStore（修复登录时未返回 shortKid 的问题）
+				const existingShortKid = getUserShortKid()
+				if (existingShortKid == '') {
+					updateUserInfoAction({ shortKid: shortKidForCache } as UTSJSONObject)
+					console.log('[PersionInfo] 已同步 shortKid 到 userStore:', shortKidForCache)
+				}
+			} catch (e) {}
+		}
+	}
+	
+	// 设置H5分享（传递 info.value，确保分享数据正确获取）
+	setupH5ShareFn(info.value)
+	
+	// 初始化微信分享（H5 微信浏览器环境）
+	// #ifdef H5
+	// 传递 info.value 和 guiderKid.value，确保分享数据正确获取
+	initWechatShareFn(info.value, guiderKid.value)
+	// #endif
+	
+	// 加载擅长标签
+	const kidVal = getInfoStringProperty(info.value, 'kid')
+	const fallbackLanguages = getArrayProp(info.value, 'userLanguageOutVos') as UTSJSONObject[]
+	const fallbackLabels = getArrayProp(info.value, 'userLabelOutvos') as UTSJSONObject[]
+	loadProfileSpecialities(
+		(kidVal != '') ? kidVal : guiderKid.value,
+		fallbackLanguages,
+		fallbackLabels
+	)
+	
+	// 设置分享SEO优化的Meta标签（传递 info.value，确保分享数据正确获取）
+	setShareMetaTagsFn(info.value)
+}
+
+/**
+ * 设置默认用户信息
+ */
+const setDefaultUserInfo = (userId: string) => {
+	const infoVal = info.value
+	infoVal.set('kid', userId)
+	infoVal.set('nickname', (userId.length >= 6) ? '用户' + userId.slice(-6) : '用户' + userId)
+	infoVal.set('image', 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png')
+	infoVal.set('focusCount', 0)
+	infoVal.set('followerCount', 0)
+	infoVal.set('beLikedCount', 0)
+	infoVal.set('collectionCount', 0)
+	infoVal.set('signature', '这个人很懒,什么都没留下')
+	infoVal.set('birthPlace', '未知')
+	infoVal.set('accessiblePlace', '暂未设置')
+	infoVal.set('servicePrice', '0元')
+	infoVal.set('serviceFeature', '这个导游很懒,什么也没留下')
+	infoVal.set('starLevel', 0)
+	infoVal.set('beEvaluateCount', 0)
+	infoVal.set('onLineStatu', 10)
+	infoVal.set('age', 0)
+	infoVal.set('sex', '未知')
+	infoVal.set('userLabelOutvos', [] as UTSJSONObject[])
+	infoVal.set('userFortes', [] as UTSJSONObject[])
+
+	// 更新统计信息
+	for (let i = 0; i < infoData.value.length; i = i + 1) {
+		infoData.value[i].value = 0
+	}
+
+	initFinish.value = true
+}
+
+/**
+ * 同步数据到缓存
+ */
+const syncProfileCache = (payload: UTSJSONObject) => {
+	const infoKidStr = getInfoStringProperty(info.value, 'kid')
+	if (infoKidStr == '') return
+	
+	const focusKid = viewerKid.value
+	const payloadStr = JSON.stringify(payload)
+	const payloadObj = JSON.parse(payloadStr) as UTSJSONObject
+	updateUserProfile(infoKidStr, payloadObj as PartialUserHomePageInfo, focusKid, DEFAULT_TTL)
+}
+
+/**
+ * 使用缓存管理器获取用户主页信息
+ */
+const initDataWithCache = async (profileKid: string) => {
+	if (isLoadingUserInfo.value == true) {
+		return
+	}
+
+	if (profileKid == '') {
+		console.error('获取用户信息缺少kid参数')
+		return
+	}
+
+	isLoadingUserInfo.value = true
+	const focusKid = viewerKid.value
+	const selfProfile = isSelfProfile(profileKid)
+	
+	try {
+		// 非自己的主页，先尝试使用缓存
+		if (selfProfile == false) {
+			const cachedProfile = getCachedProfile(profileKid, focusKid)
+			if (cachedProfile != null) {
+				updateUserInfoDisplay(cachedProfile)
+			}
+		}
+		
+		// 请求最新数据
+		const profileParams = {
+			kid: profileKid,
+			focusUserkid: focusKid,
+			forceRefresh: selfProfile
+		} as UTSJSONObject
+		const latestProfile = await getUserProfile(profileParams)
+		
+		if (latestProfile != null) {
+			updateUserInfoDisplay(latestProfile)
+		} else if (initFinish.value == false) {
+			setDefaultUserInfo(profileKid)
+		}
+	} catch (error) {
+		handleSilentError(error, '获取用户信息')
+		const fallbackProfile = getCachedProfile(profileKid, focusKid)
+		if (fallbackProfile != null) {
+			updateUserInfoDisplay(fallbackProfile)
+			uni.showToast({ title: '网络波动，已展示缓存数据', icon: 'none' })
+		} else {
+			setDefaultUserInfo(profileKid)
+			uni.showToast({ title: '获取用户信息失败，请重试', icon: 'none' })
+		}
+	} finally {
+		isLoadingUserInfo.value = false
+	}
+}
+
+// ==================== 列表加载 ====================
+
+/**
+ * 初始化用户动态列表
+ */
+const initTrends = async () => {
+	await loadUserTrends(
+		trendsPageInfo.value,
+		latitude.value,
+		longitude.value,
+		hasLocation.value
+	)
+}
+
+/**
+ * 带定位的动态列表加载
+ */
+const initUserTrendsWithLocation = async () => {
+	try {
+		const location = await getLocationInfo()
+		latitude.value = location.latitude
+		longitude.value = location.longitude
+		hasLocation.value = true
+	} catch (error) {
+		handleSilentError(error, '获取定位信息')
+		hasLocation.value = false
+	}
+	await initTrends()
+}
+
+/**
+ * 初始化用户定制列表
+ */
+const initRoute = async () => {
+	const pageInfo = routePageInfo.value
+	pageInfo.status = 'loading'
+	
+	try {
+		const routeParams = new GetUserLinesParams()
+		routeParams.userKid = pageInfo.userKid
+		routeParams.pageNumber = pageInfo.pageNumber
+		routeParams.pageSize = pageInfo.pageSize
+		
+		const responseRaw = await getUserLines(routeParams)
+		const response = responseRaw as UTSJSONObject
+		
+		let entities: UTSJSONObject[] = []
+		let hasResponseData = false
+		
+		try {
+			const dataVal = response['data'] as UTSJSONObject | null
+			if (dataVal != null) {
+				hasResponseData = true
+				const dataObj = dataVal as UTSJSONObject
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as UTSJSONObject[]
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '解析定制列表响应数据')
+		}
+		
+		if (hasResponseData == true) {
+			if (pageInfo.pageNumber == 1) {
+				// 关键修复：通过整体替换 ref.value 触发响应式更新
+				const newPageInfo = new PageInfoData()
+				newPageInfo.userKid = pageInfo.userKid
+				newPageInfo.pageNumber = pageInfo.pageNumber
+				newPageInfo.pageSize = pageInfo.pageSize
+				newPageInfo.list = entities
+				newPageInfo.status = (entities.length == 0 || entities.length < pageInfo.pageSize) ? 'nomore' : 'loadmore'
+				routePageInfo.value = newPageInfo
+			} else {
+				// 追加模式：也通过替换 ref.value 确保响应式
+				const newPageInfo = new PageInfoData()
+				newPageInfo.userKid = pageInfo.userKid
+				newPageInfo.pageNumber = pageInfo.pageNumber
+				newPageInfo.pageSize = pageInfo.pageSize
+				const newList: UTSJSONObject[] = []
+				for (let i = 0; i < pageInfo.list.length; i = i + 1) {
+					newList.push(pageInfo.list[i])
+				}
+				for (let i = 0; i < entities.length; i = i + 1) {
+					newList.push(entities[i])
+				}
+				newPageInfo.list = newList
+				newPageInfo.status = (entities.length == 0 || entities.length < pageInfo.pageSize) ? 'nomore' : 'loadmore'
+				routePageInfo.value = newPageInfo
+			}
+		} else {
+			pageInfo.status = 'loadmore'
+		}
+	} catch (error) {
+		handlePageError(error, '获取定制列表', null)
+		pageInfo.status = 'loadmore'
+	}
+}
+
+// ==================== Tab 切换 ====================
+
+/**
+ * Tab栏切换
+ */
+const handleTab = (index: number) => {
+	tabIndex.value = index
+}
+
+/**
+ * 上拉加载
+ */
+const scrolltolower = () => {
+	if (trendsPageInfo.value.status == 'loadmore' && tabIndex.value == 0) {
+		trendsPageInfo.value.pageNumber = trendsPageInfo.value.pageNumber + 1
+		initTrends()
+	}
+	if (routePageInfo.value.status == 'loadmore' && tabIndex.value == 1) {
+		routePageInfo.value.pageNumber = routePageInfo.value.pageNumber + 1
+		initRoute()
+	}
+}
+
+// ==================== 监听 Tab 切换 ====================
+watch(tabIndex, (nV: number, oV: number) => {
+	if (routeListLength.value == 0 && routePageInfo.value.pageNumber == 1 && nV == 1) {
+		initRoute()
+	}
+})
+
+
+// ==================== 上传功能 ====================
+
+/**
+ * 上传背景图
+ */
+const uploadBackground = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+	uni.chooseImage({
+		count: 1,
+		sizeType: ['compressed'],
+		sourceType: ['album', 'camera'],
+		success: (res: any | null) => {
+			if (res == null) return
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const tempFilePathsVal = resObj.get('tempFilePaths')
+				if (tempFilePathsVal == null || Array.isArray(tempFilePathsVal) == false) return
+				const tempFilePaths = tempFilePathsVal as Array<string | null>
+				if (tempFilePaths.length == 0) return
+				
+				const filePath = tempFilePaths[0]
+				if (filePath == null || filePath == '') return
+				
+				backgroundLoading.value = true
+				
+				// 使用 cosUploader 上传（背景图使用 dynamic 类型）
+				cosUploader.uploadDynamic(filePath!, (progress: number) => {
+					console.log('背景图上传进度:', progress.toString() + '%')
+				}).then((result: UTSJSONObject) => {
+					backgroundLoading.value = false
+					
+					if (result != null) {
+						// 使用 JSON 序列化模式安全访问属性
+						const resultStr = JSON.stringify(result)
+						const resultObj = JSON.parse(resultStr) as UTSJSONObject
+						const successVal = resultObj.get('success')
+						const isSuccess = (successVal != null && successVal.toString() == 'true')
+						
+						if (isSuccess == true) {
+							const dataVal = resultObj.get('data')
+							if (dataVal != null) {
+								const dataStr = JSON.stringify(dataVal)
+								const dataObj = JSON.parse(dataStr) as UTSJSONObject
+								let bgUrl = ''
+								
+								const compressedUrlVal = dataObj.get('compressedUrl')
+								if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+									bgUrl = compressedUrlVal.toString()
+								} else {
+									const originalUrlVal = dataObj.get('originalUrl')
+									if (originalUrlVal != null && originalUrlVal.toString() != '') {
+										bgUrl = originalUrlVal.toString()
+									}
+								}
+								
+								if (bgUrl != '') {
+									setInfoProperty(info.value, 'background', bgUrl)
+									uni.showToast({ title: '上传成功', icon: 'success' })
+								} else {
+									uni.showToast({ title: '上传失败', icon: 'none' })
+								}
+							} else {
+								uni.showToast({ title: '上传失败', icon: 'none' })
+							}
+						} else {
+							uni.showToast({ title: '上传失败', icon: 'none' })
+						}
+					} else {
+						uni.showToast({ title: '上传失败', icon: 'none' })
+					}
+				}, (err: any) => {
+					backgroundLoading.value = false
+					handlePageError(err, '上传背景图', null)
+				})
+			} catch (e) {
+				handleSilentError(e, '选择图片(背景)')
+			}
+		}
+	})
+	}, (error: any | null) => {
+		handleSilentError(error as any, '请求相册权限(背景)')
+	}) // requestPermissionTip
+}
+
+/**
+ * 上传头像
+ */
+const uploadAvatar = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+	uni.chooseImage({
+		count: 1,
+		sizeType: ['compressed'],
+		sourceType: ['album', 'camera'],
+		success: (res: any | null) => {
+			if (res == null) return
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const tempFilePathsVal = resObj.get('tempFilePaths')
+				if (tempFilePathsVal == null || Array.isArray(tempFilePathsVal) == false) return
+				const tempFilePaths = tempFilePathsVal as Array<string | null>
+				if (tempFilePaths.length == 0) return
+				
+				const filePath = tempFilePaths[0]
+				if (filePath == null || filePath == '') return
+				
+				avatarLoading.value = true
+				
+				// 使用 cosUploader 上传头像
+				cosUploader.uploadAvatar(filePath!, (progress: number) => {
+					console.log('头像上传进度:', progress.toString() + '%')
+				}).then((result: UTSJSONObject) => {
+					avatarLoading.value = false
+					
+					if (result != null) {
+						// 使用 JSON 序列化模式安全访问属性
+						const resultStr = JSON.stringify(result)
+						const resultObj = JSON.parse(resultStr) as UTSJSONObject
+						const successVal = resultObj.get('success')
+						const isSuccess = (successVal != null && successVal.toString() == 'true')
+						
+						if (isSuccess == true) {
+							const dataVal = resultObj.get('data')
+							if (dataVal != null) {
+								const dataStr = JSON.stringify(dataVal)
+								const dataObj = JSON.parse(dataStr) as UTSJSONObject
+								let imgUrl = ''
+								
+								const compressedUrlVal = dataObj.get('compressedUrl')
+								if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+									imgUrl = compressedUrlVal.toString()
+								} else {
+									const originalUrlVal = dataObj.get('originalUrl')
+									if (originalUrlVal != null && originalUrlVal.toString() != '') {
+										imgUrl = originalUrlVal.toString()
+									}
+								}
+								
+								if (imgUrl != '') {
+									setInfoProperty(info.value, 'image', imgUrl)
+									uni.showToast({ title: '上传成功', icon: 'success' })
+								} else {
+									uni.showToast({ title: '上传失败', icon: 'none' })
+								}
+							}
+						} else {
+							uni.showToast({ title: '上传失败', icon: 'none' })
+						}
+					}
+				}, (err: any) => {
+					avatarLoading.value = false
+					handlePageError(err, '上传头像', null)
+				})
+			} catch (e) {
+				handleSilentError(e, '选择图片(头像)')
+			}
+		}
+	})
+	}, (error: any | null) => {
+		handleSilentError(error as any, '请求相册权限(头像)')
+	}) // requestPermissionTip
+}
+
+// ==================== 事件处理 ====================
+
+/**
+ * 处理背景图点击
+ */
+const handleBackgroundClick = () => {
+	if (showSelf.value == true) {
+		uploadBackground()
+	}
+}
+
+/**
+ * 处理头像点击
+ */
+const handleAvatarClick = () => {
+	if (showSelf.value == true) {
+		uploadAvatar()
+	}
+}
+
+/**
+ * 编辑个人资料
+ */
+const handleEditProfile = () => {
+	uni.navigateTo({ url: '/pagesUser/my/profile/index' })
+}
+
+/**
+ * 跳转到向导详情页面
+ */
+const goToGuideInfo = () => {
+	if (showSelf.value == false) return
+	const infoKidVal = getInfoStringProperty(info.value, 'kid')
+	const userKid = (infoKidVal != '') ? infoKidVal : guiderKid.value
+	if (userKid == '') {
+		uni.showToast({ title: '用户信息异常', icon: 'none' })
+		return
+	}
+	uni.navigateTo({ url: '/pagesBusiness/guideInfo/index?kid=' + userKid })
+}
+
+/**
+ * 发布按钮点击 - 根据Tab跳转到对应页面
+ */
+const handlePublishClick = () => {
+	try {
+		let url = ''
+		if (tabIndex.value == 0) {
+			// 动态Tab - 跳转到动态发布页面
+			url = '/pages/index/components/addTrends'
+		} else if (tabIndex.value == 1) {
+			// 定制Tab - 跳转到定制发布页面
+			url = '/pages/index/components/addRoute'
+		}
+		
+		if (url != '') {
+			uni.navigateTo({
+				url: url,
+				fail: (_err: any | null) => {
+					console.error('页面跳转失败:', _err)
+					uni.showToast({
+						title: '页面跳转失败',
+						icon: 'none'
+					})
+				}
+			})
+		}
+	} catch (e) {
+		handleSilentError(e, 'handlePublishClick')
+	}
+}
+
+/**
+ * 编辑标签
+ */
+const handleEditTags = () => {
+	if (showSelf.value == true) {
+		uni.navigateTo({ url: '/pagesUser/my/profile/tags' })
+	}
+}
+
+/**
+ * 更新统计数据
+ */
+const updateInfoData = () => {
+	updateInfoDataFromUserInfo(infoData.value, info.value)
+}
+
+/**
+ * 关注/取消关注
+ */
+const handleAction = async () => {
+	if (checkUserLogin() == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	const infoKidVal = getInfoStringProperty(info.value, 'kid')
+	if (infoKidVal == '') {
+		console.warn('用户ID为空，无法关注')
+		return
+	}
+	
+	if (isProcessingFn(infoKidVal) == true) {
+		return
+	}
+	
+	try {
+		const currentUserKidForFollow = getCurrentUserKid()
+		const newStatus = await toggleFollowFn(currentUserKidForFollow, infoKidVal)
+		
+		// 更新本地粉丝数
+		const followerCountVal = getInfoNumberProperty(info.value, 'followerCount')
+		if (newStatus == true) {
+			setInfoProperty(info.value, 'followerCount', followerCountVal + 1)
+		} else {
+			setInfoProperty(info.value, 'followerCount', Math.max(0, followerCountVal - 1))
+		}
+		
+		updateInfoData()
+		
+		// 同步到缓存
+		syncProfileCache({
+			followerCount: getInfoNumberProperty(info.value, 'followerCount'),
+			isFocus: newStatus
+		})
+		
+		uni.showToast({
+			title: newStatus == true ? '关注成功' : '已取消关注',
+			icon: 'success'
+		})
+	} catch (error) {
+		handlePageError(error, '关注操作', null)
+	}
+}
+
+/**
+ * FollowButton 组件的关注状态变化回调
+ */
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	// 更新本地粉丝数
+	const followerCountVal = getInfoNumberProperty(info.value, 'followerCount')
+	if (isFollow == true) {
+		setInfoProperty(info.value, 'followerCount', followerCountVal + 1)
+	} else {
+		setInfoProperty(info.value, 'followerCount', Math.max(0, followerCountVal - 1))
+	}
+	
+	updateInfoData()
+	
+	// 同步到缓存
+	syncProfileCache({
+		followerCount: getInfoNumberProperty(info.value, 'followerCount'),
+		isFocus: isFollow
+	})
+}
+
+// ==================== 动态列表事件 ====================
+
+/**
+ * 点击用户头像/昵称
+ */
+const onUserClick = (userKid: string) => {
+	if (userKid == '') return
+	uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + userKid })
+}
+
+/**
+ * 点击动态内容
+ */
+const onContentClick = (item: UTSJSONObject | null) => {
+	const itemKid = getStringProp(item as any, 'kid')
+	if (itemKid == '') return
+	uni.navigateTo({ url: '/pagesBusiness/commend/index?id=' + itemKid })
+}
+
+/**
+ * 播放视频
+ */
+const onVideoPlay = (item: UTSJSONObject | null) => {
+	// 视频播放逻辑由组件内部处理
+}
+
+/**
+ * 点赞/取消点赞
+ */
+const onLike = async (item: UTSJSONObject | null) => {
+	const itemKid = getStringProp(item as any, 'kid')
+	if (itemKid == '') return
+	
+	if (checkUserLogin() == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		safeSetTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1500)
+		return
+	}
+	
+	if (isLikeProcessing(itemKid) == true) {
+		return
+	}
+	
+	try {
+		const currentUserKidForLike = getCurrentUserKid()
+		if (currentUserKidForLike == '') return
+		
+		const newStatus = await toggleLikeFn(currentUserKidForLike, itemKid)
+		
+		// 从全局 store 同步最新点赞状态
+		const isLikedVal = getLikeStatus(itemKid)
+		const likeCountVal = getLikeCount(itemKid)
+		const newIsLike = (isLikedVal == true) ? 10 : 20
+		
+		// 更新列表项
+		for (let i = 0; i < trendsPageInfo.value.list.length; i = i + 1) {
+			const listItem = trendsPageInfo.value.list[i]
+			if (listItem != null) {
+				const listItemKid = getStringProp(listItem, 'kid')
+				if (listItemKid == itemKid) {
+					try {
+						const listItemStr = JSON.stringify(listItem)
+						const listItemObj = JSON.parse(listItemStr) as UTSJSONObject
+						listItemObj.set('isLike', newIsLike)
+						listItemObj.set('likeNum', likeCountVal)
+						const updatedStr = JSON.stringify(listItemObj)
+						trendsPageInfo.value.list[i] = JSON.parse(updatedStr) as UTSJSONObject
+					} catch (eUpdate) {
+						handleSilentError(eUpdate, '更新动态点赞状态')
+					}
+					break
+				}
+			}
+		}
+		
+		// 同步个人主页「获赞」统计
+		const infoValKid = getInfoStringProperty(info.value, 'kid')
+		if (infoValKid != '') {
+			const beLikedCountVal = getInfoNumberProperty(info.value, 'beLikedCount')
+			const delta = (newStatus == true) ? 1 : -1
+			setInfoProperty(info.value, 'beLikedCount', Math.max(0, beLikedCountVal + delta))
+			updateInfoData()
+			syncProfileCache({ beLikedCount: getInfoNumberProperty(info.value, 'beLikedCount') })
+		}
+	} catch (error) {
+		handlePageError(error, '点赞操作', null)
+	}
+}
+
+/**
+ * 评论
+ */
+const onComment = (item: UTSJSONObject | null) => {
+	const itemKid = getStringProp(item as any, 'kid')
+	if (itemKid == '') return
+	
+	if (checkUserLogin() == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		safeSetTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1500)
+		return
+	}
+	
+	uni.navigateTo({ url: '/pagesBusiness/commend/index?id=' + itemKid })
+}
+
+/**
+ * 视频点击 - 跳转到全屏视频播放页
+ */
+const onVideoClick = (item: UTSJSONObject | null) => {
+	// 筛选出视频类型的动态（insertType == 3）
+	const videoItems: Array<any> = []
+	let clickedIndex = 0
+	const list = trendsPageInfo.value.list
+	
+	for (let i = 0; i < list.length; i = i + 1) {
+		const listItem = list[i]
+		const insertType = getNumberProp(listItem as any, 'insertType')
+		if (insertType == 3) {
+			const mediaName = getStringProp(listItem as any, 'mediaName')
+			if (mediaName != '') {
+				// 检查是否是当前点击的视频
+				const itemKid = getStringProp(item as any, 'kid')
+				const listItemKid = getStringProp(listItem as any, 'kid')
+				if (itemKid == listItemKid) {
+					clickedIndex = videoItems.length
+				}
+				videoItems.push(listItem)
+			}
+		}
+	}
+	
+	if (videoItems.length > 0) {
+		// 设置视频数据到 Store
+		setVideoFeedData(videoItems, clickedIndex)
+		
+		// 跳转到视频播放页
+		uni.navigateTo({
+			url: '/pagesBusiness/videoFeed/index'
+		})
+	} else {
+		uni.showToast({
+			title: '视频不可用',
+			icon: 'none'
+		})
+	}
+}
+
+// ==================== 动态操作菜单（仅自己主页） ====================
+
+/**
+ * 更多操作点击
+ */
+const onMoreClick = (item: UTSJSONObject | null) => {
+	// 仅自己主页才弹出操作菜单
+	if (showSelf.value == false) return
+	selectedTrendsItem.value = item
+	showTrendsActionSheet.value = true
+}
+
+/**
+ * 检查 VIP 状态
+ */
+const checkVipStatusForTrends = (): boolean => {
+	const vipStatus = getUserVipStatus()
+	const vipExpireTime = getUserVipExpireTime()
+	if (vipStatus != VIP_ACTIVATED) return false
+	if (vipExpireTime != null && vipExpireTime != '') {
+		const expireDate = new Date(vipExpireTime)
+		const now = new Date()
+		return expireDate > now
+	}
+	return true
+}
+
+/**
+ * 更新动态列表项状态
+ */
+const updateTrendsItemStatus = (kid: string, key: string, value: number) => {
+	const list = trendsPageInfo.value.list
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		const itemKid = getStringProp(item, 'kid')
+		if (itemKid == kid) {
+			try {
+				const itemStr = JSON.stringify(item)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set(key, value)
+				list[i] = itemObj
+			} catch (e) {
+				handleSilentError(e, '更新动态列表项状态')
+			}
+			break
+		}
+	}
+}
+
+/**
+ * 从动态列表中移除项
+ */
+const removeTrendsItem = (kid: string) => {
+	const list = trendsPageInfo.value.list
+	const newList: Array<UTSJSONObject> = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		const itemKid = getStringProp(item, 'kid')
+		if (itemKid != kid) {
+			newList.push(item)
+		}
+	}
+	trendsPageInfo.value.list = newList
+}
+
+/**
+ * 分享动态操作
+ */
+const handleTrendsShare = async () => {
+	if (selectedTrendsItem.value == null) return
+	
+	const item = selectedTrendsItem.value
+	const kid = getStringProp(item, 'kid')
+	const content = getStringProp(item, 'discoverContent')
+	const itemUserKid = getStringProp(item, 'userKid')
+	
+	let title = content
+	if (content.length > TEXT_PREVIEW_LENGTH) {
+		title = content.substring(0, TEXT_PREVIEW_LENGTH) + '...'
+	}
+	
+	// 图片：取 picList 第一张，无则用默认图
+	let imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	const picList = getArrayProp(item, 'picList')
+	if (picList.length > 0) {
+		const firstPic = picList[0]
+		const picStr = firstPic.toString()
+		if (picStr != '' && picStr != '[object Object]') {
+			imageUrl = picStr
+		} else {
+			const picUrl = getStringProp(firstPic, 'picUrl')
+			if (picUrl != '') {
+				imageUrl = picUrl
+			}
+		}
+	}
+	
+	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/commend/index?kid=' + kid
+	
+	sharePayload.value = {
+		title: title,
+		desc: content,
+		summary: content,
+		imageUrl: imageUrl,
+		url: shareUrl,
+		link: shareUrl,
+		discoverKid: kid,
+		userId: itemUserKid
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+			} else {
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {
+						handleSilentError(e, '[PersionInfo] 解析chatList原始数据')
+					}
+					if (fallbackArr.length == 0) {
+						try {
+							const chatListObj = toJsonObj(chatList)
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										const parsedV = JSON.parse(JSON.stringify(v))
+										if (Array.isArray(parsedV) == true) {
+											fallbackArr = parsedV as Array<UTSJSONObject>
+										}
+									}
+								} catch (e) {
+									handleSilentError(e, '[PersionInfo] 解析chatList.value')
+								}
+								try {
+									const l = chatListObj.get('list')
+									if (l != null) {
+										const parsedL = JSON.parse(JSON.stringify(l))
+										if (Array.isArray(parsedL) == true) {
+											fallbackArr = parsedL as Array<UTSJSONObject>
+										}
+									}
+								} catch (e) {
+									handleSilentError(e, '[PersionInfo] 解析chatList.list')
+								}
+							}
+						} catch (e) {
+							handleSilentError(e, '[PersionInfo] 转换chatList为JSON对象')
+						}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '[PersionInfo] 动态分享会话列表赋值')
+		}
+	} catch (e) {
+		handleSilentError(e, '[PersionInfo] 获取会话列表(动态分享)')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+/**
+ * 顶置操作
+ */
+const handleTrendsTop = () => {
+	if (selectedTrendsItem.value == null) return
+	const selectedItem = selectedTrendsItem.value as any
+	if (checkVipStatusForTrends() == false) {
+		if (isMemberFeatureEnabled() == false) {
+			uni.showToast({ title: '会员功能暂未开放', icon: 'none' })
+			return
+		}
+		uni.showModal({
+			title: '提示',
+			content: '顶置功能需要开通会员',
+			confirmText: '去开通',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+				}
+			}
+		})
+		return
+	}
+	const kid = getStringProp(selectedItem, 'kid')
+	const onTop = getNumberProp(selectedItem, 'onTop')
+	const isCurrentlyTop = onTop == 10
+	const params = { kid: kid, isTop: isCurrentlyTop == false } as UTSJSONObject
+	setTrendsTop(params).then((res: UTSJSONObject) => {
+		const newOnTop = isCurrentlyTop == true ? 20 : 10
+		updateTrendsItemStatus(kid, 'onTop', newOnTop)
+		uni.showToast({ title: isCurrentlyTop == true ? '已取消顶置' : '已顶置', icon: 'success' })
+	}, (error: Error | null) => {
+		uni.showToast({ title: '操作失败', icon: 'none' })
+	})
+}
+
+/**
+ * 私密操作
+ */
+const handleTrendsPrivate = () => {
+	if (selectedTrendsItem.value == null) return
+	const selectedItem = selectedTrendsItem.value as any
+	const kid = getStringProp(selectedItem, 'kid')
+	const privatel = getNumberProp(selectedItem, 'privatel')
+	const isCurrentlyPrivate = privatel == 20
+	const params = { kid: kid, isPrivate: isCurrentlyPrivate == false } as UTSJSONObject
+	setTrendsPrivate(params).then((res: UTSJSONObject) => {
+		const newPrivatel = isCurrentlyPrivate == true ? 10 : 20
+		updateTrendsItemStatus(kid, 'privatel', newPrivatel)
+		uni.showToast({ title: isCurrentlyPrivate == true ? '已取消私密' : '已设为私密', icon: 'success' })
+	}, (error: Error | null) => {
+		uni.showToast({ title: '操作失败', icon: 'none' })
+	})
+}
+
+/**
+ * 删除操作
+ */
+const handleTrendsDelete = () => {
+	if (selectedTrendsItem.value == null) return
+	const selectedItem = selectedTrendsItem.value as any
+	uni.showModal({
+		title: '提示',
+		content: '确定删除这条动态吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				const kid = getStringProp(selectedItem, 'kid')
+				const params = { kid: kid } as UTSJSONObject
+				deleteTrends(params).then((res: UTSJSONObject) => {
+					removeTrendsItem(kid)
+					uni.showToast({ title: '已删除', icon: 'success' })
+				}, (error: Error | null) => {
+					uni.showToast({ title: '删除失败', icon: 'none' })
+				})
+			}
+		}
+	})
+}
+
+/**
+ * 操作菜单选择
+ */
+const handleTrendsActionSelect = (index: number) => {
+	showTrendsActionSheet.value = false
+	
+	// 检查审核状态：待审核(10)或审核中(20)的动态只允许删除
+	const auditStatus = getNumberProp(selectedTrendsItem.value as any, 'auditStatus')
+	if (auditStatus == 10 || auditStatus == 20) {
+		if (index == 3) {
+			handleTrendsDelete()
+		} else {
+			uni.showToast({ title: '动态审核中，暂不支持此操作', icon: 'none' })
+		}
+		return
+	}
+	
+	if (index == 0) {
+		handleTrendsTop()
+	} else if (index == 1) {
+		handleTrendsShare()
+	} else if (index == 2) {
+		handleTrendsPrivate()
+	} else if (index == 3) {
+		handleTrendsDelete()
+	}
+}
+
+const handleTrendsActionCancel = () => {
+	showTrendsActionSheet.value = false
+	selectedTrendsItem.value = null
+}
+
+/**
+ * 跳转到评论页面
+ */
+const goGuideComments = () => {
+	const infoKidVal = getInfoStringProperty(info.value, 'kid')
+	const userKid = (infoKidVal != '') ? infoKidVal : guiderKid.value
+	if (userKid == '') {
+		uni.showToast({ title: '用户信息异常', icon: 'none' })
+		return
+	}
+	uni.navigateTo({ url: '/pagesUser/guideComments/index?id=' + userKid })
+}
+
+
+// ==================== 导航与分享 ====================
+
+/**
+ * 处理返回
+ * 如果上一页仍然是个人主页（persionInfo），则直接返回首页，避免用户在多个主页间循环返回
+ */
+const handlePageBack = () => {
+	const pages = getCurrentPages()
+	if (pages.length >= 2) {
+		const prevPage = pages[pages.length - 2]
+		const prevRoute = prevPage.route ?? ''
+		if (prevRoute.indexOf('persionInfo') != -1) {
+			goToHome()
+			return
+		}
+	}
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			goToHome()
+		}
+	})
+}
+
+/**
+ * 处理分享
+ */
+const handleShare = async () => {
+	if (checkUserLogin() == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+
+	// 🔧 修复：直接从 info.value 构建分享数据，避免 prepareShareDataFn 中 ref 访问问题
+	try {
+		// 获取用户信息
+		const infoVal = info.value
+		const userKid = guiderKid.value
+		
+		// 安全获取用户信息字段
+		const nicknameVal = infoVal.get('nickname')
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : '用户'
+		
+		const signatureVal = infoVal.get('signature')
+		const signatureStr = (signatureVal != null && signatureVal.toString() != '') ? signatureVal.toString() : ''
+		
+		const liveCityVal = infoVal.get('liveCity')
+		const liveCityStr = (liveCityVal != null && liveCityVal.toString() != '') ? liveCityVal.toString() : ''
+		
+		const birthPlaceVal = infoVal.get('birthPlace')
+		const birthPlaceStr = (birthPlaceVal != null && birthPlaceVal.toString() != '') ? birthPlaceVal.toString() : ''
+		
+		const sexVal = infoVal.get('sex')
+		const sexStr = (sexVal != null) ? sexVal.toString() : ''
+		
+		const imageVal = infoVal.get('image')
+		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		
+		// 构建分享标题：昵称的个人主页
+		const shareTitle = nicknameStr + '的个人主页'
+		
+		// 构建分享描述：优先使用个性签名，否则使用默认描述
+		let shareDesc = ''
+		if (signatureStr != '') {
+			shareDesc = signatureStr
+		} else {
+			const cityPart = (liveCityStr != '') ? liveCityStr : ((birthPlaceStr != '') ? birthPlaceStr : '远方')
+			const genderPart = (sexStr == '女') ? '女生' : ((sexStr == '男') ? '男生' : 'TA')
+			shareDesc = '来自' + cityPart + '的' + genderPart + '，欢迎关注！'
+		}
+		
+		// 构建分享链接
+		let shareLink = 'https://m.wyxdapp.com/#/pagesUser/persionInfo/index'
+		if (userKid != '') {
+			shareLink = shareLink + '?id=' + userKid
+		}
+		
+		// 获取推广短号
+		let referrerShortKid = ''
+		try {
+			referrerShortKid = getUserShortKid()
+			console.log('[handleShare] getUserShortKid() 返回:', referrerShortKid)
+			// 🔧 fallback：如果 userStore 中没有 shortKid，尝试从当前用户主页信息获取
+			if (referrerShortKid == '') {
+				const currentUserKidVal = getCurrentUserKid()
+				console.log('[handleShare] currentUserKidVal:', currentUserKidVal, 'userKid(guiderKid):', userKid)
+				// 🔧 修复：分享时 referrerShortKid 应该是当前登录用户的短号，不是被查看用户的
+				// 所以从 info.value 获取时，需要确认 info.value 是当前登录用户的数据
+				if (currentUserKidVal != '' && currentUserKidVal == userKid) {
+					const infoShortKid = getInfoStringProperty(infoVal, 'shortKid')
+					console.log('[handleShare] info.value shortKid:', infoShortKid)
+					if (infoShortKid != '') {
+						referrerShortKid = infoShortKid
+						console.log('[handleShare] 从主页信息获取推广短号:', referrerShortKid)
+					}
+				}
+				// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+				if (referrerShortKid == '' && currentUserKidVal != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidVal, currentUserKidVal)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								// 同步到 userStore 和 localStorage，后续分享不再需要此 fallback
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+								try {
+									uni.setStorageSync('user_shortKid_' + currentUserKidVal, referrerShortKid)
+								} catch (e3) {}
+							}
+						}
+					} catch (e2) {}
+				}
+				// 如果还是空，尝试从 localStorage 缓存获取
+				if (referrerShortKid == '' && currentUserKidVal != '') {
+					try {
+						const storedInfo = uni.getStorageSync('user_shortKid_' + currentUserKidVal) as string
+						console.log('[handleShare] localStorage user_shortKid_' + currentUserKidVal + ':', storedInfo)
+						if (storedInfo != null && storedInfo != '') {
+							referrerShortKid = storedInfo
+							console.log('[handleShare] 从缓存获取推广短号:', referrerShortKid)
+						}
+					} catch (e2) {}
+				}
+			}
+			console.log('[handleShare] 推广短号:', referrerShortKid)
+			if (referrerShortKid != '') {
+				// 添加推广参数到链接
+				if (shareLink.indexOf('?') >= 0) {
+					shareLink = shareLink + '&ref=' + referrerShortKid
+				} else {
+					shareLink = shareLink + '?ref=' + referrerShortKid
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '[handleShare] 获取推广短号')
+		}
+		
+		// 构建分享数据
+		const newPayload: UTSJSONObject = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: imageStr,
+			userId: userKid,
+			referrerShortKid: referrerShortKid
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleShare] 分享数据构建完成:')
+		console.log('[handleShare] - title:', shareTitle)
+		console.log('[handleShare] - desc:', shareDesc)
+		console.log('[handleShare] - imageUrl:', imageStr)
+		console.log('[handleShare] - link:', shareLink)
+		console.log('[handleShare] - userId:', userKid)
+	} catch (e) {
+		handleSilentError(e, '[handleShare] 构建分享数据')
+		// 使用默认值
+		sharePayload.value = {
+			title: '网约向导',
+			summary: '发现有趣的向导',
+			desc: '发现有趣的向导',
+			link: 'https://m.wyxdapp.com/',
+			url: 'https://m.wyxdapp.com/',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+
+	// 获取会话列表（异步请求） - 允许失败但仍显示弹窗
+	try {
+		const result = await getChatListFn(userStore)
+		// 使用 JSON.stringify 安全记录返回结果（避免直接访问 length 导致编译问题）
+		console.log('[PersionInfo] getChatListFn result:', JSON.stringify(result))
+		try {
+			// 如果返回的是数组，直接使用；否则尝试从模块级 chatList ref 中读取
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+				console.log('[PersionInfo] assigned result to shareChatList, new length:', shareChatList.value.length)
+			} else {
+				// fallback: 安全解析模块级 chatList（兼容 ref / 包装对象）
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						// 先尝试直接解析为数组
+						try {
+							const rawParsed = JSON.parse(JSON.stringify(chatList))
+							if (Array.isArray(rawParsed) == true) {
+								fallbackArr = rawParsed as Array<UTSJSONObject>
+							}
+						} catch (e) {
+							handleSilentError(e, '[PersionInfo] 解析chatList原始数据(分享)')
+						}
+
+						// 如果不是直接数组，尝试通过 toJsonObj 安全读取 value 或 list 字段
+						if (fallbackArr.length == 0) {
+							try {
+								const chatListObj = toJsonObj(chatList)
+								if (chatListObj != null) {
+									try {
+										const v = chatListObj.get('value')
+										if (v != null) {
+											try {
+												const parsedV = JSON.parse(JSON.stringify(v))
+												if (Array.isArray(parsedV) == true) {
+													fallbackArr = parsedV as Array<UTSJSONObject>
+												}
+											} catch (e) {
+												handleSilentError(e, '[PersionInfo] 解析chatList.value(分享)')
+											}
+										}
+									} catch (e) {
+										handleSilentError(e, '[PersionInfo] 获取chatList.value(分享)')
+									}
+									try {
+										const l = chatListObj.get('list')
+										if (l != null) {
+											try {
+												const parsedL = JSON.parse(JSON.stringify(l))
+												if (Array.isArray(parsedL) == true) {
+													fallbackArr = parsedL as Array<UTSJSONObject>
+												}
+											} catch (e) {
+												handleSilentError(e, '[PersionInfo] 解析chatList.list(分享)')
+											}
+										}
+									} catch (e) {
+										handleSilentError(e, '[PersionInfo] 获取chatList.list(分享)')
+									}
+								}
+							} catch (e) {
+								handleSilentError(e, '[PersionInfo] 转换chatList为JSON对象(分享)')
+							}
+						}
+					} catch (e) {
+						handleSilentError(e, '[PersionInfo] 解析chatList降级处理(分享)')
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+					console.log('[PersionInfo] used fallback chatList, length:', shareChatList.value.length)
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+			console.log('[PersionInfo] after getChatListFn, shareChatList length:', shareChatList.value.length)
+			console.log('[PersionInfo] after getChatListFn, shareChatList first item:', shareChatList.value.length > 0 ? JSON.stringify(shareChatList.value[0]) : 'empty')
+		} catch (e) {
+			handleSilentError(e, '[PersionInfo] 会话列表赋值')
+		}
+	} catch (e) {
+		handleSilentError(e, '获取会话列表')
+		shareChatList.value = []
+	}
+
+	showSharePopup.value = true
+}
+
+/**
+ * 分享到聊天
+ */
+const handleShareToChat = (data: UTSJSONObject | null) => {
+	handleShareToChatFn(data as any, info.value as any)
+}
+
+/**
+ * 分享到微信
+ */
+const handleShareWechat = () => {
+	handleShareWechatFn(getShareDataValue())
+}
+
+/**
+ * 分享到朋友圈
+ */
+const handleShareMoments = () => {
+	handleShareMomentsFn(getShareDataValue())
+}
+
+/**
+ * 复制链接
+ */
+const handleCopyLink = () => {
+	handleCopyLinkFn(getShareDataValue())
+}
+
+/**
+ * 显示二维码
+ */
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(getShareDataValue())
+}
+
+/**
+ * H5 打开 App
+ * 注意：微信环境检测已在 H5TopBar 组件中处理，此函数仅在非微信环境下被调用
+ */
+const handleOpenApp = () => {
+	try {
+		// handleAppFn 第四个参数为微信检测回调，由于 H5TopBar 已处理微信环境，这里传 null
+		handleAppFn(info, guiderKid, userStore, null)
+	} catch (e) {
+		handleSilentError(e, 'handleOpenApp')
+	}
+}
+
+/**
+ * 处理聊天
+ */
+const handleChat = () => {
+	if (checkUserLogin() == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+	
+	const infoValueKidForChat = getInfoStringProperty(info.value, 'kid')
+	const targetUserId = (infoValueKidForChat != '') ? infoValueKidForChat : guiderKid.value
+	if (targetUserId == '') {
+		uni.showToast({ title: '用户信息异常，无法开始聊天', icon: 'none' })
+		return
+	}
+	
+	uni.navigateTo({ url: '/pagesTrade/news/detail?targetUserId=' + targetUserId })
+}
+
+/**
+ * 跳转到预约页面
+ */
+const handleGoToSubmitOrder = () => {
+	if (checkUserLogin() == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		safeSetTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1500)
+		return
+	}
+	
+	const infoKidForOrder = getInfoStringProperty(info.value, 'kid')
+	if (infoKidForOrder == '') {
+		uni.showToast({ title: '向导信息不存在', icon: 'none' })
+		return
+	}
+	
+	// 构建URL参数
+	const queryParts: string[] = []
+	queryParts.push('guiderKid=' + encodeURIComponent(infoKidForOrder))
+	
+	const servicePriceVal = getInfoStringProperty(info.value, 'servicePrice')
+	if (servicePriceVal != '') {
+		// 提取纯数字部分，避免中文字符在微信小程序URL参数中编解码异常
+		// 使用逐字符过滤确保编译后代码正确（replace正则在某些编译目标下可能被优化掉）
+		let priceNumStr = ''
+		let i = 0
+		while (i < servicePriceVal.length) {
+			const ch = servicePriceVal.charAt(i)
+			if ((ch >= '0' && ch <= '9') || ch == '.') {
+				priceNumStr = priceNumStr + ch
+			}
+			i = i + 1
+		}
+		if (priceNumStr != '') {
+			queryParts.push('price=' + encodeURIComponent(priceNumStr))
+		}
+	}
+	
+	const liveCityVal = getInfoStringProperty(info.value, 'liveCity')
+	if (liveCityVal != '') {
+		queryParts.push('city=' + encodeURIComponent(liveCityVal))
+	}
+	
+	uni.navigateTo({ url: '/pagesUser/persionInfo/submitOrder?' + queryParts.join('&') })
+}
+
+// ==================== VIP 和礼物图标点击事件 ====================
+
+/**
+ * VIP图标点击 - 跳转VIP页面
+ */
+const handleVipClick = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+/**
+ * 礼物图标点击 - 打开礼物选择面板
+ */
+const handleGiftIconClick = (targetUserKid: string) => {
+	if (requireLoginReliable(true, '/pagesUser/persionInfo/index') == false) return
+	selectedUserKid.value = targetUserKid
+	showGiftSelector.value = true
+}
+
+/**
+ * 处理选择礼物
+ */
+const handleSelectGift = (gift: UTSJSONObject | null) => {
+	showGiftSelector.value = false
+	if (gift != null) {
+		const giftObj = toJsonObj(gift)
+		if (giftObj != null) {
+			const giftIdVal = giftObj.get('id')
+			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
+			if (giftId != '' && selectedUserKid.value != '') {
+				const userId = currentUserId.value
+				const sendParams = {
+					userKid: userId,
+					receiveUserKid: selectedUserKid.value,
+					lotteryRecordKid: giftId
+				} as UTSJSONObject
+				sendGiftFromBag(sendParams).then(() => {
+					uni.showToast({
+						title: '礼物发送成功',
+						icon: 'success'
+					})
+				}, (error: Error | null) => {
+					uni.showToast({
+						title: '发送失败',
+						icon: 'none'
+					})
+				})
+			}
+		}
+	}
+}
+
+// ==================== 生命周期 ====================
+
+// ==================== 微信小程序分享钩子 ====================
+// #ifdef MP-WEIXIN
+onShareAppMessage((): UTSJSONObject => {
+	const data = buildMpShareData()
+	const title = data.get('title')
+	const path = data.get('path')
+	const imageUrl = data.get('imageUrl')
+	console.log('[MP-SHARE] onShareAppMessage:', title, path)
+	return {
+		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
+		path: (path != null) ? path.toString() : '/pagesUser/persionInfo/index',
+		imageUrl: (imageUrl != null) ? imageUrl.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	}
+})
+
+onShareTimeline((): UTSJSONObject => {
+	const data = buildMpShareData()
+	const title = data.get('title')
+	const imageUrl = data.get('imageUrl')
+	const path = data.get('path')
+	// 从 path 中提取 query 参数（去掉路径前缀和 ?）
+	const pathStr = (path != null) ? path.toString() : ''
+	const queryIndex = pathStr.indexOf('?')
+	const queryStr = (queryIndex >= 0) ? pathStr.substring(queryIndex + 1) : ''
+	console.log('[MP-SHARE] onShareTimeline:', title, queryStr)
+	return {
+		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
+		query: queryStr,
+		imageUrl: (imageUrl != null) ? imageUrl.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	}
+})
+// #endif
+
+onLoad((options: OnLoadOptions) => {
+	console.log('个人主页加载，参数:', options)
+
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化（解决 APP 端聊天列表不显示问题）
+	initUserInfoAction()
+
+	// 初始化页面布局
+	initPageLayout()
+	
+	// 使用 pageWindowHeight 计算 scroll-view 高度
+	if (pageWindowHeight.value > 0) {
+		// #ifdef H5
+		// H5端需要减去顶部导航栏高度（90rpx = 45px）
+		scrollViewHeight.value = pageWindowHeight.value - 45
+		// #endif
+		// #ifndef H5
+		scrollViewHeight.value = pageWindowHeight.value
+		// #endif
+	} else {
+		// 默认高度
+		scrollViewHeight.value = 800
+	}
+	
+	// 获取用户ID参数（统一使用 id 参数，其他参数名作为兼容）
+	let incomingId = ''
+	const idVal = getOptionsStringProp(options, 'id')
+	
+	if (idVal != '') {
+		incomingId = idVal
+	} else {
+		// 兼容旧参数名
+		const kidVal = getOptionsStringProp(options, 'kid')
+		const userIdVal = getOptionsStringProp(options, 'userId')
+		const userKidVal = getOptionsStringProp(options, 'userKid')
+		if (kidVal != '') {
+			incomingId = kidVal
+		} else if (userIdVal != '') {
+			incomingId = userIdVal
+		} else if (userKidVal != '') {
+			incomingId = userKidVal
+		}
+	}
+	
+	// H5 场景兜底（统一使用 id 参数）
+	// #ifdef H5
+	if (incomingId == '') {
+		const safeUrlParams = getUrlParams()
+		const idVal2 = safeUrlParams.get('id')
+		if (idVal2 != null && idVal2 != '') {
+			incomingId = idVal2
+		} else {
+			// 兼容旧参数名
+			const kidVal2 = safeUrlParams.get('kid')
+			const userIdVal2 = safeUrlParams.get('userId')
+			const userKidVal2 = safeUrlParams.get('userKid')
+			if (kidVal2 != null && kidVal2 != '') {
+				incomingId = kidVal2
+			} else if (userIdVal2 != null && userIdVal2 != '') {
+				incomingId = userIdVal2
+			} else if (userKidVal2 != null && userKidVal2 != '') {
+				incomingId = userKidVal2
+			}
+		}
+	}
+	// #endif
+	
+	if (incomingId == '') {
+		console.error('个人主页缺少必要参数')
+		uni.showToast({ title: '用户id参数缺失', icon: 'none' })
+		safeSetTimeout(() => { uni.navigateBack() }, 1500)
+		return
+	}
+	
+	guiderKid.value = incomingId
+	trendsPageInfo.value.userKid = incomingId
+	routePageInfo.value.userKid = incomingId
+	
+	// 处理推广链接（解析 ref 参数并绑定推荐人）
+	handlePromotionLink(options, incomingId)
+	
+	// 加载用户信息
+	initDataWithCache(incomingId)
+	
+	// 加载用户动态
+	initUserTrendsWithLocation()
+	
+	// 处理自动跳转APP逻辑
+	handleAutoJumpToAppFn(options, guiderKid, userStore)
+})
+
+onShow(() => {
+	if (guiderKid.value == '') {
+		return
+	}
+
+	// 记录访客（无论是否登录都记录）
+	recordVisitor(viewerKid, guiderKid)
+
+	// 刷新用户信息
+	initDataWithCache(guiderKid.value)
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+@import url("@/common/styles/persionInfo.css");
+
+/* 关注/编辑按钮样式 */
+.follow-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-radius: 28rpx;
+}
+
+/* 未关注状态 - 蓝色背景 */
+.follow-btn--unfollow {
+	background-color: #37B1F2;
+}
+
+/* 已关注状态 - 白色背景 + 灰色边框 */
+.follow-btn--followed {
+	background-color: #ffffff;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #cccccc;
+}
+
+/* 点击效果 */
+.follow-btn--active {
+	opacity: 0.8;
+}
+
+/* 文字基础样式 */
+.follow-btn__text {
+	font-size: 24rpx;
+}
+
+/* 未关注文字 - 白色 */
+.follow-btn__text--unfollow {
+	color: #ffffff;
+}
+
+/* 已关注文字 - 灰色 */
+.follow-btn__text--followed {
+	color: #999999;
+}
+
+/* 动态操作菜单 */
+.action-sheet-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.action-sheet-popup {
+	width: 750rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+}
+
+.action-list {
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.action-item {
+	height: 100rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.action-item-content {
+	flex-direction: row;
+	align-items: center;
+}
+
+.action-item-danger {
+	border-bottom-width: 0;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.action-text-danger {
+	font-size: 28rpx;
+	color: #FF4D4F;
+}
+
+.vip-badge {
+	margin-left: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	background-color: #FFE4B5;
+	border-radius: 8rpx;
+}
+
+.vip-text {
+	font-size: 20rpx;
+	color: #FF8C00;
+}
+
+.cancel-section {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	flex-direction: column;
+}
+
+.cancel-btn {
+	height: 100rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+	margin-right: 16rpx;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #666666;
+	font-weight: bold;
+}
+</style>

@@ -1,0 +1,68 @@
+/**
+ * 微信登录服务统一入口
+ * 
+ * 根据运行时平台自动选择对应的实现：
+ * - APP 端：使用 uni.login API（provider: weixin），需要自定义基座
+ * - H5 端：使用 wechatLoginH5.uts（微信网页授权）
+ * - 小程序端：使用 uni.login（默认 provider）
+ * 
+ * 重要：由于 UTS 条件编译不可靠，此文件使用运行时平台检测
+ */
+
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 获取当前平台
+ */
+export function getCurrentPlatform(): string {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const infoStr = JSON.stringify(systemInfo)
+		const infoObj = JSON.parse(infoStr) as UTSJSONObject
+		const platformVal = infoObj.get('uniPlatform')
+		if (platformVal != null) {
+			return platformVal.toString()
+		}
+	} catch (e) {
+		handleSilentError(e, '获取平台信息')
+	}
+	return ''
+}
+
+/**
+ * 检查是否为 APP 端
+ */
+export function isAppPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios'
+}
+
+/**
+ * 检查是否为 H5 端
+ */
+export function isH5Platform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'web' || platform == 'h5'
+}
+
+/**
+ * 检查是否为微信小程序端
+ */
+export function isMpWeixinPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'mp-weixin'
+}
+
+/**
+ * 获取平台类型字符串
+ */
+export function getPlatformType(): string {
+	if (isAppPlatform()) {
+		return 'app'
+	} else if (isMpWeixinPlatform()) {
+		return 'mp-weixin'
+	} else if (isH5Platform()) {
+		return 'h5'
+	}
+	return 'unknown'
+}

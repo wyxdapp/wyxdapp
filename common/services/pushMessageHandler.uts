@@ -1,0 +1,355 @@
+/**
+ * 推送消息处理器
+ * 注册 onPushMessage 监听器，处理推送消息
+ * 
+ * Requirements: 2.1, 2.2, 2.5
+ */
+
+import { ref } from 'vue'
+import { parsePayload, routeToPage } from '@/common/services/notificationRouter.uts'
+import { goToHome } from '@/common/utils/utsSafe.uts'
+import { createLogger } from '@/common/utils/logger.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 创建日志记录器
+const logger = createLogger('PushMessageHandler')
+
+// ==================== 状态定义 ====================
+
+// 是否已注册监听器
+const isListenerRegisteredRef = ref<boolean>(false)
+
+// 待处理的点击消息（APP 冷启动时可能先收到点击事件）
+let pendingClickPayload: string = ''
+
+// ==================== 消息类型定义 ====================
+
+/**
+ * 推送消息结构
+ */
+export class PushMessage {
+	title: string = ''           // 通知标题
+	content: string = ''         // 通知内容
+	payload: string = ''         // 附加数据 JSON 字符串
+	type: number = 0             // 消息类型: 1-聊天, 2-订单, 3-系统
+}
+
+/**
+ * 推送消息事件类型
+ */
+export const PushEventType = {
+	RECEIVE: 'receive',     // 收到消息
+	CLICK: 'click'          // 点击消息
+} as const
+
+// ==================== 消息验证 ====================
+
+/**
+ * 验证推送消息是否有效
+ * @param message 推送消息对象
+ * @returns 是否有效
+ */
+export const isValidPushMessage = (message: any): boolean => {
+	if (message == null) {
+		return false
+	}
+	
+	try {
+		const msgStr = JSON.stringify(message)
+		if (msgStr == '' || msgStr == '{}' || msgStr == 'null') {
+			return false
+		}
+		
+		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+		
+		// 检查是否有 payload 或 data
+		const payloadVal = msgObj.get('payload')
+		const dataVal = msgObj.get('data')
+		
+		const hasPayload = (payloadVal != null && payloadVal.toString() != '')
+		const hasData = (dataVal != null && dataVal.toString() != '' && dataVal.toString() != '{}')
+		
+		// 至少需要有 payload 或 data
+		if (hasPayload == false && hasData == false) {
+			// 检查是否有 title 或 content
+			const titleVal = msgObj.get('title')
+			const contentVal = msgObj.get('content')
+			const hasTitle = (titleVal != null && titleVal.toString() != '')
+			const hasContent = (contentVal != null && contentVal.toString() != '')
+			
+			if (hasTitle == false && hasContent == false) {
+				return false
+			}
+		}
+		
+		return true
+	} catch (e) {
+		handleSilentError(e, '验证推送消息')
+		return false
+	}
+}
+
+/**
+ * 解析推送消息
+ * @param message 原始消息对象
+ * @returns PushMessage 对象
+ */
+export const parsePushMessage = (message: any): PushMessage => {
+	const pushMsg = new PushMessage()
+	
+	if (message == null) {
+		return pushMsg
+	}
+	
+	try {
+		const msgStr = JSON.stringify(message)
+		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+		
+		// 解析 title
+		const titleVal = msgObj.get('title')
+		if (titleVal != null && titleVal.toString() != '') {
+			pushMsg.title = titleVal.toString()
+		}
+		
+		// 解析 content
+		const contentVal = msgObj.get('content')
+		if (contentVal != null && contentVal.toString() != '') {
+			pushMsg.content = contentVal.toString()
+		}
+		
+		// 解析 payload（可能是字符串或对象）
+		const payloadVal = msgObj.get('payload')
+		if (payloadVal != null) {
+			if (typeof payloadVal === 'string') {
+				pushMsg.payload = payloadVal as string
+			} else {
+				pushMsg.payload = JSON.stringify(payloadVal)
+			}
+		}
+		
+		// 如果没有 payload，尝试从 data 获取
+		if (pushMsg.payload == '') {
+			const dataVal = msgObj.get('data')
+			if (dataVal != null) {
+				if (typeof dataVal === 'string') {
+					pushMsg.payload = dataVal as string
+				} else {
+					pushMsg.payload = JSON.stringify(dataVal)
+				}
+			}
+		}
+		
+		// 解析 type
+		const typeVal = msgObj.get('type')
+		if (typeVal != null) {
+			const typeNum = parseInt(typeVal.toString())
+			if (isNaN(typeNum) == false) {
+				pushMsg.type = typeNum
+			}
+		}
+		
+	} catch (e) {
+		handleSilentError(e, '解析推送消息')
+	}
+	
+	return pushMsg
+}
+
+// ==================== 消息处理 ====================
+
+/**
+ * 处理收到的推送消息（前台）
+ * @param message 推送消息
+ */
+const handleReceiveMessage = (message: PushMessage) => {
+	console.log('📬 [PushMessageHandler] 收到前台推送消息:', message.title)
+	
+	// 前台收到消息时，可以选择：
+	// 1. 显示应用内通知
+	// 2. 更新未读数
+	// 3. 触发特定业务逻辑
+	
+	// 这里触发一个事件，让页面自行处理
+	uni.$emit('push_message_received', {
+		title: message.title,
+		content: message.content,
+		payload: message.payload,
+		type: message.type
+	})
+	
+	// 可选：显示应用内 Toast 提示
+	if (message.title != '') {
+		uni.showToast({
+			title: message.title,
+			icon: 'none',
+			duration: 2000
+		})
+	}
+}
+
+/**
+ * 处理点击推送消息
+ * @param message 推送消息
+ */
+const handleClickMessage = (message: PushMessage) => {
+	console.log('👆 [PushMessageHandler] 点击推送消息:', message.title)
+	
+	// 解析 payload 并路由
+	if (message.payload != '') {
+		const payload = parsePayload(message.payload)
+		
+		// 验证 payload 是否有效
+		if (payload.type != '' || payload.targetPage != '') {
+			routeToPage(payload)
+		} else {
+			console.warn('⚠️ [PushMessageHandler] payload 无效，跳转到首页')
+			goToHome()
+		}
+	} else {
+		// 没有 payload，跳转到首页
+		console.log('ℹ️ [PushMessageHandler] 无 payload，跳转到首页')
+		goToHome()
+	}
+	
+	// 触发点击事件
+	uni.$emit('push_message_clicked', {
+		title: message.title,
+		content: message.content,
+		payload: message.payload,
+		type: message.type
+	})
+}
+
+// ==================== 监听器注册 ====================
+
+/**
+ * 注册推送消息监听器
+ */
+export const registerPushMessageListener = () => {
+	if (isListenerRegisteredRef.value == true) {
+		logger.debug('监听器已注册，跳过')
+		return
+	}
+	
+	logger.info('🎧 注册推送消息监听器')
+	
+	// #ifdef APP-PLUS || MP-WEIXIN
+	try {
+		uni.onPushMessage((res: any) => {
+			console.log('📨 [PushMessageHandler] 收到推送事件:', res)
+			
+			if (res == null) {
+				console.warn('⚠️ [PushMessageHandler] 推送事件数据为空')
+				return
+			}
+			
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				
+				// 获取事件类型
+				const eventTypeVal = resObj.get('type')
+				const eventType = (eventTypeVal != null) ? eventTypeVal.toString() : ''
+				
+				// 获取消息数据
+				const dataVal = resObj.get('data')
+				
+				// 验证消息有效性
+				if (isValidPushMessage(dataVal) == false) {
+					console.warn('⚠️ [PushMessageHandler] 无效的推送消息，已过滤')
+					return
+				}
+				
+				// 解析消息
+				const pushMessage = parsePushMessage(dataVal)
+				
+				// 根据事件类型处理
+				if (eventType == 'click') {
+					// 点击消息
+					handleClickMessage(pushMessage)
+				} else if (eventType == 'receive') {
+					// 收到消息（前台）
+					handleReceiveMessage(pushMessage)
+				} else {
+					// 未知类型，默认当作收到消息处理
+					console.log('ℹ️ [PushMessageHandler] 未知事件类型:', eventType)
+					handleReceiveMessage(pushMessage)
+				}
+			} catch (e) {
+				handleSilentError(e, '处理推送事件')
+			}
+		})
+		
+		isListenerRegisteredRef.value = true
+		logger.info('✅ 推送消息监听器注册成功')
+		
+		// 处理待处理的点击消息
+		if (pendingClickPayload != '') {
+			console.log('🔄 [PushMessageHandler] 处理待处理的点击消息')
+			const payload = parsePayload(pendingClickPayload)
+			routeToPage(payload)
+			pendingClickPayload = ''
+		}
+	} catch (e) {
+		handleSilentError(e, '注册推送监听器')
+	}
+	// #endif
+	
+	// #ifdef H5
+	// H5 平台不支持推送监听
+	console.log('ℹ️ [PushMessageHandler] H5 平台不支持推送监听')
+	isListenerRegisteredRef.value = true
+	// #endif
+}
+
+/**
+ * 注销推送消息监听器
+ */
+export const unregisterPushMessageListener = () => {
+	if (isListenerRegisteredRef.value == false) {
+		console.log('ℹ️ [PushMessageHandler] 监听器未注册')
+		return
+	}
+	
+	console.log('🔇 [PushMessageHandler] 注销推送消息监听器')
+	
+	// #ifdef APP-PLUS || MP-WEIXIN
+	try {
+		uni.offPushMessage()
+	} catch (e) {
+		handleSilentError(e, '注销推送监听器')
+	}
+	// #endif
+	
+	isListenerRegisteredRef.value = false
+}
+
+/**
+ * 检查监听器是否已注册
+ */
+export const isPushMessageListenerRegistered = (): boolean => {
+	return isListenerRegisteredRef.value
+}
+
+/**
+ * 设置待处理的点击消息（用于冷启动场景）
+ * @param payload payload 字符串
+ */
+export const setPendingClickPayload = (payload: string) => {
+	pendingClickPayload = payload
+}
+
+/**
+ * 手动处理点击消息（用于从启动参数获取的消息）
+ * @param payload payload 字符串
+ */
+export const handleClickPayload = (payload: string) => {
+	if (payload == '') {
+		return
+	}
+	
+	const parsedPayload = parsePayload(payload)
+	if (parsedPayload.type != '' || parsedPayload.targetPage != '') {
+		routeToPage(parsedPayload)
+	}
+}

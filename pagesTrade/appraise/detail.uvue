@@ -1,0 +1,440 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<UniIcons type="left" :size="22" color="#333333" />
+				</view>
+				<text class="nav-title">评价详情</text>
+				<view class="nav-action"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+
+		<!-- #ifndef H5 -->
+		<scroll-view class="scroll-view" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }" scroll-y="true">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<scroll-view class="scroll-view-h5" scroll-y="true">
+		<!-- #endif -->
+
+			<!-- 加载失败 -->
+			<view v-if="loadFailed == true" class="fail-container">
+				<text class="fail-text">加载失败，请重试</text>
+				<view class="retry-btn" @click="retryLoad">
+					<text class="retry-text">重试</text>
+				</view>
+			</view>
+
+			<!-- 评价信息 -->
+			<view v-else class="section">
+				<view class="user-info">
+					<Avatar :url="userAvatar" :customSize="80" clickMode="none" />
+					<view class="user-detail">
+						<text class="username">{{ userName }}</text>
+						<view class="rating-stars">
+							<text v-for="i in 5" :key="i" class="star">{{ i <= rating ? '⭐' : '☆' }}</text>
+						</view>
+					</view>
+					<text class="time">{{ createTime }}</text>
+				</view>
+
+				<text class="content">{{ appraiseContent }}</text>
+
+				<view v-if="imageList.length > 0" class="images-grid">
+					<image
+						v-for="(img, index) in imageList"
+						:key="index"
+						class="grid-image"
+						:src="img"
+						mode="aspectFill"
+						@click="previewImage(index)"
+					></image>
+				</view>
+
+				<view v-if="tagList.length > 0" class="tags-row">
+					<view v-for="(tag, index) in tagList" :key="index" class="tag-item">
+						<text class="tag-text">{{ tag }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 底部安全区域 -->
+			<view class="safe-bottom"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { parseTimeString } from '@/common/utils/dateUtils.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+const appraiseId = ref<string>('')
+const userAvatar = ref<string>('')
+const userName = ref<string>('')
+const rating = ref<number>(5)
+const appraiseContent = ref<string>('')
+const imageList = ref<Array<string>>([])
+const tagList = ref<Array<string>>([])
+const createTime = ref<string>('')
+const orderCover = ref<string>('')
+const orderTitle = ref<string>('')
+const orderTime = ref<string>('')
+const loadFailed = ref<boolean>(false)
+const rawDataStr = ref<string>('')
+
+const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
+
+const handleBack = () => {
+	uni.navigateBack({ delta: 1, fail: () => { uni.switchTab({ url: '/pages/index/index' }) } })
+}
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	return (val != null && val.toString() != '') ? val.toString() : ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) return num
+	}
+	return 0
+}
+
+/**
+ * 时间格式化：24小时内显示相对时间，超过显示 M月D日
+ */
+const formatEvaluateTime = (timeStr: string): string => {
+	if (timeStr == '') return ''
+	const date = parseTimeString(timeStr)
+	if (date == null) return timeStr
+	if (isNaN(date.getTime()) == true) return timeStr
+
+	const now = new Date()
+	const diff = now.getTime() - date.getTime()
+
+	if (diff < 0) return '刚刚'
+	if (diff < 60000) return '刚刚'
+	if (diff < 3600000) {
+		const minutes = Math.floor(diff / 60000)
+		return minutes.toString() + '分钟前'
+	}
+	if (diff < 86400000) {
+		const hours = Math.floor(diff / 3600000)
+		return hours.toString() + '小时前'
+	}
+
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	return month.toString() + '月' + day.toString() + '日'
+}
+
+const loadAppraiseDetail = () => {
+	loadFailed.value = false
+	if (rawDataStr.value == '') {
+		loadFailed.value = true
+		return
+	}
+	try {
+		const dataObj = JSON.parse(rawDataStr.value) as UTSJSONObject
+
+		const avatar = getObjString(dataObj, 'evaluateUserImage')
+		userAvatar.value = (avatar != '') ? avatar : defaultAvatar
+		userName.value = getObjString(dataObj, 'evaluateUserNickName')
+		rating.value = getObjNumber(dataObj, 'starLevel')
+		if (rating.value == 0) rating.value = 5
+		appraiseContent.value = getObjString(dataObj, 'commentContent')
+
+		const timeStr = getObjString(dataObj, 'evaluateTime')
+		createTime.value = formatEvaluateTime(timeStr)
+
+		// 解析图片列表
+		const picListVal = dataObj.get('picUrlList')
+		if (picListVal != null && Array.isArray(picListVal) == true) {
+			const picArr = picListVal as Array<string | null>
+			const imgs: Array<string> = []
+			for (let i = 0; i < picArr.length; i = i + 1) {
+				const item = picArr[i]
+				if (item != null) {
+					const url = item.toString()
+					if (url != '') {
+						imgs.push(url)
+					}
+				}
+			}
+			imageList.value = imgs
+		}
+
+		loadFailed.value = false
+	} catch (e: Error) {
+		handleSilentError(e, '解析评价详情数据')
+		loadFailed.value = true
+	}
+}
+
+const retryLoad = () => {
+	loadAppraiseDetail()
+}
+
+const previewImage = (index: number) => {
+	uni.previewImage({ urls: imageList.value, current: index })
+}
+
+onLoad((options: OnLoadOptions) => {
+	initPageLayout()
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const idVal = getObjString(optionsObj, 'id')
+		if (idVal != '') {
+			appraiseId.value = idVal
+		}
+		const dataVal = getObjString(optionsObj, 'data')
+		if (dataVal != '') {
+			const decoded = decodeURIComponent(dataVal)
+			if (decoded != null) {
+				rawDataStr.value = decoded as string
+			}
+		}
+	}
+	loadAppraiseDetail()
+})
+</script>
+
+<style scoped>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #F5F5F5;
+	position: relative;
+}
+
+/* #ifndef H5 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	width: 750rpx;
+	background-color: #ffffff;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+	z-index: 1000;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.nav-back {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	text-align: center;
+}
+
+.nav-action {
+	width: 88rpx;
+	height: 88rpx;
+}
+/* #endif */
+
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	background-color: #F5F5F5;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex: 1;
+	flex-direction: column;
+	background-color: #F5F5F5;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+.section {
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-top: 20rpx;
+}
+
+.user-info {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.user-detail {
+	flex: 1;
+	margin-left: 16rpx;
+}
+
+.username {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.rating-stars {
+	flex-direction: row;
+}
+
+.star {
+	font-size: 24rpx;
+}
+
+.time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.content {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.8;
+	margin-bottom: 20rpx;
+}
+
+.images-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 20rpx;
+}
+
+.grid-image {
+	width: 210rpx;
+	height: 210rpx;
+	border-radius: 8rpx;
+	margin-right: 12rpx;
+	margin-bottom: 12rpx;
+}
+
+.tags-row {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.tag-item {
+	padding-top: 6rpx;
+	padding-bottom: 6rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	background-color: #E3F2FD;
+	border-radius: 20rpx;
+	margin-right: 12rpx;
+	margin-bottom: 12rpx;
+}
+
+.tag-text {
+	font-size: 22rpx;
+	color: #37B1F2;
+}
+
+.card-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 20rpx;
+}
+
+.order-content {
+	flex-direction: row;
+}
+
+.order-cover {
+	width: 120rpx;
+	height: 120rpx;
+	border-radius: 8rpx;
+	margin-right: 20rpx;
+}
+
+.order-info {
+	flex: 1;
+	flex-direction: column;
+	justify-content: center;
+}
+
+.order-title {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 12rpx;
+}
+
+.order-time {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.safe-bottom {
+	height: 60rpx;
+}
+
+.fail-container {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+}
+
+.fail-text {
+	font-size: 28rpx;
+	color: #999999;
+	margin-bottom: 32rpx;
+}
+
+.retry-btn {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+}
+
+.retry-text {
+	font-size: 28rpx;
+	color: #FFFFFF;
+}
+</style>

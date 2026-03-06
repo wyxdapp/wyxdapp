@@ -1,0 +1,408 @@
+﻿<template>
+	<view class="gift-box-container" v-if="show == true">
+		<view class="modal-overlay" @click="handleClose"></view>
+		<view class="gift-box-modal">
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+			
+			<!-- 标题 -->
+			<view class="modal-header">
+				<text class="modal-title">我的礼物盒</text>
+			</view>
+			
+			<!-- 礼物列表 -->
+			<scroll-view scroll-y="true" class="gift-list-scroll">
+				<view v-if="gifts == null || (Array.isArray(gifts) == true && (gifts as Array<any>).length === 0)" class="empty-state">
+					<text class="empty-text">礼物盒中暂无礼物</text>
+				</view>
+				<view v-else class="gift-list">
+					<view 
+						v-for="(gift, index) in (gifts as Array<any>)" 
+						:key="index"
+						class="gift-item"
+						@click="handleSelectGift(gift)"
+					>
+						<image 
+							class="gift-image" 
+							:src="getGiftProp(gift, 'rewardImage')" 
+							mode="aspectFit"
+						/>
+						<view class="gift-info">
+							<text class="gift-name">{{ getGiftProp(gift, 'rewardName') }}</text>
+							<text class="gift-value">价值 ¥{{ getGiftProp(gift, 'rewardValue') }}</text>
+							<text class="gift-time">获得时间：{{ formatTime(getGiftProp(gift, 'lotteryTime')) }}</text>
+						</view>
+						<view class="gift-action">
+							<view class="action-btn" @click.stop="handleSendGift(gift)">
+								<text class="btn-text">赠送</text>
+							</view>
+						</view>
+					</view>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, watch, computed } from 'vue'
+import { getMyGifts } from '@/common/services/lotteryService.uts'
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	userKid: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+	sendGift: [gift: any]
+}>()
+
+// 响应式数据
+const gifts = ref<any[]>([])
+const loading = ref(false)
+
+// 加载礼物
+const loadGifts = async () => {
+	console.log('🎁 [GiftBox] 开始加载礼物, userKid:', props.userKid)
+	
+	try {
+		loading.value = true
+		
+		// 直接传递 UTSJSONObject 类型参数
+		const params = { userKid: props.userKid } as UTSJSONObject
+		
+		console.log('🎁 [GiftBox] 调用 getMyGifts API')
+		const result = await getMyGifts(params)
+		console.log('🎁 [GiftBox] API 返回结果:', JSON.stringify(result))
+
+		// any 类型变量不能初始化为 null，使用空字符串或其他默认值
+		let code: any = ''
+		let data: any = ''
+
+		if (result != null) {
+			try {
+				// 使用 JSON.parse + UTSJSONObject.get() 安全访问 result 的属性
+				const resultJson = JSON.stringify(result)
+				console.log('🎁 [GiftBox] 结果 JSON:', resultJson)
+				
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						// 使用 UTSJSONObject.get() 方法安全访问属性
+						const codeVal = resultObj.get('code')
+						const dataVal = resultObj.get('data')
+						code = (codeVal != null) ? codeVal : ''
+						data = (dataVal != null) ? dataVal : ''
+						
+						console.log('🎁 [GiftBox] 解析结果 - code:', code, ', data:', JSON.stringify(data))
+					}
+				}
+			} catch (e) {
+				console.error('🎁 [GiftBox] 解析结果失败:', e)
+			}
+		}
+
+		const success = (code != null && code.toString() == '200')
+		console.log('🎁 [GiftBox] 请求是否成功:', success)
+
+		if (success == true && data != null && Array.isArray(data) == true) {
+			gifts.value = data as Array<any>
+			console.log('🎁 [GiftBox] 礼物列表已更新, 数量:', gifts.value.length)
+		} else {
+			gifts.value = []
+			console.log('🎁 [GiftBox] 礼物列表为空或请求失败')
+		}
+	} catch (error) {
+		console.error('🎁 [GiftBox] 加载礼物失败:', error)
+		gifts.value = []
+	} finally {
+		loading.value = false
+	}
+}
+
+// 关闭弹窗（必须在 handleSendGift 之前定义，避免 error18）
+// 注意：UTS 没有函数提升，函数必须在使用前定义
+const handleClose = () => {
+	emit('close')
+}
+
+// 辅助函数：获取礼物的属性（用于模板访问，避免括号访问（String.get 错误））
+// 使用 UTSJSONObject.get() 方法安全访问属性，避免 error18
+const getGiftProp = (gift: any, key: string): string => {
+	if (gift == null) {
+		if (key === 'rewardImage') {
+			return '/static/images/liwu/xiaoxinxin.png'
+		}
+		return ''
+	}
+	try {
+		// 使用 JSON.parse + UTSJSONObject.get() 安全访问属性
+		const giftJson = JSON.stringify(gift)
+		if (giftJson != null && giftJson != '') {
+			const giftObj = JSON.parse(giftJson) as UTSJSONObject
+			if (giftObj != null) {
+				// 使用 UTSJSONObject.get() 方法安全访问属性
+				if (key === 'rewardImage') {
+					const val = giftObj.get('rewardImage')
+					return (val != null && val.toString() != '') ? val.toString() : '/static/images/liwu/xiaoxinxin.png'
+				} else if (key === 'rewardName') {
+					const val = giftObj.get('rewardName')
+					return (val != null && val.toString() != '') ? val.toString() : ''
+				} else if (key === 'rewardValue') {
+					const val = giftObj.get('rewardValue')
+					return (val != null && val.toString() != '') ? val.toString() : '0'
+				} else if (key === 'lotteryTime') {
+					const val = giftObj.get('lotteryTime')
+					return (val != null && val.toString() != '') ? val.toString() : ''
+				} else if (key === 'lotteryRecordKid') {
+					const val = giftObj.get('lotteryRecordKid')
+					return (val != null && val.toString() != '') ? val.toString() : ''
+				} else if (key === 'giftKid') {
+					const val = giftObj.get('giftKid')
+					return (val != null && val.toString() != '') ? val.toString() : ''
+				}
+			}
+		}
+	} catch (e) {
+		console.error('getGiftProp error:', e)
+	}
+	if (key === 'rewardImage') {
+		return '/static/images/liwu/xiaoxinxin.png'
+	}
+	return ''
+}
+
+// 选择礼物
+const handleSelectGift = (gift: any) => {
+	// 可以查看详情等
+}
+
+// 赠送礼物
+const handleSendGift = (gift: any) => {
+	// 跳转到会话列表，让用户选择接收用户
+	let recordKid = ''
+	let giftKid = ''
+
+	if (gift != null) {
+		try {
+			// 使用 JSON.parse + UTSJSONObject.get() 安全访问属性
+			const giftJson = JSON.stringify(gift)
+			if (giftJson != null && giftJson != '') {
+				const giftObj = JSON.parse(giftJson) as UTSJSONObject
+				if (giftObj != null) {
+					// 使用 UTSJSONObject.get() 方法安全访问属性
+					const recordKidVal = giftObj.get('lotteryRecordKid')
+					if (recordKidVal != null && recordKidVal.toString() != '') {
+						recordKid = recordKidVal.toString()
+					}
+					const giftKidVal = giftObj.get('giftKid')
+					if (giftKidVal != null && giftKidVal.toString() != '') {
+						giftKid = giftKidVal.toString()
+					}
+				}
+			}
+		} catch (e) {
+			console.error('handleSendGift parse error:', e)
+		}
+	}
+
+	let finalKid = ''
+	if (recordKid != null && recordKid != '') {
+		finalKid = recordKid
+	} else if (giftKid != null && giftKid != '') {
+		finalKid = giftKid
+	}
+
+	uni.navigateTo({
+		url: '/pagesTrade/giftSend/index?giftKid=' + finalKid
+	})
+	handleClose()
+}
+
+// 格式化时间
+const formatTime = (timeStr: string): string => {
+	if (timeStr == null || timeStr == '') return ''
+	try {
+		const date = new Date(timeStr)
+		const year = date.getFullYear()
+		const month = (date.getMonth() + 1).toString().padStart(2, '0')
+		const day = date.getDate().toString().padStart(2, '0')
+		return `${year}-${month}-${day}`
+	} catch (e) {
+		return timeStr
+	}
+}
+
+// 监听show变化，加载数据（使用 computed 包装，避免 watch 返回类型不匹配）
+const showValue = computed((): boolean => props.show)
+watch(showValue, (newVal: boolean) => {
+	if (newVal == true && props.userKid != null && props.userKid != '') {
+		loadGifts()
+	}
+})
+</script>
+
+<style scoped>
+.gift-box-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10002;
+}
+
+.modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.6);
+}
+
+.gift-box-modal {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 680rpx;
+	max-height: 1200rpx;
+	background: #fff;
+	border-radius: 32rpx;
+	padding: 48rpx;
+	display: flex;
+	flex-direction: column;
+}
+
+.close-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	width: 60rpx;
+	height: 60rpx;
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 40rpx;
+	color: #999;
+}
+
+.modal-header {
+	text-align: center;
+	margin-bottom: 32rpx;
+}
+
+.modal-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333;
+	display: flex;
+}
+
+.gift-list-scroll {
+	flex: 1;
+	width: 100%;
+	min-height: 400rpx;
+}
+
+.empty-state {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	justify-content: center;
+	padding: 120rpx 0;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999;
+	display: flex;
+}
+
+.gift-list {
+	display: flex;
+	flex-direction: column;
+	flex-wrap: nowrap;
+}
+
+.gift-item {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	padding: 24rpx;
+	margin-bottom: 24rpx;
+	background: #f9f9f9;
+	border-radius: 16rpx;
+}
+
+.gift-image {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 24rpx;
+	flex-shrink: 0;
+}
+
+.gift-info {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	flex-wrap: nowrap;
+}
+
+.gift-name {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333;
+	margin-bottom: 8rpx;
+	display: flex;
+}
+
+.gift-value {
+	font-size: 24rpx;
+	color: #FF6B35;
+	margin-bottom: 8rpx;
+	display: flex;
+}
+
+.gift-time {
+	font-size: 22rpx;
+	color: #999;
+	display: flex;
+}
+
+.gift-action {
+	margin-left: 24rpx;
+	flex-shrink: 0;
+}
+
+.action-btn {
+	padding: 16rpx 32rpx;
+	background-color: #FF6B35;
+	border-radius: 32rpx;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-text {
+	font-size: 26rpx;
+	color: #fff;
+	font-weight: bold;
+	display: flex;
+}
+</style>
+

@@ -1,0 +1,468 @@
+/**
+ * 定制/向导相关 API
+ * 对应Vue2: http.api.js 中的定制模块
+ */
+
+import request from '@/utils/request'
+
+// 日程详情接口（用于 PublishTravelInfoParams）
+export interface ScheduleItem {
+	day: number
+	title: string
+	content: string
+	images?: string[]
+}
+
+// 获取定制详情参数类
+export class GetTravelDetailParams {
+	kid: string = ''
+	userKid: string = ''
+}
+
+// 辅助函数：从 UTSJSONObject 获取字符串属性
+const getParamString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 获取定制详情
+ * GET /line/newLine/querySchedule
+ */
+export const getTravelDetail = (params: GetTravelDetailParams) => {
+	// 使用 JSON 序列化方式访问 any 类型属性
+	let kid = ''
+	let userKid = ''
+	try {
+		const paramsStr = JSON.stringify(params)
+		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+		kid = getParamString(paramsObj, 'kid')
+		userKid = getParamString(paramsObj, 'userKid')
+	} catch (e) {
+		kid = ''
+		userKid = ''
+	}
+	
+	let queryParts: Array<string> = []
+	if (kid != '') {
+		queryParts.push(`kid=${encodeURIComponent(kid)}`)
+	}
+	if (userKid != '') {
+		queryParts.push(`userKid=${encodeURIComponent(userKid)}`)
+	}
+	
+	const query = queryParts.join('&')
+	return request.get(`/line/newLine/querySchedule?${query}`, null, false)
+}
+
+// 创建定制参数接口
+export interface CreateTrendInfoParams {
+	userKid: string
+	lineTitle: string
+	lineDescribe?: string
+	linePrice?: string
+	lineDays?: number
+	lineCity?: string
+	lineImage?: string
+}
+
+/**
+ * 创建定制
+ * POST /line/newLine/createEditLine
+ * @param params { userKid: string, lineTitle: string, lineDescribe?, linePrice?, lineDays?, lineCity?, lineImage? }
+ */
+export const createTrendInfo = (params: CreateTrendInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lineTitle: params.lineTitle
+	} as UTSJSONObject
+	if (params.lineDescribe != null) { payload['lineDescribe'] = params.lineDescribe }
+	if (params.linePrice != null) { payload['linePrice'] = params.linePrice }
+	if (params.lineDays != null) { payload['lineDays'] = params.lineDays }
+	if (params.lineCity != null) { payload['lineCity'] = params.lineCity }
+	if (params.lineImage != null) { payload['lineImage'] = params.lineImage }
+	return request.post('/line/newLine/createEditLine', payload, true)
+}
+
+// 发布定制参数接口
+export interface PublishTravelInfoParams {
+	userKid: string
+	lineTitle: string
+	lineDescribe?: string
+	linePrice?: string
+	lineDays?: number
+	lineCity?: string
+	lineImage?: string
+	schedules?: ScheduleItem[]
+}
+
+/**
+ * 发布定制
+ * POST /line/newLine/v1/createLine
+ * @param params { userKid: string, lineTitle: string, lineDescribe?, linePrice?, lineDays?, lineCity?, lineImage?, schedules? }
+ */
+export const publishTravelInfo = (params: PublishTravelInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lineTitle: params.lineTitle
+	} as UTSJSONObject
+	if (params.lineDescribe != null) { payload['lineDescribe'] = params.lineDescribe }
+	if (params.linePrice != null) { payload['linePrice'] = params.linePrice }
+	if (params.lineDays != null) { payload['lineDays'] = params.lineDays }
+	if (params.lineCity != null) { payload['lineCity'] = params.lineCity }
+	if (params.lineImage != null) { payload['lineImage'] = params.lineImage }
+	if (params.schedules != null) { payload['schedules'] = params.schedules }
+	return request.post('/line/newLine/v1/createLine', payload, true)
+}
+
+// 设置编辑器信息参数接口
+export interface SetEditorInfoParams {
+	lineKid: string
+	content: string
+}
+
+/**
+ * 富文本编辑
+ * POST /line/line/createLineOther
+ * @param params { lineKid: string, content: string }
+ */
+export const setEditorInfo = (params: SetEditorInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		lineKid: params.lineKid,
+		content: params.content
+	} as UTSJSONObject
+	return request.post('/line/line/createLineOther', payload, true)
+}
+
+// 设置向导状态参数接口
+export interface SetGuideInfoStatusParams {
+	guideKid: string
+	onLineStatu: number
+}
+
+/**
+ * 向导上下线
+ * POST /support/member/upOrDownGuide
+ * @param params { guideKid: string, onLineStatu: number }
+ */
+export const setGuideInfoStatus = (params: SetGuideInfoStatusParams): Promise<UTSJSONObject> => {
+	const payload = {
+		guideKid: params.guideKid,
+		onLineStatu: params.onLineStatu
+	} as UTSJSONObject
+	return request.post('/support/member/upOrDownGuide', payload, true)
+}
+
+// 发布向导信息参数接口
+export interface PublishGuideInfoParams {
+	userKid: string
+	servicePrice: string
+	accessiblePlace: string
+	serviceFeature?: string
+	userFortes?: string[]
+}
+
+/**
+ * 向导发布
+ * POST /support/member/addFreeTravelGuideInfo
+ * @param params { userKid: string, servicePrice: string, accessiblePlace: string, serviceFeature?, userFortes? }
+ */
+export const publishGuideInfo = (params: PublishGuideInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		servicePrice: params.servicePrice,
+		accessiblePlace: params.accessiblePlace
+	} as UTSJSONObject
+	if (params.serviceFeature != null) { payload['serviceFeature'] = params.serviceFeature }
+	if (params.userFortes != null) { payload['userFortes'] = params.userFortes }
+	return request.post('/support/member/addFreeTravelGuideInfo', payload, true)
+}
+
+// 更新基本信息参数接口
+export interface UpdateBaseInfoParams {
+	kid: string
+	nickname?: string
+	sex?: string
+	birthDate?: string
+	birthPlace?: string
+	liveCity?: string
+	signature?: string
+	image?: string
+	background?: string
+}
+
+/**
+ * 修改个人基本信息
+ * POST /user/baseInfo/updateBaseInfo
+ * @param params { kid: string, nickname?, sex?, birthDate?, birthPlace?, liveCity?, signature?, image?, background? }
+ */
+export const updateBaseInfo = (params: UpdateBaseInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid
+	} as UTSJSONObject
+	if (params.nickname != null) { payload['nickname'] = params.nickname }
+	if (params.sex != null) { payload['sex'] = params.sex }
+	if (params.birthDate != null) { payload['birthDate'] = params.birthDate }
+	if (params.birthPlace != null) { payload['birthPlace'] = params.birthPlace }
+	if (params.liveCity != null) { payload['liveCity'] = params.liveCity }
+	if (params.signature != null) { payload['signature'] = params.signature }
+	if (params.image != null) { payload['image'] = params.image }
+	if (params.background != null) { payload['background'] = params.background }
+	return request.post('/user/baseInfo/updateBaseInfo', payload, true)
+}
+
+// 更新联系信息参数接口
+export interface UpdateContactInfoParams {
+	kid: string
+	weixinNumber?: string
+	qqNumber?: string
+	contactPhone?: string
+}
+
+/**
+ * 修改联系方式
+ * POST /user/baseInfo/updateBaseInfo
+ * @param params { kid: string, weixinNumber?, qqNumber?, contactPhone? }
+ */
+export const updateContactInfo = (params: UpdateContactInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid
+	} as UTSJSONObject
+	if (params.weixinNumber != null) { payload['weixinNumber'] = params.weixinNumber }
+	if (params.qqNumber != null) { payload['qqNumber'] = params.qqNumber }
+	if (params.contactPhone != null) { payload['contactPhone'] = params.contactPhone }
+	return request.post('/user/baseInfo/updateBaseInfo', payload, true)
+}
+
+// 检查会员状态参数接口
+export interface CheckMemberStatusParams {
+	userKid: string
+}
+
+/**
+ * 会员认证查询接口
+ * POST /support/member/v1/isMember
+ * @param params { userKid: string }
+ */
+export const checkMemberStatus = (params: CheckMemberStatusParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/support/member/v1/isMember', payload, false)
+}
+
+// 个人认证参数接口
+export interface IdentityUserParams {
+	userKid: string
+	realname: string
+	idNumber: string
+	idcardFrontImage: string
+	idcardBackImage: string
+}
+
+/**
+ * 个人认证
+ * POST /user/baseInfo/identityUser
+ * @param params { userKid: string, realname: string, idNumber: string, idcardFrontImage: string, idcardBackImage: string }
+ */
+export const identityUser = (params: IdentityUserParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		realname: params.realname,
+		idNumber: params.idNumber,
+		idcardFrontImage: params.idcardFrontImage,
+		idcardBackImage: params.idcardBackImage
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/identityUser', payload, true)
+}
+
+// 商家认证参数接口
+export interface IdentityEnterpriseParams {
+	userKid: string
+	enterpriseName: string
+	enterpriseCode: string
+	businessLicense: string
+}
+
+/**
+ * 商家(企业)认证
+ * POST /user/identityEnterprise
+ * @param params { userKid: string, enterpriseName: string, enterpriseCode: string, businessLicense: string }
+ */
+export const identityEnterprise = (params: IdentityEnterpriseParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		enterpriseName: params.enterpriseName,
+		enterpriseCode: params.enterpriseCode,
+		businessLicense: params.businessLicense
+	} as UTSJSONObject
+	return request.post('/user/identityEnterprise', payload, true)
+}
+
+// 查询认证信息参数接口
+export interface QueryAuthInfoParams {
+	userKid: string
+}
+
+/**
+ * 查询认证信息
+ * POST /user/baseInfo/v1/queryAuthInfo
+ * @param params { userKid: string }
+ */
+export const queryAuthInfo = (params: QueryAuthInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/v1/queryAuthInfo', payload, false)
+}
+
+// 导游认证参数接口
+export interface GuideAuthParams {
+	userKid: string
+	guideAuthenticatImage: string
+	guideCertificateNo?: string
+}
+
+/**
+ * 导游认证
+ * POST /user/baseInfo/guideAuth
+ * @param params { userKid: string, guideAuthenticatImage: string, guideCertificateNo?: string }
+ */
+export const guideAuth = (params: GuideAuthParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		guideAuthenticatImage: params.guideAuthenticatImage
+	} as UTSJSONObject
+	if (params.guideCertificateNo != null) { payload['guideCertificateNo'] = params.guideCertificateNo }
+	return request.post('/user/baseInfo/guideAuth', payload, true)
+}
+
+// 司机认证参数接口
+export interface DriverAuthParams {
+	userKid: string
+	driverAuthenticatImage: string
+	driverLicenseNo?: string
+}
+
+/**
+ * 司机认证
+ * POST /user/baseInfo/driverAuth
+ * @param params { userKid: string, driverAuthenticatImage: string, driverLicenseNo?: string }
+ */
+export const driverAuth = (params: DriverAuthParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		driverAuthenticatImage: params.driverAuthenticatImage
+	} as UTSJSONObject
+	if (params.driverLicenseNo != null) { payload['driverLicenseNo'] = params.driverLicenseNo }
+	return request.post('/user/baseInfo/driverAuth', payload, true)
+}
+
+// 创建VIP订单参数接口
+export interface CreateVipOrderParams {
+	userKid: string
+	vipType: number
+	vipDays: number
+	vipPrice: number
+}
+
+/**
+ * 创建VIP订单（会员认证开通）
+ * POST /order/tourist/createVipOrder
+ * @param params { userKid: string, vipType: number, vipDays: number, vipPrice: number }
+ */
+export const createVipOrder = (params: CreateVipOrderParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		vipType: params.vipType,
+		vipDays: params.vipDays,
+		vipPrice: params.vipPrice
+	} as UTSJSONObject
+	return request.post('/order/tourist/createVipOrder', payload, true)
+}
+
+// 更换手机号码参数接口
+export interface ChangePhoneParams {
+	userKid: string
+	newPhone: string
+	verificationCode: string
+}
+
+/**
+ * 更换手机号码
+ * POST /user/baseInfo/changePhone
+ * @param params { userKid: string, newPhone: string, verificationCode: string }
+ */
+export const changePhone = (params: ChangePhoneParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		newPhone: params.newPhone,
+		verificationCode: params.verificationCode
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/changePhone', payload, true)
+}
+
+// 设置支付密码参数接口
+export interface SetPayPasswordParams {
+	userKid: string
+	payPassword: string
+	verificationCode: string
+}
+
+/**
+ * 设置支付密码
+ * POST /user/baseInfo/setPayPassword
+ * @param params { userKid: string, payPassword: string, verificationCode: string }
+ */
+export const setPayPassword = (params: SetPayPasswordParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		payPassword: params.payPassword,
+		verificationCode: params.verificationCode
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/setPayPassword', payload, true)
+}
+
+// 校验登录密码参数接口
+export interface CheckLoginPasswordParams {
+	userKid: string
+	password: string
+}
+
+/**
+ * 校验登录密码
+ * POST /user/baseInfo/checkPassword
+ * @param params { userKid: string, password: string }
+ */
+export const checkLoginPassword = (params: CheckLoginPasswordParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		password: params.password
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/checkPassword', payload, true)
+}
+
+// 找回密码参数接口
+export interface RetrievePasswordParams {
+	phone: string
+	newPassword: string
+	verificationCode: string
+}
+
+/**
+ * 找回密码
+ * POST /user/baseInfo/retrievePassword
+ * @param params { phone: string, newPassword: string, verificationCode: string }
+ */
+export const retrievePassword = (params: RetrievePasswordParams): Promise<UTSJSONObject> => {
+	const payload = {
+		phone: params.phone,
+		newPassword: params.newPassword,
+		verificationCode: params.verificationCode
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/retrievePassword', payload, true)
+}

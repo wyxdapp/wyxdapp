@@ -1,0 +1,298 @@
+<template>
+	<view class="webview-container">
+		<web-view
+			:src="webviewUrl"
+			@message="onWebviewMessage"
+			@error="onWebviewError"
+			class="webview"
+		></web-view>
+
+		<!-- 加载中 -->
+		<view v-if="isLoading == true" class="loading-mask">
+			<view class="loading-content">
+				<text class="loading-text">加载中...</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+// 导入必要的模块
+import request from '@/utils/request'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+export default {
+	data() {
+		return {
+			webviewUrl: '',
+			callback: '',
+			isLoading: true
+		}
+	},
+
+	onLoad(options: OnLoadOptions) {
+		console.log('Webview页面加载，参数:', options)
+
+		// UTS 规范：使用 UTSJSONObject 安全访问属性
+		if (options != null) {
+			const optionsObj = JSON.parse(JSON.stringify(options)) as UTSJSONObject
+			const urlVal = optionsObj.get('url')
+			const callbackVal = optionsObj.get('callback')
+			
+			if (urlVal != null && urlVal.toString() != '') {
+				const decodedUrl = decodeURIComponent(urlVal.toString())
+				if (decodedUrl != null) {
+					this.webviewUrl = decodedUrl
+				}
+			}
+
+			if (callbackVal != null && callbackVal.toString() != '') {
+				this.callback = callbackVal.toString()
+			}
+		}
+
+		// 检查是否是微信授权回调
+		if (this.callback == 'wechat_auth') {
+			this.handleWechatAuthCallback()
+		}
+	},
+
+	methods: {
+		// 处理微信授权回调
+		handleWechatAuthCallback() {
+			try {
+				// 获取当前URL参数，检查是否有code
+				const currentPages = getCurrentPages()
+				if (currentPages == null || currentPages.length == 0) {
+					console.error('获取当前页面失败')
+					return
+				}
+				
+				const currentPage = currentPages[currentPages.length - 1]
+				if (currentPage == null) {
+					console.error('当前页面为空')
+					return
+				}
+				
+				// UTS 规范：使用 JSON 序列化安全访问属性
+				let url = ''
+				try {
+					const pageStr = JSON.stringify(currentPage)
+					const pageObj = JSON.parse(pageStr) as UTSJSONObject
+					const pageVal = pageObj.get('$page')
+					if (pageVal != null) {
+						const innerPageStr = JSON.stringify(pageVal)
+						const innerPageObj = JSON.parse(innerPageStr) as UTSJSONObject
+						const fullPathVal = innerPageObj.get('fullPath')
+						if (fullPathVal != null) {
+							url = fullPathVal.toString()
+						}
+					}
+				} catch (e) {
+					console.warn('获取页面路径失败:', e)
+				}
+
+				console.log('当前页面URL:', url)
+
+				// 解析URL参数
+				const urlParams = this.parseUrlParams(url)
+				
+				// UTS 规范：使用 UTSJSONObject 访问
+				const paramsStr = JSON.stringify(urlParams)
+				const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+				const codeVal = paramsObj.get('code')
+				const stateVal = paramsObj.get('state')
+				
+				const code = (codeVal != null) ? codeVal.toString() : ''
+				const state = (stateVal != null) ? stateVal.toString() : ''
+
+				console.log('解析到的参数: code=', code, 'state=', state)
+
+				if (code != '') {
+					// 调用后端API获取OpenID
+					this.fetchOpenId(code, state)
+				} else {
+					this.showAuthError('未获取到授权code')
+				}
+			} catch (error) {
+				console.error('微信授权回调处理失败:', error)
+				this.showAuthError('微信授权失败')
+			}
+		},
+		
+		// 获取 OpenID
+		fetchOpenId(code: string, state: string) {
+			// code 作为请求体参数传递（后端使用 @RequestParam）
+			const params = { code: code, source: 'h5' } as UTSJSONObject
+			request.post('/third/thirdLogin/getWechatOpenIdForWithdraw', params, true).then((res: UTSJSONObject) => {
+				console.log('获取OpenID响应:', res)
+				
+				// UTS 规范：使用 UTSJSONObject 安全访问
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const codeVal = resObj.get('code')
+					
+					if (codeVal != null && codeVal.toString() == '200') {
+						const dataVal = resObj.get('data')
+						const openid = (dataVal != null) ? dataVal.toString() : ''
+						console.log('获取到OpenID:', openid)
+
+						// 将OpenID传递给withdraw页面
+						uni.$emit('wechatAuthSuccess', {
+							openid: openid,
+							state: state
+						})
+
+						// 显示成功提示
+						uni.showToast({
+							title: '微信授权成功',
+							icon: 'success'
+						})
+
+						// 延迟返回上一页
+						let timerId: number = 0
+						timerId = safeSetTimeout(() => {
+							uni.navigateBack()
+						}, 1500)
+					} else {
+						this.showAuthError('获取OpenID失败')
+					}
+				} else {
+					this.showAuthError('获取OpenID失败')
+				}
+			}).catch((error) => {
+				console.error('获取OpenID失败:', error)
+				this.showAuthError('获取OpenID失败')
+			})
+		},
+		
+		// 显示授权错误
+		showAuthError(msg: string) {
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+
+			// 返回上一页
+			let timerId: number = 0
+			timerId = safeSetTimeout(() => {
+				uni.navigateBack()
+			}, 2000)
+		},
+
+		// 解析URL参数
+		parseUrlParams(url: string): UTSJSONObject {
+			const params = new UTSJSONObject()
+			try {
+				const parts = url.split('?')
+				if (parts.length < 2) {
+					return params
+				}
+				
+				const queryString = parts[1]
+				if (queryString == null || queryString == '') {
+					return params
+				}
+				
+				const pairs = queryString.split('&')
+				for (let i = 0; i < pairs.length; i = i + 1) {
+					const pair = pairs[i]
+					const keyValue = pair.split('=')
+					if (keyValue.length >= 2) {
+						const decodedKey = decodeURIComponent(keyValue[0])
+						const decodedValue = decodeURIComponent(keyValue[1])
+						// UTS 规范：确保 key 和 value 不为 null
+						if (decodedKey != null && decodedValue != null) {
+							const keyStr: string = decodedKey as string
+							const valueStr: string = decodedValue as string
+							if (keyStr != '' && valueStr != '') {
+								params.set(keyStr, valueStr)
+							}
+						}
+					}
+				}
+
+				return params
+			} catch (error) {
+				console.error('解析URL参数失败:', error)
+				return params
+			}
+		},
+
+		// Webview消息处理
+		onWebviewMessage(event: UTSJSONObject) {
+			console.log('Webview消息:', event)
+		},
+
+		// Webview错误处理
+		onWebviewError(event: UTSJSONObject) {
+			console.error('Webview错误:', event)
+			this.isLoading = false
+		}
+	},
+
+	onShow() {
+		// 页面显示时隐藏加载状态
+		let timerId: number = 0
+		timerId = safeSetTimeout(() => {
+			this.isLoading = false
+		}, 1000)
+	},
+
+	beforeUnmount() {
+		clearAllTimers()
+	}
+}
+</script>
+
+<style>
+.webview-container {
+	position: relative;
+	width: 750rpx;
+	flex: 1;
+	flex-direction: column;
+}
+
+.webview {
+	width: 750rpx;
+	flex: 1;
+}
+
+.loading-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(255, 255, 255, 0.8);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-content {
+	flex-direction: column;
+	align-items: center;
+}
+
+.loading-text {
+	font-size: 32rpx;
+	color: #666666;
+}
+</style>

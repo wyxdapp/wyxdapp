@@ -1,0 +1,320 @@
+<template>
+	<view class="route-list">
+		<view v-if="list == null || (Array.isArray(list) == true && (list as Array<any>).length === 0)" class="empty">
+			<text>{{ nullText }}</text>
+		</view>
+		
+		<view v-else>
+			<view 
+				v-for="(item, index) in (list as Array<any>)" 
+				:key="getItemId(item, index)"
+				class="route-item"
+				@click="handleItemClick(item)"
+			>
+				<image class="cover" :src="getItemCover(item)" mode="aspectFill"></image>
+				<view class="info">
+					<text class="title">{{ getItemTitle(item) }}</text>
+					<view class="meta">
+						<text class="days">{{ getItemDaysText(item) }}</text>
+						<view class="location-row">
+							<UniIcons type="location" :size="24" color="#999999" />
+							<text class="location"> {{ getItemDestination(item) }}</text>
+						</view>
+					</view>
+					<view class="tags">
+						<text v-for="(tag, tagIndex) in getItemTags(item)" :key="tagIndex" class="tag">{{ tag }}</text>
+					</view>
+					<view class="bottom">
+						<view class="price-info">
+							<text class="price">￥{{ getItemPrice(item) }}</text>
+							<text class="unit">/人起</text>
+						</view>
+						<text class="booking">已预订{{ getItemBookingCount(item) }}人</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+interface RouteItem {
+	id: string
+	title: string
+	coverImage: string
+	days: number
+	nights: number
+	destination: string
+	tags: string[]
+	price: number
+	bookingCount: number
+}
+
+class RouteItemClass implements RouteItem {
+	id: string
+	title: string
+	coverImage: string
+	days: number
+	nights: number
+	destination: string
+	tags: string[]
+	price: number
+	bookingCount: number
+	
+	constructor(id: string, title: string, coverImage: string, days: number, nights: number, destination: string, tags: string[], price: number, bookingCount: number) {
+		this.id = id
+		this.title = title
+		this.coverImage = coverImage
+		this.days = days
+		this.nights = nights
+		this.destination = destination
+		this.tags = tags
+		this.price = price
+		this.bookingCount = bookingCount
+	}
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	list: { type: Array, required: true },
+	nullText: { type: String, default: '暂无路线' }
+})
+
+const emit = defineEmits<{
+	itemClick: [item: RouteItem]
+}>()
+
+
+// 辅助方法 - 安全访问 item 属性（基于 RouteItem 接口，避免在 any 上做下标访问）
+const getItemId = (item: any, index: number): string => {
+  if (item == null) return index.toString()
+  try {
+    const obj = item as RouteItem
+    const id = obj.id
+    if (id != null && id != '') return id.toString()
+  } catch (e) {}
+  return index.toString()
+}
+
+const getItemCover = (item: any): string => {
+  if (item == null) return ''
+  try {
+    const obj = item as RouteItem
+    const coverImage = obj.coverImage
+    if (coverImage != null && coverImage != '') return coverImage.toString()
+  } catch (e) {}
+  return ''
+}
+
+const getItemTitle = (item: any): string => {
+  if (item == null) return ''
+  try {
+    const obj = item as RouteItem
+    const title = obj.title
+    if (title != null && title != '') return title.toString()
+  } catch (e) {}
+  return ''
+}
+
+const getItemDaysText = (item: any): string => {
+  if (item == null) return '0天0晚'
+  try {
+    const obj = item as RouteItem
+    const daysValue = obj.days
+    const nightsValue = obj.nights
+    const days = (daysValue != null) ? parseInt(daysValue.toString()) : 0
+    const nights = (nightsValue != null) ? parseInt(nightsValue.toString()) : 0
+    return `${days}天${nights}晚`
+  } catch (e) {}
+  return '0天0晚'
+}
+
+const getItemDestination = (item: any): string => {
+  if (item == null) return ''
+  try {
+    const obj = item as RouteItem
+    const destination = obj.destination
+    if (destination != null) return destination.toString()
+  } catch (e) {}
+  return ''
+}
+
+const getItemTags = (item: any): string[] => {
+  if (item == null) return []
+  try {
+    const obj = item as RouteItem
+    const tags = obj.tags
+    if (tags != null && Array.isArray(tags) == true) {
+      const tagsArr = tags as Array<any>
+      const result: string[] = []
+      const len = tagsArr.length
+      const maxCount = len > 3 ? 3 : len
+      for (let i = 0; i < maxCount; i++) {
+        const tag = tagsArr[i]
+        if (tag != null) {
+          result.push(tag.toString())
+        }
+      }
+      return result
+    }
+  } catch (e) {}
+  return []
+}
+
+const getItemPrice = (item: any): string => {
+  if (item == null) return '0'
+  try {
+    const obj = item as RouteItem
+    const price = obj.price
+    if (price != null) return price.toString()
+  } catch (e) {}
+  return '0'
+}
+
+const getItemBookingCount = (item: any): string => {
+  if (item == null) return '0'
+  try {
+    const obj = item as RouteItem
+    const bookingCount = obj.bookingCount
+    if (bookingCount != null) return bookingCount.toString()
+  } catch (e) {}
+  return '0'
+}
+
+const handleItemClick = (item: any) => {
+	if (item == null) return
+	try {
+		const idVal = getItemId(item, 0)
+		const titleVal = getItemTitle(item)
+		const coverImageVal = getItemCover(item)
+		const daysVal = (() => {
+			const obj = item as RouteItem
+			const daysValue = obj.days
+			return (daysValue != null) ? parseInt(daysValue.toString()) : 0
+		})()
+		const nightsVal = (() => {
+			const obj = item as RouteItem
+			const nightsValue = obj.nights
+			return (nightsValue != null) ? parseInt(nightsValue.toString()) : 0
+		})()
+		const destinationVal = getItemDestination(item)
+		const tagsVal = getItemTags(item)
+		const priceVal = (() => {
+			const obj = item as RouteItem
+			const priceValue = obj.price
+			return (priceValue != null) ? parseFloat(priceValue.toString()) : 0
+		})()
+		const bookingCountVal = (() => {
+			const obj = item as RouteItem
+			const bookingCountValue = obj.bookingCount
+			return (bookingCountValue != null) ? parseInt(bookingCountValue.toString()) : 0
+		})()
+		
+		const routeItem = new RouteItemClass(
+			idVal,
+			titleVal,
+			coverImageVal,
+			daysVal,
+			nightsVal,
+			destinationVal,
+			tagsVal,
+			priceVal,
+			bookingCountVal
+		)
+		emit('itemClick', routeItem)
+	} catch (e) {}
+}
+</script>
+
+<style scoped>
+.route-list {
+	display: flex;
+	flex-direction: column;
+}
+
+.empty {
+	padding: 80rpx 0;
+	text-align: center;
+	color: #999999;
+}
+
+.route-item {
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	overflow: hidden;
+	margin-bottom: 20rpx;
+}
+
+.cover {
+	width: 100%;
+	height: 360rpx;
+}
+
+.info {
+	padding: 24rpx;
+}
+
+.title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	display: flex;
+}
+
+.meta {
+	display: flex;
+	margin-bottom: 12rpx;
+}
+
+.days,
+.location {
+	font-size: 24rpx;
+	color: #666666;
+	margin-right: 20rpx;
+}
+
+.tags {
+	display: flex;
+	margin-bottom: 16rpx;
+}
+
+.tag {
+	font-size: 22rpx;
+	color: #2196F3;
+	background-color: #E3F2FD;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+	margin-right: 8rpx;
+}
+
+.bottom {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.price-info {
+	display: flex;
+	align-items: flex-start;
+}
+
+.price {
+	font-size: 32rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.unit {
+	font-size: 22rpx;
+	color: #999999;
+	margin-left: 4rpx;
+}
+
+.booking {
+	font-size: 24rpx;
+	color: #999999;
+}
+</style>

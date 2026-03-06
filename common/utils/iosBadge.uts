@@ -1,0 +1,72 @@
+/**
+ * iOS应用图标角标工具模块
+ * 仅在iOS平台生效，其他平台静默跳过
+ * 
+ * 使用场景：
+ * 1. 用户在线时，WebSocket 301消息推送后更新角标
+ * 2. 用户阅读消息后减少角标
+ * 3. 用户退出登录后清除角标
+ */
+
+/**
+ * 设置iOS应用图标角标数字
+ * @param count 角标数字，0表示清除角标
+ */
+export const setAppBadgeNumber = (count: number) => {
+	// #ifdef APP-IOS
+	try {
+		// 确保角标数为非负整数
+		let badgeCount = 0
+		if (count > 0) {
+			badgeCount = Math.floor(count)
+		}
+		
+		// 使用 plus.ios 调用iOS原生API
+		// UIApplication.shared.applicationIconBadgeNumber = count
+		const UIApplication = plus.ios.importClass('UIApplication')
+		if (UIApplication != null) {
+			const app = UIApplication.sharedApplication()
+			if (app != null) {
+				app.setApplicationIconBadgeNumber(badgeCount)
+			}
+		}
+	} catch (e) {
+		console.warn('⚠️ [iOSBadge] 设置iOS角标失败:', e)
+	}
+	// #endif
+	
+	// #ifndef APP-IOS
+	// 非iOS平台静默跳过，不执行任何操作
+	// #endif
+}
+
+/**
+ * 清除iOS应用图标角标
+ */
+export const clearAppBadge = () => {
+	setAppBadgeNumber(0)
+}
+
+/**
+ * 获取当前iOS应用图标角标数字
+ * @returns 当前角标数，非iOS平台返回0
+ */
+export const getAppBadgeNumber = (): number => {
+	// #ifdef APP-IOS
+	try {
+		const UIApplication = plus.ios.importClass('UIApplication')
+		if (UIApplication != null) {
+			const app = UIApplication.sharedApplication()
+			if (app != null) {
+				const badgeNumber = app.applicationIconBadgeNumber()
+				if (badgeNumber != null) {
+					return parseInt(badgeNumber.toString())
+				}
+			}
+		}
+	} catch (e) {
+		console.warn('⚠️ [iOSBadge] 获取iOS角标失败:', e)
+	}
+	// #endif
+	return 0
+}

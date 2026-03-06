@@ -1,0 +1,235 @@
+﻿<template>
+	<view class="trends-page">
+		<!-- Tab 切换 -->
+		<view class="tabs-row">
+			<view 
+				v-for="(tab, index) in tabs" 
+				:key="index"
+				class="tab-item" 
+				@click="handleTabChange(index)"
+			>
+				<text class="tab-text" :class="{ 'tab-text-active': activeTab == index }">{{ tab.label }}</text>
+				<view v-if="activeTab == index" class="tab-underline"></view>
+			</view>
+		</view>
+		
+		<!-- 动态列表 -->
+		<scroll-view 
+			class="trends-scroll"
+			scroll-y
+			@scrolltolower="loadMore"
+			:refresher-enabled="true"
+			:refresher-triggered="refreshing"
+			:show-scrollbar="false"
+			@refresherrefresh="onRefresh"
+		>
+			<TrendsItem 
+				:list="trendsList"
+				@itemClick="goToDetail"
+				@like="handleLike"
+				@comment="handleComment"
+				@share="handleShare"
+			/>
+			
+			<!-- 加载更多 -->
+			<view v-if="hasMore" class="load-more">
+				<text>{{ loading ? '加载中...' : '上拉加载更多' }}</text>
+			</view>
+			<view v-else-if="trendsList.length > 0" class="no-more">
+				<text>没有更多了</text>
+			</view>
+		</scroll-view>
+		
+		<!-- 发布按钮 -->
+		<view class="publish-btn" @click="goToPublish">
+			<UniIcons type="compose" :size="40" color="#FFFFFF" />
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import TrendsItem from '@/components/business/TrendsItem.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// 响应式数据
+const activeTab = ref(0)
+const loading = ref(false)
+const refreshing = ref(false)
+const hasMore = ref(true)
+const page = ref(1)
+const pageSize = ref(10)
+
+const tabs = ref([
+	{ label: '推荐', value: 0 },
+	{ label: '关注', value: 1 },
+	{ label: '附近', value: 2 }
+])
+
+const trendsList = ref<UTSJSONObject[]>([])
+
+// 生命周期
+onMounted(() => {
+	loadTrendsListDefault()
+})
+
+// 方法
+function loadTrendsList(isRefresh: boolean) {
+	if (loading.value == true) return
+	
+	loading.value = true
+	
+	if (isRefresh == true) {
+		page.value = 1
+		hasMore.value = true
+	}
+	
+	// TODO: 调用动态列表 API - 这里使用模拟数据
+	setTimeout(() => {
+		const newList: Array<UTSJSONObject> = []
+		for (let i = 0; i < pageSize.value; i = i + 1) {
+			const emptyImages: Array<string> = []
+			const hasImage = (i % 3) == 0
+			if (hasImage == true) {
+				emptyImages.push('https://jiasu.wyxdapp.com/iconimages/default_cover.jpg')
+			}
+			
+			const item = {
+				id: page.value.toString() + '-' + i.toString(),
+				userId: 'user' + i.toString(),
+				userName: '用户' + i.toString(),
+				userAvatar: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+				content: '这是一条动态内容 ' + page.value.toString() + '-' + i.toString(),
+				images: emptyImages,
+				video: (i % 5) == 0 ? 'videoUrl' : '',
+				location: (i % 2) == 0 ? '成都市' : '',
+				likeCount: Math.floor(Math.random() * 100),
+				commentCount: Math.floor(Math.random() * 50),
+				isLiked: false,
+				isFollow: false,
+				createTime: '2024-11-21 10:00'
+			} as UTSJSONObject
+			newList.push(item)
+		}
+		
+		if (isRefresh == true) {
+			trendsList.value = newList
+		} else {
+			// 使用 for 循环追加数据
+			for (let j = 0; j < newList.length; j = j + 1) {
+				trendsList.value.push(newList[j])
+			}
+		}
+		
+		hasMore.value = newList.length >= pageSize.value
+		page.value = page.value + 1
+		loading.value = false
+		refreshing.value = false
+	}, 1000)
+}
+
+// 提供默认参数版本
+function loadTrendsListDefault() {
+	loadTrendsList(false)
+}
+
+const handleTabChange = (index: number) => {
+	activeTab.value = index
+	trendsList.value = []
+	page.value = 1
+	loadTrendsList(true)
+}
+
+const onRefresh = () => {
+	refreshing.value = true
+	loadTrendsList(true)
+}
+
+const loadMore = () => {
+	if (loading.value == false && hasMore.value == true) {
+		loadTrendsListDefault()
+	}
+}
+
+const goToDetail = (item: UTSJSONObject) => {
+	uni.navigateTo({
+		url: `/pagesBusiness/trendsDetail/index?id=${item.get('id')}`
+	})
+}
+
+const handleLike = (item: UTSJSONObject) => {
+	// TODO: 调用点赞 API
+	const wasLiked = item.get('isLiked')
+	item.set('isLiked', wasLiked == false)
+	if (wasLiked == true) {
+		const currentCount = item.get('likeCount') != null ? Number(item.get('likeCount')) : 0
+		item.set('likeCount', currentCount - 1)
+	} else {
+		const currentCount = item.get('likeCount') != null ? Number(item.get('likeCount')) : 0
+		item.set('likeCount', currentCount + 1)
+	}
+}
+
+const handleComment = (item: UTSJSONObject) => {
+	uni.navigateTo({
+		url: `/pagesBusiness/trendsDetail/index?id=${item.get('id')}&action=comment`
+	})
+}
+
+const handleShare = (item: UTSJSONObject) => {
+	uni.showShareMenu({
+		withShareTicket: true
+	})
+}
+
+const goToPublish = () => {
+	uni.navigateTo({
+		url: '/pagesBusiness/publishTrends/index'
+	})
+}
+</script>
+
+<style scoped>
+@import '@/common/styles/tabs.css';
+
+.trends-page {
+	height: 100%;
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.trends-scroll {
+	flex: 1;
+	overflow-y: auto;
+}
+
+.load-more,
+.no-more {
+	padding: 40rpx 0;
+	text-align: center;
+}
+
+.load-more text,
+.no-more text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.publish-btn {
+	position: fixed;
+	right: 40rpx;
+	bottom: 120rpx;
+	width: 100rpx;
+	height: 100rpx;
+	background-color: #667eea;
+	border-radius: 30rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+}
+
+.publish-btn text {
+	font-size: 48rpx;
+}
+</style>

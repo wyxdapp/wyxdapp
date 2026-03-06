@@ -1,0 +1,1182 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="goBack">
+					<uni-icons type="left" :size="22" color="#333333" />
+				</view>
+				<text class="nav-title">添加向导</text>
+				<view class="nav-action"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端滚动内容（需要留出导航栏空间） -->
+		<scroll-view class="add-guide-page" :style="{ marginTop: (statusBarHeight + 44) + 'px' }" scroll-y="true">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端滚动内容（无需额外 margin） -->
+		<scroll-view class="add-guide-page-h5" scroll-y="true">
+		<!-- #endif -->
+		
+		<!-- 形象照 -->
+		<view class="section">
+			<view class="section-header">
+				<uni-icons type="camera-filled" :size="20" color="#37B1F2" />
+				<text class="section-title-text">形象照</text>
+			</view>
+			<view class="section-body">
+				<view class="upload-area">
+					<view v-if="hasImagePhoto == true" class="upload-preview" @click="chooseImage">
+						<image :src="formImagePhoto" class="preview-image" mode="aspectFill" />
+					</view>
+					<view v-else class="upload-placeholder" @click="chooseImage">
+						<uni-icons type="camera-filled" :size="48" color="#c0c4cc" />
+						<text class="upload-desc">上传形象照</text>
+					</view>
+				</view>
+				<text class="upload-tip">建议上传清晰的个人照片，支持 jpg、png，大小不超过 5MB</text>
+			</view>
+		</view>
+
+		<!-- 城市 -->
+		<view class="section">
+			<view class="section-header">
+				<uni-icons type="location-filled" :size="20" color="#37B1F2" />
+				<text class="section-title-text">城市</text>
+			</view>
+			<view class="section-body">
+				<view class="city-tags">
+					<view 
+						v-for="(city, index) in accessiblePlace" 
+						:key="index" 
+						class="city-chip"
+						@click="handleCityChipClick(city, index)"
+					>
+						<text class="city-chip-text">{{ city }}</text>
+					</view>
+					<view class="chip-add" @click="openCityPicker">
+						<uni-icons type="plus" :size="20" color="#909399" />
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 擅长 -->
+		<view class="section">
+			<view class="section-header">
+				<uni-icons type="star-filled" :size="20" color="#37B1F2" />
+				<text class="section-title-text">擅长</text>
+			</view>
+			<view class="section-body">
+				<view class="speciality-tags">
+					<view
+						v-for="(item, index) in selectedSpecialities"
+						:key="getSpecialityKey(item, index)"
+						class="speciality-chip"
+						@click="handleSpecialityChipClick(item)"
+					>
+						<text class="speciality-chip-text">{{ item.name }}</text>
+					</view>
+					<view class="chip-add" @click="goToTagManager">
+						<uni-icons type="plus" :size="20" color="#909399" />
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 服务费用 -->
+		<view class="section">
+			<view class="section-header">
+				<uni-icons type="wallet-filled" :size="20" color="#37B1F2" />
+				<text class="section-title-text">费用</text>
+			</view>
+			<view class="section-body">
+				<view class="price-row">
+					<input type="digit" v-model="formServicePrice" placeholder="请输入预定金额" class="price-input" />
+					<text class="price-unit">元</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 服务介绍 -->
+		<view class="section">
+			<view class="section-header">
+				<uni-icons type="compose" :size="20" color="#37B1F2" />
+				<text class="section-title-text">介绍</text>
+			</view>
+			<view class="section-body">
+				<textarea v-model="formGuideDescribe" placeholder="请输入介绍" class="intro-textarea" :maxlength="500" />
+				<text :class="charCountClass">{{ formGuideDescribeLength }}/500</text>
+			</view>
+		</view>
+
+		<!-- 提交按钮 -->
+		<view class="btn-container">
+			<view :class="submitBtnClass" @click="handlePublish">
+				<text class="btn-text">{{ displayBtnText }}</text>
+			</view>
+		</view>
+
+		<!-- 底部安全区域 -->
+		<view class="safe-bottom"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onUnmounted } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getGuideDetail, publishGuide } from '@/common/services/guideService.uts'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { queryUserForte, deleteUserLanguage, deleteUserLabel } from '@/api/discover.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { GUIDE_CONTENT_MAX_LENGTH } from '@/common/config/uiConfig.uts'
+import { QueryUserForteParams, DeleteUserLanguageParams, DeleteUserLabelParams } from '@/api/types/discoverTypes.uts'
+
+// ==================== 页面布局 ====================
+// 使用导出的 ref 变量和函数
+const statusBarHeight = pageStatusBarHeight
+
+// ==================== 类定义 ====================
+
+class SpecialityItemData {
+	kid: string = ''
+	name: string = ''
+	itemType: string = 'label'
+	isCustom: boolean = false
+}
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 响应式状态 ====================
+
+const formMemberGuideKid = ref<string>('')
+const formImagePhoto = ref<string>('')
+const formServicePrice = ref<string>('')
+const formGuideDescribe = ref<string>('')
+const formLabelKids = ref<Array<string>>([])
+const formLanguageKids = ref<Array<string>>([])
+
+const accessiblePlace = ref<Array<string>>([])
+const currentGuideKid = ref<string>('')
+const selectedSpecialities = ref<Array<SpecialityItemData>>([])
+const isEdit = ref<boolean>(false)
+const uploading = ref<boolean>(false)
+const submitting = ref<boolean>(false)
+
+// 🔧 优化：添加标记，避免 onLoad 和 onShow 重复加载
+const isFirstShow = ref<boolean>(true)
+
+// ==================== 计算属性 ====================
+
+const hasImagePhoto = computed((): boolean => {
+	try {
+		const img = formImagePhoto.value
+		return img != null && img != ''
+	} catch (e) {}
+	return false
+})
+
+const formGuideDescribeLength = computed((): number => {
+	try {
+		const desc = formGuideDescribe.value
+		if (desc != null) {
+			return desc.length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const displayBtnText = computed((): string => {
+	try {
+		if (submitting.value == true) {
+			return '提交中...'
+		}
+		if (isEdit.value == true) {
+			return '完成'
+		}
+	} catch (e) {}
+	return '确定'
+})
+
+// 字数统计样式类
+const charCountClass = computed((): string => {
+	const len = formGuideDescribeLength.value
+	if (len >= GUIDE_CONTENT_MAX_LENGTH) {
+		return 'char-count char-count-warning'
+	}
+	return 'char-count'
+})
+
+// 提交按钮样式类
+const submitBtnClass = computed((): string => {
+	if (submitting.value == true) {
+		return 'btn btn-disabled'
+	}
+	return 'btn'
+})
+
+// ==================== 模板辅助函数 ====================
+
+const getSpecialityKey = (item: SpecialityItemData, index: number): string => {
+	return (item.kid != '') ? item.kid : index.toString()
+}
+
+// ==================== 业务函数 ====================
+
+const normalizeAccessiblePlace = (place: string | number | boolean | UTSJSONObject | null): Array<string> => {
+	const result: Array<string> = []
+	if (place == null) return result
+	try {
+		if (Array.isArray(place) == true) {
+			const arr = place as Array<UTSJSONObject>
+			for (let i = 0; i < arr.length; i = i + 1) {
+				const item = arr[i]
+				if (item != null && item.toString() != '') {
+					result.push(item.toString())
+				}
+			}
+			return result
+		}
+		const placeStr = place.toString()
+		if (placeStr != '') {
+			const parts = placeStr.split(',')
+			for (let i = 0; i < parts.length; i = i + 1) {
+				const part = parts[i]
+				if (part != null && part.trim() != '') {
+					result.push(part.trim())
+				}
+			}
+		}
+	} catch (e) {}
+	return result
+}
+
+const syncSelectedFormFields = () => {
+	const labelKids: Array<string> = []
+	const languageKids: Array<string> = []
+	const list = selectedSpecialities.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		if (item.itemType == 'label' && item.kid != '') {
+			labelKids.push(item.kid)
+		} else if (item.itemType == 'language' && item.kid != '') {
+			languageKids.push(item.kid)
+		}
+	}
+	formLabelKids.value = labelKids
+	formLanguageKids.value = languageKids
+}
+
+const removeSpecialitySelection = (targetKid: string) => {
+	const newList: Array<SpecialityItemData> = []
+	const list = selectedSpecialities.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		if (item.kid != targetKid) {
+			newList.push(item)
+		}
+	}
+	selectedSpecialities.value = newList
+	syncSelectedFormFields()
+}
+
+// ==================== API 调用函数 ====================
+
+const loadGuideInfo = async (kid: string) => {
+	try {
+		const currentUserKid = getUserKidFromStore()
+		
+		// 🔧 优化：验证参数
+		if (kid == '') {
+			console.warn('⚠️ [addGuide] loadGuideInfo - kid 为空，跳过加载')
+			return
+		}
+		
+		const params = {
+			userKid: kid,
+			currentUserKid: (currentUserKid != '') ? currentUserKid : kid
+		} as UTSJSONObject
+		
+		console.log('📡 [addGuide] 请求向导信息, kid:', kid, 'currentUserKid:', currentUserKid)
+		
+		const res = await getGuideDetail(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			
+			// 🔧 优化：检查响应码
+			const codeVal = resObj.get('code')
+			const code = (codeVal != null) ? parseInt(codeVal.toString()) : 0
+			
+			if (code == 404 || code == 400) {
+				// 向导不存在，这是正常情况（新用户）
+				console.log('ℹ️ [addGuide] 向导信息不存在，用户可能是新用户')
+				// 不显示错误提示，让用户正常填写表单
+				return
+			}
+			
+			if (code != 200) {
+				throw new Error('API 返回错误码: ' + code.toString())
+			}
+			
+			const dataVal = resObj.get('data')
+			
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				
+				const memberGuideKidVal = dataObj.get('memberGuideKid')
+				const imagePhotoVal = dataObj.get('imagePhoto')
+				const guideImgVal = dataObj.get('guideImg')
+				const servicePriceVal = dataObj.get('servicePrice')
+				const guideDescribeVal = dataObj.get('guideDescribe')
+				const accessiblePlaceVal = dataObj.get('accessiblePlace')
+				const userFortesVal = dataObj.get('userFortes')
+				
+				if (memberGuideKidVal != null && memberGuideKidVal.toString() != '') {
+					formMemberGuideKid.value = memberGuideKidVal.toString()
+				} else {
+					formMemberGuideKid.value = kid
+				}
+				
+				if (imagePhotoVal != null && imagePhotoVal.toString() != '') {
+					formImagePhoto.value = imagePhotoVal.toString()
+				} else if (guideImgVal != null && guideImgVal.toString() != '') {
+					formImagePhoto.value = guideImgVal.toString()
+				}
+				
+				if (servicePriceVal != null && servicePriceVal.toString() != '') {
+					formServicePrice.value = servicePriceVal.toString()
+				}
+				
+				if (guideDescribeVal != null && guideDescribeVal.toString() != '') {
+					formGuideDescribe.value = guideDescribeVal.toString()
+				}
+				
+				if (accessiblePlaceVal != null) {
+					accessiblePlace.value = normalizeAccessiblePlace(accessiblePlaceVal)
+				}
+				
+				// 解析 userFortes
+				if (userFortesVal != null && Array.isArray(userFortesVal) == true) {
+					const fortesArr = userFortesVal as Array<UTSJSONObject>
+					const newSpecialities: Array<SpecialityItemData> = []
+					for (let i = 0; i < fortesArr.length; i = i + 1) {
+						const forte = fortesArr[i]
+						if (forte != null) {
+							const forteKid = getItemStringProp(forte, 'forteKid')
+							const labelName = getItemStringProp(forte, 'labelName')
+							if (forteKid != '' && labelName != '') {
+								const newItem = new SpecialityItemData()
+								newItem.kid = forteKid
+								newItem.name = labelName
+								newItem.itemType = 'label'
+								newItem.isCustom = false
+								newSpecialities.push(newItem)
+							}
+						}
+					}
+					selectedSpecialities.value = newSpecialities
+					syncSelectedFormFields()
+				}
+			}
+		}
+	} catch (error) {
+		// 🔧 优化：区分错误类型
+		if (error != null && error.message != null) {
+			const msg = error.message.toString()
+			if (msg.indexOf('向导不存在') >= 0 || msg.indexOf('404') >= 0 || msg.indexOf('400') >= 0) {
+				// 向导不存在，不显示错误（新用户场景）
+				console.log('ℹ️ [addGuide] 向导不存在，这是正常情况（新用户）')
+				return
+			}
+		}
+		
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载向导信息', null)
+		}
+	}
+}
+
+const loadSpecialities = async (kid: string) => {
+	try {
+		const params = new QueryUserForteParams()
+		params.userKid = kid
+		const res = await queryUserForte(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const fortesVal = dataObj.get('fortes')
+				
+				if (fortesVal != null && Array.isArray(fortesVal) == true) {
+					const fortesArr = fortesVal as Array<UTSJSONObject>
+					const newSpecialities: Array<SpecialityItemData> = []
+					
+					for (let i = 0; i < fortesArr.length; i = i + 1) {
+						const forte = fortesArr[i]
+						if (forte != null) {
+							const forteKid = getItemStringProp(forte, 'kid')
+							const labelName = getItemStringProp(forte, 'labelName')
+							const isSelectedStr = getItemStringProp(forte, 'isSelected')
+							
+							if (forteKid != '' && labelName != '' && isSelectedStr == 'true') {
+								const newItem = new SpecialityItemData()
+								newItem.kid = forteKid
+								newItem.name = labelName
+								newItem.itemType = 'label'
+								newItem.isCustom = false
+								newSpecialities.push(newItem)
+							}
+						}
+					}
+					
+					if (newSpecialities.length > 0) {
+						selectedSpecialities.value = newSpecialities
+						syncSelectedFormFields()
+					}
+				}
+			}
+		}
+	} catch (error) {
+		handleSilentError(error, '加载擅长列表')
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+const goBack = () => {
+	uni.navigateBack()
+}
+
+const doDeleteSpeciality = async (item: SpecialityItemData) => {
+	const userKid = getUserKidFromStore()
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	try {
+		if (item.itemType == 'language') {
+			const params = new DeleteUserLanguageParams()
+			params.userKid = userKid
+			params.languageKid = item.kid
+			await deleteUserLanguage(params)
+		} else {
+			const params = new DeleteUserLabelParams()
+			params.userKid = userKid
+			params.labelKid = item.kid
+			await deleteUserLabel(params)
+		}
+		
+		removeSpecialitySelection(item.kid)
+		uni.showToast({ title: '删除成功', icon: 'success' })
+	} catch (error) {
+		console.error('删除标签失败:', error)
+		uni.showToast({ title: '删除失败，请稍后重试', icon: 'none' })
+	}
+}
+
+// 点击擅长标签，弹出确认删除
+const handleSpecialityChipClick = (item: SpecialityItemData) => {
+	if (item.kid == '') return
+	
+	uni.showModal({
+		title: '提示',
+		content: '确定移除"' + item.name + '"吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doDeleteSpeciality(item)
+			}
+		}
+	})
+}
+
+// 点击城市标签，弹出确认删除
+const handleCityChipClick = (city: string, index: number) => {
+	uni.showModal({
+		title: '提示',
+		content: '确定移除"' + city + '"吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				// 直接内联删除逻辑，避免 UTS 回调作用域问题
+				const list = accessiblePlace.value
+				list.splice(index, 1)
+				accessiblePlace.value = list
+			}
+		}
+	})
+}
+
+const goToTagManager = () => {
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return
+	}
+	uni.navigateTo({ url: '/pagesUser/my/profile/fortes' })
+}
+
+const uploadImage = (filePath: string) => {
+	if (uploading.value == true) return
+	uploading.value = true
+	
+	const emptyProgressCallback = (progress: number): void => {
+		// 不处理进度
+	}
+	
+	cosUploader.uploadImage(filePath, 'guide', emptyProgressCallback).then((result: UTSJSONObject) => {
+		if (result != null) {
+			// 使用 JSON 序列化方式安全访问属性
+			let isSuccess = false
+			let compressedUrl = ''
+			let originalUrl = ''
+			
+			try {
+				const resStr = JSON.stringify(result)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				
+				const successVal = resObj.get('success')
+				if (successVal != null && successVal.toString() == 'true') {
+					isSuccess = true
+				}
+				
+				const dataVal = resObj.get('data')
+				if (dataVal != null) {
+					const dataStr = JSON.stringify(dataVal)
+					const dataObj = JSON.parse(dataStr) as UTSJSONObject
+					
+					const compressedUrlVal = dataObj.get('compressedUrl')
+					if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+						compressedUrl = compressedUrlVal.toString()
+					}
+					
+					const originalUrlVal = dataObj.get('originalUrl')
+					if (originalUrlVal != null && originalUrlVal.toString() != '') {
+						originalUrl = originalUrlVal.toString()
+					}
+				}
+			} catch (e) {
+				console.error('解析上传结果失败:', e)
+			}
+			
+			if (isSuccess == true) {
+				if (compressedUrl != '') {
+					formImagePhoto.value = compressedUrl
+				} else if (originalUrl != '') {
+					formImagePhoto.value = originalUrl
+				}
+				
+				uni.showToast({ title: '上传成功', icon: 'success' })
+			} else {
+				uni.showToast({ title: '上传失败', icon: 'none' })
+			}
+		}
+		uploading.value = false
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '形象照上传', null)
+		}
+		uploading.value = false
+	})
+}
+
+const chooseImage = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		uni.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						if (tempFilePaths.length > 0) {
+							const firstPath = tempFilePaths[0]
+							if (firstPath != null && firstPath.toString() != '') {
+								uploadImage(firstPath.toString())
+							}
+						}
+					}
+				}
+			}
+		})
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '请求相机相册权限')
+	})
+}
+
+// 城市选择相关函数
+const openCityPicker = () => {
+	// 跳转到城市选择页面
+	uni.navigateTo({
+		url: '/pagesBusiness/citySelect/index'
+	})
+}
+
+const handleCitySelect = (city: string) => {
+	const normalized = (city != null) ? city.trim() : ''
+	if (normalized == '' || normalized == '全部') return
+	
+	const list = accessiblePlace.value
+	let exists = false
+	for (let i = 0; i < list.length; i = i + 1) {
+		if (list[i] == normalized) {
+			exists = true
+			break
+		}
+	}
+	
+	if (exists == true) {
+		// 城市已存在，不重复添加
+		return
+	}
+	
+	if (list.length >= 10) {
+		uni.showToast({ title: '最多选择 10 个城市', icon: 'none' })
+		return
+	}
+	
+	list.push(normalized)
+	accessiblePlace.value = list
+}
+
+const validateForm = (): string => {
+	if (formImagePhoto.value == '') {
+		return '请上传形象照'
+	}
+	
+	if (accessiblePlace.value.length == 0) {
+		return '请选择城市'
+	}
+	
+	if (formServicePrice.value == '') {
+		return '请输入服务费用'
+	}
+	
+	const price = parseFloat(formServicePrice.value)
+	if (isNaN(price) == true || price <= 0) {
+		return '请输入有效的费用金额'
+	}
+	
+	const desc = formGuideDescribe.value.trim()
+	if (desc == '') {
+		return '请输入服务介绍'
+	}
+	
+	if (formMemberGuideKid.value == '') {
+		return '用户信息失效，请重新登录'
+	}
+	
+	return ''
+}
+
+const handlePublish = async () => {
+	if (submitting.value == true) return
+	
+	const error = validateForm()
+	if (error != '') {
+		uni.showToast({ title: error, icon: 'none' })
+		return
+	}
+	
+	submitting.value = true
+	
+	try {
+		// 构建擅长名称列表
+		const specialityNames: Array<string> = []
+		const list = selectedSpecialities.value
+		for (let i = 0; i < list.length; i = i + 1) {
+			const item = list[i]
+			if (item.name != '') {
+				specialityNames.push(item.name)
+			}
+		}
+		
+		const params = {
+			memberGuideKid: formMemberGuideKid.value,
+			imagePhoto: formImagePhoto.value.trim(),
+			accessiblePlace: accessiblePlace.value.join(','),
+			servicePrice: parseFloat(formServicePrice.value),
+			guideDescribe: formGuideDescribe.value.trim(),
+			serviceLabel: specialityNames.join(','),
+			labelKids: formLabelKids.value,
+			languageKids: formLanguageKids.value
+		} as UTSJSONObject
+		
+		await publishGuide(params)
+		
+		const title = (isEdit.value == true) ? '编辑成功' : '发布成功'
+		uni.showToast({ title: title, icon: 'success' })
+		
+		setTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '发布向导信息', null)
+		}
+	} finally {
+		submitting.value = false
+	}
+}
+
+const refreshGuideData = () => {
+	const userKid = getUserKidFromStore()
+	if (userKid != '') {
+		loadSpecialities(userKid)
+	}
+	const guideKid = currentGuideKid.value
+	if (guideKid != '') {
+		loadGuideInfo(guideKid)
+	}
+}
+
+const initPageData = () => {
+	// 初始化页面布局（获取状态栏高度等）
+	initPageLayout()
+	
+	// 监听城市选择事件
+	uni.$on('onCitySelected', (data: UTSJSONObject | null) => {
+		if (data != null) {
+			try {
+				const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+				const cityVal = dataObj.get('city')
+				if (cityVal != null) {
+					const city = cityVal.toString()
+					handleCitySelect(city)
+				}
+			} catch (e) {
+				console.error('解析城市选择数据失败:', e)
+			}
+		}
+	})
+	
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return
+	}
+	
+	const userKid = getUserKidFromStore()
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return
+	}
+	
+	formMemberGuideKid.value = userKid
+}
+
+// ==================== 生命周期 ====================
+
+onLoad((options: OnLoadOptions) => {
+	initPageData()
+	
+	let targetKid = ''
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const kidVal = optionsObj.get('kid')
+		if (kidVal != null && kidVal.toString() != '') {
+			targetKid = kidVal.toString()
+		}
+	}
+	
+	if (targetKid == '') {
+		targetKid = getUserKidFromStore()
+	}
+	
+	currentGuideKid.value = targetKid
+	
+	if (targetKid != '') {
+		isEdit.value = true
+		refreshGuideData()
+	}
+})
+
+onShow(() => {
+	// 🔧 优化：首次显示跳过（onLoad 已加载）
+	if (isFirstShow.value == true) {
+		isFirstShow.value = false
+		console.log('ℹ️ [addGuide] 首次 onShow，跳过刷新（onLoad 已加载）')
+		return
+	}
+	
+	// 后续显示才刷新（从其他页面返回时）
+	console.log('🔄 [addGuide] 从其他页面返回，刷新数据')
+	refreshGuideData()
+})
+
+// 页面卸载时移除事件监听
+onUnmounted(() => {
+	uni.$off('onCitySelected')
+})
+</script>
+
+
+<style scoped>
+/* 页面容器 */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #ffffff;
+	position: relative;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	width: 750rpx;
+	background-color: #ffffff;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+	z-index: 1000;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.nav-back {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	text-align: center;
+}
+
+.nav-action {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+}
+/* #endif */
+
+/* APP端滚动区域 */
+/* #ifndef H5 */
+.add-guide-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #ffffff;
+	padding: 0 28rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+/* H5端滚动区域 */
+/* #ifdef H5 */
+.add-guide-page-h5 {
+	flex: 1;
+	flex-direction: column;
+	background-color: #ffffff;
+	padding: 0 28rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+/* 表单分区 */
+.section {
+	margin-bottom: 32rpx;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	padding: 20rpx 0 0;
+}
+
+.section-title-text {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #3a3a3a;
+	margin-left: 12rpx;
+}
+
+.section-body {
+	margin-top: 20rpx;
+	padding-left: 32rpx;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+/* 图片上传区域 */
+.upload-area {
+	flex-direction: column;
+	align-items: flex-start;
+	margin-bottom: 12rpx;
+}
+
+.upload-preview {
+	width: 280rpx;
+	height: 280rpx;
+	border-radius: 16rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.upload-placeholder {
+	width: 280rpx;
+	height: 280rpx;
+	border-radius: 16rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #dcdcdc;
+}
+
+.preview-image {
+	width: 280rpx;
+	height: 280rpx;
+	border-radius: 16rpx;
+}
+
+.upload-desc {
+	font-size: 26rpx;
+	color: #909399;
+	margin-top: 16rpx;
+}
+
+.upload-tip {
+	font-size: 24rpx;
+	color: #909399;
+	line-height: 36rpx;
+}
+
+/* 标签容器 - 城市和擅长共用 */
+.city-tags {
+	flex-direction: row;
+	flex-wrap: wrap;
+	width: 100%;
+}
+
+.speciality-tags {
+	flex-direction: row;
+	flex-wrap: wrap;
+	width: 100%;
+}
+
+/* 城市标签芯片 - 点击整个标签删除 */
+.city-chip {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-radius: 32rpx;
+	background-color: #e6f3ff;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.city-chip-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+	lines: 1;
+}
+
+/* 擅长标签芯片 - 点击整个标签删除 */
+.speciality-chip {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-radius: 32rpx;
+	background-color: #e6f3ff;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.speciality-chip-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+	lines: 1;
+}
+
+/* 添加按钮 - 城市和擅长共用 */
+.chip-add {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	width: 72rpx;
+	height: 56rpx;
+	border-radius: 28rpx;
+	background-color: #f7f7f7;
+	margin-bottom: 16rpx;
+}
+
+/* 价格输入 */
+.price-row {
+	flex-direction: row;
+	align-items: center;
+	width: 100%;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #dcdcdc;
+	border-radius: 40rpx;
+	background-color: #ffffff;
+	padding: 0 24rpx;
+}
+
+.price-input {
+	flex: 1;
+	height: 80rpx;
+	font-size: 28rpx;
+	color: #3a3a3a;
+}
+
+.price-unit {
+	font-size: 28rpx;
+	color: #6a6a6a;
+	margin-left: 16rpx;
+}
+
+/* 服务介绍 */
+.intro-textarea {
+	width: 100%;
+	min-height: 240rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #dcdcdc;
+	border-radius: 16rpx;
+	background-color: #f7f7f7;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	font-size: 28rpx;
+	color: #3a3a3a;
+}
+
+.char-count {
+	margin-top: 8rpx;
+	font-size: 24rpx;
+	color: #909399;
+	text-align: right;
+	align-self: flex-end;
+}
+
+.char-count-warning {
+	color: #e43d33;
+}
+
+/* 提交按钮容器 */
+.btn-container {
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	flex-direction: row;
+	justify-content: center;
+}
+
+/* 提交按钮 */
+.btn {
+	width: 654rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-disabled {
+	background-color: #9bd9f9;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 底部安全区域 */
+.safe-bottom {
+	height: 60rpx;
+}
+</style>

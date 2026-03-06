@@ -1,0 +1,295 @@
+﻿/**
+ * 聊天操作组合式函数
+ * 处理预定、联系方式查看等功能
+ * 
+ * 注意：此文件从 pagesBusiness/composables/useChatActions.uts 移动到主包
+ * 原因：pagesTrade 需要引用此 composable，避免跨分包引用错误
+ * 移动时间：2026-02-04
+ */
+
+import { useUserStore } from '@/stores/user'
+import { checkMemberStatus } from '@/api/travel'
+import { getUserHomePage, type GetUserHomePageParams } from '@/api/user.uts'
+import { useMemberGuard } from '@/common/composables/useMemberGuard.uts'
+import { toUTSJSON, getString, getObject } from '@/common/utils/typeConverter'
+
+// 防止重复操作的标志
+let isContacting = false
+
+/**
+ * 处理立即预定
+ * @param targetUserId 目标用户ID
+ * @param targetUserName 目标用户名
+ */
+export const handleReserve = (targetUserId: string, targetUserName: string) => {
+	if (targetUserId == null) {
+		throw new Error('用户信息不完整')
+	}
+	
+	// 跳转到预约页面
+	uni.navigateTo({
+		url: `/pagesUser/persionInfo/submitOrder?targetId=${targetUserId}`,
+		success: () => {
+			console.log('跳转到预约页面成功')
+		},
+		fail: (error) => {
+			console.error('跳转到预约页面失败:', error)
+			uni.showToast({
+				title: '跳转失败，请重试',
+				icon: 'none'
+			})
+		}
+	})
+}
+
+/**
+ * 处理联系方式查看
+ * @param targetUserId 目标用户ID
+ * @param targetUserName 目标用户名
+ * @param currentUserInfo 当前用户信息
+ * @returns Promise<boolean> 是否成功显示联系方式
+ */
+export const handleContact = async (
+	targetUserId: string, 
+	targetUserName: string, 
+	currentUserInfo: any
+): Promise<boolean> => {
+	console.log('🔍 [useChatActions] handleContact 开始, isContacting:', isContacting)
+	
+	if (targetUserId == null) {
+		throw new Error('用户信息不完整')
+	}
+	
+	// 安全访问 currentUserInfo 的属性，避免 error18
+	let currentUserKid = ''
+	if (currentUserInfo != null) {
+		const userInfoObj = toUTSJSON(currentUserInfo)
+		currentUserKid = getString(userInfoObj, 'kid')
+	}
+	
+	// 使用显式判断替代 !currentUserInfo
+	if (currentUserInfo == null || currentUserKid == null || currentUserKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return false
+	}
+
+	if (isContacting) {
+		console.log('🚫 [useChatActions] 正在处理中，跳过重复点击')
+		// 避免重复发起流程
+		return false
+	}
+	isContacting = true
+
+	try {
+		// 1. 会员认证检查
+		const userStore = useUserStore()
+		const api = {
+			checkMemberStatus
+		}
+		const pass = await useMemberGuard(api, userStore, 'contact_view')
+		console.log('🔍 [useChatActions] 会员认证结果:', pass)
+		
+		// 🔧 修复：检查 pass == false 而不是 pass == null
+		if (pass == false) { 
+			isContacting = false
+			return false 
+		}
+
+		// 已通过会员认证，获取对方联系方式
+		uni.showLoading({ title: '获取中...' })
+		
+		let userInfo: any = '' // any 类型不能初始化为 null
+		try {
+			// 调用用户主页接口获取联系方式
+			// 使用之前安全获取的 currentUserKid
+			console.log('📞 [useChatActions] 调用 getUserHomePage, targetUserId:', targetUserId, 'currentUserKid:', currentUserKid)
+			
+			// 使用 toUTSJSON + 接口类型传递参数，符合 UTS 规范
+			const paramsRaw = {
+				kid: targetUserId,
+				focusUserkid: currentUserKid
+			} as any
+			const getUserHomePageParams = paramsRaw as GetUserHomePageParams
+			const response = await getUserHomePage(getUserHomePageParams)
+			
+			console.log('📞 [useChatActions] getUserHomePage 响应:', response)
+			
+			// 安全访问 response 的属性，避免 error18
+			let responseCode: number | string | null = null
+			let responseData: any = '' // any 类型不能初始化为 null
+			
+			try {
+				const responseObj = toUTSJSON(response)
+				console.log('📞 [useChatActions] 响应解析完成')
+				if (responseObj != null) {
+					const codeVal = responseObj.get('code')
+					const dataVal = responseObj.get('data')
+					
+					console.log('📞 [useChatActions] 响应 code:', codeVal, 'data:', dataVal)
+					
+					if (codeVal != null) {
+						if (typeof codeVal === 'number') {
+							responseCode = codeVal
+						} else if (typeof codeVal === 'string') {
+							responseCode = codeVal
+						}
+					}
+					if (dataVal != null) {
+						responseData = dataVal
+					}
+				}
+			} catch (e) {
+				console.error('📞 [useChatActions] 解析响应失败:', e)
+			}
+			
+			console.log('📞 [useChatActions] 解析后 responseCode:', responseCode, 'responseData:', responseData)
+			
+			// 使用显式判断替代 response &&
+			if (response != null && (responseCode == 200 || responseCode == '200') && responseData != null && responseData != '') {
+				userInfo = responseData
+			} else {
+			}
+		} catch (error) {
+			console.error('❌ [useChatActions] 获取用户信息失败:', error)
+		}
+		
+		uni.hideLoading()
+		
+		// 使用显式判断替代 if (userInfo)
+		if (userInfo != null && userInfo != '') {
+			// 显示联系方式弹窗（showContactPopup 内部会处理不同的数据结构）
+			console.log('🎉 [useChatActions] 准备显示联系方式弹窗')
+			showContactPopup(userInfo, targetUserName)
+			return true
+		} else {
+			uni.showToast({
+				title: '获取联系方式失败',
+				icon: 'none'
+			})
+			return false
+		}
+	} catch (error) {
+		uni.hideLoading()
+		console.error('获取联系方式失败:', error)
+		uni.showToast({
+			title: '网络错误，请重试',
+			icon: 'none'
+		})
+		return false
+	} finally {
+		isContacting = false
+	}
+}
+
+/**
+ * 安全获取用户信息属性
+ */
+const getUserInfoProp = (userInfo: any, key: string): string => {
+	if (userInfo == null) return ''
+	const userInfoObj = toUTSJSON(userInfo)
+	return getString(userInfoObj, key)
+}
+
+/**
+ * 显示联系方式弹窗
+ * @param userInfo 用户信息
+ * @param userName 用户名
+ */
+const showContactPopup = (userInfo: any, userName: string) => {
+	// 兼容不同的字段名称，使用安全访问方式
+	const realnameVal = getUserInfoProp(userInfo, 'realname')
+	const nameVal = getUserInfoProp(userInfo, 'name')
+	const nicknameVal = getUserInfoProp(userInfo, 'nickname')
+	const realname = (realnameVal != null && realnameVal != '') ? realnameVal : 
+	                 ((nameVal != null && nameVal != '') ? nameVal : 
+	                 ((nicknameVal != null && nicknameVal != '') ? nicknameVal : ''))
+	
+	const contactPhoneVal = getUserInfoProp(userInfo, 'contactPhone')
+	const phoneVal = getUserInfoProp(userInfo, 'phone')
+	const mobileVal = getUserInfoProp(userInfo, 'mobile')
+	const telephoneVal = getUserInfoProp(userInfo, 'telephone')
+	const contactPhone = (contactPhoneVal != null && contactPhoneVal != '') ? contactPhoneVal : 
+	                    ((phoneVal != null && phoneVal != '') ? phoneVal : 
+	                    ((mobileVal != null && mobileVal != '') ? mobileVal : 
+	                    ((telephoneVal != null && telephoneVal != '') ? telephoneVal : '')))
+	
+	const qqNumberVal = getUserInfoProp(userInfo, 'qqNumber')
+	const qqVal = getUserInfoProp(userInfo, 'qq')
+	const qqNumber = (qqNumberVal != null && qqNumberVal != '') ? qqNumberVal : 
+	                ((qqVal != null && qqVal != '') ? qqVal : '')
+	
+	const weixinNumberVal = getUserInfoProp(userInfo, 'weixinNumber')
+	const weixinVal = getUserInfoProp(userInfo, 'weixin')
+	const wxVal = getUserInfoProp(userInfo, 'wx')
+	const weixinNumber = (weixinNumberVal != null && weixinNumberVal != '') ? weixinNumberVal : 
+	                    ((weixinVal != null && weixinVal != '') ? weixinVal : 
+	                    ((wxVal != null && wxVal != '') ? wxVal : ''))
+	
+	// 初始化联系方式信息
+	let finalRealname = realname
+	let finalContactPhone = contactPhone
+	let finalQqNumber = qqNumber
+	let finalWeixinNumber = weixinNumber
+	
+	// 尝试从更深层次的数据结构中提取
+	try {
+		const userInfoObj = toUTSJSON(userInfo)
+		if (userInfoObj != null) {
+			const contactInfoInnerObj = getObject(userInfoObj, 'contactInfo')
+			if (contactInfoInnerObj != null) {
+				const contactInfoQqNumber = getString(contactInfoInnerObj, 'qqNumber')
+				const contactInfoWeixinNumber = getString(contactInfoInnerObj, 'weixinNumber')
+				const contactInfoPhone = getString(contactInfoInnerObj, 'phone')
+				
+				if ((finalQqNumber == null || finalQqNumber == '') && contactInfoQqNumber != null && contactInfoQqNumber != '') {
+					finalQqNumber = contactInfoQqNumber
+				}
+				if ((finalWeixinNumber == null || finalWeixinNumber == '') && contactInfoWeixinNumber != null && contactInfoWeixinNumber != '') {
+					finalWeixinNumber = contactInfoWeixinNumber
+				}
+				if ((finalContactPhone == null || finalContactPhone == '') && contactInfoPhone != null && contactInfoPhone != '') {
+					finalContactPhone = contactInfoPhone
+				}
+			}
+		}
+	} catch (e) {}
+	
+	// 构造最终的联系方式信息对象
+	const contactInfo = {
+		realname: finalRealname,
+		contactPhone: finalContactPhone,
+		qqNumber: finalQqNumber,
+		weixinNumber: finalWeixinNumber
+	} as any
+
+	console.log('📋 [showContactPopup] 联系方式信息:', JSON.stringify(contactInfo))
+
+	// 检查是否有联系方式 - 🔧 修复：使用 final 变量检查
+	const hasRealname = finalRealname != null && finalRealname != ''
+	const hasContactPhone = finalContactPhone != null && finalContactPhone != ''
+	const hasQqNumber = finalQqNumber != null && finalQqNumber != ''
+	const hasWeixinNumber = finalWeixinNumber != null && finalWeixinNumber != ''
+	const hasContact = hasRealname == true || hasContactPhone == true || hasQqNumber == true || hasWeixinNumber == true
+
+	console.log('📋 [showContactPopup] hasContact:', hasContact, 'hasRealname:', hasRealname, 'hasContactPhone:', hasContactPhone, 'hasQqNumber:', hasQqNumber, 'hasWeixinNumber:', hasWeixinNumber)
+
+	if (hasContact == false) {
+		uni.showToast({
+			title: '该用户暂未设置联系方式',
+			icon: 'none'
+		})
+		return
+	}
+
+	console.log('🎉 [showContactPopup] 触发 show-contact-popup 事件')
+	// 使用全局事件触发联系方式弹窗组件
+	uni.$emit('show-contact-popup', {
+		userName,
+		contactInfo
+	})
+}
+
+export default { 
+	handleReserve, 
+	handleContact 
+}

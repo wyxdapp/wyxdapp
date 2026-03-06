@@ -1,0 +1,49 @@
+/**
+ * 微信公众号相关 API
+ */
+
+/**
+ * 绑定微信公众号
+ * @param code 微信授权 code
+ * @param platform 平台标识（h5/app/mp）
+ */
+export const bindWechatMp = (code: string, platform: string): Promise<UTSJSONObject> => {
+	return new Promise<UTSJSONObject>((resolve, reject) => {
+		uni.request({
+			url: '/chat/user/bind-wechat-mp',
+			method: 'POST',
+			data: {
+				code: code,
+				platform: platform
+			} as UTSJSONObject,
+			success: (res) => {
+				resolve(res.data as UTSJSONObject)
+			},
+			fail: (err) => {
+				const errObj = new UTSJSONObject()
+				errObj.set('errMsg', err.errMsg)
+				reject(errObj)
+			}
+		})
+	})
+}
+
+/**
+ * 解绑微信公众号
+ */
+export const unbindWechatMp = (): Promise<UTSJSONObject> => {
+	return new Promise<UTSJSONObject>((resolve, reject) => {
+		uni.request({
+			url: '/chat/user/unbind-wechat-mp',
+			method: 'DELETE',
+			success: (res) => {
+				resolve(res.data as UTSJSONObject)
+			},
+			fail: (err) => {
+				const errObj = new UTSJSONObject()
+				errObj.set('errMsg', err.errMsg)
+				reject(errObj)
+			}
+		})
+	})
+}

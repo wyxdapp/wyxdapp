@@ -1,0 +1,44 @@
+/**
+ * 认证相关 API
+ * 对应后端: AuthApiController.java
+ */
+
+import request from '@/utils/request'
+import { RefreshTokenParams, LogoutParams, LogoutAllParams } from './types/authTypes.uts'
+
+/**
+ * 刷新令牌（accessToken续期）
+ * POST /auth/refresh
+ * @param params { refreshToken: string }
+ */
+export const refreshToken = (params: RefreshTokenParams): Promise<UTSJSONObject> => {
+	const payload = {
+		refreshToken: params.refreshToken
+	} as UTSJSONObject
+	return request.post('/auth/refresh', payload, true)
+}
+
+/**
+ * 登出（删除当前设备refreshToken）
+ * POST /auth/logout
+ * @param params { refreshToken?: string, device?: string }
+ */
+export const logout = (params: LogoutParams): Promise<UTSJSONObject> => {
+	const payload = {
+		refreshToken: params.refreshToken,
+		device: params.device
+	} as UTSJSONObject
+	return request.post('/auth/logout', payload, true)
+}
+
+/**
+ * 全部设备登出（删除用户所有设备的refreshToken）
+ * POST /auth/logoutAll
+ * @param params { userKid: string }
+ */
+export const logoutAll = (params: LogoutAllParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/auth/logoutAll', payload, true)
+}

@@ -1,0 +1,132 @@
+/* ==================== Vue3 Uni-app X 基础样式 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：页面基础重置样式和全局样式 */
+
+/* ==================== 页面基础 ==================== */
+/* ❌ uni-app x 不支持元素选择器（page, view, text, image 等），已移除 */
+/* 页面基础样式请在 App.uvue 或页面中使用 .page-root 类 */
+
+/* 页面根容器（替代 page 选择器）*/
+.page-root {
+  width: 100%;
+  min-height: 1334rpx;
+  background-color: #F5F5F5;
+  font-size: 28rpx;
+  color: #333333;
+  line-height: 1.5;
+}
+
+/* ==================== 元素重置 ==================== */
+/* ❌ uni-app x 不支持元素选择器，已移除 view, text, image 的全局样式 */
+/* 如需重置样式，请使用具体的类名 */
+
+/* ==================== 图片默认样式 ==================== */
+/* ❌ uni-app x 不支持元素选择器，已移除 image 全局样式 */
+
+/* ==================== 滚动区域 ==================== */
+/* ❌ uni-app x 不支持元素选择器，已移除 scroll-view 全局样式 */
+/* scroll-view 默认样式已足够，无需额外设置 */
+
+/* ==================== 阴影样式 ==================== */
+.shadow-sm {
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+}
+
+.shadow-md {
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
+}
+
+.shadow-lg {
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.16);
+}
+
+/* ==================== 卡片样式 ==================== */
+.card {
+  background-color: #FFFFFF;
+  border-radius: 16rpx;
+  padding: 24rpx;
+}
+
+.card-shadow {
+  background-color: #FFFFFF;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+}
+
+/* ==================== 页面容器 ==================== */
+.page-container {
+  width: 100%;
+  min-height: 1334rpx;  /* ✅ 修复：uni-app x 不支持 %/vh，改为固定像素值 */
+  background-color: #F5F5F5;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  padding: 24rpx;
+}
+
+/* ==================== 安全区域 ==================== */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* ==================== 状态栏占位（APP端使用）==================== */
+/* 用于自定义导航栏页面，避免内容被状态栏遮挡 */
+.status-bar-placeholder {
+  width: 750rpx;
+  background-color: transparent;
+}
+
+/* 白色背景的状态栏占位 */
+.status-bar-placeholder-white {
+  width: 750rpx;
+  background-color: #ffffff;
+}
+
+/* ==================== 加载状态 ==================== */
+.skeleton {
+  background-color: #f0f0f0;  /* ✅ 修复：uni-app x 不支持 background-size 和 animation */
+  /* 骨架屏动画需要使用 uni.createAnimation() API 实现 */
+}
+
+/* ==================== 占位符 ==================== */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 120rpx 0;
+}
+
+.placeholder-image {
+  width: 320rpx;
+  height: 320rpx;
+  margin-bottom: 32rpx;
+}
+
+.placeholder-text {
+  font-size: 28rpx;
+  color: #999999;
+}
+
+/* ==================== 禁用状态 ==================== */
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ==================== 点击态 ==================== */
+.hover-opacity {
+  opacity: 0.8;
+}
+
+.hover-scale {
+  transform: scale(0.98);
+}

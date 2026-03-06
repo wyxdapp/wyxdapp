@@ -1,0 +1,717 @@
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { WX_OPEN_APP_ID, WX_UNIVERSAL_LINK, WX_ERR_USER_CANCEL } from '@/common/config/wechatConfig.uts'
+import { WX_PAYMENT_CALLBACK_TIMEOUT } from '@/common/config/timeoutConfig.uts'
+
+/**
+ * APP 端微信支付服务
+ * 使用 tt-wechat-pro 插件实现微信支付
+ *
+ * 支持平台：Android、iOS、HarmonyOS
+ *
+ * 注意：需要使用自定义基座运行
+ * H5 环境下提供空实现，避免编译错误
+ *
+ * @author wyxdapp
+ * @version 2.0.5
+ * @since 2025-12-29
+ * @updated 2025-12-29 修复支付回调不触发问题：
+ *   - 添加全局回调存储，避免页面卸载导致回调丢失
+ *   - 添加 onAppShow 检查机制，用于从微信返回时检查支付状态
+ *   - 添加超时机制，防止回调永远不触发
+ */
+
+// 从独立的 types.uts 导入，避免循环依赖
+import { 
+	PAYMENT_STATE_IDLE,
+	PAYMENT_STATE_PROCESSING,
+	PAYMENT_STATE_SUCCESS,
+	PAYMENT_STATE_FAILED,
+	getPaymentState,
+	setPaymentState,
+	clearPaymentState
+} from './types.uts'
+import request from '@/utils/request'
+
+// 导入微信 SDK 插件（仅 APP 端）
+// #ifndef H5
+import * as wxsdk from '@/uni_modules/tt-wechat-pro'
+// #endif
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+/**
+ * 从对象获取字符串属性
+ */
+function getObjString(obj: UTSJSONObject | null, key: string): string {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 从对象获取数字属性
+ */
+function getObjNumber(obj: UTSJSONObject | null, key: string): number {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// ==================== 模块级变量 ====================
+
+// #ifndef H5
+// 微信 SDK 实例（仅 APP 端）
+let weChatSDK: wxsdk.TTWeChatSDK | null = null
+
+// SDK 是否已初始化
+let isSDKInitialized: boolean = false
+
+// SDK 是否已注册
+let isSDKRegistered: boolean = false
+
+// ==================== 全局回调存储（解决页面卸载导致回调丢失问题）====================
+// 当前支付的订单ID
+let currentPayingOrderId: string = ''
+
+// 支付成功回调（全局存储）
+let globalPaySuccessCallback: ((message: string) => void) | null = null
+
+// 支付失败回调（全局存储）
+let globalPayErrorCallback: ((error: string) => void) | null = null
+
+// 支付是否已完成（回调已触发）
+let isPaymentCallbackTriggered: boolean = false
+
+// 支付开始时间（用于超时检测）
+let paymentStartTime: number = 0
+
+// #endif
+
+// ==================== SDK 初始化和清理函数 ====================
+
+// #ifndef H5
+/**
+ * 内部函数：注册微信 SDK（接收非空 SDK 实例）
+ */
+function doRegisterSDKInternal(sdk: wxsdk.TTWeChatSDK): void {
+	// 检查微信是否安装
+	const isInstalled = sdk.isInstall()
+	console.log('📱 [WX-PAY-APP] 微信安装状态:', isInstalled)
+	
+	// 注册 SDK（关键步骤！）
+	sdk.register({
+		appid: WX_OPEN_APP_ID,
+		universalLink: WX_UNIVERSAL_LINK,
+		success: (e: wxsdk.TTWeChatRegisterSuccess) => {
+			isSDKRegistered = true
+		},
+		fail: (err: wxsdk.TTWeChatRegisterFail) => {
+			console.error('❌ [WX-PAY-APP] 微信SDK注册失败:', err)
+			isSDKRegistered = false
+		},
+		complete: null
+	} as wxsdk.TTWeChatRegisterOptions)
+}
+// #endif
+
+/**
+ * 初始化微信支付 SDK
+ * 必须在调用支付前先初始化
+ */
+export function initWeChatPaySDK(): void {
+	// #ifdef H5
+	// #endif
+	
+	// #ifndef H5
+	try {
+		// 获取 SDK 实例
+		weChatSDK = wxsdk.getTTWeChatSDK()
+		
+		// 获取临时变量
+		const sdk = weChatSDK
+		if (sdk == null) {
+			console.error('❌ [WX-PAY-APP] 获取微信SDK实例失败')
+			isSDKInitialized = false
+			return
+		}
+		
+		isSDKInitialized = true
+		
+		// 调用内部函数注册 SDK
+		doRegisterSDKInternal(sdk)
+		
+	} catch (error: Error) {
+		console.error('❌ [WX-PAY-APP] 初始化微信支付SDK失败:', error)
+		isSDKInitialized = false
+	}
+	// #endif
+}
+
+/**
+ * 清理微信支付 SDK 资源
+ * 注意：不要在 onUnload 中调用此函数，因为支付回调可能还没触发
+ * 应该在支付完成（成功或失败）后调用
+ */
+export function cleanupWeChatPaySDK(): void {
+	// #ifdef H5
+	// #endif
+	
+	// #ifndef H5
+	try {
+		// 清理 SDK 实例
+		weChatSDK = null
+		isSDKInitialized = false
+		isSDKRegistered = false
+		
+		// 清理全局回调
+		globalPaySuccessCallback = null
+		globalPayErrorCallback = null
+		currentPayingOrderId = ''
+		isPaymentCallbackTriggered = false
+		paymentStartTime = 0
+		
+	} catch (error: Error) {
+		console.error('❌ [WX-PAY-APP] 清理微信支付SDK资源失败:', error)
+	}
+	// #endif
+}
+
+/**
+ * 从微信返回时检查支付状态
+ * 应该在 App.uvue 的 onShow 或页面的 onShow 中调用
+ * 
+ * @returns 是否有待处理的支付
+ */
+export function checkPaymentOnAppShow(): boolean {
+	// #ifdef H5
+	return false
+	// #endif
+	
+	// #ifndef H5
+	// 如果没有正在进行的支付，返回 false
+	if (currentPayingOrderId == '') {
+		return false
+	}
+	
+	// 如果回调已经触发，返回 false
+	if (isPaymentCallbackTriggered == true) {
+		return false
+	}
+	
+	// 计算等待时间
+	const now = Date.now()
+	const waitTime = now - paymentStartTime
+	
+	// 如果等待时间超过阈值，可能回调不会触发了
+	// 此时应该主动查询订单状态
+	if (waitTime > WX_PAYMENT_CALLBACK_TIMEOUT) {
+		// 触发超时处理
+		// 注意：这里不直接调用失败回调，而是返回 true 让调用方决定如何处理
+		return true
+	}
+	
+	// 还在等待回调
+	return true
+	// #endif
+}
+
+/**
+ * 获取当前支付的订单ID
+ */
+export function getCurrentPayingOrderId(): string {
+	// #ifdef H5
+	return ''
+	// #endif
+	
+	// #ifndef H5
+	return currentPayingOrderId
+	// #endif
+}
+
+/**
+ * 手动触发支付成功（用于订单查询确认支付成功后调用）
+ */
+export function triggerPaymentSuccess(): void {
+	// #ifdef H5
+	// #endif
+	
+	// #ifndef H5
+	if (isPaymentCallbackTriggered == true) {
+		return
+	}
+	
+	isPaymentCallbackTriggered = true
+	
+	// 设置支付状态为成功
+	if (currentPayingOrderId != '') {
+		setPaymentState(currentPayingOrderId, PAYMENT_STATE_SUCCESS)
+	}
+	
+	// 调用成功回调
+	const callback = globalPaySuccessCallback
+	if (callback != null) {
+		callback('支付成功')
+	}
+	
+	// 清理状态
+	currentPayingOrderId = ''
+	globalPaySuccessCallback = null
+	globalPayErrorCallback = null
+	// #endif
+}
+
+/**
+ * 手动触发支付失败（用于超时或订单查询确认支付失败后调用）
+ */
+export function triggerPaymentFail(errorMsg: string): void {
+	// #ifdef H5
+	// #endif
+	
+	// #ifndef H5
+	if (isPaymentCallbackTriggered == true) {
+		return
+	}
+	
+	isPaymentCallbackTriggered = true
+	
+	// 设置支付状态为失败
+	if (currentPayingOrderId != '') {
+		setPaymentState(currentPayingOrderId, PAYMENT_STATE_FAILED)
+	}
+	
+	// 调用失败回调
+	const callback = globalPayErrorCallback
+	if (callback != null) {
+		callback(errorMsg)
+	}
+	
+	// 清理状态
+	currentPayingOrderId = ''
+	globalPaySuccessCallback = null
+	globalPayErrorCallback = null
+	// #endif
+}
+
+// ==================== 支付成功处理函数（必须在 wechatPayApp 之前定义）====================
+
+/**
+ * 处理支付成功
+ */
+function handlePaySuccess(
+	orderId: string,
+	onSuccess: (message: string) => void
+): void {
+	// #ifndef H5
+	// 标记回调已触发
+	isPaymentCallbackTriggered = true
+	// #endif
+	
+	// 设置支付状态为成功
+	setPaymentState(orderId, PAYMENT_STATE_SUCCESS)
+	
+	// 调用成功回调
+	onSuccess('支付成功')
+	
+	// #ifndef H5
+	// 清理全局状态
+	currentPayingOrderId = ''
+	globalPaySuccessCallback = null
+	globalPayErrorCallback = null
+	// #endif
+}
+
+/**
+ * 处理支付失败
+ */
+function handlePayFail(
+	orderId: string,
+	error: Error | null,
+	onError: (error: string) => void
+): void {
+	console.error('❌ [WX-PAY-APP] 微信支付失败回调触发:', error)
+	
+	// #ifndef H5
+	// 标记回调已触发
+	isPaymentCallbackTriggered = true
+	// #endif
+	
+	// 设置支付状态为失败
+	setPaymentState(orderId, PAYMENT_STATE_FAILED)
+	
+	// 解析错误消息
+	let errMsg = '支付失败'
+	
+	// #ifndef H5
+	if (error != null) {
+		// 尝试从错误对象中获取消息
+		try {
+			// 检查是否是 TTWeChatPayFail 类型
+			const errObj = error as wxsdk.TTWeChatPayFail
+			if (errObj != null) {
+				// 检查错误码
+				const errCode = errObj.errCode
+				if (errCode == WX_ERR_USER_CANCEL) {
+					errMsg = '已取消支付'
+				} else if (errObj.errMsg != null && errObj.errMsg != '') {
+					errMsg = errObj.errMsg.toString()
+				}
+			}
+		} catch (e) {
+			// 如果解析失败，尝试 JSON 方式
+			try {
+				const errStr = JSON.stringify(error)
+				if (errStr != null && errStr != '') {
+					const errJsonObj = JSON.parse(errStr) as UTSJSONObject
+					if (errJsonObj != null) {
+						// 检查错误码
+						const codeVal = errJsonObj.get('errCode')
+						if (codeVal != null) {
+							const code = parseInt(codeVal.toString())
+							console.log('📋 [WX-PAY-APP] 错误码(JSON):', code)
+							// WX_ERR_USER_CANCEL 表示用户取消
+							if (code == WX_ERR_USER_CANCEL) {
+								errMsg = '已取消支付'
+							}
+						}
+						
+						// 获取错误消息
+						const msgVal = errJsonObj.get('errMsg')
+						if (msgVal != null && msgVal.toString() != '') {
+							errMsg = msgVal.toString()
+						}
+					}
+				}
+			} catch (e2) {
+				// 使用默认消息
+			}
+		}
+	}
+	
+	// 清理全局状态
+	currentPayingOrderId = ''
+	globalPaySuccessCallback = null
+	globalPayErrorCallback = null
+	// #endif
+	
+	// 调用失败回调
+	onError(errMsg)
+}
+
+// #ifndef H5
+/**
+ * 内部函数：调用微信支付 SDK（接收非空 SDK 实例）
+ * 使用非空类型参数避免 smart cast 问题
+ */
+function doWeChatPayInternal(
+	sdk: wxsdk.TTWeChatSDK,
+	payData: UTSJSONObject,
+	orderId: string,
+	onSuccess: (message: string) => void,
+	onError: (error: string) => void
+): void {
+	// 检查微信是否安装
+	const isInstalled = sdk.isInstall()
+	if (isInstalled == false) {
+		console.error('❌ [WX-PAY-APP] 微信未安装')
+		setPaymentState(orderId, PAYMENT_STATE_FAILED)
+		onError('请安装微信客户端')
+		return
+	}
+	
+	// 解析支付参数
+	// 后端返回的字段名是小写：partnerid, prepayid, noncestr, timestamp
+	// 需要兼容两种格式
+	let partnerId = getObjString(payData, 'partnerId')
+	if (partnerId == '') {
+		partnerId = getObjString(payData, 'partnerid')
+	}
+	
+	let prepayId = getObjString(payData, 'prepayId')
+	if (prepayId == '') {
+		prepayId = getObjString(payData, 'prepayid')
+	}
+	
+	let nonceStr = getObjString(payData, 'nonceStr')
+	if (nonceStr == '') {
+		nonceStr = getObjString(payData, 'noncestr')
+	}
+	
+	// timeStamp 可能是字符串或数字
+	let timeStamp = getObjNumber(payData, 'timeStamp')
+	if (timeStamp == 0) {
+		timeStamp = getObjNumber(payData, 'timestamp')
+	}
+	
+	const packageVal = getObjString(payData, 'package')
+	const sign = getObjString(payData, 'sign')
+	
+	// 验证必要参数
+	if (partnerId == '' || prepayId == '' || nonceStr == '' || sign == '') {
+		console.error('❌ [WX-PAY-APP] 支付参数不完整')
+		setPaymentState(orderId, PAYMENT_STATE_FAILED)
+		onError('支付参数不完整')
+		return
+	}
+	
+	// 设置支付状态为处理中
+	setPaymentState(orderId, PAYMENT_STATE_PROCESSING)
+	
+	// ==================== 保存全局回调（关键！）====================
+	// 这样即使页面被卸载，回调仍然可以执行
+	currentPayingOrderId = orderId
+	globalPaySuccessCallback = onSuccess
+	globalPayErrorCallback = onError
+	isPaymentCallbackTriggered = false
+	paymentStartTime = Date.now()
+	
+	// 调用微信支付
+	sdk.pay({
+		partnerId: partnerId,
+		prepayId: prepayId,
+		nonceStr: nonceStr,
+		timeStamp: timeStamp,
+		package: packageVal,
+		sign: sign,
+		success: (res: wxsdk.TTWeChatPaySuccess) => {
+			handlePaySuccess(orderId, onSuccess)
+		},
+		fail: (err: wxsdk.TTWeChatPayFail) => {
+			handlePayFail(orderId, err as Error | null, onError)
+		},
+		complete: null
+	} as wxsdk.TTWeChatPayOptions)
+}
+// #endif
+
+/**
+ * 调用微信支付 SDK
+ */
+function callWeChatPay(
+	payData: UTSJSONObject,
+	orderId: string,
+	onSuccess: (message: string) => void,
+	onError: (error: string) => void
+): void {
+	// #ifdef H5
+	console.error('❌ [WX-PAY-APP] H5环境不支持此功能')
+	onError('H5环境不支持此功能')
+	// #endif
+	
+	// #ifndef H5
+	try {
+		// 确保 SDK 已初始化
+		if (weChatSDK == null) {
+			weChatSDK = wxsdk.getTTWeChatSDK()
+		}
+		
+		// 获取 SDK 实例
+		const sdk = weChatSDK
+		if (sdk == null) {
+			console.error('❌ [WX-PAY-APP] 微信SDK实例为空')
+			setPaymentState(orderId, PAYMENT_STATE_FAILED)
+			onError('微信SDK初始化失败')
+			return
+		}
+		
+		// 调用内部函数（传递非空 SDK 实例）
+		doWeChatPayInternal(sdk, payData, orderId, onSuccess, onError)
+		
+	} catch (error: Error) {
+		console.error('❌ [WX-PAY-APP] 调用微信支付异常:', error)
+		setPaymentState(orderId, PAYMENT_STATE_FAILED)
+		onError('支付调起失败')
+	}
+	// #endif
+}
+
+// #ifndef H5
+/**
+ * 内部函数：执行微信支付流程（接收非空 SDK 实例）
+ * 使用非空类型参数避免 smart cast 问题
+ */
+function doWechatPayAppInternal(
+	sdk: wxsdk.TTWeChatSDK,
+	orderId: string,
+	amount: string,
+	goodsName: string,
+	onSuccess: (message: string) => void,
+	onError: (error: string) => void
+): void {
+	// 检查微信是否安装
+	const isInstalled = sdk.isInstall()
+	if (isInstalled == false) {
+		console.error('❌ [WX-PAY-APP] 微信未安装')
+		onError('请安装微信客户端')
+		return
+	}
+	
+	// 注册 SDK（如果尚未注册）
+	// 注意：register 是异步的，但 SDK 内部会处理
+	if (isSDKRegistered == false) {
+		sdk.register({
+			appid: WX_OPEN_APP_ID,
+			universalLink: WX_UNIVERSAL_LINK,
+			success: (e: wxsdk.TTWeChatRegisterSuccess) => {
+				isSDKRegistered = true
+			},
+			fail: (err: wxsdk.TTWeChatRegisterFail) => {
+				console.error('❌ [WX-PAY-APP] 微信SDK注册失败:', err)
+			},
+			complete: null
+		} as wxsdk.TTWeChatRegisterOptions)
+	}
+	
+	// ==================== 调用后端接口获取支付参数 ====================
+	
+	// 构造请求参数
+	// 后端接口：/pay/wxpay/applyAppPay
+	// 参数：orderId, txnAmt（元）, goodsName
+	const requestParams = {
+		orderId: orderId,
+		txnAmt: amount,
+		goodsName: (goodsName != '') ? goodsName : '订单支付'
+	} as UTSJSONObject
+	
+	// 调用后端接口
+	request.post('/pay/wxpay/applyAppPay', requestParams, false).then((res: UTSJSONObject | null) => {
+		// 解析响应
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			console.error('❌ [WX-PAY-APP] 响应解析失败')
+			onError('获取支付参数失败')
+			return
+		}
+		
+		// 检查响应码
+		const code = getObjNumber(resObj, 'code')
+		if (code != 200) {
+			const msg = getObjString(resObj, 'msg')
+			console.error('❌ [WX-PAY-APP] 后端返回错误:', code, msg)
+			onError((msg != '') ? msg : '获取支付参数失败')
+			return
+		}
+		
+		// 获取支付参数
+		const dataVal = resObj.get('data')
+		if (dataVal == null) {
+			console.error('❌ [WX-PAY-APP] 支付参数为空')
+			onError('支付参数为空')
+			return
+		}
+		
+		const payData = toJsonObj(dataVal)
+		if (payData == null) {
+			console.error('❌ [WX-PAY-APP] 支付参数解析失败')
+			onError('支付参数解析失败')
+			return
+		}
+		
+		// 🔧 新增：检查是否是已支付状态（后端检测到 ORDERPAID 错误后返回）
+		const payStatus = getObjString(payData, 'status')
+		if (payStatus == 'ALREADY_PAID') {
+			onSuccess('订单已支付')
+			return
+		}
+		
+		// 调用微信支付
+		callWeChatPay(payData, orderId, onSuccess, onError)
+		
+	}).catch((err: any | null) => {
+		console.error('❌ [WX-PAY-APP] 请求后端失败:', err)
+		onError('网络请求失败，请重试')
+	})
+}
+// #endif
+
+// ==================== 主支付函数 ====================
+
+/**
+ * APP 端微信支付
+ * 
+ * @param orderId 订单ID
+ * @param amount 支付金额（元）
+ * @param goodsName 商品名称
+ * @param onSuccess 支付成功回调
+ * @param onError 支付失败回调
+ */
+export function wechatPayApp(
+	orderId: string,
+	amount: string,
+	goodsName: string,
+	onSuccess: (message: string) => void,
+	onError: (error: string) => void
+): void {
+	console.log('💰 [WX-PAY-APP] 开始APP端微信支付 v2.0.5')
+	console.log('💰 [WX-PAY-APP] 订单ID:', orderId)
+	console.log('💰 [WX-PAY-APP] 支付金额:', amount)
+	console.log('💰 [WX-PAY-APP] 商品名称:', goodsName)
+	
+	// #ifdef H5
+	console.error('❌ [WX-PAY-APP] H5环境不支持APP端微信支付')
+	onError('H5环境不支持APP端微信支付')
+	// #endif
+	
+	// #ifndef H5
+	
+	// ==================== 参数验证 ====================
+	
+	// 验证订单ID
+	if (orderId == null || orderId == '') {
+		console.error('❌ [WX-PAY-APP] 订单ID不能为空')
+		onError('订单ID不能为空')
+		return
+	}
+	
+	// 验证金额
+	if (amount == null || amount == '') {
+		console.error('❌ [WX-PAY-APP] 支付金额不能为空')
+		onError('支付金额不能为空')
+		return
+	}
+	
+	const amountNum = parseFloat(amount)
+	if (isNaN(amountNum) == true || amountNum <= 0) {
+		console.error('❌ [WX-PAY-APP] 支付金额无效:', amount)
+		onError('支付金额无效')
+		return
+	}
+	
+	// ==================== 重复支付检查 ====================
+	
+	const currentState = getPaymentState(orderId)
+	if (currentState == PAYMENT_STATE_PROCESSING) {
+		console.warn('⚠️ [WX-PAY-APP] 支付正在处理中，防止重复支付')
+		onError('支付正在处理中，请稍候')
+		return
+	}
+	
+	// ==================== 检查微信是否安装 ====================
+	
+	// 确保 SDK 已初始化
+	if (weChatSDK == null) {
+		console.log('⚠️ [WX-PAY-APP] 微信SDK未初始化，尝试初始化...')
+		weChatSDK = wxsdk.getTTWeChatSDK()
+	}
+	
+	// 获取 SDK 实例
+	const sdk = weChatSDK
+	if (sdk == null) {
+		console.error('❌ [WX-PAY-APP] 微信SDK实例为空')
+		onError('微信SDK初始化失败')
+		return
+	}
+	
+	// 调用内部函数（传递非空 SDK 实例）
+	doWechatPayAppInternal(sdk, orderId, amount, goodsName, onSuccess, onError)
+	
+	// #endif
+}

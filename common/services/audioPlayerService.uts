@@ -1,0 +1,298 @@
+/**
+ * 音频播放服务
+ * 封装 uni.createInnerAudioContext API，提供语音消息的播放、暂停、停止功能
+ */
+
+import { ref } from 'vue'
+
+// 播放状态枚举值
+export const PlayingStatusIdle = 'idle'
+export const PlayingStatusLoading = 'loading'
+export const PlayingStatusPlaying = 'playing'
+export const PlayingStatusPaused = 'paused'
+export const PlayingStatusEnded = 'ended'
+export const PlayingStatusError = 'error'
+
+// 状态变量
+const currentStatus = ref<string>(PlayingStatusIdle)
+const currentMessageId = ref<string>('')
+const currentTime = ref<number>(0)
+const totalDuration = ref<number>(0)
+
+// 音频上下文
+let audioContext: InnerAudioContext | null = null
+
+// 回调函数
+let onStatusChangeCallback: ((status: string, messageId: string) => void) | null = null
+let onTimeUpdateCallback: ((currentTime: number) => void) | null = null
+let onEndedCallback: ((messageId: string) => void) | null = null
+let onErrorCallback: ((error: string) => void) | null = null
+
+/**
+ * 初始化音频上下文
+ */
+function initAudioContext() {
+	if (audioContext != null) return
+	
+	audioContext = uni.createInnerAudioContext()
+	
+	audioContext!.onCanplay(() => {
+		console.log('🔊 [AudioPlayer] 音频可以播放')
+	})
+	
+	audioContext!.onPlay(() => {
+		console.log('🔊 [AudioPlayer] 开始播放')
+		currentStatus.value = PlayingStatusPlaying
+		notifyStatusChange(PlayingStatusPlaying, currentMessageId.value)
+	})
+	
+	audioContext!.onPause(() => {
+		console.log('🔊 [AudioPlayer] 暂停播放')
+		currentStatus.value = PlayingStatusPaused
+		notifyStatusChange(PlayingStatusPaused, currentMessageId.value)
+	})
+	
+	audioContext!.onStop(() => {
+		console.log('🔊 [AudioPlayer] 停止播放')
+		currentStatus.value = PlayingStatusIdle
+		notifyStatusChange(PlayingStatusIdle, currentMessageId.value)
+	})
+	
+	audioContext!.onEnded(() => {
+		console.log('🔊 [AudioPlayer] 播放结束')
+		currentStatus.value = PlayingStatusEnded
+		notifyStatusChange(PlayingStatusEnded, currentMessageId.value)
+		
+		// 通知播放结束
+		if (onEndedCallback != null) {
+			const callback = onEndedCallback!
+			const msgId = currentMessageId.value
+			callback(msgId)
+		}
+		
+		// 重置状态
+		currentMessageId.value = ''
+		currentTime.value = 0
+	})
+	
+	audioContext!.onTimeUpdate(() => {
+		if (audioContext != null) {
+			currentTime.value = Math.floor(audioContext!.currentTime)
+			totalDuration.value = Math.floor(audioContext!.duration)
+			notifyTimeUpdate(currentTime.value)
+		}
+	})
+	
+	audioContext!.onError((err: any) => {
+		console.error('🔊 [AudioPlayer] 播放错误:', err)
+		currentStatus.value = PlayingStatusError
+		notifyStatusChange(PlayingStatusError, currentMessageId.value)
+		
+		let errorMsg = '播放失败'
+		if (err != null) {
+			try {
+				const errStr = JSON.stringify(err)
+				const errObj = JSON.parse(errStr) as UTSJSONObject
+				const msgVal = errObj.get('errMsg')
+				if (msgVal != null && msgVal.toString() != '') {
+					errorMsg = msgVal.toString()
+				}
+			} catch (e) {}
+		}
+		
+		notifyError(errorMsg)
+	})
+}
+
+// 通知状态变化
+function notifyStatusChange(status: string, messageId: string) {
+	if (onStatusChangeCallback != null) {
+		const callback = onStatusChangeCallback!
+		callback(status, messageId)
+	}
+}
+
+// 通知时间更新
+function notifyTimeUpdate(time: number) {
+	if (onTimeUpdateCallback != null) {
+		const callback = onTimeUpdateCallback!
+		callback(time)
+	}
+}
+
+// 通知错误
+function notifyError(error: string) {
+	if (onErrorCallback != null) {
+		const callback = onErrorCallback!
+		callback(error)
+	}
+}
+
+/**
+ * 播放语音
+ * @param url 语音文件URL
+ * @param messageId 消息ID
+ */
+export function playAudio(url: string, messageId: string) {
+	console.log('🔊 [AudioPlayer] 播放语音:', url, messageId)
+	
+	if (url == null || url == '') {
+		console.error('🔊 [AudioPlayer] 语音URL为空')
+		notifyError('语音文件不存在')
+		return
+	}
+	
+	// 初始化音频上下文
+	initAudioContext()
+	
+	// 如果正在播放同一条消息，则暂停
+	if (currentMessageId.value == messageId && currentStatus.value == PlayingStatusPlaying) {
+		pauseAudio()
+		return
+	}
+	
+	// 如果正在播放其他消息，先停止
+	if (currentStatus.value == PlayingStatusPlaying || currentStatus.value == PlayingStatusPaused) {
+		stopAudio()
+	}
+	
+	// 设置新的播放
+	currentMessageId.value = messageId
+	currentStatus.value = PlayingStatusLoading
+	notifyStatusChange(PlayingStatusLoading, messageId)
+	
+	if (audioContext != null) {
+		audioContext!.src = url
+		audioContext!.play()
+	}
+}
+
+/**
+ * 暂停播放
+ */
+export function pauseAudio() {
+	console.log('🔊 [AudioPlayer] 暂停播放')
+	
+	if (audioContext != null && currentStatus.value == PlayingStatusPlaying) {
+		audioContext!.pause()
+	}
+}
+
+/**
+ * 继续播放
+ */
+export function resumeAudio() {
+	console.log('🔊 [AudioPlayer] 继续播放')
+	
+	if (audioContext != null && currentStatus.value == PlayingStatusPaused) {
+		audioContext!.play()
+	}
+}
+
+/**
+ * 停止播放
+ */
+export function stopAudio() {
+	console.log('🔊 [AudioPlayer] 停止播放')
+	
+	if (audioContext != null) {
+		audioContext!.stop()
+	}
+	
+	currentStatus.value = PlayingStatusIdle
+	currentMessageId.value = ''
+	currentTime.value = 0
+}
+
+/**
+ * 销毁音频上下文
+ */
+export function destroyAudio() {
+	console.log('🔊 [AudioPlayer] 销毁音频上下文')
+	
+	if (audioContext != null) {
+		audioContext!.stop()
+		audioContext!.destroy()
+		audioContext = null
+	}
+	
+	currentStatus.value = PlayingStatusIdle
+	currentMessageId.value = ''
+	currentTime.value = 0
+	totalDuration.value = 0
+}
+
+/**
+ * 获取当前播放状态
+ */
+export function getPlayingStatus(): string {
+	return currentStatus.value
+}
+
+/**
+ * 获取当前播放的消息ID
+ */
+export function getCurrentPlayingMessageId(): string {
+	return currentMessageId.value
+}
+
+/**
+ * 获取当前播放时间
+ */
+export function getCurrentTime(): number {
+	return currentTime.value
+}
+
+/**
+ * 获取总时长
+ */
+export function getTotalDuration(): number {
+	return totalDuration.value
+}
+
+/**
+ * 检查指定消息是否正在播放
+ */
+export function isMessagePlaying(messageId: string): boolean {
+	return currentMessageId.value == messageId && currentStatus.value == PlayingStatusPlaying
+}
+
+/**
+ * 设置状态变化回调
+ */
+export function onPlayStatusChange(callback: (status: string, messageId: string) => void): () => void {
+	onStatusChangeCallback = callback
+	return () => {
+		onStatusChangeCallback = null
+	}
+}
+
+/**
+ * 设置时间更新回调
+ */
+export function onPlayTimeUpdate(callback: (currentTime: number) => void): () => void {
+	onTimeUpdateCallback = callback
+	return () => {
+		onTimeUpdateCallback = null
+	}
+}
+
+/**
+ * 设置播放结束回调
+ */
+export function onPlayEnded(callback: (messageId: string) => void): () => void {
+	onEndedCallback = callback
+	return () => {
+		onEndedCallback = null
+	}
+}
+
+/**
+ * 设置错误回调
+ */
+export function onPlayError(callback: (error: string) => void): () => void {
+	onErrorCallback = callback
+	return () => {
+		onErrorCallback = null
+	}
+}

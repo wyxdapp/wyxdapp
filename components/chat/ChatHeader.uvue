@@ -1,0 +1,221 @@
+<template>
+	<view class="chat-header">
+		<!-- APP端状态栏占位 -->
+		<!-- #ifndef H5 -->
+		<view class="status-bar-placeholder" :style="{ height: statusBarHeight + 'px' }"></view>
+		<!-- #endif -->
+		<!-- 顶部导航栏 -->
+		<view class="nav-bar">
+			<view class="nav-left" @click="handleBack">
+				<!-- 使用CSS绘制精简返回箭头 -->
+				<view class="css-icon-back"></view>
+			</view>
+			<view class="nav-center" @click="handleTitleClick">
+				<text class="title">{{ getUserName() }}</text>
+			</view>
+			<view class="nav-right" @click="handleMore">
+				<!-- 使用CSS绘制更多图标 -->
+				<view class="css-icon-more">
+					<view class="dot"></view>
+					<view class="dot"></view>
+					<view class="dot"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 快捷功能栏 -->
+		<view class="action-buttons">
+			<view class="btn bg-light-blue" @click="handleReserve">
+				<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_subscribe.png" mode="aspectFit"></image>
+				<text class="btn-text light-blue">立即预定</text>
+			</view>
+			
+			<view class="btn chat" @click="handleContact">
+				<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_chat.png" mode="aspectFit"></image>
+				<text class="btn-text white">联系方式</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { getStatusBarHeight } from '@/common/utils/utsSafe.uts'
+
+// ✅ 运行时 Props 声明 (符合 uni-app x 规范)
+const props = defineProps({
+	userName: {
+		type: String,
+		default: '聊天'
+	}
+})
+
+// Emits
+const emit = defineEmits<{
+	back: []
+	viewProfile: []
+	more: []
+	reserve: []
+	contact: []
+}>()
+
+// 状态栏高度
+const statusBarHeight = ref<number>(44)
+
+// 辅助方法
+const getUserName = (): string => {
+	const name = props.userName
+	if (name != '' && name.length > 0) {
+		return name
+	}
+	return '聊天'
+}
+
+// Methods
+const handleBack = () => {
+	emit('back')
+}
+
+const handleTitleClick = () => {
+	emit('viewProfile')
+}
+
+const handleMore = () => {
+	emit('more')
+}
+
+const handleReserve = () => {
+	emit('reserve')
+}
+
+const handleContact = () => {
+	emit('contact')
+}
+
+// 生命周期
+onMounted(() => {
+	// #ifndef H5
+	// APP端使用公共函数获取状态栏高度
+	statusBarHeight.value = getStatusBarHeight()
+	// #endif
+})
+</script>
+
+<style>
+.chat-header {
+	background-color: #f7f8fa;
+	border-bottom: none;
+	flex-direction: column;
+}
+
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #ffffff;
+}
+
+.nav-bar {
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 10rpx;
+	padding-right: 10rpx;
+	background-color: #ffffff;
+}
+
+.nav-left, .nav-right {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+/* CSS绘制返回箭头 */
+.css-icon-back {
+	width: 24rpx;
+	height: 24rpx;
+	border-left-width: 4rpx;
+	border-left-style: solid;
+	border-left-color: #333333;
+	border-bottom-width: 4rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #333333;
+	transform: rotate(45deg);
+	margin-left: 10rpx;
+}
+
+/* CSS绘制更多图标 */
+.css-icon-more {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.dot {
+	width: 8rpx;
+	height: 8rpx;
+	background-color: #333333;
+	border-radius: 4rpx;
+	margin-left: 6rpx;
+}
+
+.nav-center {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+/* 快捷功能栏 */
+.action-buttons {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	background-color: #f7f8fa;
+}
+
+.btn {
+	width: 320rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.bg-light-blue {
+	background-color: rgba(46, 174, 242, 0.1);
+}
+
+.chat {
+	background-color: #2EAEF2;
+}
+
+.btn-icon {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 12rpx;
+}
+
+.btn-text {
+	font-size: 28rpx;
+	font-weight: bold;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.white {
+	color: #FFFFFF;
+}
+</style>

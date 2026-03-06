@@ -1,0 +1,519 @@
+﻿// 分享服务 - 统一处理各种分享功能
+import { isWechatBrowser } from './systemInfo'
+import { buildProfileCardContent } from './shareCardHelper.uts'
+import { H5_SHARE_BASE_URL } from '@/utils/config.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
+import { SK_USER_INFO } from '@/common/config/storageKeys.uts'
+
+// 分享用户信息接口（必须在顶层定义）
+interface ShareUserInfo {
+	kid?: string | null
+	id?: string | null
+	nickname?: string | null
+	liveCity?: string | null
+	sex?: string | null
+	signature?: string | null
+	image?: string | null
+	avatar?: string | null
+}
+
+class ShareService {
+	private static instance: ShareService | null = null
+
+	static getInstance(): ShareService {
+		if (ShareService.instance == null) {
+			ShareService.instance = new ShareService()
+		}
+		return ShareService.instance
+	}
+
+	// 分享到微信
+	shareToWeChat(shareData: UTSJSONObject): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// #ifdef MP-WEIXIN
+			uni.share({
+				provider: 'weixin',
+				scene: 'WXSceneSession',
+				type: 0,
+				href: shareData.url,
+				title: shareData.title,
+				summary: shareData.desc,
+				imageUrl: shareData.imageUrl,
+				success: () => {
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('微信分享失败:', error)
+					reject(error)
+				}
+			})
+			// #endif
+			
+			// #ifdef H5
+			// 使用缓存工具获取环境信息
+			if (isWechatBrowser()) {
+				// 微信内置浏览器分享
+				this.setupWeChatShare(shareData)
+				uni.showToast({
+					title: '请使用右上角分享',
+					icon: 'none'
+				})
+				return
+			} else {
+				this.copyLink(shareData.url)
+				resolve()
+			}
+			// #endif
+			
+			// #ifdef APP-PLUS
+			uni.share({
+				provider: 'weixin',
+				scene: 'WXSceneSession',
+				type: 0,
+				href: shareData.url,
+				title: shareData.title,
+				summary: shareData.desc,
+				imageUrl: shareData.imageUrl,
+				success: () => {
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('微信分享失败:', error)
+					reject(error)
+				}
+			})
+			// #endif
+		})
+	}
+
+	// 分享到朋友圈
+	shareToMoments(shareData: UTSJSONObject): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// #ifdef APP-PLUS
+			uni.share({
+				provider: 'weixin',
+				scene: 'WXSceneTimeline',
+				type: 0,
+				href: shareData.url,
+				title: shareData.title,
+				summary: shareData.desc,
+				imageUrl: shareData.imageUrl,
+				success: () => {
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('朋友圈分享失败:', error)
+					reject(error)
+				}
+			})
+			// #endif
+			
+			// #ifdef H5 || MP-WEIXIN
+			uni.showToast({
+				title: '请保存图片到相册分享',
+				icon: 'none'
+			})
+			resolve()
+			// #endif
+		})
+	}
+
+	// 分享到QQ
+	shareToQQ(shareData: UTSJSONObject): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// #ifdef APP-PLUS
+			uni.share({
+				provider: 'qq',
+				type: 0,
+				href: shareData.url,
+				title: shareData.title,
+				summary: shareData.desc,
+				imageUrl: shareData.imageUrl,
+				success: () => {
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('QQ分享失败:', error)
+					reject(error)
+				}
+			})
+			// #endif
+			
+			// #ifdef H5 || MP-WEIXIN
+			this.copyLink(shareData.url)
+			resolve()
+			// #endif
+		})
+	}
+
+	// 分享到微博
+	shareToWeibo(shareData: UTSJSONObject): Promise<void> {
+		return new Promise((resolve, reject) => {
+			// #ifdef APP-PLUS
+			uni.share({
+				provider: 'sinaweibo',
+				type: 0,
+				href: shareData.url,
+				title: shareData.title,
+				summary: shareData.desc,
+				imageUrl: shareData.imageUrl,
+				success: () => {
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('微博分享失败:', error)
+					reject(error)
+				}
+			})
+			// #endif
+			
+			// #ifdef H5
+			const weiboUrl = `https://service.weibo.com/share/share.php?url=${encodeURIComponent(shareData.url)}&title=${encodeURIComponent(shareData.title)}&pic=${encodeURIComponent(shareData.imageUrl)}`
+			window.open(weiboUrl, '_blank')
+			resolve()
+			// #endif
+			
+			// #ifdef MP-WEIXIN
+			this.copyLink(shareData.url)
+			resolve()
+			// #endif
+		})
+	}
+
+	// 复制链接
+	copyLink(url: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			uni.setClipboardData({
+				data: url,
+				success: () => {
+					uni.showToast({
+						title: '链接已复制',
+						icon: 'success'
+					})
+					resolve()
+				},
+				fail: (error) => {
+					console.error('复制链接失败:', error)
+					reject(error)
+				}
+			})
+		})
+	}
+
+	/**
+	 * 构建分享链接
+	 * @param userKid - 用户ID（向导KID）
+	 * @param referrerCode - 推广号（可选，来自导师推广号 extension_number）
+	 * @returns 分享链接
+	 */
+	buildShareLink(userKid: string, referrerCode?: string | null): string {
+		let h5Link = `${H5_SHARE_BASE_URL}/#/pagesUser/persionInfo/index?id=${userKid}`
+			
+		// 添加推广号参数（ref 参数用于推广追踪）
+		const hasReferrerCode = (referrerCode != null) && ((referrerCode as string).trim() != '')
+		if (hasReferrerCode == true) {
+			h5Link += `&ref=${referrerCode}`
+		}
+			
+		h5Link += '&autoJump=true' // 自动跳转APP标识
+		return h5Link
+	}
+
+	/**
+	 * 获取当前用户的推广短号（8位用户短号 short_kid）
+	 * 升级说明：从导师推广号改为用户短号，所有用户都可以推广
+	 * @returns 推广短号（8位数字），如果用户没有则返回 null
+	 */
+	async getCurrentUserShortKid(): Promise<string | null> {
+		try {
+			const userInfoStr = uni.getStorageSync(SK_USER_INFO)
+			if (userInfoStr != null) {
+				const userInfo = (typeof userInfoStr === 'string') ? JSON.parse(userInfoStr) : userInfoStr
+				if (userInfo != null) {
+					try {
+						const userInfoJson = JSON.stringify(userInfo)
+						if (userInfoJson != null && userInfoJson != '') {
+							const userInfoParsed = JSON.parse(userInfoJson) as UTSJSONObject
+							if (userInfoParsed != null) {
+								const userInfoObj = userInfoParsed as UTSJSONObject
+								// 获取用户短号（shortKid）
+								const shortKidVal = userInfoObj.get('shortKid')
+								if (shortKidVal != null && shortKidVal != '') {
+									return shortKidVal.toString()
+								}
+							}
+						}
+					} catch (e) {}
+				}
+			}
+			
+			return null
+		} catch (e) {
+			console.error('获取用户短号失败:', e)
+			return null
+		}
+	}
+
+	/**
+	 * 获取当前用户的推广号（用户短号 short_kid，8位数字）
+	 * @returns 推广号（8位数字），如果用户没有短号则返回 null
+	 */
+	async getCurrentUserExtensionNumber(): Promise<string | null> {
+		// 直接返回用户短号作为推广号
+		return await this.getCurrentUserShortKid()
+	}
+
+	/**
+	 * 获取当前用户邀请码（兼容旧接口，内部调用 getCurrentUserExtensionNumber）
+	 * @returns 邀请码（推广号或用户ID）
+	 * @deprecated 请使用 getCurrentUserExtensionNumber
+	 */
+	async getCurrentUserInviteCode(): Promise<string | null> {
+		return await this.getCurrentUserExtensionNumber()
+	}
+
+	/**
+	 * 构建分享卡片消息内容
+	 * @param userInfo - 用户信息
+	 * @param referrerCode - 推广号（可选，来自导师推广号 extension_number）
+	 * @returns 分享消息内容（JSON 格式）
+	 */
+	buildShareCardMessage(userInfo: UTSJSONObject, referrerCode?: string | null): string {
+		// 使用新的 JSON 格式构建分享卡片
+		return buildProfileCardContent(userInfo)
+	}
+	
+	/**
+	 * 构建旧版分享卡片消息内容（兼容旧版调用）
+	 * @deprecated 请使用 buildShareCardMessage，返回 JSON 格式
+	 * @param userInfo - 用户信息
+	 * @param referrerCode - 推广号（可选）
+	 * @returns 分享消息内容（换行文本格式）
+	 */
+	buildShareCardMessageLegacy(userInfo: UTSJSONObject, referrerCode?: string | null): string {
+		// 安全访问 userInfo 的属性，避免 error18
+		let userKid = ''
+		let nickname = '用户'
+		let liveCity = '远方'
+		let sex = '未知'
+		let signature = ''
+		let image = ''
+		
+		try {
+			const userInfoJson = JSON.stringify(userInfo)
+			if (userInfoJson != null && userInfoJson != '') {
+				const userInfoParsed = JSON.parse(userInfoJson) as UTSJSONObject
+				if (userInfoParsed != null) {
+					const userInfoTyped = userInfoParsed as ShareUserInfo
+					
+					// 获取 userKid
+					const kidVal = userInfoTyped.kid
+					const idVal = userInfoTyped.id
+					userKid = (kidVal != null && kidVal != '') ? kidVal.toString() : ((idVal != null && idVal != '') ? idVal.toString() : '')
+					
+					// 获取其他属性
+					const nicknameVal = userInfoTyped.nickname
+					if (nicknameVal != null && nicknameVal != '') {
+						nickname = nicknameVal.toString()
+					}
+					
+					const liveCityVal = userInfoTyped.liveCity
+					if (liveCityVal != null && liveCityVal != '') {
+						liveCity = liveCityVal.toString()
+					}
+					
+					const sexVal = userInfoTyped.sex
+					if (sexVal != null && sexVal != '') {
+						sex = sexVal.toString()
+					}
+					
+					const signatureVal = userInfoTyped.signature
+					const imageVal = userInfoTyped.image
+					const avatarVal = userInfoTyped.avatar
+					
+					if (signatureVal != null && signatureVal != '') {
+						signature = signatureVal.toString()
+					}
+					
+					if (imageVal != null && imageVal != '') {
+						image = imageVal.toString()
+					} else if (avatarVal != null && avatarVal != '') {
+						image = avatarVal.toString()
+					}
+				}
+			}
+		} catch (e) {}
+		
+		const shareLink = this.buildShareLink(userKid, referrerCode)
+		const isFemale = sex === '女'
+		const sexText = isFemale == true ? '女生' : '男生'
+		if (signature == '') {
+			signature = `来自${liveCity}的${sexText}，欢迎关注！`
+		}
+			
+		// 格式：用户昵称\n个性签名\n链接\n用户头像\n用户ID
+		return [
+			nickname,
+			signature,
+			shareLink,
+			image,
+			userKid
+		].join('\n')
+	}
+
+	// 生成分享数据
+	generateShareData(userInfo: UTSJSONObject, baseUrl: string = H5_SHARE_BASE_URL + '/#/pagesUser/persionInfo/index'): UTSJSONObject {
+		// 安全访问 userInfo 的属性，避免 error18
+		let id = ''
+		let kid = ''
+		let nickname = '向导'
+		let signature = '发现专业向导，定制专属行程'
+		let image = DEFAULT_SHARE_IMAGE
+		
+		try {
+			const userInfoJson = JSON.stringify(userInfo)
+			if (userInfoJson != null && userInfoJson != '') {
+				const userInfoParsed = JSON.parse(userInfoJson) as UTSJSONObject
+				if (userInfoParsed != null) {
+					const userInfoTyped = userInfoParsed as ShareUserInfo
+					
+					// 获取 id 和 kid
+					const idVal = userInfoTyped.id
+					if (idVal != null && idVal != '') {
+						id = idVal.toString()
+					}
+					
+					const kidVal = userInfoTyped.kid
+					if (kidVal != null && kidVal != '') {
+						kid = kidVal.toString()
+					}
+					
+					// 获取其他属性
+					const nicknameVal = userInfoTyped.nickname
+					if (nicknameVal != null && nicknameVal != '') {
+						nickname = nicknameVal.toString()
+					}
+					
+					const signatureVal = userInfoTyped.signature
+					if (signatureVal != null && signatureVal != '') {
+						signature = signatureVal.toString()
+					}
+					
+					const imageVal = userInfoTyped.image
+					if (imageVal != null && imageVal != '') {
+						image = imageVal.toString()
+					} else {
+						// 尝试获取 background 属性（需要重新解析）
+						try {
+							const userInfoObj = userInfoParsed as UTSJSONObject
+							const backgroundVal = userInfoObj.get('background')
+							if (backgroundVal != null && backgroundVal != '') {
+								image = backgroundVal.toString()
+							}
+						} catch (e) {}
+					}
+				}
+			}
+		} catch (e) {}
+		
+		const userId = (id != null && id != '') ? id : ((kid != null && kid != '') ? kid : '')
+		const hasUserId = userId != null && userId != ''
+		const shareUrl = hasUserId == true ? `${baseUrl}?id=${userId}` : baseUrl
+			
+		const resultRaw = {
+			title: `${nickname}的主页 - 网约向导趣游玩`,
+			desc: signature,
+			imageUrl: image,
+			url: shareUrl,
+			userId: userId
+		} as UTSJSONObject
+		return resultRaw
+	}
+
+	// 设置微信分享配置（H5端）
+	private setupWeChatShare(shareData: UTSJSONObject): void {
+		// TODO: 配置微信JS-SDK
+		// 需要后端提供签名接口
+		console.log('设置微信分享配置:', shareData)
+	}
+
+	// 保存图片到相册（用于朋友圈分享）
+	saveImageToAlbum(imageUrl: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			uni.downloadFile({
+				url: imageUrl,
+				success: (res) => {
+					if (res.statusCode === 200) {
+						uni.saveImageToPhotosAlbum({
+							filePath: res.tempFilePath,
+							success: () => {
+								uni.showToast({
+									title: '图片已保存',
+									icon: 'success'
+								})
+								resolve()
+							},
+							fail: (error) => {
+								console.error('保存图片失败:', error)
+								reject(error)
+							}
+						})
+					} else {
+						reject(new Error('图片下载失败'))
+					}
+				},
+				fail: (error) => {
+					console.error('下载图片失败:', error)
+					reject(error)
+				}
+			})
+		})
+	}
+
+	// 检查分享权限
+	checkShareAuth(): Promise<boolean> {
+		return new Promise((resolve) => {
+			// #ifdef APP-PLUS
+			uni.getProvider({
+				service: 'share',
+				success: (res) => {
+					resolve(res.provider.length > 0)
+				},
+				fail: () => {
+					resolve(false)
+				}
+			})
+			// #endif
+			
+			// #ifdef H5 || MP-WEIXIN
+			resolve(true)
+			// #endif
+		})
+	}
+}
+
+// 导出单例实例
+export default ShareService.getInstance()
+
+// 导出类（用于测试）
+export { ShareService }

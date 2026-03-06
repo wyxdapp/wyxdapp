@@ -1,0 +1,935 @@
+/**
+ * UTS 安全工具集
+ * - toJsonObj: 将任意值序列化为 UTSJSONObject（避免直接下标/点访问触发 error18）
+ * - countArrayItems: 安全计算数组元素数量（接受 nullable）
+ */
+import { SK_TOKEN, SK_USER_INFO, SK_LOGIN_REDIRECT_URL } from '@/common/config/storageKeys.uts'
+import { getToken } from '@/common/utils/security/tokenManager.uts'
+import { secureError } from '@/common/utils/security/secureLogger.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON, getString, getNumber, getBoolean, getArray, getObject } from '@/common/utils/typeConverter'
+
+export function toJsonObj(val: any | null): UTSJSONObject | null {
+	return toUTSJSON(val)
+}
+
+export function countArrayItems(arr: any | null): number {
+	try {
+		if (arr == null) return 0
+		if (Array.isArray(arr) == true) {
+			const a = arr as Array<any>
+			// UTS: 类型转换后 a 已是非空，直接返回 length
+			return a.length
+		}
+	} catch (e) {}
+	return 0
+}
+
+/**
+ * UTS 安全访问工具
+ * 提供安全的 UTSJSONObject 访问与安全克隆/合并方法
+ */
+
+// ==================== 基础安全访问 ====================
+
+export function safeGet(obj: any | null, key: string): any {
+  try {
+    const json = toUTSJSON(obj)
+    if (json != null) {
+      const val = json.get(key)
+      if (val != null) return val
+    }
+  } catch (e) {}
+  return ''
+}
+
+export function safeClone(obj: any): UTSJSONObject {
+  try {
+    const result = toUTSJSON(obj)
+    if (result != null) {
+      return result
+    }
+  } catch (e) {}
+  return JSON.parse('{}') as UTSJSONObject
+}
+
+// ==================== 属性获取辅助函数 ====================
+
+/**
+ * 获取字符串属性
+ * @param obj 数据对象
+ * @param key 属性名
+ * @returns 字符串值，不存在返回空字符串
+ */
+export const getStringProp = (obj: any, key: string): string => {
+  const val = safeGet(obj, key)
+  // safeGet 返回 '' 或有效值，不会返回 null
+  if (val.toString() != '') {
+    return val.toString()
+  }
+  return ''
+}
+
+/**
+ * 获取数字属性（无默认值版本）
+ * @param obj 数据对象
+ * @param key 属性名
+ * @returns 数字值
+ */
+export const getNumberProp = (obj: any, key: string): number => {
+  const val = safeGet(obj, key)
+  // safeGet 返回 '' 或有效值，不会返回 null
+  const valStr = val.toString()
+  if (valStr != '') {
+    const num = parseInt(valStr)
+    if (isNaN(num) == false) {
+      return num
+    }
+  }
+  return 0
+}
+
+/**
+ * 获取数字属性（带默认值版本）
+ * @param obj 数据对象
+ * @param key 属性名
+ * @param defaultVal 默认值
+ * @returns 数字值
+ */
+export const getNumberPropWithDefault = (obj: any, key: string, defaultVal: number): number => {
+  const val = safeGet(obj, key)
+  // safeGet 返回 '' 或有效值，不会返回 null
+  const valStr = val.toString()
+  if (valStr != '') {
+    const num = parseInt(valStr)
+    if (isNaN(num) == false) {
+      return num
+    }
+  }
+  return defaultVal
+}
+
+/**
+ * 获取浮点数属性
+ * @param obj 数据对象
+ * @param key 属性名
+ * @returns 浮点数值
+ */
+export const getFloatProp = (obj: any, key: string): number => {
+  const val = safeGet(obj, key)
+  // safeGet 返回 '' 或有效值，不会返回 null
+  const valStr = val.toString()
+  if (valStr != '') {
+    const num = parseFloat(valStr)
+    if (isNaN(num) == false) {
+      return num
+    }
+  }
+  return 0
+}
+
+/**
+ * 获取布尔属性
+ * @param obj 数据对象
+ * @param key 属性名
+ * @returns 布尔值
+ */
+export const getBoolProp = (obj: any, key: string): boolean => {
+  const val = safeGet(obj, key)
+  // safeGet 返回 '' 或有效值，不会返回 null
+  if (val == true) return true
+  if (val == false) return false
+  const str = val.toString()
+  return str == 'true' || str == '1' || str == '10'
+}
+
+/**
+ * 判断值是否为"真"（兼容多种数据格式）
+ * 支持: true, "true", "1", "10", 1, 10
+ * @param val 任意值
+ * @returns 布尔值
+ */
+export const isTrueValue = (val: string | number | boolean | null): boolean => {
+  if (val == null) return false
+  if (val == true) return true
+  if (val == false) return false
+  const str = val.toString()
+  return str == 'true' || str == '1' || str == '10'
+}
+
+/**
+ * 获取数组属性
+ * @param obj 数据对象
+ * @param key 属性名
+ * @returns 数组
+ */
+export const getArrayProp = (obj: any, key: string): Array<any> => {
+  const val = safeGet(obj, key)
+  if (Array.isArray(val) == true) {
+    return val as Array<any>
+  }
+  return []
+}
+
+// ==================== API 响应处理 ====================
+
+/**
+ * 获取响应码
+ * @param res API 响应对象
+ * @returns 响应码
+ */
+export const getResponseCode = (res: any): number => {
+  return getNumberProp(res, 'code')
+}
+
+/**
+ * 获取响应消息
+ * @param res API 响应对象
+ * @returns 响应消息
+ */
+export const getResponseMsg = (res: any): string => {
+  let msg = getStringProp(res, 'msg')
+  if (msg == '') {
+    msg = getStringProp(res, 'message')
+  }
+  return msg
+}
+
+/**
+ * 获取响应数据对象
+ * @param res API 响应对象
+ * @returns UTSJSONObject 或 null
+ */
+export const getResponseData = (res: any): UTSJSONObject | null => {
+  try {
+    const resObj = toUTSJSON(res)
+    if (resObj != null) {
+      const dataVal = resObj.get('data')
+      if (dataVal != null) {
+        return toUTSJSON(dataVal)
+      }
+    }
+  } catch (e) {}
+  return null
+}
+
+/**
+ * 获取响应数据数组
+ * 用于 data 字段直接是数组的 API 响应
+ * @param res API 响应对象
+ * @returns 数组
+ */
+export const getResponseDataArray = (res: any): Array<any> => {
+  if (res == null) return []
+  try {
+    const resObj = toUTSJSON(res)
+    if (resObj != null) {
+      const dataVal = resObj.get('data')
+      if (dataVal != null && Array.isArray(dataVal) == true) {
+        return dataVal as Array<any>
+      }
+    }
+  } catch (e) {}
+  return []
+}
+
+/**
+ * 获取分页列表数据
+ * @param dataObj 响应数据对象
+ * @returns 实体数组
+ */
+export const getEntities = (dataObj: UTSJSONObject | null): Array<any> => {
+  if (dataObj == null) return []
+  try {
+    const val = dataObj.get('entities')
+    if (val != null && Array.isArray(val) == true) {
+      return val as Array<any>
+    }
+  } catch (e) {}
+  return []
+}
+
+/**
+ * 获取分页总数
+ * @param dataObj 响应数据对象
+ * @returns 总数
+ */
+export const getDataCount = (dataObj: UTSJSONObject | null): number => {
+  if (dataObj == null) return 0
+  try {
+    const countVal = dataObj.get('count')
+    if (countVal != null) {
+      const num = parseInt(countVal.toString())
+      if (isNaN(num) == false) {
+        return num
+      }
+    }
+  } catch (e) {}
+  return 0
+}
+
+// ==================== 格式化辅助函数 ====================
+
+/**
+ * 格式化距离
+ * @param meters 米数（字符串或数字）
+ * @returns 格式化后的距离字符串
+ */
+export const formatDistance = (meters: string | number): string => {
+  if (meters == '') return ''
+  const str = meters.toString()
+  
+  // 如果已经包含单位，直接返回
+  if (str.indexOf('km') >= 0 || str.indexOf('m') >= 0) {
+    return str
+  }
+  
+  const v = parseFloat(str)
+  if (isNaN(v) == true || v < 0) return ''
+  if (v >= 1000) {
+    return (v / 1000).toFixed(1) + 'km'
+  }
+  return Math.round(v).toString() + 'm'
+}
+
+/**
+ * 格式化价格
+ * @param price 价格值
+ * @returns 格式化后的价格字符串
+ */
+export const formatPrice = (price: string | number | null): string => {
+  if (price == null || price == '') return ''
+  const str = price.toString()
+  
+  // 如果已经包含 ￥，直接返回
+  if (str.indexOf('￥') == 0) {
+    return str
+  }
+  
+  const num = parseFloat(str)
+  if (isNaN(num) == true || num <= 0) return ''
+  return '￥' + str
+}
+
+/**
+ * 格式化价格（带前缀）
+ * @param price 价格值
+ * @param prefix 前缀
+ * @returns 格式化后的价格字符串
+ */
+export const formatPriceWithPrefix = (price: string | number | null, prefix: string): string => {
+  if (price == null || price == '') return ''
+  const str = price.toString()
+  
+  // 如果已经包含 ￥，直接返回
+  if (str.indexOf('￥') == 0) {
+    return str
+  }
+  
+  const num = parseFloat(str)
+  if (isNaN(num) == true || num <= 0) return ''
+  return prefix + str
+}
+
+/**
+ * 获取列表项的唯一 key
+ * @param item 列表项
+ * @param index 索引
+ * @returns key 字符串
+ */
+export const getItemKey = (item: any, index: number): string => {
+  const kid = getStringProp(item, 'kid')
+  return (kid != '') ? kid : index.toString()
+}
+
+/**
+ * 获取列表项的唯一 key（指定字段）
+ * @param item 列表项
+ * @param index 索引
+ * @param keyField 主键字段名
+ * @returns key 字符串
+ */
+export const getItemKeyByField = (item: any, index: number, keyField: string): string => {
+  const kid = getStringProp(item, keyField)
+  return (kid != '') ? kid : index.toString()
+}
+
+
+// ==================== 距离计算 ====================
+
+/**
+ * 使用 Haversine 公式计算两点之间的距离
+ * @param lat1 第一个点的纬度
+ * @param lng1 第一个点的经度
+ * @param lat2 第二个点的纬度
+ * @param lng2 第二个点的经度
+ * @returns 距离（米）
+ */
+export const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  // 地球半径（米）
+  const R = 6371000
+  
+  // 如果任一坐标为0或无效，返回-1表示无法计算
+  if (lat1 == 0 || lng1 == 0 || lat2 == 0 || lng2 == 0) {
+    return -1
+  }
+  
+  // 将角度转换为弧度
+  const toRad = (deg: number): number => {
+    return deg * Math.PI / 180
+  }
+  
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  
+  return R * c
+}
+
+/**
+ * 计算并格式化两点之间的距离
+ * @param lat1 第一个点的纬度
+ * @param lng1 第一个点的经度
+ * @param lat2 第二个点的纬度
+ * @param lng2 第二个点的经度
+ * @returns 格式化后的距离字符串（如 "500m" 或 "3.2km"）
+ */
+export const calculateAndFormatDistance = (lat1: number, lng1: number, lat2: number, lng2: number): string => {
+  const meters = calculateDistance(lat1, lng1, lat2, lng2)
+  if (meters < 0) return ''
+  return formatDistance(meters)
+}
+
+
+// ==================== 登录状态检查 ====================
+
+/**
+ * 检查用户是否已登录
+ * 
+ * @deprecated 此函数已废弃，请使用 getUserLoginStatus() from '@/stores/user'
+ * 
+ * 迁移示例：
+ * ```typescript
+ * // 旧代码
+ * import { checkUserLogin } from '@/common/utils/utsSafe.uts'
+ * const isLogin = checkUserLogin()
+ * 
+ * // 新代码
+ * import { getUserLoginStatus } from '@/stores/user'
+ * const isLogin = getUserLoginStatus()
+ * ```
+ * 
+ * 特殊场景（Store 未初始化时）：
+ * ```typescript
+ * import { checkUserLoginReliable } from '@/common/utils/loginHelper.uts'
+ * const isLogin = checkUserLoginReliable()
+ * ```
+ * 
+ * @returns 是否已登录
+ */
+export const checkUserLogin = (): boolean => {
+	// 🔧 优化：内部调用 getUserLoginStatus()，确保行为一致
+	try {
+		// 动态导入避免循环依赖
+		const { getUserLoginStatus } = require('@/stores/user.uts')
+		if (getUserLoginStatus != null) {
+			return getUserLoginStatus()
+		}
+	} catch (e) {
+		// Store 未初始化或导入失败，降级到 Storage 检查
+		console.warn('⚠️ [utsSafe] checkUserLogin() 已废弃，请使用 getUserLoginStatus()')
+	}
+	
+	// 降级方案：从 storage 检查
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const kidVal = userInfoObj.get('kid')
+				const tokenVal = userInfoObj.get('token')
+				const phoneWebTokenVal = userInfoObj.get('phoneWebToken')
+				
+				const hasKid = (kidVal != null && kidVal.toString() != '')
+				const hasToken = (tokenVal != null && tokenVal.toString() != '') || (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '')
+				
+				if (hasKid == true && hasToken == true) {
+					return true
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 检查登录状态失败:', e)
+	}
+	return false
+}
+
+/**
+ * 获取当前登录用户的 kid
+ * 优先从 storage 获取，避免 store 序列化问题
+ * @returns 用户 kid，未登录返回空字符串
+ */
+export const getCurrentUserKid = (): string => {
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const kidVal = userInfoObj.get('kid')
+				if (kidVal != null && kidVal.toString() != '') {
+					return kidVal.toString()
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取用户ID失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 获取当前登录用户的 token
+ * 优先从 storage 获取
+ * @returns 用户 token，未登录返回空字符串
+ */
+export const getCurrentUserToken = (): string => {
+	try {
+		// 先尝试通过 Token_Manager 获取 token（加密存储）
+		const tokenDirect = getToken()
+		if (tokenDirect != null && tokenDirect != '') {
+			return tokenDirect.toString()
+		}
+		
+		// 从 userInfo 中获取
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const tokenVal = userInfoObj.get('token')
+				const phoneWebTokenVal = userInfoObj.get('phoneWebToken')
+				
+				if (tokenVal != null && tokenVal.toString() != '') {
+					return tokenVal.toString()
+				}
+				if (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '') {
+					return phoneWebTokenVal.toString()
+				}
+			}
+		}
+	} catch (e) {
+		secureError('utsSafe', '获取用户Token失败')
+	}
+	return ''
+}
+
+/**
+ * 获取当前登录用户的手机号
+ * @returns 用户手机号，未登录返回空字符串
+ */
+export const getCurrentUserPhone = (): string => {
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const phoneVal = userInfoObj.get('phone')
+				if (phoneVal != null && phoneVal.toString() != '') {
+					return phoneVal.toString()
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取用户手机号失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 获取当前登录用户的昵称
+ * @returns 用户昵称，未登录返回空字符串
+ */
+export const getCurrentUserNickname = (): string => {
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const nicknameVal = userInfoObj.get('nickname')
+				const nickNameVal = userInfoObj.get('nickName')
+				if (nicknameVal != null && nicknameVal.toString() != '') {
+					return nicknameVal.toString()
+				}
+				if (nickNameVal != null && nickNameVal.toString() != '') {
+					return nickNameVal.toString()
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取用户昵称失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 获取当前登录用户的头像
+ * @returns 用户头像URL，未登录返回空字符串
+ */
+export const getCurrentUserAvatar = (): string => {
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const avatarVal = userInfoObj.get('avatar')
+				const imageVal = userInfoObj.get('image')
+				if (avatarVal != null && avatarVal.toString() != '') {
+					return avatarVal.toString()
+				}
+				if (imageVal != null && imageVal.toString() != '') {
+					return imageVal.toString()
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取用户头像失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 获取当前登录用户的指定属性
+ * @param key 属性名
+ * @returns 属性值字符串
+ */
+export const getCurrentUserProp = (key: string): string => {
+	try {
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		if (userInfoStr != null && userInfoStr != '') {
+			const userInfoObj = toUTSJSON(userInfoStr)
+			if (userInfoObj != null) {
+				const val = userInfoObj.get(key)
+				if (val != null && val.toString() != '') {
+					return val.toString()
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取用户属性失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 检查登录状态，未登录则跳转登录页
+ * 
+ * @deprecated 此函数已废弃，请使用 requireLoginReliable() from '@/common/utils/loginHelper.uts'
+ * 
+ * 迁移示例：
+ * ```typescript
+ * // 旧代码
+ * import { requireLogin } from '@/common/utils/utsSafe.uts'
+ * if (requireLogin(true, '/pages/my/index') == false) {
+ *   return
+ * }
+ * 
+ * // 新代码
+ * import { requireLoginReliable } from '@/common/utils/loginHelper.uts'
+ * if (requireLoginReliable(true, '/pages/my/index') == false) {
+ *   return
+ * }
+ * ```
+ * 
+ * @param showToast 是否显示提示
+ * @param redirectUrl 登录后跳转的页面（可选）
+ * @returns 是否已登录
+ */
+export const requireLogin = (showToast: boolean = true, redirectUrl: string = ''): boolean => {
+	console.warn('⚠️ [utsSafe] requireLogin() 已废弃，请使用 requireLoginReliable()')
+	
+	// 🔧 优化：内部调用 requireLoginReliable()，确保行为一致
+	try {
+		const { requireLoginReliable } = require('@/common/utils/loginHelper.uts')
+		if (requireLoginReliable != null) {
+			return requireLoginReliable(showToast, redirectUrl)
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 调用 requireLoginReliable() 失败:', e)
+	}
+	
+	// 降级方案：使用原有逻辑
+	const isLogin = checkUserLogin()
+	if (isLogin == false) {
+		if (showToast == true) {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+		}
+		
+		// 保存登录后跳转地址
+		if (redirectUrl != '') {
+			safeSetStorageSync(SK_LOGIN_REDIRECT_URL, redirectUrl)
+		}
+		
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return false
+	}
+	return true
+}
+
+/**
+ * 跳转到登录页
+ * @param redirectUrl 登录后跳转的页面（可选）
+ */
+export const goToLoginPage = (redirectUrl: string = '') => {
+	// 保存登录后跳转地址
+	if (redirectUrl != '') {
+		safeSetStorageSync(SK_LOGIN_REDIRECT_URL, redirectUrl)
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+
+// ==================== 系统信息获取 ====================
+
+/**
+ * 获取状态栏高度
+ * 统一处理 APP 端状态栏高度，避免内容被系统状态栏遮挡
+ * @returns 状态栏高度（px）
+ */
+export const getStatusBarHeight = (): number => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = toUTSJSON(systemInfo)
+		if (systemInfoObj != null) {
+			const statusBarVal = systemInfoObj.get('statusBarHeight')
+			if (statusBarVal != null) {
+				const sbHeight = parseInt(statusBarVal.toString())
+				if (isNaN(sbHeight) == false && sbHeight > 0) {
+					return sbHeight
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取状态栏高度失败:', e)
+	}
+	// 默认状态栏高度（iOS 约 44px，Android 约 24-48px）
+	return 44
+}
+
+/**
+ * 获取窗口高度
+ * @returns 窗口高度（px）
+ */
+export const getWindowHeight = (): number => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = toUTSJSON(systemInfo)
+		if (systemInfoObj != null) {
+			const windowHeightVal = systemInfoObj.get('windowHeight')
+			if (windowHeightVal != null) {
+				const wHeight = parseInt(windowHeightVal.toString())
+				if (isNaN(wHeight) == false && wHeight > 0) {
+					return wHeight
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取窗口高度失败:', e)
+	}
+	return 667 // 默认高度
+}
+
+/**
+ * 获取屏幕宽度
+ * @returns 屏幕宽度（px）
+ */
+export const getScreenWidth = (): number => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = toUTSJSON(systemInfo)
+		if (systemInfoObj != null) {
+			const screenWidthVal = systemInfoObj.get('screenWidth')
+			if (screenWidthVal != null) {
+				const sWidth = parseInt(screenWidthVal.toString())
+				if (isNaN(sWidth) == false && sWidth > 0) {
+					return sWidth
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取屏幕宽度失败:', e)
+	}
+	return 375 // 默认宽度
+}
+
+/**
+ * 获取导航栏高度（状态栏 + 标题栏）
+ * 标题栏高度：iOS 44px，Android 48px
+ * @returns 导航栏总高度（px）
+ */
+export const getNavBarHeight = (): number => {
+	const statusBarHeight = getStatusBarHeight()
+	// 标题栏高度统一使用 44px
+	return statusBarHeight + 44
+}
+
+/**
+ * 获取系统信息对象
+ * @returns UTSJSONObject 或 null
+ */
+export const getSystemInfo = (): UTSJSONObject | null => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		return toUTSJSON(systemInfo)
+	} catch (e) {
+		console.error('❌ [utsSafe] 获取系统信息失败:', e)
+	}
+	return null
+}
+
+/**
+ * 判断是否为 iOS 平台
+ * @returns 是否为 iOS
+ */
+export const isIOS = (): boolean => {
+	try {
+		const systemInfo = getSystemInfo()
+		if (systemInfo != null) {
+			const platformVal = systemInfo.get('platform')
+			if (platformVal != null) {
+				const platform = platformVal.toString().toLowerCase()
+				return platform == 'ios'
+			}
+		}
+	} catch (e) {}
+	return false
+}
+
+/**
+ * 判断是否为 Android 平台
+ * @returns 是否为 Android
+ */
+export const isAndroid = (): boolean => {
+	try {
+		const systemInfo = getSystemInfo()
+		if (systemInfo != null) {
+			const platformVal = systemInfo.get('platform')
+			if (platformVal != null) {
+				const platform = platformVal.toString().toLowerCase()
+				return platform == 'android'
+			}
+		}
+	} catch (e) {}
+	return false
+}
+
+
+// ==================== 页面跳转工具 ====================
+
+/**
+ * 跳转到首页
+ * 根据不同平台跳转到对应的首页
+ * - 所有平台：/pages/index/index
+ */
+export const goToHome = () => {
+	uni.reLaunch({
+		url: '/pages/index/index'
+	})
+}
+
+/**
+ * 获取首页路径
+ * 根据不同平台返回对应的首页路径
+ * @returns 首页路径
+ */
+export const getHomePath = (): string => {
+	return '/pages/index/index'
+}
+
+/**
+ * 跳转到首页（使用 switchTab，适用于 Tab 页）
+ * 如果首页是 Tab 页，使用此方法
+ */
+export const switchToHome = () => {
+	uni.switchTab({
+		url: '/pages/index/index'
+	})
+}
+
+
+// ==================== 平台检测工具 ====================
+
+/**
+ * 获取当前平台
+ * @returns 平台标识字符串
+ */
+export function getCurrentPlatform(): string {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const infoObj = toUTSJSON(systemInfo)
+		if (infoObj != null) {
+			const platformVal = infoObj.get('uniPlatform')
+			if (platformVal != null) {
+				return platformVal.toString()
+			}
+		}
+	} catch (e) {
+		console.error('[utsSafe] 获取平台信息失败:', e)
+	}
+	return ''
+}
+
+/**
+ * 检查是否为 APP 端
+ * @returns 是否为 APP 端
+ */
+export function isAppPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios'
+}
+
+/**
+ * 检查是否为 H5 端
+ * @returns 是否为 H5 端
+ */
+export function isH5Platform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'web' || platform == 'h5'
+}
+
+/**
+ * 检查是否为微信小程序端
+ * @returns 是否为微信小程序端
+ */
+export function isMpWeixinPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'mp-weixin'
+}
+
+/**
+ * 获取平台类型字符串
+ * @returns 平台类型：'app' | 'mp-weixin' | 'h5' | 'unknown'
+ */
+export function getPlatformType(): string {
+	if (isAppPlatform()) {
+		return 'app'
+	} else if (isMpWeixinPlatform()) {
+		return 'mp-weixin'
+	} else if (isH5Platform()) {
+		return 'h5'
+	}
+	return 'unknown'
+}

@@ -1,0 +1,384 @@
+export type TTWeChatLoginSuccess = {
+	/**
+	 * 用于换取 access_token 的 code
+	 */
+	code: string,
+	/*
+	 * 用来标识请求的唯一性的标志
+	 */
+	state : string
+};
+
+
+export interface TTWeChatLoginFail extends IUniError {
+
+}
+
+export type TTWeChatLoginSuccessCallback = (result: TTWeChatLoginSuccess) => void;
+export type TTWeChatLoginFailCallback = (result: TTWeChatLoginFail) => void;
+export type TTWeChatLoginCompleteCallback = (result: any) => void;
+
+export type TTWeChatLoginOptions = {
+	/**
+	 * 用来标识请求的唯一性，最后跳转回第三方程序时，由微信终端回传，字符串长度不能超过1K。
+	 */
+	state: string | null,
+
+	success : TTWeChatLoginSuccessCallback | null,
+
+	fail : TTWeChatLoginFailCallback | null,
+
+	complete : TTWeChatLoginCompleteCallback | null
+}
+
+export type TTWeChatShareSuccess = {}
+export interface TTWeChatShareFail extends IUniError {}
+
+export type TTWeChatShareSuccessCallback =  (res: TTWeChatShareSuccess) => void;
+export type TTWeChatShareFailCallback = (res: TTWeChatShareFail) => void;
+export type TTWeChatShareCompleteCallback = (res: any) => void;
+
+export type TTWeChatShareMiniProgramOptions = {
+	/* 
+	 *小程序id
+	 */
+	userName: string,
+	/*
+	 *小程序页面路径
+	 */
+	path: string,
+	/*
+	 * 兼容低版本网页的URL
+	 */
+	webpageUrl: string,
+	/*
+	 * 版本类型，可取值： 0-正式版； 1-开发版； 2-体验版。 默认值为0
+	 */
+	miniProgramType : number | null
+}
+
+// TODO
+// export type TTWeChatShareMusicOptions = {
+// 	/* 
+// 	 *音乐url
+// 	 */
+// 	musicUrl: string,
+// 	/*
+// 	 *音乐数据url
+// 	 */
+// 	musicDataUrl: string,
+// 	/*
+// 	 * 歌手名
+// 	 */
+// 	singerName: string,
+// 	/*
+// 	 * 音乐时长，毫秒
+// 	 */
+// 	duration : number
+// }
+
+export type TTWeChatShareOptions = {
+	/**
+	 * WXTypeText		= 0,  < 文本
+	 * WXTypeImage		= 1,  < 图片
+	 * WXTypeVideo		= 2,  < 视频
+	 * WXTypeWeb		= 3,  < web
+	 * WXTypeMP			= 4,  < 小程序
+	 * WXTypeMusic		= 5,  < 音乐
+	 */
+	type: number,
+	/**
+	 *  WXSceneSession          = 0,  	< 聊天界面
+     * 	WXSceneTimeline         = 1,    < 朋友圈
+	 * 	WXSceneFavorite         = 2,    < 收藏
+	 */
+	scene : number,
+	/* 
+	 * 分享内容的标题,限制长度不超过512Bytes
+	 */
+	title?: string | null,
+	/*
+	 * 分享内容的摘要,限制长度不超过1KB
+	 */
+	desc?: string | null,
+	/*
+	 * 分享图片地址（仅支持本地路径,内容大小不超过10MB）
+	 */
+	imageUrl?: string | null,
+	/*
+	 * 缩略图路径（仅支持本地路径,限制内容大小不超过32KB）
+	 */
+	thumbImageUrl?: string | null,
+	/*
+	 * 分享音视频地址(限制长度不超过10KB)
+	 */
+	videoUrl?: string | null,
+	/*
+	 * 分享音乐地址(限制长度不超过10KB)
+	 */
+	musicUrl?: string | null,
+	/*
+	 * 分享网址(限制长度不超过10KB)
+	 */
+	href?: string | null,
+	/*
+	 * 分享到小程序
+	 */
+	miniProgram?: TTWeChatShareMiniProgramOptions | null,
+	success?: TTWeChatShareSuccessCallback | null,
+	fail?: TTWeChatShareFailCallback | null,
+	complete?: TTWeChatShareCompleteCallback | null
+}
+
+export type TTWeChatPaySuccess = {}
+export interface TTWeChatPayFail extends IUniError {}
+
+export type TTWeChatPaySuccessCallback =  (res: TTWeChatPaySuccess) => void;
+export type TTWeChatPayFailCallback = (res: TTWeChatPayFail) => void;
+export type TTWeChatPayCompleteCallback = (res: any) => void;
+
+export type TTWeChatLaunchMiniProgramSuccess = {
+	message : string
+}
+export interface TTWeChatLaunchMiniProgramFail extends IUniError {}
+
+export type TTWeChatLaunchMiniProgramSuccessCallback =  (res: TTWeChatLaunchMiniProgramSuccess) => void;
+export type TTWeChatLaunchMiniProgramFailCallback = (res: TTWeChatLaunchMiniProgramFail) => void;
+export type TTWeChatLaunchMiniProgramCompleteCallback = (res: any) => void;
+
+export type TTWeChatOpenCustomerServiceSuccess = {}
+export interface TTWeChatOpenCustomerServiceFail extends IUniError {}
+
+export type TTWeChatOpenCustomerServiceSuccessCallback =  (res: TTWeChatOpenCustomerServiceSuccess) => void;
+export type TTWeChatOpenCustomerServiceFailCallback = (res: TTWeChatOpenCustomerServiceFail) => void;
+export type TTWeChatOpenCustomerServiceCompleteCallback = (res: any) => void;
+
+export type TTWeChatRegisterSuccess = {}
+export interface TTWeChatRegisterFail extends IUniError {}
+
+export type TTWeChatRegisterSuccessCallback =  (res: TTWeChatRegisterSuccess) => void;
+export type TTWeChatRegisterFailCallback = (res: TTWeChatRegisterFail) => void;
+export type TTWeChatRegisterCompleteCallback = (res: any) => void;
+
+export type TTWeChatPayOptions = {
+	/* 
+	 * 商家向财付通申请的商家id
+	 */
+	partnerId : string,
+	/*
+	 * 预支付订单
+	 */
+	prepayId : string,
+	/*
+	 * 随机字符串，不长于32位。该值建议使用随机数算法生成
+	 */
+	nonceStr : string,
+	/*
+	 * 时间戳，防重发
+	 */
+	timeStamp : number,
+	/*
+	 * 商家根据财付通文档填写的数据和签名
+	 */
+	package : string,
+	/*
+	 * 商家根据微信开放平台文档对数据做的签名
+	 */
+	sign : string,
+	
+	success : TTWeChatPaySuccessCallback | null,
+	
+	fail : TTWeChatPayFailCallback | null,
+	
+	complete : TTWeChatPayCompleteCallback | null
+}
+
+export type TTWeChatLaunchMiniProgramOptions = {
+	/*
+	 *小程序id
+	 */
+	userName: string,
+	/*
+	 *小程序页面路径
+	 */
+	path: string,
+	/*
+	 * 版本类型，可取值： 0-正式版； 1-开发版； 2-体验版。 默认值为0
+	 */
+	miniProgramType : number | null,
+	
+	success : TTWeChatLaunchMiniProgramSuccessCallback | null,
+	
+	fail : TTWeChatLaunchMiniProgramFailCallback | null,
+	
+	complete : TTWeChatLaunchMiniProgramCompleteCallback | null
+}
+
+export type TTWeChatOpenCustomerServiceOptions = {
+	/* 
+	 * 企业id
+	 */
+	corpId: string,
+	/*
+	 * 客服url
+	 */
+	url: string,
+	
+	success : TTWeChatOpenCustomerServiceSuccessCallback | null,
+	
+	fail : TTWeChatOpenCustomerServiceFailCallback | null,
+	
+	complete : TTWeChatOpenCustomerServiceCompleteCallback | null
+}
+
+export type TTWeChatRegisterOptions = {
+	/* 
+	 * 应用的appid
+	 */
+	appid: string,
+	/*
+	 * 通用链接(iOS必传,安卓传空字符串)
+	 */
+	universalLink: string,
+	
+	success : TTWeChatRegisterSuccessCallback | null,
+	
+	fail : TTWeChatRegisterFailCallback | null,
+	
+	complete : TTWeChatRegisterCompleteCallback | null
+}
+
+// 新增：从微信跳转到应用时的数据（已废弃，保留用于兼容）
+export type TTWeChatLaunchFromWXData = {
+	/**
+	 * 微信传递的额外参数
+	 */
+	extData?: string | null
+}
+
+/**
+ * 从微信跳转到应用时的成功回调数据
+ */
+export type TTWeChatLaunchFromWXSuccess = {
+	/**
+	 * 从微信跳转过来的数据（extData 字符串）
+	 * 可以是普通字符串或 JSON 字符串格式
+	 * 建议在分享时使用 JSON 格式传递结构化数据
+	 * 
+	 * @example
+	 * // JSON 格式示例
+	 * {"page": "/pages/detail/detail", "id": "12345"}
+	 * 
+	 * // 普通字符串示例
+	 * "some-custom-data"
+	 */
+	data: string | null
+}
+
+export interface TTWeChatLaunchFromWXFail extends IUniError {}
+
+export type TTWeChatLaunchFromWXSuccessCallback = (result: TTWeChatLaunchFromWXSuccess) => void;
+export type TTWeChatLaunchFromWXFailCallback = (result: TTWeChatLaunchFromWXFail) => void;
+export type TTWeChatLaunchFromWXCompleteCallback = (result: any) => void;
+
+/**
+ * 监听从微信跳转到应用的选项
+ * 
+ * @description
+ * 当用户从微信跳转到您的应用时，可以通过此方法监听并获取微信传递的启动参数
+ * 
+ * @example
+ * ```typescript
+ * weChat.onLaunchFromWX({
+ *     success: (res) => {
+ *         console.log("启动参数:", res.data);
+ *         // 处理启动参数
+ *     },
+ *     fail: (err) => {
+ *         console.error("监听失败:", err);
+ *     }
+ * });
+ * ```
+ */
+export type TTWeChatLaunchFromWXOptions = {
+	/**
+	 * 成功回调
+	 * 当监听到从微信跳转事件时触发
+	 */
+	success?: TTWeChatLaunchFromWXSuccessCallback | null,
+	/**
+	 * 失败回调
+	 */
+	fail?: TTWeChatLaunchFromWXFailCallback | null,
+	/**
+	 * 完成回调
+	 */
+	complete?: TTWeChatLaunchFromWXCompleteCallback | null
+}
+
+export interface TTWeChatSDK{
+	/* 判断应用是否安装 */
+	isInstall() : boolean
+	/* 初始化 */
+	register(options : TTWeChatRegisterOptions) : void
+	/* 微信登录 */
+	login(options : TTWeChatLoginOptions) : void
+	/* 微信分享 */
+	share(options: TTWeChatShareOptions) : void
+	/* 微信支付 */
+	pay(options: TTWeChatPayOptions) : void
+	/* 打开小程序 */
+	launchMiniProgram(options : TTWeChatLaunchMiniProgramOptions) : void
+	/* 打开微信客服 */
+	openCustomerService(options : TTWeChatOpenCustomerServiceOptions) : void
+	
+	/**
+	 * 监听从微信跳转到应用的事件
+	 * 
+	 * @description
+	 * 当用户从微信跳转到您的应用时，可以通过此方法监听并获取微信传递的启动参数（extData）
+	 * 
+	 * @param options 监听选项，包含成功、失败、完成回调
+	 * 
+	 * @example
+	 * ```typescript
+	 * weChat.onLaunchFromWX({
+	 *     success: (res) => {
+	 *         console.log("启动参数:", res.data);
+	 *         // 处理启动参数，例如跳转到指定页面
+	 *         if (res.data) {
+	 *             const params = JSON.parse(res.data);
+	 *             uni.navigateTo({ url: params.page });
+	 *         }
+	 *     },
+	 *     fail: (err) => {
+	 *         console.error("监听失败:", err);
+	 *     }
+	 * });
+	 * ```
+	 * 
+	 * @note
+	 * - 建议在应用启动时（onLoad 或 onMounted）立即设置监听
+	 * - SDK 支持冷启动场景，即使应用未运行也能正确接收参数
+	 * - 在页面销毁时（onUnload 或 onUnmounted）应调用 offLaunchFromWX() 取消监听
+	 */
+	onLaunchFromWX(options: TTWeChatLaunchFromWXOptions): void
+	
+	/**
+	 * 取消监听从微信跳转到应用的事件
+	 * 
+	 * @description
+	 * 取消之前设置的微信跳转监听，释放资源
+	 * 
+	 * @example
+	 * ```typescript
+	 * // 在页面销毁时调用
+	 * onUnmounted() {
+	 *     weChat.offLaunchFromWX();
+	 * }
+	 * ```
+	 */
+	offLaunchFromWX(): void
+}
+
+export type GetTTWeChatSDK = () => TTWeChatSDK;

@@ -1,0 +1,846 @@
+<template>
+	<view class="page">
+		<!-- 自定义导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="back-btn" @click="goBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">选择赠送对象</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		
+		<!-- 搜索框 -->
+		<view class="search-container">
+			<view class="search-box">
+				<image class="search-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png" mode="aspectFit"></image>
+				<input 
+					class="search-input" 
+					type="text" 
+					placeholder="搜索用户昵称"
+					:value="searchKeyword"
+					@input="onSearchInput"
+					@confirm="doSearch"
+				/>
+				<view v-if="searchKeyword != ''" class="clear-btn" @click="clearSearch">
+					<text class="clear-icon">×</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 用户列表 -->
+		<scroll-view 
+			class="user-list"
+			:style="{ height: contentHeight + 'px' }"
+			scroll-y="true"
+			@scrolltolower="loadMore"
+		>
+			<!-- 搜索结果 -->
+			<view v-if="isSearchMode == true">
+				<view v-if="searchLoading == true" class="loading-state">
+					<text class="loading-text">搜索中...</text>
+				</view>
+				<view v-else-if="searchResultsLength == 0" class="empty-state">
+					<text class="empty-text">未找到相关用户</text>
+				</view>
+				<view v-else>
+					<view class="section-title">
+						<text class="section-title-text">搜索结果</text>
+					</view>
+					<view 
+						v-for="(user, index) in searchResults" 
+						:key="'search-' + index"
+						class="user-item"
+						@click="selectUser(user, 'search')"
+					>
+						<view class="avatar-wrapper">
+							<Avatar 
+								:url="getUserProp(user, 'image')"
+								:userId="getUserProp(user, 'kid')"
+								size="medium"
+								clickMode="none"
+							/>
+						</view>
+						<view class="user-info">
+							<text class="user-name">{{ getUserProp(user, 'nickname') }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 最近聊天列表 -->
+			<view v-else>
+				<view v-if="chatLoading == true" class="loading-state">
+					<text class="loading-text">加载中...</text>
+				</view>
+				<view v-else-if="chatListLength == 0" class="empty-state">
+					<text class="empty-text">暂无最近聊天</text>
+				</view>
+				<view v-else>
+					<view class="section-title">
+						<text class="section-title-text">最近聊天</text>
+					</view>
+					<view 
+						v-for="(item, index) in chatList" 
+						:key="'chat-' + index"
+						class="user-item"
+						@click="selectUser(item, 'chat')"
+					>
+						<view class="avatar-wrapper">
+							<Avatar 
+								:url="getConvProp(item, 'targetUserAvatar')"
+								:userId="getConvProp(item, 'targetUserId')"
+								size="medium"
+								clickMode="none"
+							/>
+						</view>
+						<view class="user-info">
+							<NicknameWithBadges
+								:nickname="getDisplayName(item)"
+								:vipType="getVipTypeString(item)"
+								:giftLevel="getConvNumber(item, 'giftLevel')"
+								size="medium"
+							/>
+							<text class="last-time">{{ formatTime(getConvProp(item, 'lastMessageTime')) }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { getConversations, GetConversationsParams } from '@/api/chat.uts'
+import { searchIndex } from '@/api/home.uts'
+import { SearchIndexParams } from '@/api/types/homeTypes.uts'
+import { SEARCH_TYPE_USER } from '@/common/config/businessCodes.uts'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { formatRelativeTime } from '@/common/utils/dateUtils.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 辅助函数 ====================
+const getObjValue = (obj: UTSJSONObject | null, key: string): string | number | boolean | null => {
+	if (obj == null) return null
+	try {
+		const objStr = JSON.stringify(obj)
+		if (objStr == null || objStr == '') return null
+		const objParsed = JSON.parse(objStr) as UTSJSONObject
+		if (objParsed != null) {
+			const val = objParsed.get(key)
+			if (val != null) return val.toString()
+		}
+		return null
+	} catch (e) {
+		return null
+	}
+}
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = getObjValue(obj, key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = getObjValue(obj, key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// ==================== 会话数据类 ====================
+class ConversationItem {
+	conversationId: string = ''
+	targetUserId: string = ''
+	targetUserName: string = ''
+	targetUserAvatar: string = ''
+	lastMessageTime: string = ''
+	giftLevel: number = 0
+	vip: number = 10
+	vipType: number = 0
+	constructor() {}
+}
+
+// ==================== 响应式数据 ====================
+const statusBarHeight = ref<number>(44)
+const contentHeight = ref<number>(500)
+
+// 页面参数
+const giftKid = ref<string>('')
+
+// 聊天列表
+const chatList = ref<Array<ConversationItem>>([])
+const chatLoading = ref<boolean>(false)
+const chatPage = ref<number>(1)
+const chatHasMore = ref<boolean>(true)
+
+// 搜索
+const searchKeyword = ref<string>('')
+const searchResults = ref<Array<UTSJSONObject>>([])
+const searchLoading = ref<boolean>(false)
+const isSearchMode = ref<boolean>(false)
+
+// 赠送状态
+const sending = ref<boolean>(false)
+
+// ==================== 计算属性 ====================
+const chatListLength = computed((): number => {
+	try {
+		const arr = chatList.value
+		if (arr != null) {
+			return arr.length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const searchResultsLength = computed((): number => {
+	try {
+		const arr = searchResults.value
+		if (arr != null) {
+			return arr.length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 辅助方法 ====================
+const getUserProp = (user: UTSJSONObject | null, key: string): string => {
+	if (user == null) return ''
+	try {
+		const userObj = toJsonObj(user)
+		if (userObj != null) {
+			return getObjString(userObj, key)
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getConvProp = (item: ConversationItem, key: string): string => {
+	if (item == null) return ''
+	if (key == 'targetUserAvatar') return item.targetUserAvatar
+	if (key == 'targetUserId') return item.targetUserId
+	if (key == 'targetUserName') return item.targetUserName
+	if (key == 'lastMessageTime') return item.lastMessageTime
+	return ''
+}
+
+const getConvNumber = (item: ConversationItem, key: string): number => {
+	if (item == null) return 0
+	if (key == 'giftLevel') return item.giftLevel
+	if (key == 'vip') return item.vip
+	if (key == 'vipType') return item.vipType
+	return 0
+}
+
+const getVipTypeString = (item: ConversationItem): string => {
+	if (item == null) return ''
+	if (item.vip != 20) return ''
+	if (item.vipType == 40) return 'year'
+	return 'normal'
+}
+
+const getDisplayName = (item: ConversationItem): string => {
+	if (item == null) return '用户'
+	const name = item.targetUserName
+	if (name != null && name != '' && name != '用户') {
+		return name
+	}
+	const userId = item.targetUserId
+	if (userId != null && userId.length > 6) {
+		return '用户' + userId.substring(userId.length - 6)
+	}
+	return '用户'
+}
+
+const formatTime = (time: string): string => {
+	if (time == null || time == '') return ''
+	return formatRelativeTime(time)
+}
+
+
+// ==================== 页面方法 ====================
+const goBack = () => {
+	uni.navigateBack()
+}
+
+const initPageLayout = () => {
+	initPageLayoutComposable()
+	statusBarHeight.value = pageStatusBarHeight.value
+	
+	// 计算内容高度：窗口高度 - 导航栏 - 搜索框
+	const navHeight = statusBarHeight.value + 44
+	const searchHeight = 100
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - navHeight - searchHeight
+	}
+	
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+}
+
+// 加载聊天列表
+const loadChatList = () => {
+	const userId = getCurrentUserIdReliable()
+	if (userId == '') {
+		chatLoading.value = false
+		return
+	}
+	
+	if (chatLoading.value == true) return
+	chatLoading.value = true
+	
+	const params = new GetConversationsParams()
+	params.userId = userId
+	params.page = chatPage.value
+	params.size = 20
+	
+	getConversations(params).then((res: any | null) => {
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const codeVal = resObj.get('code')
+				const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+				const code = parseInt(codeStr)
+				
+				if (code == 200) {
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						const isDataArray = Array.isArray(dataVal) == true
+						let listArr: Array<UTSJSONObject | null> = []
+						
+						if (isDataArray == true) {
+							const rawArr = dataVal as Array<UTSJSONObject | null>
+							listArr = rawArr
+						} else {
+							const dataObj = toJsonObj(dataVal)
+							if (dataObj != null) {
+								const listVal = dataObj.get('list')
+								if (listVal != null && Array.isArray(listVal) == true) {
+									listArr = listVal as Array<UTSJSONObject | null>
+								}
+							}
+						}
+						
+						if (listArr.length > 0) {
+							const newItems: Array<ConversationItem> = []
+							for (let i = 0; i < listArr.length; i = i + 1) {
+								const conv = listArr[i]
+								const convObj = toJsonObj(conv)
+								if (convObj != null) {
+									const item = new ConversationItem()
+									item.conversationId = getObjString(convObj, 'conversationId')
+									item.targetUserId = getObjString(convObj, 'targetUserId')
+									item.targetUserName = getObjString(convObj, 'targetUserName')
+									item.targetUserAvatar = getObjString(convObj, 'targetUserAvatar')
+									item.lastMessageTime = getObjString(convObj, 'lastMessageTime')
+									item.giftLevel = getObjNumber(convObj, 'targetUserGiftLevel')
+									item.vip = getObjNumber(convObj, 'targetUserVip')
+									if (item.vip == 0) item.vip = 10
+									item.vipType = getObjNumber(convObj, 'targetUserVipType')
+									newItems.push(item)
+								}
+							}
+							
+							if (chatPage.value == 1) {
+								chatList.value = newItems
+							} else {
+								for (let j = 0; j < newItems.length; j = j + 1) {
+									chatList.value.push(newItems[j])
+								}
+							}
+							
+							chatHasMore.value = listArr.length >= 20
+						} else {
+							if (chatPage.value == 1) {
+								chatList.value = []
+							}
+							chatHasMore.value = false
+						}
+					}
+				}
+			} catch (e) {}
+		}
+		chatLoading.value = false
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '加载聊天列表', chatLoading)
+		} else {
+			chatLoading.value = false
+		}
+	})
+}
+
+// 搜索用户
+const doSearch = () => {
+	const keyword = searchKeyword.value
+	if (keyword == null || keyword == '') {
+		isSearchMode.value = false
+		searchResults.value = []
+		return
+	}
+	
+	isSearchMode.value = true
+	searchLoading.value = true
+	
+	const params = new SearchIndexParams()
+	params.keyword = keyword
+	params.searchType = SEARCH_TYPE_USER
+	params.pageNumber = 1
+	params.pageSize = 20
+	
+	searchIndex(params).then((res: any | null) => {
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const codeVal = resObj.get('code')
+				const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+				const code = parseInt(codeStr)
+				
+				if (code == 200) {
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						const dataObj = toJsonObj(dataVal)
+						if (dataObj != null) {
+							const usersVal = dataObj.get('users')
+							if (usersVal != null && Array.isArray(usersVal) == true) {
+								searchResults.value = usersVal as Array<UTSJSONObject>
+							} else {
+								searchResults.value = []
+							}
+						}
+					}
+				}
+			} catch (e) {}
+		}
+		searchLoading.value = false
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '搜索用户', searchLoading)
+		} else {
+			searchLoading.value = false
+		}
+		searchResults.value = []
+	})
+}
+
+const onSearchInput = (e: UniInputEvent) => {
+	try {
+		const eStr = JSON.stringify(e)
+		if (eStr != null && eStr != '') {
+			const eObj = JSON.parse(eStr) as UTSJSONObject
+			if (eObj != null) {
+				const detailVal = eObj.get('detail')
+				if (detailVal != null) {
+					const detailStr = JSON.stringify(detailVal)
+					if (detailStr != null && detailStr != '') {
+						const detail = JSON.parse(detailStr) as UTSJSONObject
+						const valueVal = detail.get('value')
+						if (valueVal != null) {
+							searchKeyword.value = valueVal.toString()
+						}
+					}
+				}
+			}
+		}
+	} catch (err) {}
+}
+
+const clearSearch = () => {
+	searchKeyword.value = ''
+	isSearchMode.value = false
+	searchResults.value = []
+}
+
+const loadMore = () => {
+	if (isSearchMode.value == true) return
+	if (chatHasMore.value == false || chatLoading.value == true) return
+	chatPage.value = chatPage.value + 1
+	loadChatList()
+}
+
+// 待赠送的用户ID（用于回调）
+const pendingReceiveUserId = ref<string>('')
+
+// 执行赠送（必须在 selectUser 之前定义，UTS 没有函数提升）
+const executeSendGift = () => {
+	const receiveUserKid = pendingReceiveUserId.value
+	if (receiveUserKid == '') return
+	
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (giftKid.value == '') {
+		uni.showToast({
+			title: '礼物信息错误',
+			icon: 'none'
+		})
+		return
+	}
+	
+	sending.value = true
+	uni.showLoading({
+		title: '赠送中...'
+	})
+	
+	const params = {
+		userKid: userKid,
+		lotteryRecordKid: giftKid.value,
+		receiveUserKid: receiveUserKid
+	} as UTSJSONObject
+	
+	sendGiftFromBag(params).then((res: any | null) => {
+		uni.hideLoading()
+		sending.value = false
+		pendingReceiveUserId.value = ''
+		
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const codeVal = resObj.get('code')
+				const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+				const code = parseInt(codeStr)
+				
+				if (code == 200) {
+					uni.showToast({
+						title: '赠送成功',
+						icon: 'success'
+					})
+					safeSetTimeout(() => {
+						uni.navigateBack()
+					}, 1500)
+				} else {
+					const msgVal = resObj.get('msg')
+					const msg = (msgVal != null && msgVal.toString() != '') ? msgVal.toString() : '赠送失败'
+					uni.showToast({
+						title: msg,
+						icon: 'none'
+					})
+				}
+			} catch (e) {
+				uni.showToast({
+					title: '赠送失败',
+					icon: 'none'
+				})
+			}
+		} else {
+			uni.showToast({
+				title: '赠送失败',
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		uni.hideLoading()
+		sending.value = false
+		pendingReceiveUserId.value = ''
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '赠送礼物', sending)
+		}
+	})
+}
+
+// 处理弹窗确认结果
+const handleModalConfirm = (res: UniShowModalResult) => {
+	if (res.confirm == true) {
+		executeSendGift()
+	} else {
+		pendingReceiveUserId.value = ''
+	}
+}
+
+// 选择用户
+const selectUser = (user: UTSJSONObject | ConversationItem, source: string) => {
+	if (sending.value == true) return
+	
+	let targetUserId = ''
+	let targetUserName = ''
+	
+	if (source == 'chat') {
+		const item = user as ConversationItem
+		targetUserId = item.targetUserId
+		targetUserName = getDisplayName(item)
+	} else {
+		const userObj = user as UTSJSONObject
+		targetUserId = getUserProp(userObj, 'kid')
+		targetUserName = getUserProp(userObj, 'nickname')
+		if (targetUserName == '') {
+			targetUserName = '该用户'
+		}
+	}
+	
+	if (targetUserId == '') {
+		uni.showToast({
+			title: '用户信息错误',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 保存待赠送用户ID
+	pendingReceiveUserId.value = targetUserId
+	
+	// 显示确认弹窗
+	uni.showModal({
+		title: '确认赠送',
+		content: '确定要将礼物赠送给"' + targetUserName + '"吗？',
+		confirmText: '确认赠送',
+		confirmColor: '#37B1F2',
+		success: handleModalConfirm
+	})
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	initPageLayout()
+	
+	if (options != null) {
+		const optionsObj = JSON.parse(JSON.stringify(options)) as UTSJSONObject
+		const giftKidVal = optionsObj.get('giftKid')
+		if (giftKidVal != null && giftKidVal.toString() != '') {
+			giftKid.value = giftKidVal.toString()
+		}
+	}
+	
+	// 检查登录状态
+	if (checkUserLoginReliable() == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+		return
+	}
+	
+	// 加载聊天列表
+	loadChatList()
+})
+
+onMounted(() => {
+	initPageLayout()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+
+<style scoped>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+/* 导航栏 */
+.nav-bar {
+	background-color: #ffffff;
+	width: 750rpx;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+}
+
+.nav-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-placeholder {
+	width: 60rpx;
+}
+
+/* 搜索框 */
+.search-container {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #ffffff;
+}
+
+.search-box {
+	height: 72rpx;
+	background-color: #f5f5f5;
+	border-radius: 36rpx;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.search-icon {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 16rpx;
+}
+
+.search-input {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.clear-btn {
+	width: 40rpx;
+	height: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.clear-icon {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+/* 用户列表 */
+.user-list {
+	flex-direction: column;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-top: 20rpx;
+}
+
+.section-title {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+}
+
+.section-title-text {
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.user-item {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 20rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.avatar-wrapper {
+	margin-right: 20rpx;
+}
+
+.user-info {
+	flex: 1;
+	flex-direction: column;
+	justify-content: center;
+}
+
+.user-name {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.last-time {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+/* 状态 */
+.loading-state {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 80rpx;
+	padding-bottom: 80rpx;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.empty-state {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+</style>

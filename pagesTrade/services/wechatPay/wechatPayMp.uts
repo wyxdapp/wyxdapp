@@ -1,0 +1,257 @@
+/**
+ * 小程序端微信支付服务
+ * 使用 uni.requestPayment 实现微信小程序支付
+ * 
+ * @author wyxdapp
+ * @version 2.0.0
+ * @since 2025-12-28
+ */
+
+// 从独立的 types.uts 导入，避免循环依赖
+import {
+	PaymentParams,
+	PaymentResult,
+	PaymentSuccessCallback,
+	PaymentErrorCallback,
+	PAYMENT_STATE_PENDING,
+	PAYMENT_STATE_PROCESSING,
+	PAYMENT_STATE_SUCCESS,
+	PAYMENT_STATE_FAILED,
+	setPaymentState
+} from './types.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import request from '@/utils/request'
+
+/**
+ * 从对象获取字符串属性
+ */
+function getObjString(obj: UTSJSONObject | null, key: string): string {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 从对象获取数字属性
+ */
+function getObjNumber(obj: UTSJSONObject | null, key: string): number {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+/**
+ * 获取小程序登录 code
+ */
+export function getMpLoginCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	// #ifdef MP-WEIXIN
+	console.log('🔄 [WX-PAY-MP] 获取小程序登录code')
+	
+	uni.login({
+		provider: 'weixin',
+		success: (res: UTSJSONObject | null) => {
+			const resObj = toJsonObj(res)
+			const code = getObjString(resObj, 'code')
+			
+			if (code != '') {
+				onSuccess(code)
+			} else {
+				onError('获取登录code失败')
+			}
+		},
+		fail: (err: UniError | null) => {
+			console.error('❌ [WX-PAY-MP] 获取登录code失败:', err)
+			onError('获取微信授权失败')
+		}
+	})
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	onError('非小程序环境不支持此功能')
+	// #endif
+}
+
+/**
+ * 调用小程序支付
+ */
+function callMpPayment(
+	payData: UTSJSONObject,
+	orderId: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef MP-WEIXIN
+	console.log('💳 [WX-PAY-MP] 调用小程序支付')
+	
+	// 解析支付参数
+	const timeStamp = getObjString(payData, 'timeStamp')
+	const nonceStr = getObjString(payData, 'nonceStr')
+	const packageVal = getObjString(payData, 'package')
+	let signType = getObjString(payData, 'signType')
+	if (signType == '') {
+		signType = 'MD5'
+	}
+	const paySign = getObjString(payData, 'paySign')
+	
+	console.log('📋 [WX-PAY-MP] 支付参数:', {
+		timeStamp: timeStamp,
+		nonceStr: nonceStr.substring(0, 10) + '...',
+		package: packageVal.substring(0, 20) + '...',
+		signType: signType
+	})
+	
+	// 设置支付状态为处理中
+	setPaymentState(orderId, PAYMENT_STATE_PROCESSING)
+	
+	// 构造 orderInfo
+	const orderInfoRaw = {
+		timeStamp: timeStamp,
+		nonceStr: nonceStr,
+		package: packageVal,
+		signType: signType,
+		paySign: paySign
+	} as UTSJSONObject
+	const orderInfoJson = JSON.stringify(orderInfoRaw)
+	
+	uni.requestPayment({
+		provider: 'wxpay',
+		orderInfo: orderInfoJson,
+		success: (res: UTSJSONObject | null) => {
+			setPaymentState(orderId, PAYMENT_STATE_SUCCESS)
+			const payResult = new PaymentResult(true, '支付成功', toJsonObj(res))
+			onSuccess(payResult)
+		},
+		fail: (err: UniError | null) => {
+			console.error('❌ [WX-PAY-MP] 微信支付失败:', err)
+			setPaymentState(orderId, PAYMENT_STATE_FAILED)
+			
+			// 解析错误信息
+			let errMsg = '支付失败'
+			const errObj = toJsonObj(err)
+			if (errObj != null) {
+				const errMsgVal = getObjString(errObj, 'errMsg')
+				if (errMsgVal != '') {
+					if (errMsgVal.indexOf('cancel') != -1) {
+						errMsg = '已取消支付'
+					} else {
+						errMsg = errMsgVal
+					}
+				}
+			}
+			onError(errMsg)
+		}
+	})
+	// #endif
+}
+
+/**
+ * 小程序端微信支付（使用已有的登录码）
+ */
+export function doWechatPayWithCode(
+	params: PaymentParams,
+	loginCode: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef MP-WEIXIN
+	console.log('📱 [WX-PAY-MP] 开始小程序端微信支付（使用登录码）')
+	console.log('📱 [WX-PAY-MP] 订单ID:', params.orderId)
+	console.log('📱 [WX-PAY-MP] 支付金额:', params.amount)
+	
+	// 设置支付状态为待支付
+	setPaymentState(params.orderId, PAYMENT_STATE_PENDING)
+	
+	// 调用后端获取支付参数
+	console.log('📡 [WX-PAY-MP] 调用后端小程序支付接口')
+	const requestParams = {
+		code: loginCode,
+		orderId: params.orderId,
+		txnAmt: params.amount
+	} as UTSJSONObject
+	
+	request.post('/pay/wxpay/applyXcxPay', requestParams, false).then((res: UTSJSONObject | null) => {
+		console.log('📥 [WX-PAY-MP] 后端响应:', res)
+		
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('获取支付参数失败')
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code != 200) {
+			const msg = getObjString(resObj, 'msg')
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError((msg != '') ? msg : '获取支付参数失败')
+			return
+		}
+		
+		const dataVal = resObj.get('data')
+		if (dataVal == null) {
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('支付参数为空')
+			return
+		}
+		
+		const payData = toJsonObj(dataVal)
+		if (payData == null) {
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('支付参数解析失败')
+			return
+		}
+		
+		// 调用小程序支付
+		callMpPayment(payData, params.orderId, onSuccess, onError)
+	}).catch((err: Error | null) => {
+		console.error('❌ [WX-PAY-MP] 请求后端失败:', err)
+		setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+		onError('网络请求失败，请重试')
+	})
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	onError('非小程序环境不支持此功能')
+	// #endif
+}
+
+/**
+ * 小程序端微信支付
+ * 会自动获取登录码
+ */
+export function doWechatPay(
+	params: PaymentParams,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef MP-WEIXIN
+	console.log('📱 [WX-PAY-MP] 开始小程序端微信支付')
+	
+	// 检查是否有传入的登录码
+	if (params.code != null && params.code != '') {
+		doWechatPayWithCode(params, params.code, onSuccess, onError)
+		return
+	}
+	
+	// 获取登录码
+	getMpLoginCode((code: string) => {
+		doWechatPayWithCode(params, code, onSuccess, onError)
+	}, onError)
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	onError('非小程序环境不支持此功能')
+	// #endif
+}

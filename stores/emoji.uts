@@ -1,0 +1,764 @@
+/**
+ * 表情状态管理 Store - 使用 Vue 响应式 API
+ * 管理最近使用表情和自定义表情
+ * 
+ * 数据存储策略：
+ * - 最近使用表情：仅本地存储
+ * - 自定义表情：服务端存储 + 本地缓存
+ */
+
+import { ref, computed } from 'vue'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { toUTSJSON } from '@/common/utils/typeConverter.uts'
+import { safeGetString, safeGetBoolean, safeGetArray } from '@/utils/nullGuard.uts'
+import { getCurrentUserKid, getResponseCode, getResponseData, getStringProp } from '@/common/utils/utsSafe.uts'
+import { getUserId, isStoreReady, LOGIN_STATUS_CHANGE_EVENT } from '@/stores/user'
+import { saveEmojiApi, getEmojiListApi, deleteEmojiApi, SaveEmojiParams, GetEmojiListParams, DeleteEmojiParams } from '@/api/emoji.uts'
+import { SK_RECENT_EMOJIS, SK_CUSTOM_EMOJIS, SK_FAVORITE_EMOJIS } from '@/common/config/storageKeys.uts'
+import { RADIX_BASE36 } from '@/common/config/generatorConfig.uts'
+
+// 最近使用的表情接口
+export interface RecentEmoji {
+	emoji: string
+	type: string  // 'unicode' | 'custom'
+	imageUrl: string
+	name: string
+	useCount: number
+	lastUsedTime: number
+}
+
+// 自定义表情类
+export class CustomEmoji {
+	kid: string = ''
+	imageUrl: string = ''
+	name: string = ''
+	createTime: number = 0
+}
+
+// 收藏表情接口
+export interface FavoriteEmoji {
+	emoji: string
+	type: string  // 'unicode' | 'custom'
+	imageUrl: string
+	name: string
+	favoriteTime: number
+}
+
+// ==================== 最近使用表情 ====================
+
+const recentEmojis = ref<Array<any>>([])
+
+const loadRecentEmojis = () => {
+	try {
+		const stored = uni.getStorageSync(SK_RECENT_EMOJIS)
+		if (stored != null && stored != '') {
+			const parsed = JSON.parse(stored as string)
+			if (parsed != null && Array.isArray(parsed) == true) {
+				recentEmojis.value = parsed as Array<any>
+			}
+		}
+	} catch (error: any) {
+		handleSilentError(error, '加载最近表情')
+	}
+}
+
+const saveRecentEmojis = () => {
+	try {
+		uni.setStorageSync(SK_RECENT_EMOJIS, JSON.stringify(recentEmojis.value))
+	} catch (error: any) {
+		handleSilentError(error, '保存最近表情')
+	}
+}
+
+const addRecentEmoji = (
+	emoji: string, 
+	type: string, 
+	imageUrl: string, 
+	name: string
+) => {
+	const now = Date.now()
+	const typeVal = (type != null && type != '') ? type : 'unicode'
+	
+	let existingIndex = -1
+	for (let i = 0; i < recentEmojis.value.length; i = i + 1) {
+		const item = recentEmojis.value[i]
+		const itemEmoji = getStringProp(item, 'emoji')
+		const itemType = getStringProp(item, 'type')
+		if (itemEmoji == emoji && itemType == typeVal) {
+			existingIndex = i
+			break
+		}
+	}
+	
+	if (existingIndex >= 0) {
+		const existing = recentEmojis.value[existingIndex]
+		const currentCount = parseInt(getStringProp(existing, 'useCount'))
+		const newCount = (isNaN(currentCount) == false) ? currentCount + 1 : 1
+		
+		// 使用 typeConverter 安全转换为 UTSJSONObject
+		try {
+			const existingObj = toUTSJSON(existing)
+			if (existingObj == null) throw new Error('转换失败')
+			existingObj.set('useCount', newCount)
+			existingObj.set('lastUsedTime', now)
+			
+			recentEmojis.value.splice(existingIndex, 1)
+			recentEmojis.value.unshift(existingObj)
+		} catch (e) {
+			// 如果更新失败，直接移动到开头
+			recentEmojis.value.splice(existingIndex, 1)
+			recentEmojis.value.unshift(existing)
+		}
+	} else {
+		const newItem = {
+			emoji: emoji,
+			type: typeVal,
+			imageUrl: imageUrl,
+			name: name,
+			useCount: 1,
+			lastUsedTime: now
+		} as UTSJSONObject
+		recentEmojis.value.unshift(newItem)
+	}
+	
+	// 限制最多30个
+	if (recentEmojis.value.length > 30) {
+		recentEmojis.value = recentEmojis.value.slice(0, 30)
+	}
+	
+	saveRecentEmojis()
+	console.log('📝 添加最近表情:', { emoji: emoji, type: typeVal, total: recentEmojis.value.length })
+}
+
+const clearRecentEmojis = () => {
+	recentEmojis.value = []
+	saveRecentEmojis()
+	console.log('🗑️ 清空最近表情')
+}
+
+const getRecentEmojis = computed((): Array<any> => {
+	return recentEmojis.value.slice(0, 20)
+})
+
+// ==================== 自定义表情（服务端同步） ====================
+
+const customEmojis = ref<Array<any>>([])
+const customEmojisLoading = ref<boolean>(false)
+const customEmojisSynced = ref<boolean>(false)
+
+// ==================== 登录状态监听相关 ====================
+
+// 事件监听器注册标记
+const loginListenerRegistered = ref<boolean>(false)
+
+// 当前同步的用户ID（用于检测用户切换）
+const syncedUserKid = ref<string>('')
+
+/**
+ * 从本地缓存加载自定义表情
+ */
+const loadCustomEmojisFromCache = () => {
+	try {
+		const stored = uni.getStorageSync(SK_CUSTOM_EMOJIS)
+		if (stored != null && stored != '') {
+			const parsed = JSON.parse(stored as string)
+			if (parsed != null && Array.isArray(parsed) == true) {
+				customEmojis.value = parsed as Array<any>
+			}
+		}
+	} catch (error: any) {		handleSilentError(error, '加载自定义表情缓存')
+	}
+}
+
+/**
+ * 保存自定义表情到本地缓存
+ */
+const saveCustomEmojisToCache = () => {
+	try {
+		uni.setStorageSync(SK_CUSTOM_EMOJIS, JSON.stringify(customEmojis.value))
+	} catch (error: any) {
+		handleSilentError(error, '保存自定义表情缓存')
+	}
+}
+
+/**
+ * 用户登出时清理自定义表情数据
+ */
+const clearCustomEmojisOnLogout = () => {
+	customEmojis.value = []
+	customEmojisSynced.value = false
+	syncedUserKid.value = ''
+	saveCustomEmojisToCache()
+	console.log('🗑️ [EmojiStore] 已清理自定义表情数据')
+}
+
+/**
+ * 处理登录状态变化事件
+ */
+const onLoginStatusChange = (event: any) => {
+	try {
+		const eventObj = toUTSJSON(event)
+		if (eventObj == null) {
+			console.warn('⚠️ [EmojiStore] 登录状态事件数据为空')
+			return
+		}
+		const isLogin = safeGetBoolean(eventObj, 'isLogin')
+		const userId = safeGetString(eventObj, 'userId')
+		
+		console.log('📢 [EmojiStore] 收到登录状态变化: isLogin=', isLogin, ', userId=', userId)
+		
+		if (isLogin == true && userId != '') {
+			// 检查是否是不同用户登录
+			if (syncedUserKid.value != '' && syncedUserKid.value != userId) {
+				console.log('🔄 [EmojiStore] 检测到用户切换，重置同步状态')
+				customEmojisSynced.value = false
+				customEmojis.value = []
+			}
+			// 执行同步
+			syncCustomEmojisFromServer()
+		} else {
+			// 用户登出，清理数据
+			clearCustomEmojisOnLogout()
+		}
+	} catch (e: any) {
+		handleSilentError(e, '处理登录状态变化事件')
+	}
+}
+
+/**
+ * 注册登录状态变化事件监听器
+ */
+const registerLoginStatusListener = () => {
+	// 防止重复注册
+	if (loginListenerRegistered.value == true) {
+		console.log('⚠️ [EmojiStore] 登录状态监听器已注册，跳过')
+		return
+	}
+	
+	// 注册监听器
+	try {
+		uni.$on(LOGIN_STATUS_CHANGE_EVENT, onLoginStatusChange)
+		loginListenerRegistered.value = true
+	} catch (e: any) {
+		handleSilentError(e, '注册登录状态监听器')
+	}
+}
+
+/**
+ * 移除登录状态监听器
+ */
+const unregisterLoginStatusListener = () => {
+	if (loginListenerRegistered.value == true) {
+		try {
+			uni.$off(LOGIN_STATUS_CHANGE_EVENT, onLoginStatusChange)
+			loginListenerRegistered.value = false
+		} catch (e: any) {
+			handleSilentError(e, '移除登录状态监听器')
+		}
+	}
+}
+
+/**
+ * 尝试初始同步（如果条件满足）
+ */
+const tryInitialSync = () => {
+	// 检查 Store 是否已就绪
+	const storeReady = isStoreReady()
+	
+	if (storeReady == true) {
+		const userKid = getUserId()
+		if (userKid != '') {
+			syncCustomEmojisFromServer()
+			return
+		}
+	}
+	
+	// Store 未就绪或用户未登录，尝试从 Storage 获取
+	const storageUserKid = getCurrentUserKid()
+	if (storageUserKid != '') {
+		syncCustomEmojisFromServer()
+		return
+	}
+	
+	// 都获取不到，等待登录事件
+	console.log('⏳ [EmojiStore] 用户未登录，等待登录状态事件')
+}
+
+/**
+ * 从服务端同步自定义表情列表
+ */
+const syncCustomEmojisFromServer = () => {
+	// 防重复检查：已同步则跳过
+	if (customEmojisSynced.value == true) {
+		return
+	}
+	
+	// 防重复检查：正在同步中则跳过
+	if (customEmojisLoading.value == true) {
+		return
+	}
+	
+	// 优先从 Store 获取用户ID
+	let userKid = ''
+	const storeReady = isStoreReady()
+	
+	if (storeReady == true) {
+		userKid = getUserId()
+	}
+	
+	// 如果 Store 获取不到，尝试从 Storage 获取
+	if (userKid == '') {
+		userKid = getCurrentUserKid()
+	}
+	
+	if (userKid == '') {
+		console.log('⚠️ [EmojiStore] 用户未登录，跳过同步自定义表情')
+		return
+	}
+	
+	// 记录当前同步的用户ID
+	syncedUserKid.value = userKid
+	
+	customEmojisLoading.value = true
+	
+	const params = new GetEmojiListParams()
+	params.userKid = userKid
+	
+	getEmojiListApi(params).then((res: any) => {
+		const code = getResponseCode(res)
+		
+		if (code == 200) {
+			// 直接从响应中获取 data 字段（可能是数组）
+			// 注意：getResponseData() 返回 UTSJSONObject，不适用于数组类型的 data
+			let dataArray: Array<any> = []
+			try {
+				const resObj = toUTSJSON(res)
+				if (resObj != null) {
+					const dataVal = resObj.get('data')
+					
+					if (dataVal != null) {
+						if (Array.isArray(dataVal) == true) {
+							// data 直接是数组
+							dataArray = dataVal as Array<any>
+						} else {
+							// data 可能是对象，尝试获取 entities 字段（分页格式）
+							const dataObj = toUTSJSON(dataVal)
+							if (dataObj != null) {
+								dataArray = safeGetArray(dataObj, 'entities')
+							}
+						}
+					}
+				}
+			} catch (e: any) {
+				handleSilentError(e, '解析表情响应数据')
+			}
+			
+			if (dataArray.length > 0) {
+				customEmojis.value = dataArray
+			} else {
+				// 服务端返回空数组，保留本地缓存
+				console.log('⚠️ [EmojiStore] 服务端返回空数组，保留本地缓存:', customEmojis.value.length)
+			}
+			saveCustomEmojisToCache()
+			customEmojisSynced.value = true
+		} else {
+			handleSilentError(new Error('同步自定义表情失败: code=' + code.toString()), '同步自定义表情')
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '同步自定义表情')
+	}).finally(() => {
+		customEmojisLoading.value = false
+	})
+}
+
+/**
+ * 保存自定义表情到服务端
+ * @param imageUrl 图片URL
+ * @param name 表情名称（可选）
+ * @returns Promise<boolean> 是否保存成功
+ */
+const saveCustomEmojiToServer = (imageUrl: string, name: string): Promise<boolean> => {
+	// 优先从 Store 获取用户ID
+	let userKid = ''
+	const storeReady = isStoreReady()
+	if (storeReady == true) {
+		userKid = getUserId()
+	}
+	if (userKid == '') {
+		userKid = getCurrentUserKid()
+	}
+	
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return Promise.resolve(false)
+	}
+	
+	// 先检查本地是否已存在
+	if (isCustomEmojiExists(imageUrl) == true) {
+		uni.showToast({ title: '该表情已存在', icon: 'none' })
+		return Promise.resolve(false)
+	}
+	
+	const params = new SaveEmojiParams()
+	params.userKid = userKid
+	params.imageUrl = imageUrl
+	params.name = name
+	
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		saveEmojiApi(params).then((res: any) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+				const dataVal = getResponseData(res)
+				if (dataVal != null) {
+					// 添加到本地列表开头
+					customEmojis.value.unshift(dataVal)
+					saveCustomEmojisToCache()
+					uni.showToast({ title: '添加成功', icon: 'success' })
+					resolve(true)
+				} else {
+					resolve(false)
+				}
+			} else {
+				handleSilentError(new Error('保存自定义表情失败: code=' + code.toString()), '保存自定义表情')
+				resolve(false)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error as any, '保存自定义表情')
+			resolve(false)
+		})
+	})
+}
+
+/**
+ * 从服务端删除自定义表情
+ * @param kid 表情ID
+ * @returns Promise<boolean> 是否删除成功
+ */
+const deleteCustomEmojiFromServer = (kid: string): Promise<boolean> => {
+	// 优先从 Store 获取用户ID
+	let userKid = ''
+	const storeReady = isStoreReady()
+	if (storeReady == true) {
+		userKid = getUserId()
+	}
+	if (userKid == '') {
+		userKid = getCurrentUserKid()
+	}
+	
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return Promise.resolve(false)
+	}
+	
+	const params = new DeleteEmojiParams()
+	params.userKid = userKid
+	params.kid = kid
+	
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		deleteEmojiApi(params).then((res: any) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+				// 从本地列表移除
+				let index = -1
+				for (let i = 0; i < customEmojis.value.length; i = i + 1) {
+					const item = customEmojis.value[i]
+					const itemKid = getStringProp(item, 'kid')
+					if (itemKid == kid) {
+						index = i
+						break
+					}
+				}
+				if (index >= 0) {
+					customEmojis.value.splice(index, 1)
+					saveCustomEmojisToCache()
+				}
+				uni.showToast({ title: '删除成功', icon: 'success' })
+				resolve(true)
+			} else {
+				handleSilentError(new Error('删除自定义表情失败: code=' + code.toString()), '删除自定义表情')
+				uni.showToast({ title: '删除失败', icon: 'none' })
+				resolve(false)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error as any, '删除自定义表情')
+			uni.showToast({ title: '删除失败', icon: 'none' })
+			resolve(false)
+		})
+	})
+}
+
+/**
+ * 检查自定义表情是否已存在（基于imageUrl）
+ * @param imageUrl 图片URL
+ * @returns boolean 是否存在
+ */
+const isCustomEmojiExists = (imageUrl: string): boolean => {
+	for (let i = 0; i < customEmojis.value.length; i = i + 1) {
+		const item = customEmojis.value[i]
+		const itemUrl = getStringProp(item, 'imageUrl')
+		if (itemUrl == imageUrl) {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 本地添加自定义表情（兼容旧逻辑，不推荐使用）
+ * @deprecated 请使用 saveCustomEmojiToServer
+ */
+const addCustomEmoji = (
+	imageUrl: string, 
+	name: string, 
+	category: string
+): CustomEmoji => {
+	const newEmoji = new CustomEmoji()
+	newEmoji.kid = 'local_' + Date.now().toString() + '_' + Math.random().toString(RADIX_BASE36).slice(2, 8)
+	newEmoji.imageUrl = imageUrl
+	newEmoji.name = name
+	newEmoji.createTime = Date.now()
+	
+	customEmojis.value.unshift(newEmoji)
+	saveCustomEmojisToCache()
+	
+	return newEmoji
+}
+
+/**
+ * 本地删除自定义表情（兼容旧逻辑，不推荐使用）
+ * @deprecated 请使用 deleteCustomEmojiFromServer
+ */
+const deleteCustomEmoji = (id: string): boolean => {
+	let index = -1
+	for (let i = 0; i < customEmojis.value.length; i = i + 1) {
+		const item = customEmojis.value[i]
+		const itemKid = getStringProp(item, 'kid')
+		const itemId = getStringProp(item, 'id')
+		if (itemKid == id || itemId == id) {
+			index = i
+			break
+		}
+	}
+	if (index >= 0) {
+		const deleted = customEmojis.value[index]
+		customEmojis.value.splice(index, 1)
+		saveCustomEmojisToCache()
+		console.log('🗑️ 本地删除自定义表情')
+		return true
+	}
+	return false
+}
+
+const getCustomEmojis = computed((): Array<any> => {
+	return customEmojis.value
+})
+
+// ==================== 收藏表情 ====================
+
+const favoriteEmojis = ref<Array<any>>([])
+
+const loadFavoriteEmojis = () => {
+	try {
+		const stored = uni.getStorageSync(SK_FAVORITE_EMOJIS)
+		if (stored != null && stored != '') {
+			const parsed = JSON.parse(stored as string)
+			if (parsed != null && Array.isArray(parsed) == true) {
+				favoriteEmojis.value = parsed as Array<any>
+			}
+		}
+	} catch (error: any) {		handleSilentError(error, '加载收藏表情')
+	}
+}
+
+const saveFavoriteEmojis = () => {
+	try {
+		uni.setStorageSync(SK_FAVORITE_EMOJIS, JSON.stringify(favoriteEmojis.value))
+	} catch (error: any) {
+		handleSilentError(error, '保存收藏表情')
+	}
+}
+
+const addFavoriteEmoji = (
+	emoji: string,
+	type: string,
+	imageUrl: string,
+	name: string
+): boolean => {
+	let exists = false
+	for (let i = 0; i < favoriteEmojis.value.length; i = i + 1) {
+		const item = favoriteEmojis.value[i]
+		const itemEmoji = getStringProp(item, 'emoji')
+		const itemType = getStringProp(item, 'type')
+		if (itemEmoji == emoji && itemType == type) {
+			exists = true
+			break
+		}
+	}
+	
+	if (exists == true) {
+		console.log('⚠️ 表情已收藏:', emoji)
+		return false
+	}
+	
+	const nameVal = (name != null && name != '') ? name : emoji
+	
+	const newItem = {
+		emoji: emoji,
+		type: type,
+		imageUrl: imageUrl,
+		name: nameVal,
+		favoriteTime: Date.now()
+	} as UTSJSONObject
+	favoriteEmojis.value.unshift(newItem)
+	
+	saveFavoriteEmojis()
+	console.log('⭐ 添加收藏表情:', emoji)
+	return true
+}
+
+const removeFavoriteEmoji = (emoji: string, type: string): boolean => {
+	let index = -1
+	for (let i = 0; i < favoriteEmojis.value.length; i = i + 1) {
+		const item = favoriteEmojis.value[i]
+		const itemEmoji = getStringProp(item, 'emoji')
+		const itemType = getStringProp(item, 'type')
+		if (itemEmoji == emoji && itemType == type) {
+			index = i
+			break
+		}
+	}
+	
+	if (index >= 0) {
+		favoriteEmojis.value.splice(index, 1)
+		saveFavoriteEmojis()
+		console.log('🗑️ 移除收藏表情:', emoji)
+		return true
+	}
+	return false
+}
+
+const isFavorite = (emoji: string, type: string): boolean => {
+	for (let i = 0; i < favoriteEmojis.value.length; i = i + 1) {
+		const item = favoriteEmojis.value[i]
+		const itemEmoji = getStringProp(item, 'emoji')
+		const itemType = getStringProp(item, 'type')
+		if (itemEmoji == emoji && itemType == type) {
+			return true
+		}
+	}
+	return false
+}
+
+const getFavoriteEmojis = computed((): Array<any> => {
+	return favoriteEmojis.value
+})
+
+// ==================== 初始化 ====================
+
+const init = () => {
+	loadRecentEmojis()
+	loadCustomEmojisFromCache()
+	loadFavoriteEmojis()
+	
+	// 注册登录状态监听器（等待登录事件）
+	registerLoginStatusListener()
+	
+	// 尝试初始同步（如果条件满足）
+	tryInitialSync()
+	
+	console.log('🎉 表情 Store 初始化完成')
+}
+
+// ==================== 导出独立函数（供外部直接调用） ====================
+
+/**
+ * 添加最近使用表情（导出函数）
+ */
+export const addRecentEmojiAction = (
+	emoji: string, 
+	type: string, 
+	imageUrl: string, 
+	name: string
+) => {
+	addRecentEmoji(emoji, type, imageUrl, name)
+}
+
+/**
+ * 保存自定义表情到服务端（导出函数）
+ */
+export const saveCustomEmojiToServerAction = (imageUrl: string, name: string): Promise<boolean> => {
+	return saveCustomEmojiToServer(imageUrl, name)
+}
+
+/**
+ * 从服务端删除自定义表情（导出函数）
+ */
+export const deleteCustomEmojiFromServerAction = (kid: string): Promise<boolean> => {
+	return deleteCustomEmojiFromServer(kid)
+}
+
+/**
+ * 初始化表情 Store（导出函数）
+ */
+export const initEmojiStore = () => {
+	init()
+}
+
+/**
+ * 移除登录状态监听器（导出函数）
+ * 供应用退出时调用清理
+ */
+export const unregisterEmojiStoreListener = () => {
+	unregisterLoginStatusListener()
+}
+
+/**
+ * 获取最近使用表情列表（导出函数）
+ */
+export const getRecentEmojisList = (): Array<any> => {
+	return recentEmojis.value.slice(0, 20)
+}
+
+/**
+ * 获取自定义表情列表（导出函数）
+ */
+export const getCustomEmojisList = (): Array<any> => {
+	return customEmojis.value
+}
+
+// 导出 useEmojiStore 函数
+export const useEmojiStore = () => {
+	return {
+		// 最近使用表情
+		get recentEmojis() { return recentEmojis.value },
+		get getRecentEmojis() { return getRecentEmojis.value },
+		addRecentEmoji,
+		clearRecentEmojis,
+		loadRecentEmojis,
+		
+		// 自定义表情
+		get customEmojis() { return customEmojis.value },
+		get getCustomEmojis() { return getCustomEmojis.value },
+		get customEmojisLoading() { return customEmojisLoading.value },
+		get customEmojisSynced() { return customEmojisSynced.value },
+		addCustomEmoji,
+		deleteCustomEmoji,
+		loadCustomEmojis: loadCustomEmojisFromCache,
+		// 服务端同步方法
+		syncCustomEmojisFromServer,
+		saveCustomEmojiToServer,
+		deleteCustomEmojiFromServer,
+		isCustomEmojiExists,
+		
+		// 收藏表情
+		get favoriteEmojis() { return favoriteEmojis.value },
+		get getFavoriteEmojis() { return getFavoriteEmojis.value },
+		addFavoriteEmoji,
+		removeFavoriteEmoji,
+		isFavorite,
+		loadFavoriteEmojis,
+		
+		// 初始化
+		init
+	}
+}

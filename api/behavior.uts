@@ -1,0 +1,187 @@
+/**
+ * 行为相关 API（访客、点赞、评论等）
+ * 对应Vue2: http.api.js 中的访客模块
+ */
+
+import request from '@/utils/request'
+import {
+	QueryVisitorWithUnreadStatusParams,
+	GetVisitorUnreadCountParams,
+	MarkVisitorAsReadParams,
+	QueryVisitorParams,
+	AddVisitorParams
+} from './types/behaviorTypes.uts'
+
+// Re-export types for consumers that import from this file
+export {
+	QueryVisitorWithUnreadStatusParams,
+	GetVisitorUnreadCountParams,
+	MarkVisitorAsReadParams,
+	QueryVisitorParams,
+	AddVisitorParams
+} from './types/behaviorTypes.uts'
+
+/**
+ * 查询访客列表（含未读状态）
+ * POST /behavior/visitor/queryVisitorWithUnreadStatus
+ * @param params { userKid: string, pageNumber?: number, pageSize?: number }
+ */
+export const queryVisitorWithUnreadStatus = (params: QueryVisitorWithUnreadStatusParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/behavior/visitor/queryVisitorWithUnreadStatus', payload, false)
+}
+
+/**
+ * 获取访客未读数统计
+ * POST /behavior/visitor/getVisitorUnreadCount
+ * @param params { userKid: string }
+ */
+export const getVisitorUnreadCount = (params: GetVisitorUnreadCountParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/behavior/visitor/getVisitorUnreadCount', payload, false)
+}
+
+/**
+ * 标记访客为已读
+ * POST /behavior/visitor/markVisitorAsRead
+ * @param params { userKid: string, visitorKid?: string }
+ */
+export const markVisitorAsRead = (params: MarkVisitorAsReadParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		visitorKid: params.visitorKid
+	} as UTSJSONObject
+	return request.post('/behavior/visitor/markVisitorAsRead', payload, false)
+}
+
+/**
+ * 查询访客列表（基础版）
+ * POST /behavior/visitor/queryVisitor
+ * @param params { userKid: string, pageNumber?: number, pageSize?: number }
+ */
+export const queryVisitor = (params: QueryVisitorParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/behavior/visitor/queryVisitor', payload, false)
+}
+
+/**
+ * 添加访客记录
+ * POST /behavior/visitor/addVisitor
+ */
+export const addVisitor = (params: AddVisitorParams) => {
+	const userKid = params.userKid
+	let url = `/behavior/visitor/addVisitor?userKid=${encodeURIComponent(userKid)}`
+	
+	// 访客ID: 允许空值（表示匿名访客），但要传递给后端处理
+	if (params.visitUserKid != '') {
+		url += `&visitUserKid=${encodeURIComponent(params.visitUserKid)}`
+	}
+	if (params.visitType != '') {
+		url += `&visitType=${params.visitType}`
+	}
+	if (params.targetKid != '') {
+		url += `&targetKid=${encodeURIComponent(params.targetKid)}`
+	}
+	
+	return request.post(url, null, false)
+}
+
+// H5访客页参数类型
+export type GetVisitorsParams = {
+	userKid?: string
+	page?: number
+	pageNumber?: number
+	pageSize?: number
+}
+
+// H5访客页列表项类型
+export type VisitorListItem = {
+	userId: string
+	avatar: string
+	nickname: string
+	visitTime: string
+}
+
+// H5访客页返回数据类型
+export type GetVisitorsData = {
+	list: VisitorListItem[]
+	total: number
+}
+
+export type GetVisitorsResponse = {
+	success: boolean
+	data: GetVisitorsData
+}
+
+/**
+ * H5访客页包装：返回 {success, data:{list,total}}
+ */
+export const getVisitors = async (params: GetVisitorsParams): Promise<GetVisitorsResponse> => {
+	try {
+		const userKidValue = (params.userKid != null && params.userKid != '') ? params.userKid : ''
+		const pageValue = (params.page != null) ? params.page : null
+		const pageNumberValue = (pageValue != null) ? pageValue : ((params.pageNumber != null) ? params.pageNumber : 1)
+		const pageSizeValue = (params.pageSize != null) ? params.pageSize : 10
+		
+		if (userKidValue == null || userKidValue == '') {
+			const emptyData = { list: [], total: 0 } as GetVisitorsData
+			return { success: false, data: emptyData }
+		}
+		
+		const requestPayload = {
+			userKid: userKidValue as string,
+			pageNumber: pageNumberValue as number,
+			pageSize: pageSizeValue as number
+		} as UTSJSONObject
+		const res = await request.post('/behavior/visitor/queryVisitor', requestPayload, false)
+		
+		if (res == null || res.data == null) {
+			const emptyData = { list: [], total: 0 } as GetVisitorsData
+			return { success: false, data: emptyData }
+		}
+		
+		const data = res.data
+		const entitiesValue = (data.entities != null && Array.isArray(data.entities) == true) ? data.entities : []
+		const list: VisitorListItem[] = []
+		for (let i = 0; i < entitiesValue.length; i++) {
+			const it = entitiesValue[i]
+			if (it != null) {
+				const visitorKid = (it.visitorKid != null) ? it.visitorKid.toString() : ''
+				const visitorImage = (it.visitorImage != null && it.visitorImage != '') ? it.visitorImage.toString() : ''
+				const visitorNickname = (it.visitorNickname != null && it.visitorNickname != '') ? it.visitorNickname.toString() : '游客'
+				const createtime = (it.createtime != null && it.createtime != '') ? it.createtime.toString() : ''
+				const lastVisitTime = (it.lastVisitTime != null && it.lastVisitTime != '') ? it.lastVisitTime.toString() : ''
+				const visitTime = (createtime != null && createtime != '') ? createtime : lastVisitTime
+				list.push({
+					userId: visitorKid,
+					avatar: visitorImage,
+					nickname: visitorNickname,
+					visitTime: visitTime
+				})
+			}
+		}
+		
+		const countValue = (data.count != null) ? parseFloat(data.count.toString()) : 0
+		const responseData = {
+			list: list,
+			total: countValue
+		} as GetVisitorsData
+		return {
+			success: true,
+			data: responseData
+		}
+	} catch (e) {
+		const emptyData = { list: [], total: 0 } as GetVisitorsData
+		return { success: false, data: emptyData }
+	}
+}

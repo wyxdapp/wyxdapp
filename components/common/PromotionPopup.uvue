@@ -1,0 +1,417 @@
+﻿<template>
+	<view class="promotion-popup-container" v-if="visity == true">
+		<view class="modal-overlay" @click="handleClose"></view>
+		<view class="promotion-popup-modal">
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+			
+			<view class="modal-header">
+				<text class="modal-title">推广设置</text>
+			</view>
+			
+			<view class="modal-content">
+				<!-- 推广开关 -->
+				<view class="setting-row">
+					<view class="setting-left">
+						<text class="setting-label">推广开关</text>
+						<text class="setting-desc">开启/关闭向导信息在首页和运营展示</text>
+					</view>
+					<switch 
+						:checked="homeShowEnabled" 
+						@change="handleHomeShowChange"
+						color="#37B1F2"
+					/>
+				</view>
+				
+				<!-- 顶置推荐开关 -->
+				<view class="setting-row">
+					<view class="setting-left">
+						<view class="setting-label-row">
+							<text class="setting-label">顶置推荐</text>
+							<view class="vip-badge">
+								<text class="vip-text">会员专享</text>
+							</view>
+						</view>
+						<text class="setting-desc">开启后向导将优先展示在首页顶部</text>
+					</view>
+					<switch 
+						:checked="topRecommendEnabled" 
+						@change="handleTopRecommendChange"
+						color="#37B1F2"
+					/>
+				</view>
+				
+				<!-- 推荐费率 -->
+				<view class="setting-row setting-row-last">
+					<view class="setting-left">
+						<view class="setting-label-row">
+							<text class="setting-label">推荐费率</text>
+						</view>
+						<text class="setting-desc">用户推荐客户交易成功给予佣金</text>
+					</view>
+					<view class="rate-input-box">
+						<input
+							v-model="operateRateInput"
+							class="rate-input"
+							type="number"
+							placeholder="20"
+							placeholder-class="rate-placeholder"
+							@blur="handleRateBlur"
+						/>
+						<text class="rate-unit">%</text>
+					</view>
+				</view>
+			</view>
+			
+			<view class="modal-footer">
+				<view class="cancel-btn" @click="handleClose">
+					<text class="cancel-text">取消</text>
+				</view>
+				<view class="confirm-btn" @click="handleConfirm">
+					<text class="confirm-text">保存</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, watch } from 'vue'
+import { isUserVip } from '@/stores/user.uts'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+
+// Props定义
+const props = defineProps({
+	visity: { type: Boolean, default: false },
+	guideKid: { type: String, default: '' },
+	initialHomeShow: { type: Boolean, default: true },
+	initialTopRecommend: { type: Boolean, default: false },
+	initialOperateRate: { type: Number, default: 20 }
+})
+
+// Emits定义
+const emit = defineEmits(['update:visity', 'save', 'close'])
+
+// 响应式状态
+const homeShowEnabled = ref<boolean>(true)
+const topRecommendEnabled = ref<boolean>(false)
+const operateRateInput = ref<string>('')
+
+// 初始化数据
+const initData = () => {
+	homeShowEnabled.value = props.initialHomeShow
+	topRecommendEnabled.value = props.initialTopRecommend
+	const rate = props.initialOperateRate
+	// operateRate 为 0 或 null 时使用默认值 20，设为空字符串显示placeholder
+	// 如果rate是20（默认值）也设为空字符串，让placeholder显示
+	operateRateInput.value = (rate > 0 && rate != 20) ? rate.toString() : ''
+}
+
+// 监听 visity 变化，初始化数据
+watch(
+	(): boolean => props.visity,
+	(newVal: boolean): void => {
+		if (newVal == true) {
+			initData()
+		}
+	}
+)
+
+// 获取 switch 值的辅助函数
+const getSwitchValue = (e: any): boolean => {
+	let result = false
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const detailVal = eObj.get('detail')
+		if (detailVal != null) {
+			const detailStr = JSON.stringify(detailVal)
+			const detailObj = JSON.parse(detailStr) as UTSJSONObject
+			const valueVal = detailObj.get('value')
+			if (valueVal != null) {
+				result = valueVal.toString() == 'true'
+			}
+		}
+	} catch (err) {
+		console.error('getSwitchValue error:', err)
+	}
+	return result
+}
+
+// 事件处理
+const handleClose = () => {
+	emit('update:visity', false)
+	emit('close')
+}
+
+const handleHomeShowChange = (e: any) => {
+	homeShowEnabled.value = getSwitchValue(e)
+}
+
+const handleTopRecommendChange = (e: any) => {
+	const isVip = isUserVip()
+	if (isVip == false) {
+		// 检查会员功能是否开启
+		if (isMemberFeatureEnabled() == false) {
+			uni.showToast({
+				title: '会员功能暂未开放',
+				icon: 'none'
+			})
+			return
+		}
+		// 用户不是会员，跳转到会员开通页面
+		uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+		return
+	}
+	// 用户是会员，直接设置顶置推荐状态
+	topRecommendEnabled.value = getSwitchValue(e)
+}
+
+
+const handleRateBlur = () => {
+	let rate = parseInt(operateRateInput.value)
+	// 如果输入为空或无效，使用默认值20
+	if (isNaN(rate) == true || operateRateInput.value == '') {
+		rate = 20
+	}
+	if (rate < 1) { rate = 1 }
+	if (rate > 100) { rate = 100 }
+	operateRateInput.value = rate.toString()
+}
+
+const handleConfirm = () => {
+	let rate = parseInt(operateRateInput.value)
+	if (isNaN(rate) == true) { rate = 20 }
+	if (rate < 1 || rate > 100) {
+		uni.showToast({ title: '推荐费率需在1-100之间', icon: 'none' })
+		return
+	}
+
+	const saveData = {
+		guideKid: props.guideKid,
+		homeShow: homeShowEnabled.value,
+		topRecommend: topRecommendEnabled.value,
+		operateRate: rate
+	} as any
+
+	emit('save', saveData)
+	handleClose()
+}
+</script>
+
+<style scoped>
+.promotion-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+}
+
+.modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.promotion-popup-modal {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 48rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	flex-direction: column;
+}
+
+.close-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	width: 48rpx;
+	height: 48rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.close-icon {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.modal-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 32rpx;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.modal-content {
+	flex-direction: column;
+	width: 686rpx;
+}
+
+.setting-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 24rpx 0;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.setting-row-last {
+	border-bottom-width: 0;
+}
+
+.setting-left {
+	flex: 1;
+	flex-direction: column;
+}
+
+.setting-label-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.setting-label {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.setting-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.vip-badge {
+	margin-left: 12rpx;
+	padding: 4rpx 12rpx;
+	background-color: #FFE4B5;
+	border-radius: 8rpx;
+}
+
+.vip-text {
+	font-size: 20rpx;
+	color: #FF8C00;
+}
+
+.rate-display {
+	margin-left: 12rpx;
+	font-size: 26rpx;
+	color: #37B1F2;
+	font-weight: normal;
+}
+
+.rate-setting-box {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20rpx 24rpx;
+	margin-top: 16rpx;
+	background-color: #F9F9F9;
+	border-radius: 12rpx;
+}
+
+.rate-setting-label {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.rate-input-box {
+	flex-direction: row;
+	align-items: center;
+	background-color: #F5F5F5;
+	border-radius: 12rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #E5E5E5;
+	padding: 0 16rpx;
+	height: 60rpx;
+}
+
+.rate-input {
+	width: 100rpx;
+	height: 60rpx;
+	font-size: 28rpx;
+	color: #333333;
+	text-align: center;
+	background-color: transparent;
+	border: none;
+	padding: 0;
+}
+
+.rate-placeholder {
+	color: #BBBBBB;
+}
+
+.rate-unit {
+	font-size: 28rpx;
+	color: #666666;
+	margin-left: 8rpx;
+}
+
+.modal-footer {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 32rpx;
+	width: 686rpx;
+}
+
+.cancel-btn {
+	flex: 1;
+	height: 88rpx;
+	border-radius: 44rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #EEEEEE;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #FFFFFF;
+	margin-right: 24rpx;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #666666;
+}
+
+.confirm-btn {
+	flex: 1;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #37B1F2;
+}
+
+.confirm-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+}
+</style>

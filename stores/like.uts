@@ -1,0 +1,142 @@
+import { ref } from 'vue'
+import { likeTrend, unlikeTrend } from '@/common/services/findService.uts'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+import { deepCloneObject } from '@/utils/deepClone.uts'
+import { safeGetString, safeGetNumber } from '@/utils/nullGuard.uts'
+
+/**
+ * 点赞状态管理 Store - 使用 Vue 响应式 API
+ * 用于全局管理动态的点赞关系
+ */
+
+// 使用 ref 创建响应式状态
+const likeMapRef = ref<Map<string, boolean>>(new Map())
+const likeCountMapRef = ref<Map<string, number>>(new Map())
+const processingMapRef = ref<Map<string, boolean>>(new Map())
+
+// 批量设置点赞状态的项接口
+interface BatchLikeItem {
+	kid: string
+	isLike: number | boolean
+	likeNum?: number
+}
+
+// ===== 直接导出的模块级函数（UTS 规范：避免从返回对象中访问方法）=====
+
+export const isLiked = (discoverKid: string): boolean => {
+	return likeMapRef.value.get(discoverKid) === true
+}
+
+export const getLikeCount = (discoverKid: string): number => {
+	const count = likeCountMapRef.value.get(discoverKid)
+	return (count != null) ? count : 0
+}
+
+export const isLikeProcessing = (discoverKid: string): boolean => {
+	return processingMapRef.value.get(discoverKid) === true
+}
+
+export const setLikeStatus = (discoverKid: string, isLikedVal: boolean, likeCount?: number) => {
+	likeMapRef.value.set(discoverKid, isLikedVal)
+	if (likeCount != null) {
+		likeCountMapRef.value.set(discoverKid, likeCount)
+	}
+}
+
+export const batchSetLikeStatus = (items: Array<any>) => {
+	for (let i = 0; i < items.length; i++) {
+		const item = items[i]
+		if (item != null) {
+			const itemObj = deepCloneObject(item as UTSJSONObject)
+			const kidVal = safeGetString(itemObj, 'kid')
+			const isLikeVal = itemObj.get('isLike')
+			const likeNum = safeGetNumber(itemObj, 'likeNum', -1)
+			
+			if (kidVal != '') {
+				const isLikedVal = isLikeVal == 10 || isLikeVal == true
+				likeMapRef.value.set(kidVal, isLikedVal)
+				if (likeNum >= 0) {
+					likeCountMapRef.value.set(kidVal, likeNum)
+				}
+			}
+		}
+	}
+}
+
+export const getLikeStatus = (discoverKid: string): boolean => {
+	return likeMapRef.value.get(discoverKid) === true
+}
+
+export const toggleLike = async (currentUserKid: string, discoverKid: string): Promise<boolean> => {
+	// 检查是否正在处理
+	if (processingMapRef.value.get(discoverKid) === true) {
+		console.log('正在处理点赞操作，请稍候')
+		return likeMapRef.value.get(discoverKid) === true
+	}
+	
+	// 标记为处理中
+	processingMapRef.value.set(discoverKid, true)
+	
+	// 保存旧状态（用于失败回滚）
+	const oldStatus = likeMapRef.value.get(discoverKid) === true
+	const oldCountVal = likeCountMapRef.value.get(discoverKid)
+	const oldCount = (oldCountVal != null) ? oldCountVal : 0
+	
+	try {
+		const newStatus = (oldStatus == false)
+		
+		// 乐观更新（先更新UI）
+		likeMapRef.value.set(discoverKid, newStatus)
+		const newCount = Math.max(0, oldCount + ((newStatus == true) ? 1 : -1))
+		likeCountMapRef.value.set(discoverKid, newCount)
+		
+		// UTS 规范：直接构造 any 类型参数，不使用 as 类型转换
+		const params = { userKid: currentUserKid, discoverKid: discoverKid } as UTSJSONObject
+		
+		// 调用后端API
+		if (newStatus == true) {
+			await likeTrend(params)
+			console.log(`✅ 点赞成功: ${discoverKid}`)
+		} else {
+			await unlikeTrend(params)
+			console.log(`✅ 取消点赞成功: ${discoverKid}`)
+		}
+		
+		return newStatus
+	} catch (error: any) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(error, '点赞操作', errorOptions)
+		// 失败回滚
+		likeMapRef.value.set(discoverKid, oldStatus)
+		likeCountMapRef.value.set(discoverKid, oldCount)
+		throw error
+	} finally {
+		// 移除处理中标记
+		processingMapRef.value.delete(discoverKid)
+	}
+}
+
+export const clearAllLikeStatus = () => {
+	likeMapRef.value.clear()
+	likeCountMapRef.value.clear()
+	processingMapRef.value.clear()
+}
+
+// 导出 useLikeStore 函数（兼容旧代码）
+export const useLikeStore = () => {
+	return {
+		// Getters
+		isLiked,
+		getLikeCount,
+		isProcessing: isLikeProcessing,
+		getLikeStatus,
+		
+		// Actions
+		setLikeStatus,
+		batchSetLikeStatus,
+		toggleLike,
+		clearAll: clearAllLikeStatus
+	}
+}

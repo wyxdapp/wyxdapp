@@ -1,0 +1,430 @@
+/**
+ * Cool Unix 组件 PassThrough 默认配置
+ * 
+ * PassThrough (pt) 是 cool-unix 提供的样式穿透 API
+ * 允许开发者将任意属性和样式直接应用于组件内部的 DOM 元素
+ * 
+ * 本文件定义了项目中各组件的默认 pt 配置，确保 UI 一致性
+ * 
+ * @author WYXD Team
+ * @date 2025-12-27
+ */
+
+
+// ==================== Button 组件配置 ====================
+
+/**
+ * Button PassThrough 配置接口
+ */
+interface ButtonPtConfig {
+	className: string
+	label: ButtonLabelConfig
+	icon: ButtonIconConfig
+	loading: ButtonLoadingConfig
+}
+
+interface ButtonLabelConfig {
+	className: string
+	color: string
+}
+
+interface ButtonIconConfig {
+	size: number
+	color: string
+	className: string
+}
+
+interface ButtonLoadingConfig {
+	size: number
+	color: string
+}
+
+/**
+ * 主按钮默认配置（登录、提交等主要操作）
+ */
+export function getPrimaryButtonPt(): any {
+	const config = {
+		className: '!rounded-full !h-[88rpx] !w-full !bg-[#37B1F2]',
+		label: {
+			className: 'text-[32rpx] font-bold',
+			color: 'light'
+		},
+		icon: {
+			size: 36,
+			color: 'light',
+			className: 'mr-[8rpx]'
+		},
+		loading: {
+			size: 28,
+			color: 'light'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 微信登录按钮配置
+ */
+export function getWechatButtonPt(): any {
+	const config = {
+		className: '!rounded-full !h-[96rpx] !w-full !bg-[#07C160]',
+		label: {
+			className: 'text-[32rpx] font-bold',
+			color: 'light'
+		},
+		icon: {
+			size: 40,
+			color: 'light',
+			className: 'mr-[12rpx]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 手机登录按钮配置
+ */
+export function getPhoneButtonPt(): any {
+	const config = {
+		className: '!rounded-full !h-[96rpx] !w-full !bg-[#1890ff]',
+		label: {
+			className: 'text-[32rpx] font-bold',
+			color: 'light'
+		},
+		icon: {
+			size: 40,
+			color: 'light',
+			className: 'mr-[12rpx]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 次要按钮配置（取消、返回等次要操作）
+ */
+export function getSecondaryButtonPt(): any {
+	const config = {
+		className: '!rounded-full !h-[72rpx] !border-[#cfcfcf] !bg-white',
+		label: {
+			className: 'text-[28rpx]',
+			color: 'dark'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 文本按钮配置（链接样式按钮）
+ */
+export function getTextButtonPt(): any {
+	const config = {
+		className: '!bg-transparent !p-0',
+		label: {
+			className: 'text-[28rpx]',
+			color: 'primary'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 禁用按钮配置
+ */
+export function getDisabledButtonPt(): any {
+	const config = {
+		className: '!rounded-full !h-[88rpx] !w-full !bg-[#CCCCCC]',
+		label: {
+			className: 'text-[32rpx] font-bold',
+			color: 'light'
+		}
+	} as any
+	return config
+}
+
+// ==================== Input 组件配置 ====================
+
+/**
+ * Input PassThrough 配置接口
+ */
+interface InputPtConfig {
+	className: string
+	inner: InputInnerConfig
+	prefixIcon: InputIconConfig
+	suffixIcon: InputIconConfig
+}
+
+interface InputInnerConfig {
+	className: string
+}
+
+interface InputIconConfig {
+	size: number
+	className: string
+}
+
+/**
+ * 默认输入框配置
+ */
+export function getDefaultInputPt(): any {
+	const config = {
+		className: '!bg-white/95 !rounded-[16rpx] !h-[96rpx] !px-[32rpx]',
+		inner: {
+			className: 'text-[32rpx] text-[#333333]'
+		},
+		prefixIcon: {
+			size: 32,
+			className: 'mr-[12rpx]'
+		},
+		suffixIcon: {
+			size: 32,
+			className: 'ml-[12rpx]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 登录页输入框配置（半透明白色背景）
+ */
+export function getLoginInputPt(): any {
+	const config = {
+		className: '!bg-white/95 !rounded-[16rpx] !h-[96rpx] !px-[32rpx] !border-transparent',
+		inner: {
+			className: 'text-[32rpx] text-[#333333]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 搜索输入框配置
+ */
+export function getSearchInputPt(): any {
+	const config = {
+		className: '!bg-[#F5F5F5] !rounded-full !h-[72rpx] !px-[24rpx]',
+		inner: {
+			className: 'text-[28rpx] text-[#333333]'
+		},
+		prefixIcon: {
+			size: 28,
+			className: 'mr-[8rpx] text-[#999999]'
+		}
+	} as any
+	return config
+}
+
+// ==================== Loading 组件配置 ====================
+
+/**
+ * Loading PassThrough 配置接口
+ */
+interface LoadingPtConfig {
+	className: string
+	mask: LoadingMaskConfig
+	content: LoadingContentConfig
+}
+
+interface LoadingMaskConfig {
+	className: string
+}
+
+interface LoadingContentConfig {
+	className: string
+}
+
+/**
+ * 全屏加载配置
+ */
+export function getFullscreenLoadingPt(): any {
+	const config = {
+		className: '',
+		mask: {
+			className: '!bg-black/50'
+		},
+		content: {
+			className: '!bg-black/70 !rounded-[16rpx] !p-[40rpx]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 内联加载配置
+ */
+export function getInlineLoadingPt(): any {
+	const config = {
+		className: '',
+		content: {
+			className: '!bg-transparent'
+		}
+	} as any
+	return config
+}
+
+// ==================== Popup 组件配置 ====================
+
+/**
+ * Popup PassThrough 配置接口
+ */
+interface PopupPtConfig {
+	className: string
+	mask: PopupMaskConfig
+	content: PopupContentConfig
+}
+
+interface PopupMaskConfig {
+	className: string
+}
+
+interface PopupContentConfig {
+	className: string
+}
+
+/**
+ * 底部弹出层配置
+ */
+export function getBottomPopupPt(): any {
+	const config = {
+		className: '',
+		mask: {
+			className: '!bg-black/50'
+		},
+		content: {
+			className: '!rounded-t-[32rpx]'
+		}
+	} as any
+	return config
+}
+
+/**
+ * 中心弹出层配置
+ */
+export function getCenterPopupPt(): any {
+	const config = {
+		className: '',
+		mask: {
+			className: '!bg-black/50'
+		},
+		content: {
+			className: '!rounded-[32rpx] !w-[600rpx]'
+		}
+	} as any
+	return config
+}
+
+// ==================== Checkbox 组件配置 ====================
+
+/**
+ * 协议勾选框配置
+ */
+export function getAgreementCheckboxPt(): any {
+	const config = {
+		className: '',
+		icon: {
+			size: 32,
+			checkedColor: '#07C160',
+			uncheckedColor: '#CCCCCC'
+		},
+		label: {
+			className: 'text-[24rpx] text-[#999999]'
+		}
+	} as any
+	return config
+}
+
+// ==================== OTP Input 组件配置 ====================
+
+/**
+ * 验证码输入框配置
+ */
+export function getOtpInputPt(): any {
+	const config = {
+		className: '!gap-[24rpx]',
+		item: {
+			className: '!w-[120rpx] !h-[120rpx] !rounded-[16rpx] !bg-white/95 !border-transparent'
+		},
+		input: {
+			className: 'text-[48rpx] font-bold text-[#333333]'
+		}
+	} as any
+	return config
+}
+
+// ==================== Empty 组件配置 ====================
+
+/**
+ * 空状态组件配置
+ */
+export function getEmptyPt(): any {
+	const config = {
+		className: '!py-[80rpx]',
+		image: {
+			className: '!w-[200rpx] !h-[200rpx]'
+		},
+		description: {
+			className: 'text-[28rpx] text-[#999999] !mt-[24rpx]'
+		}
+	} as any
+	return config
+}
+
+// ==================== Skeleton 组件配置 ====================
+
+/**
+ * 骨架屏组件配置
+ */
+export function getSkeletonPt(): any {
+	const config = {
+		className: '',
+		row: {
+			className: '!h-[32rpx] !rounded-[8rpx] !bg-[#F5F5F5]'
+		}
+	} as any
+	return config
+}
+
+// ==================== Badge 组件配置 ====================
+
+/**
+ * 消息徽标配置
+ */
+export function getBadgePt(): any {
+	const config = {
+		className: '!bg-[#F44336] !text-white !text-[20rpx] !min-w-[32rpx] !h-[32rpx] !rounded-full'
+	} as any
+	return config
+}
+
+// ==================== Avatar 组件配置 ====================
+
+/**
+ * 用户头像配置
+ */
+export function getAvatarPt(): any {
+	const config = {
+		className: '!rounded-full',
+		image: {
+			className: '!rounded-full'
+		}
+	} as any
+	return config
+}
+
+// ==================== Image 组件配置 ====================
+
+/**
+ * 默认图片配置
+ */
+export function getImagePt(): any {
+	const config = {
+		className: '',
+		loading: {
+			className: '!bg-[#F5F5F5]'
+		},
+		error: {
+			className: '!bg-[#F5F5F5]'
+		}
+	} as any
+	return config
+}

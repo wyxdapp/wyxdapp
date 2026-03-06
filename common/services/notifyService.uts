@@ -1,0 +1,63 @@
+/**
+ * 通知服务 API (UTS 版本)
+ */
+import { request } from '@/utils/request'
+
+/**
+ * 获取官方通知列表（Admin 服务）
+ */
+export const getOfficialNotices = (params: UTSJSONObject) => {
+	return request.post('/support/notify/queryNotify', params, false)
+}
+
+/**
+ * 获取订单通知列表（Chat 服务）
+ */
+export const getChatNotifications = (params: UTSJSONObject) => {
+	return request.get(`/chat/notifications/history?userId=${params.get('userId')}&page=${params.get('page')}&size=${params.get('size')}`, null, false)
+}
+
+/**
+ * 获取未读通知数量
+ */
+export const getUnreadCount = (userId: string) => {
+	return request.get(`/chat/notifications/unread/count?userId=${userId}`, null, false)
+}
+
+/**
+ * 标记通知为已读
+ */
+export const markNotificationRead = (notificationId: string) => {
+	return request.put(`/chat/notifications/${notificationId}/read`, null, false)
+}
+
+/**
+ * 批量标记已读
+ */
+export const markAllRead = (userId: string) => {
+	return request.put('/chat/notifications/mark-all-read', { userId: userId } as UTSJSONObject, false)
+}
+
+/**
+ * 获取通知设置
+ */
+export const getNotificationSettings = (userId: string) => {
+	return request.get(`/chat/notifications/settings/${userId}`, null, false)
+}
+
+/**
+ * 更新通知设置
+ */
+export const updateNotificationSettings = (settings: UTSJSONObject) => {
+	return request.put('/chat/notifications/settings', settings, false)
+}
+
+export default {
+	getOfficialNotices,
+	getChatNotifications,
+	getUnreadCount,
+	markNotificationRead,
+	markAllRead,
+	getNotificationSettings,
+	updateNotificationSettings
+}

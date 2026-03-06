@@ -1,0 +1,500 @@
+﻿<template>
+	<view class="keyboard-pay-wrapper" v-if="show == true" @click.stop="handleMaskClick">
+		<view class="keyboard-pay-content" @click.stop>
+			<!-- 头部 -->
+			<view class="keyboard-header">
+				<text class="keyboard-title">请输入支付密码</text>
+				<view class="keyboard-close" @click="handleClose">
+					<text class="close-icon">×</text>
+				</view>
+			</view>
+			
+			<!-- 密码输入框 -->
+			<view class="password-input-wrapper">
+				<view 
+					v-for="(item, index) in (passwordDots as Array<any>)" 
+					:key="index"
+					class="password-input-box"
+					:class="{ 
+						'active': index === password.length,
+						'filled': index < password.length 
+					}"
+				>
+					<text v-if="index < password.length" class="password-dot">●</text>
+					<view v-else-if="index === password.length" class="password-cursor"></view>
+				</view>
+			</view>
+			
+			<!-- 数字键盘 -->
+			<view class="keyboard-grid">
+				<view
+					v-for="(key, index) in (keyboardLayout as Array<any>)"
+					:key="index"
+					class="keyboard-key"
+					:class="{
+						'keyboard-key--blank': key === 'blank',
+						'keyboard-key--action': key === 'delete'
+					}"
+					@click="handleKeyTap(key)"
+				>
+					<text v-if="typeof key === 'number'" class="key-text">{{ key }}</text>
+					<text v-else-if="key === 'delete'" class="key-text delete">删除</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 忘记密码提示弹窗 -->
+		<view v-if="showForgetPrompt == true" class="forget-prompt-mask" @click.stop>
+			<view class="forget-prompt-container">
+				<text class="forget-prompt-title">支付密码错误次数过多</text>
+				<text class="forget-prompt-desc">是否忘记支付密码？可以通过短信验证码重置</text>
+				<view class="forget-prompt-actions">
+					<view class="forget-prompt-btn forget-prompt-cancel" @click="handleForgetCancel">
+						<text class="forget-prompt-btn-text cancel-text">取消</text>
+					</view>
+					<view class="forget-prompt-btn forget-prompt-confirm" @click="handleForgetConfirm">
+						<text class="forget-prompt-btn-text confirm-text">去修改</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch } from 'vue'
+import { checkPayPassword } from '@/common/services/paymentService'
+// 🔧 修复：导入可靠的用户信息获取函数
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+
+// 接口定义（必须在顶层定义，不能在局部作用域声明）
+interface UserInfoData {
+	kid?: string | null
+}
+
+interface ErrorData {
+	msg?: string | null
+	message?: string | null
+}
+
+interface UserStoreData {
+	userInfo?: any | null
+	isLogin?: boolean | null
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, required: true },
+	money: { type: Number, default: 0 },
+	payType: { type: String, default: 'balance' }
+})
+
+const emit = defineEmits<{
+	confirm: [password: string]
+	cancel: []
+	'update:show': [value: boolean]
+}>()
+
+const password = ref('')
+const errorCount = ref<number>(0)
+const showForgetPrompt = ref<boolean>(false)
+type KeyboardKey = number | 'blank' | 'delete'
+const keyboardLayout: KeyboardKey[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 'blank', 0, 'delete']
+
+// 密码点显示
+const passwordDots = computed((): Array<number> => {
+	const arr: Array<number> = []
+	for (let i = 0; i < 6; i++) {
+		arr.push(i)
+	}
+	return arr
+})
+
+// 关闭弹窗
+const handleClose = () => {
+	password.value = ''
+	emit('update:show', false)
+	emit('cancel')
+}
+
+const handleMaskClick = () => {
+	handleClose()
+}
+
+// 删除处理
+const handleDelete = () => {
+	if (password.value.length > 0) {
+		password.value = password.value.slice(0, -1)
+	}
+}
+
+// 安全获取 userKid（🔧 修复：使用 loginHelper 可靠获取用户ID）
+const getUserKid = (): string => {
+	// 使用 loginHelper 的可靠函数获取用户ID
+	// 该函数会优先从 Store 获取，降级从 Storage 获取
+	return getCurrentUserIdReliable()
+}
+
+// 确认支付
+const handleConfirm = async () => {
+	if (password.value.length != 6) {
+		uni.showToast({
+			title: '请输入6位支付密码',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证支付密码
+	try {
+		const userKid = getUserKid()
+		if (userKid == null || userKid == '') {
+			uni.showToast({
+				title: '用户信息不完整，请重新登录',
+				icon: 'none'
+			})
+			handleClose()
+			return
+		}
+		
+		uni.showLoading({
+			title: '验证中...'
+		})
+		
+		// 🔧 修复：参数名 userKid 改为 kid，与后端 validatePayPassword 接口保持一致
+		const checkParams = {
+			kid: userKid,
+			payPassword: password.value
+		} as UTSJSONObject
+		await checkPayPassword(checkParams)
+		
+		uni.hideLoading()
+		
+		// 密码验证成功，触发confirm事件
+		emit('confirm', password.value)
+		handleClose()
+	} catch (error: any) {
+		uni.hideLoading()
+		let errorMsg = '密码验证失败，请重试'
+		if (error != null) {
+			try {
+				// 使用 JSON.parse + 接口类型安全访问 error 的属性，避免括号访问（String.get 错误）
+				// 注意：ErrorData 接口已在顶层定义
+				const errorJson = JSON.stringify(error)
+				if (errorJson != null && errorJson != '') {
+					const errorParsed = JSON.parse(errorJson) as any
+					if (errorParsed != null) {
+						const errorData = errorParsed as ErrorData
+						// 安全访问 msg 属性，避免 error18
+						try {
+							const errorDataJson = JSON.stringify(errorData)
+							if (errorDataJson != null && errorDataJson != '') {
+								const errorDataParsed = JSON.parse(errorDataJson) as any
+								if (errorDataParsed != null) {
+									const errorDataTyped = errorDataParsed as ErrorData
+									const msgVal = errorDataTyped.msg
+									if (msgVal != null && msgVal != '') {
+										errorMsg = msgVal.toString()
+									} else {
+										const messageVal = errorDataTyped.message
+										if (messageVal != null && messageVal != '') {
+											errorMsg = messageVal.toString()
+										}
+									}
+								}
+							}
+						} catch (e) {}
+					}
+				}
+			} catch (e) {}
+		}
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+		password.value = '' // 清空密码
+		
+		// 递增错误计数
+		errorCount.value = errorCount.value + 1
+		if (errorCount.value >= 3) {
+			showForgetPrompt.value = true
+		}
+	}
+}
+
+// 忘记密码提示 - 取消
+const handleForgetCancel = () => {
+	showForgetPrompt.value = false
+	errorCount.value = 0
+}
+
+// 忘记密码提示 - 去修改
+const handleForgetConfirm = () => {
+	showForgetPrompt.value = false
+	password.value = ''
+	emit('update:show', false)
+	emit('cancel')
+	uni.navigateTo({
+		url: '/pagesUser/my/security/index?action=resetPayPassword'
+	})
+}
+
+// 按键处理
+const handleKeyPress = (num: number) => {
+	if (password.value.length < 6) {
+		password.value += (num).toString()
+		
+		// 密码输入完成，自动提交
+		if (password.value.length === 6) {
+			handleConfirm()
+		}
+	}
+}
+
+const handleKeyTap = (key: KeyboardKey) => {
+	const keyType = typeof key
+	if (keyType === 'string') {
+	if (key === 'blank') return
+	if (key === 'delete') {
+		handleDelete()
+		return
+	}
+	}
+	if (keyType === 'number') {
+	handleKeyPress(key as number)
+	}
+}
+
+// 监听show变化，重置密码（使用 computed 包装，避免 watch 返回类型不匹配）
+const showValue = computed((): boolean => props.show)
+watch(showValue, (newVal: boolean) => {
+	if (newVal == true) {
+		password.value = ''
+		errorCount.value = 0
+		showForgetPrompt.value = false
+	}
+})
+</script>
+
+<style scoped>
+.keyboard-pay-wrapper {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 9999;
+	flex-direction: column;
+	justify-content: flex-end;
+	align-items: center;
+}
+
+.keyboard-pay-content {
+	width: 100%;
+	background-color: #ffffff;
+	border-radius: 32rpx 32rpx 0 0;
+	padding-top: 48rpx;
+	padding-bottom: 32rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	flex-direction: column;
+}
+
+.keyboard-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 48rpx;
+}
+
+.keyboard-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.keyboard-close {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 48rpx;
+	color: #999999;
+	line-height: 1;
+}
+
+.password-input-wrapper {
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	margin-right: 32rpx;
+	margin-left: 32rpx;
+	margin-bottom: 60rpx;
+	/* gap: 16rpx - use margin instead */
+}
+
+.password-input-box {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 8rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e5e5e5;
+	background-color: #ffffff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+
+.password-input-box.active {
+	border-color: #37B1F2;
+	box-shadow: 0 0 0 2rpx rgba(0, 122, 255, 0.1);
+}
+
+.password-input-box.filled {
+	border-color: #37B1F2;
+}
+
+.password-dot {
+	font-size: 36rpx;
+	color: #333333;
+	line-height: 1;
+}
+
+.password-cursor {
+	width: 2rpx;
+	height: 36rpx;
+	background-color: #37B1F2;
+}
+
+.keyboard-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin: 0;
+	background-color: #ffffff;
+	border-radius: 0;
+	overflow: hidden;
+	/* gap: 12rpx - use margin instead */
+	padding-top: 0;
+	padding-bottom: 0;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+}
+
+.keyboard-key {
+	width: 33%;
+	height: 100rpx;
+	background-color: #ffffff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e5e5e5;
+	margin: 0;
+	border-radius: 8rpx;
+	box-sizing: border-box;
+}
+
+.keyboard-key--blank {
+	background-color: transparent;
+	pointer-events: none;
+	border-color: transparent;
+}
+
+.keyboard-key--action {
+	background-color: #ffffff;
+	border-color: #e5e5e5;
+}
+
+.key-text {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.key-text.delete {
+	font-size: 24rpx;
+	color: #333333;
+}
+
+.forget-prompt-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 10000;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.forget-prompt-container {
+	width: 560rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	padding: 48rpx 40rpx;
+	flex-direction: column;
+	align-items: center;
+}
+
+.forget-prompt-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 20rpx;
+}
+
+.forget-prompt-desc {
+	font-size: 28rpx;
+	color: #666666;
+	margin-bottom: 40rpx;
+	text-align: center;
+}
+
+.forget-prompt-actions {
+	flex-direction: row;
+	width: 100%;
+}
+
+.forget-prompt-btn {
+	flex: 1;
+	height: 80rpx;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 12rpx;
+	margin-right: 12rpx;
+}
+
+.forget-prompt-cancel {
+	background-color: #f5f5f5;
+}
+
+.forget-prompt-confirm {
+	background-color: #37B1F2;
+}
+
+.forget-prompt-btn-text {
+	font-size: 28rpx;
+}
+
+.cancel-text {
+	color: #666666;
+}
+
+.confirm-text {
+	color: #ffffff;
+}
+</style>
+
+

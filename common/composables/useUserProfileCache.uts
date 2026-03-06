@@ -1,0 +1,425 @@
+import { requestUserHomePage, type UserHomePageInfo, type QueryUserHomePageParams } from '@/common/services/userProfileApi.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+interface GetUserProfileParams extends QueryUserHomePageParams {
+	forceRefresh?: boolean
+	ttl?: number
+}
+
+// UTS 规范：data 使用 UTSJSONObject 类型
+interface ProfileCacheEntry {
+	data: UTSJSONObject
+	expiredAt: number
+	cachedAt: number
+	lastAccessedAt: number
+	hits: number
+}
+
+// UTS 规范：不支持 Partial<T> 泛型，在顶层定义接口
+interface PartialUserHomePageInfo {
+	kid?: string
+	shortKid?: string
+	nickname?: string
+	image?: string
+	background?: string
+	signature?: string
+	extensionNumber?: string
+	vip?: number
+	vipExpireTime?: string
+	vipType?: number
+	giftLevel?: number
+	focusCount?: number
+	followerCount?: number
+	beLikedCount?: number
+	collectionCount?: number
+	isFocus?: boolean
+}
+
+// UTS 规范：data 使用 UTSJSONObject 类型
+class ProfileCacheEntryClass implements ProfileCacheEntry {
+	data: UTSJSONObject
+	expiredAt: number
+	cachedAt: number
+	lastAccessedAt: number
+	hits: number
+	
+	constructor(data: UTSJSONObject, expiredAt: number, cachedAt: number, lastAccessedAt: number, hits: number) {
+		this.data = data
+		this.expiredAt = expiredAt
+		this.cachedAt = cachedAt
+		this.lastAccessedAt = lastAccessedAt
+		this.hits = hits
+	}
+}
+
+const STORAGE_KEY = 'user_profile_cache_v1'
+export const DEFAULT_TTL = 10 * 60 * 1000 // 10分钟，兼顾首屏体验与过期一致性
+const MAX_CACHE_ENTRIES = 50
+const FALLBACK_TOAST = '网络波动，已展示缓存数据'
+
+const cacheMap: Map<string, ProfileCacheEntry> = new Map()
+const pendingRequests: Map<string, Promise<UTSJSONObject | null>> = new Map()
+
+hydrateCacheFromStorage()
+
+function hydrateCacheFromStorage() {
+	try {
+		const cacheStr = uni.getStorageSync(STORAGE_KEY)
+		if (cacheStr == null || cacheStr == '' || cacheStr == 'null') {
+			return
+		}
+		// 🔧 修复：使用 UTSJSONObject 避免 ClassCastException
+		const raw = JSON.parse(cacheStr as string) as UTSJSONObject | null
+		if (raw == null) {
+			return
+		}
+		
+		// 🔧 修复：使用 UTSJSONObject.toMap() 获取所有键值对
+		const rawMap = raw.toMap()
+		if (rawMap == null) {
+			return
+		}
+		
+		// 遍历 Map 而不是对象
+		rawMap.forEach((value: any | null, key: string) => {
+			if (value == null) {
+				return
+			}
+			try {
+				// 使用 toUTSJSON 安全访问
+				const entryObj = toUTSJSON(value)
+				if (entryObj == null) {
+					return
+				}
+				
+				const dataVal = entryObj.get('data')
+				const expiredAtVal = entryObj.get('expiredAt')
+				const cachedAtVal = entryObj.get('cachedAt')
+				const lastAccessedAtVal = entryObj.get('lastAccessedAt')
+				const hitsVal = entryObj.get('hits')
+				
+				// 🔧 修复：dataVal 可能为 null，需要检查
+				if (dataVal == null) {
+					console.warn('[useUserProfileCache] 跳过无效缓存项（data 为 null）:', key)
+					return
+				}
+				
+				const expiredAt = (expiredAtVal != null) ? parseInt(expiredAtVal.toString()) : Date.now()
+				const cachedAt = (cachedAtVal != null) ? parseInt(cachedAtVal.toString()) : Date.now()
+				const lastAccessedAt = (lastAccessedAtVal != null) ? parseInt(lastAccessedAtVal.toString()) : cachedAt
+				const hits = (hitsVal != null) ? parseInt(hitsVal.toString()) : 0
+				
+				// 将 dataVal 转换为 UTSJSONObject
+				const dataObj = toUTSJSON(dataVal)
+				if (dataObj == null) {
+					console.warn('[useUserProfileCache] 跳过无效缓存项（data 转换失败）:', key)
+					return
+				}
+				
+				cacheMap.set(key, new ProfileCacheEntryClass(
+					dataObj,
+					expiredAt,
+					cachedAt,
+					lastAccessedAt,
+					hits
+				))
+			} catch (e: any) {
+				handleSilentError(e, '解析缓存项: ' + key)
+			}
+		})
+	} catch (error: any) {
+		handleSilentError(error, '读取用户资料缓存')
+	}
+}
+
+function persistCache() {
+	try {
+		// UTS 规范：any 对象属性必须事先定义，使用 JSON 序列化方式
+		const cacheEntries: string[] = []
+		cacheMap.forEach((value: ProfileCacheEntry, key: string) => {
+			const entry = {
+				key: key,
+				data: value.data,
+				expiredAt: value.expiredAt,
+				cachedAt: value.cachedAt,
+				lastAccessedAt: value.lastAccessedAt,
+				hits: value.hits
+			}
+			cacheEntries.push(JSON.stringify(entry))
+		})
+		// 构建缓存对象
+		const cacheJsonParts: string[] = []
+		for (let i = 0; i < cacheEntries.length; i = i + 1) {
+			const entryJson = cacheEntries[i]
+			const entryData = toUTSJSON(JSON.parse(entryJson))
+			if (entryData == null) continue
+			
+			const key = (entryData['key'] != null) ? entryData['key'].toString() : ''
+			const dataObj = entryData['data']
+			const expiredAt = entryData['expiredAt']
+			const cachedAt = entryData['cachedAt']
+			const lastAccessedAt = entryData['lastAccessedAt']
+			const hits = entryData['hits']
+			
+			const valueJson = JSON.stringify({
+				data: dataObj,
+				expiredAt: expiredAt,
+				cachedAt: cachedAt,
+				lastAccessedAt: lastAccessedAt,
+				hits: hits
+			})
+			cacheJsonParts.push(`"${key}":${valueJson}`)
+		}
+		const cacheJson = '{' + cacheJsonParts.join(',') + '}'
+		uni.setStorageSync(STORAGE_KEY, cacheJson)
+	} catch (error: any) {
+		handleSilentError(error, '持久化用户资料缓存')
+	}
+}
+
+function buildCacheKey(kid: string, focusUserkid?: string) {
+	const normalizedKid = (kid != null) ? kid.trim() : ''
+	if (normalizedKid == null || normalizedKid == '') {
+		throw new Error('kid 不能为空')
+	}
+	const trimmedFocus = (focusUserkid != null) ? focusUserkid.trim() : ''
+	const normalizedFocus = ((trimmedFocus != null) && (trimmedFocus != '')) ? trimmedFocus : ''
+	if (normalizedFocus != null && normalizedFocus != '') {
+		return `${normalizedKid}_${normalizedFocus}`
+	} else {
+		return normalizedKid
+	}
+}
+
+function getCacheEntry(cacheKey: string, shouldValidate = true) {
+	const entry = cacheMap.get(cacheKey)
+	if (entry == null) {
+		return null
+	}
+	if (shouldValidate && Date.now() >= entry.expiredAt) {
+		cacheMap.delete(cacheKey)
+		persistCache()
+		return null
+	}
+	entry.hits = entry.hits + 1
+	entry.lastAccessedAt = Date.now()
+	return entry
+}
+
+function setCacheEntry(cacheKey: string, data: UTSJSONObject, ttl: number) {
+	const now = Date.now()
+	const entry = new ProfileCacheEntryClass(data, now + ttl, now, now, 0)
+	cacheMap.set(cacheKey, entry)
+	ensureCapacity()
+	persistCache()
+}
+
+function ensureCapacity() {
+	if (cacheMap.size <= MAX_CACHE_ENTRIES) {
+		return
+	}
+	class CacheEntryWithKey {
+		key: string = ''
+		lastAccessedAt: number = 0
+	}
+	const entries: CacheEntryWithKey[] = []
+	cacheMap.forEach((entry: ProfileCacheEntry, key: string) => {
+		const item = new CacheEntryWithKey()
+		item.key = key
+		item.lastAccessedAt = entry.lastAccessedAt
+		entries.push(item)
+	})
+	entries.sort((a: CacheEntryWithKey, b: CacheEntryWithKey): number => {
+		return a.lastAccessedAt - b.lastAccessedAt
+	})
+	let idx = 0
+	while (cacheMap.size > MAX_CACHE_ENTRIES && idx < entries.length) {
+		cacheMap.delete(entries[idx].key)
+		idx = idx + 1
+	}
+}
+
+// ===== 直接导出的模块级函数（UTS 规范：避免从 composable 返回对象中访问方法）=====
+
+/**
+ * 获取用户资料（带缓存）
+ */
+export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObject | null> {
+	console.log('[getUserProfile] 开始获取用户资料')
+	console.log('[getUserProfile] 参数:', JSON.stringify(params))
+	
+	const paramsObj = toUTSJSON(params)
+	const kid = getString(paramsObj, 'kid')
+	const focusUserkid = getString(paramsObj, 'focusUserkid')
+	const notLoginVal = (paramsObj != null) ? paramsObj.get('notLogin') : null
+	const notLogin = (notLoginVal != null) ? parseInt(notLoginVal.toString()) : 0
+	const forceRefreshVal = (paramsObj != null) ? paramsObj.get('forceRefresh') : null
+	let forceRefresh = false
+	if (forceRefreshVal != null) {
+		const forceRefreshStr = forceRefreshVal.toString()
+		// 支持 boolean 和字符串两种格式
+		if (forceRefreshStr == 'true' || forceRefreshStr == '1') {
+			forceRefresh = true
+		}
+	}
+	const ttlVal = (paramsObj != null) ? paramsObj.get('ttl') : null
+	const ttl = (ttlVal != null) ? parseInt(ttlVal.toString()) : DEFAULT_TTL
+	
+	console.log('[getUserProfile] kid:', kid, 'forceRefresh:', forceRefresh)
+	
+	const cacheKey = buildCacheKey(kid, focusUserkid)
+	const cachedEntry = getCacheEntry(cacheKey, forceRefresh == false)
+	if (cachedEntry != null && forceRefresh == false) {
+		console.log('[getUserProfile] 返回缓存数据')
+		return cachedEntry.data
+	}
+	const existingRequest = pendingRequests.get(cacheKey)
+	if (existingRequest != null) {
+		console.log('[getUserProfile] 返回进行中的请求')
+		return existingRequest
+	}
+	const requestPromise: Promise<UTSJSONObject | null> = (async () => {
+		try {
+			let kid_val = kid
+			let focusUserkid_val: string | null = null
+			let notLogin_val: number | null = null
+					
+			if (focusUserkid != null && focusUserkid != '') {
+				focusUserkid_val = focusUserkid
+			}
+			if (notLogin != null) {
+				notLogin_val = notLogin
+			}
+			
+			// UTS 规范：构造查询参数对象
+			const queryParams = {
+				kid: kid_val,
+				focusUserkid: focusUserkid_val,
+				notLogin: notLogin_val
+			} as UTSJSONObject
+			
+			console.log('[getUserProfile] 发起 API 请求:', JSON.stringify(queryParams))
+					
+			const response = await requestUserHomePage(queryParams)
+			console.log('[getUserProfile] API 响应:', JSON.stringify(response))
+			
+			// 使用 toUTSJSON 安全访问属性
+			const responseObj = toUTSJSON(response)
+			if (responseObj == null) {
+				throw new Error('响应解析失败')
+			}
+			
+			const responseCodeVal = responseObj.get('code')
+			let code = 0
+			if (responseCodeVal != null) {
+				const codeStr = responseCodeVal.toString()
+				if (codeStr != '') {
+					const parsedCode = parseInt(codeStr)
+					code = isNaN(parsedCode) == false ? parsedCode : 0
+				}
+			}
+			
+			console.log('[getUserProfile] 响应码:', code)
+			
+			const responseDataVal = responseObj.get('data')
+			console.log('[getUserProfile] 响应数据:', JSON.stringify(responseDataVal))
+			
+			if (code == 200 && responseDataVal != null) {
+				// 存储和返回 UTSJSONObject 类型数据
+				const responseDataObj = toUTSJSON(responseDataVal)
+				if (responseDataObj != null) {
+					setCacheEntry(cacheKey, responseDataObj, ttl)
+					console.log('[getUserProfile] 数据已缓存，返回数据')
+					return responseDataObj
+				}
+			}
+			
+			const responseMsgVal = responseObj.get('msg')
+			const responseMessageVal = responseObj.get('message')
+			let errorMsg = '获取用户信息失败'
+			if (responseMsgVal != null && responseMsgVal.toString() != '') {
+				errorMsg = responseMsgVal.toString()
+			} else if (responseMessageVal != null && responseMessageVal.toString() != '') {
+				errorMsg = responseMessageVal.toString()
+			}
+			console.error('[getUserProfile] 业务错误:', errorMsg)
+			throw new Error(errorMsg)
+		} catch (error: any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, '获取用户资料', errorOptions)
+			const fallbackEntry = getCacheEntry(cacheKey, false)
+			if (fallbackEntry != null) {
+				uni.showToast({
+					title: FALLBACK_TOAST,
+					icon: 'none'
+				})
+				return (fallbackEntry != null) ? fallbackEntry.data : null
+			}
+			throw error
+		} finally {
+			pendingRequests.delete(cacheKey)
+		}
+	})()
+	pendingRequests.set(cacheKey, requestPromise)
+	return requestPromise
+}
+
+/**
+ * 更新用户资料缓存
+ */
+export function updateUserProfile(
+	kid: string,
+	partial: PartialUserHomePageInfo,
+	focusUserkid?: string,
+	ttl?: number
+): void {
+	// UTS 规范：不支持 ?? 运算符，使用三元表达式
+	const ttlVal = (ttl != null) ? ttl : DEFAULT_TTL
+	const cacheKey = buildCacheKey(kid, focusUserkid)
+	const existing = getCacheEntry(cacheKey, false)
+	if (existing != null) {
+		const existingData = existing.data
+		const existingDataJson = JSON.stringify(existingData)
+		const partialJson = JSON.stringify(partial)
+		
+		const parsedPartial = toUTSJSON(partial)
+		if (parsedPartial != null && JSON.stringify(parsedPartial) != '{}') {
+			const mergedStr = existingDataJson.substring(0, existingDataJson.length - 1) + ',' + partialJson.substring(1)
+			const mergedData = JSON.parse(mergedStr) as UTSJSONObject
+			setCacheEntry(cacheKey, mergedData, ttlVal)
+		} else {
+			const existingDataCopy = JSON.parse(existingDataJson) as UTSJSONObject
+			setCacheEntry(cacheKey, existingDataCopy, ttlVal)
+		}
+	} else if (partial != null) {
+		const partialData = partial as UTSJSONObject
+		setCacheEntry(cacheKey, partialData, ttlVal)
+	}
+}
+
+/**
+ * 使缓存失效
+ */
+export function invalidateUserProfile(kid: string, focusUserkid?: string): void {
+	const cacheKey = buildCacheKey(kid, focusUserkid)
+	if (cacheMap.delete(cacheKey)) {
+		persistCache()
+	}
+}
+
+/**
+ * 获取缓存的用户资料（不发起请求）
+ */
+export function getCachedProfile(kid: string, focusUserkid?: string): UTSJSONObject | null {
+	const cacheKey = buildCacheKey(kid, focusUserkid)
+	const entry = getCacheEntry(cacheKey, false)
+	if (entry != null && entry.data != null) {
+		return entry.data
+	}
+	return null
+}
+
+export type { GetUserProfileParams, ProfileCacheEntry, PartialUserHomePageInfo }

@@ -1,0 +1,1433 @@
+<template>
+	<view class="page bg-base animation-fade relative" v-if="initFinish == true">
+		<!-- #ifndef H5 -->
+		<!-- 顶部导航栏 -->
+		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-bar">
+				<view class="back-btn" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">向导详情</text>
+				<view class="nav-right"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		<view class="profile-section flex-row align-center" @click="handleUserProfile">
+			<ImageSelf
+				:width="122"
+				:height="122"
+				borderRadius="100%"
+				:preView="false"
+				:url="displayGuideImg"
+				defaultImage="https://jiasu.wyxdapp.com/iconimages/default_avatar.png"
+			></ImageSelf>
+			<view class="profile-meta flex-column flex-1">
+				<view class="name-row flex-row align-center">
+					<NicknameWithBadges
+						:nickname="displayGuideNickname"
+						:vipType="displayVipType"
+						:giftLevel="displayGiftLevel"
+						size="large"
+					/>
+				</view>
+				<!-- 性别年龄 + 认证图标行 -->
+				<view class="info-row flex-row align-center">
+					<!-- 性别年龄组件 -->
+					<view class="gender-age-box">
+						<GenderAge :sex="displaySex" :age="displayAge" />
+					</view>
+					<!-- 官方认证 -->
+					<view v-if="infoOfficialAuth == 20 || infoOfficialAuth == 30" class="official-certification">
+						<image src="https://jiasu.wyxdapp.com/iconimages/n_index_officialAuthor.png" class="cert-icon" mode="aspectFill" />
+					</view>
+					<!-- 实名认证 -->
+					<view v-if="infoIdAuth == 30" class="name-authentication">
+						<image src="https://jiasu.wyxdapp.com/iconimages/n_index_realName.png" class="auth-icon" mode="aspectFill" />
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<view class="info-card bg-white">
+			<view class="info-row flex-row align-center">
+				<image class="info-icon" :src="iconCost" mode="aspectFit"></image>
+				<text class="info-label">费用</text>
+				<text class="info-value orange">{{ displayServicePrice }}元</text>
+			</view>
+			<view class="info-row flex-row align-center">
+				<image class="info-icon" :src="iconDeal" mode="aspectFit"></image>
+				<text class="info-label">擅长</text>
+				<text class="info-value color-text">{{ displayFortes }}</text>
+			</view>
+			<view class="info-row flex-row align-center">
+				<image class="info-icon" :src="iconRange" mode="aspectFit"></image>
+				<text class="info-label">范围</text>
+				<text class="info-value color-text">{{ displayAccessiblePlace }}</text>
+			</view>
+			<view class="info-row flex-row align-center">
+				<image class="info-icon" :src="iconScore" mode="aspectFit"></image>
+				<text class="info-label">评分</text>
+				<view class="rate-row flex-row align-center">
+					<text v-for="i in 5" :key="i" class="star" :style="getStarStyle(i)">★</text>
+				</view>
+				<text class="info-value color-text">{{ displayServiceScore }}</text>
+			</view>
+			<view class="info-row flex-row align-start">
+				<image class="info-icon" :src="iconIntroduce" mode="aspectFit"></image>
+				<text class="info-label special">介绍</text>
+				<text class="info-value color-text">{{ displayGuideDescribe }}</text>
+			</view>
+			<view class="info-row flex-row align-center space-between">
+				<view class="flex-row align-center">
+					<image class="info-icon" :src="iconComment" mode="aspectFit"></image>
+					<text class="info-label">评论</text>
+					<text class="info-value color-text">{{ displayCommentCount }}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="comment-head flex-row align-center space-between bg-white">
+			<view class="flex-row align-center">
+				<text class="title-icon"></text>
+				<text class="comment-title">游客评价</text>
+				<text class="title-count" v-if="commendListAll > 0">({{ commendListAll }}人评价)</text>
+			</view>
+			<view class="flex-row align-center">
+				<text class="view-all">查看全部</text>
+				<text class="arrow">›</text>
+			</view>
+		</view>
+
+		<view class="commend-list bg-white">
+			<view v-for="(item, index) in commendList" :key="getCommendItemKey(item, index)" class="commend-item">
+				<view class="commend-header flex-row">
+					<Avatar
+						:url="getCommendUserImage(item)"
+						:userId="getCommendUserId(item)"
+						:customSize="72"
+						clickMode="profile"
+					/>
+					<view class="commend-meta flex-column flex-1">
+						<text class="commend-name">{{ getCommendUserName(item) }}</text>
+						<view class="commend-stars flex-row">
+							<text v-for="j in 5" :key="j" class="commend-star" :class="{'active-star': j <= getCommendStarLevel(item)}">★</text>
+						</view>
+					</view>
+					<text class="commend-time">{{ getCommendTime(item) }}</text>
+				</view>
+				<text class="commend-content">{{ getCommendContent(item) }}</text>
+			</view>
+			<view class="loadmore-box" v-if="commendListAll >= 5">
+				<LoadMore :status="pageListStatus" :load-text="loadText"></LoadMore>
+			</view>
+		</view>
+
+		<view class="footer-box flex-row align-center space-between">
+			<view class="btn bg-light" @click="handleEdit">
+				<text class="btn-text light-blue">编辑</text>
+			</view>
+			<view class="btn chat" @click="handlePromotion">
+				<text class="btn-text white">推广</text>
+			</view>
+		</view>
+		
+		<!-- 推广设置弹窗 -->
+		<PromotionPopup
+			v-model:visity="showPromotionPopup"
+			:guideKid="info.memberGuideKid"
+			:initialHomeShow="promotionSettings.homeShow"
+			:initialTopRecommend="promotionSettings.topRecommend"
+			:initialOperateRate="promotionSettings.operateRate"
+			@save="handlePromotionSave"
+		/>
+	</view>
+	<Loading :show="loading" fullscreen></Loading>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad, onShow, onReachBottom } from '@dcloudio/uni-app'
+import ImageSelf from '@/components/base/ImageSelf.uvue'
+import LoadMore from '@/components/base/LoadMore.uvue'
+import Loading from '@/components/base/Loading.uvue'
+import GenderAge from '@/components/base/GenderAge.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import PromotionPopup from '@/components/common/PromotionPopup.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import { initUserInfoAction } from '@/stores/user.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { getGuideDetail, getGuideEvaluateList, toggleGuideStatus } from '@/common/services/guideService.uts'
+import { updateGuidePromotion, getOperatorGuides, signGuide } from '@/pagesBusiness/api/operator.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 类定义 ====================
+
+class GuideInfoData {
+	guideImg: string = ''
+	guideNickname: string = ''
+	sex: string = ''
+	age: string = ''
+	memberGuideKid: string = ''
+	shortKid: string = ''
+	servicePrice: string = ''
+	connectedNum: string = ''
+	accessiblePlace: string = ''
+	userFortes: string = ''
+	serviceScore: string = ''
+	guideDescribe: string = ''
+	guideStatus: number = 10
+	guideKid: string = ''
+	officialAuth: number = 0
+	idAuth: number = 0
+	guideIdentity: number = 10
+	operateRate: number = 20
+	giftLevel: number = 0
+	vip: number = 10
+	vipExpireTime: string = ''
+	vipType: number = 0
+}
+
+class PageListData {
+	userKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 10
+	status: string = 'loadmore'
+}
+
+// 推广设置数据类
+class PromotionSettingsData {
+	homeShow: boolean = true
+	topRecommend: boolean = false
+	operateRate: number = 20
+}
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+// 获取字符串属性
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 获取数字属性
+const getItemNumberProp = (item: UTSJSONObject | null, key: string): number => {
+	if (item == null) return 0
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val != null) {
+			const num = parseInt(val.toString())
+			if (isNaN(num) == false) return num
+		}
+	} catch (e) {}
+	return 0
+}
+
+// 从 loginHelper 获取用户 Kid（可靠版本）
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 检查是否已登录（可靠版本）
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// 格式化可服务地点（替代 filter(Boolean)）
+const normalizeAccessiblePlace = (place: any | null): string => {
+	if (place == null) return ''
+	try {
+		if (Array.isArray(place) == true) {
+			const arr = place as Array<string>
+			const result: Array<string> = []
+			for (let i = 0; i < arr.length; i++) {
+				const item = arr[i]
+				if (item != null && item.toString() != '') {
+					result.push(item.toString())
+				}
+			}
+			return result.join('、')
+		}
+		const placeStr = place.toString()
+		if (placeStr != '') {
+			const parts = placeStr.split(',')
+			const result: Array<string> = []
+			for (let i = 0; i < parts.length; i++) {
+				const part = parts[i]
+				if (part != null && part != '') {
+					result.push(part)
+				}
+			}
+			return result.join('、')
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 格式化擅长标签
+const formatFortes = (fortes: any | null): string => {
+	if (fortes == null) return ''
+	try {
+		if (Array.isArray(fortes) == true) {
+			const arr = fortes as Array<UTSJSONObject>
+			const names: Array<string> = []
+			for (let i = 0; i < arr.length; i++) {
+				const item = arr[i]
+				if (item != null) {
+					const labelName = getItemStringProp(item, 'labelName')
+					if (labelName != '') {
+						names.push(labelName)
+					}
+				}
+			}
+			if (names.length > 0) {
+				return names.join('  ')
+			}
+		}
+	} catch (e) {}
+	return ''
+}
+
+// ==================== 响应式状态 ====================
+
+// 布局相关
+const statusBarHeight = ref<number>(0)
+
+const loading = ref<boolean>(false)
+const initFinish = ref<boolean>(false)
+const targetGuideKid = ref<string>('')
+const info = ref<GuideInfoData>(new GuideInfoData())
+const commendList = ref<Array<UTSJSONObject>>([])
+const commendListAll = ref<number>(0)
+const pageList = ref<PageListData>(new PageListData())
+
+// 推广相关状态
+const showPromotionPopup = ref<boolean>(false)
+const promotionSettings = ref<PromotionSettingsData>(new PromotionSettingsData())
+
+// 图标地址
+const iconBase = 'https://cos.wyxdapp.com/iconImages'
+const iconCost = iconBase + '/n_icon_cost.png'
+const iconDeal = iconBase + '/n_icon_deal.png'
+const iconRange = iconBase + '/n_icon_Range.png'
+const iconScore = iconBase + '/n_icon_score.png'
+const iconIntroduce = iconBase + '/n_icon_introduce.png'
+const iconComment = iconBase + '/n_icon_comment.png'
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+const loadText = {
+	loadmore: '轻轻上拉',
+	loading: '努力加载中',
+	nomore: '到底了哦~'
+} as UTSJSONObject
+
+// ==================== 计算属性 ====================
+
+const displayGuideImg = computed((): string => {
+	try {
+		const guideImgVal = info.value.guideImg
+		if (guideImgVal != null && guideImgVal != '') {
+			return guideImgVal
+		}
+	} catch (e) {}
+	return defaultAvatar
+})
+
+const displayGuideNickname = computed((): string => {
+	try {
+		const nicknameVal = info.value.guideNickname
+		if (nicknameVal != null && nicknameVal != '') {
+			return nicknameVal
+		}
+	} catch (e) {}
+	return '-'
+})
+
+const displaySex = computed((): string => {
+	try {
+		const sexVal = info.value.sex
+		if (sexVal != null && sexVal != '') {
+			return sexVal
+		}
+	} catch (e) {}
+	return '男'
+})
+
+const displayAge = computed((): string => {
+	try {
+		const ageVal = info.value.age
+		if (ageVal != null && ageVal != '') {
+			return ageVal
+		}
+	} catch (e) {}
+	return '--'
+})
+
+const displayShortKid = computed((): string => {
+	try {
+		const shortKidVal = info.value.shortKid
+		if (shortKidVal != null && shortKidVal != '') {
+			return shortKidVal
+		}
+		const memberGuideKidVal = info.value.memberGuideKid
+		if (memberGuideKidVal != null && memberGuideKidVal != '') {
+			return memberGuideKidVal
+		}
+	} catch (e) {}
+	return '--'
+})
+
+const displayServicePrice = computed((): string => {
+	try {
+		const priceVal = info.value.servicePrice
+		if (priceVal != null && priceVal != '') {
+			return priceVal
+		}
+	} catch (e) {}
+	return '0'
+})
+
+const displayFortes = computed((): string => {
+	try {
+		const fortesVal = info.value.userFortes
+		if (fortesVal != null && fortesVal != '') {
+			return fortesVal
+		}
+	} catch (e) {}
+	return '未填写'
+})
+
+const displayAccessiblePlace = computed((): string => {
+	try {
+		const placeVal = info.value.accessiblePlace
+		if (placeVal != null && placeVal != '') {
+			return placeVal
+		}
+	} catch (e) {}
+	return '未填写'
+})
+
+const displayServiceScore = computed((): string => {
+	try {
+		const scoreVal = info.value.serviceScore
+		if (scoreVal != null && scoreVal != '') {
+			return scoreVal
+		}
+	} catch (e) {}
+	return '暂无评分'
+})
+
+const displayGuideDescribe = computed((): string => {
+	try {
+		const descVal = info.value.guideDescribe
+		if (descVal != null && descVal != '') {
+			return descVal
+		}
+	} catch (e) {}
+	return '这个导游很懒,什么也没留下'
+})
+
+const displayCommentCount = computed((): string => {
+	try {
+		const count = commendListAll.value
+		if (count > 0) {
+			return count.toString() + '人评价'
+		}
+	} catch (e) {}
+	return '暂无评价'
+})
+
+const pageListStatus = computed((): string => {
+	try {
+		return pageList.value.status
+	} catch (e) {}
+	return 'loadmore'
+})
+
+const serviceScoreNum = computed((): number => {
+	try {
+		const scoreVal = info.value.serviceScore
+		if (scoreVal != null && scoreVal != '') {
+			const text = scoreVal.replace('分', '')
+			const n = parseFloat(text)
+			if (isNaN(n) == false) {
+				return n
+			}
+		}
+	} catch (e) {}
+	return 0
+})
+
+const rateSize = computed((): number => {
+	try {
+		const n = serviceScoreNum.value
+		if (n >= 4.5) return 28
+		if (n >= 3.5) return 26
+		if (n >= 2.5) return 24
+	} catch (e) {}
+	return 22
+})
+
+// 官方认证状态
+const infoOfficialAuth = computed((): number => {
+	try {
+		return info.value.officialAuth
+	} catch (e) {}
+	return 0
+})
+
+// 实名认证状态
+const infoIdAuth = computed((): number => {
+	try {
+		return info.value.idAuth
+	} catch (e) {}
+	return 0
+})
+
+// VIP类型（用于昵称显示）
+const displayVipType = computed((): string => {
+	try {
+		const vip = info.value.vip
+		const vipExpireTime = info.value.vipExpireTime
+
+		// 检查VIP是否有效
+		if (vip == 20) {
+			if (vipExpireTime != null && vipExpireTime != '') {
+				const expireDate = new Date(vipExpireTime)
+				const now = new Date()
+				if (expireDate > now) {
+					// 根据VIP类型返回图标类型
+					// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+					const vipType = info.value.vipType
+					if (vipType == 20) return 'year'
+					return 'normal'
+				}
+			} else {
+				// 没有到期时间，认为是永久有效的
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				const vipType = info.value.vipType
+				if (vipType == 20) return 'year'
+				return 'normal'
+			}
+		}
+	} catch (e) {}
+	return ''
+})
+
+// 礼物等级（用于昵称显示）
+const displayGiftLevel = computed((): number => {
+	try {
+		return info.value.giftLevel
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 模板辅助函数 ====================
+
+const getStarStyle = (index: number): UTSJSONObject => {
+	const scoreNum = serviceScoreNum.value
+	const roundedScore = Math.round(scoreNum)
+	const active = index <= roundedScore
+	const style = {
+		color: active == true ? '#FF9F0A' : '#C0C4CC',
+		fontSize: rateSize.value.toString() + 'rpx'
+	} as UTSJSONObject
+	return style
+}
+
+const getCommendItemKey = (item: UTSJSONObject, index: number): string => {
+	const kid = getItemStringProp(item, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+const getCommendUserImage = (item: UTSJSONObject): string => {
+	const img = getItemStringProp(item, 'evaluateUserImage')
+	return (img != '') ? img : defaultAvatar
+}
+
+const getCommendUserId = (item: UTSJSONObject): string => {
+	let userId = getItemStringProp(item, 'evaluateUserKid')
+	if (userId == '') {
+		userId = getItemStringProp(item, 'userKid')
+	}
+	if (userId == '') {
+		userId = getItemStringProp(item, 'userId')
+	}
+	return userId
+}
+
+const getCommendUserName = (item: UTSJSONObject): string => {
+	const name = getItemStringProp(item, 'evaluateUserNickName')
+	return (name != '') ? name : '匿名用户'
+}
+
+const getCommendStarLevel = (item: UTSJSONObject): number => {
+	return getItemNumberProp(item, 'starLevel')
+}
+
+const getCommendTime = (item: UTSJSONObject): string => {
+	return getItemStringProp(item, 'evaluateTime')
+}
+
+const getCommendContent = (item: UTSJSONObject): string => {
+	const content = getItemStringProp(item, 'commentContent')
+	return (content != '') ? content : '该用户未填写评价内容'
+}
+
+// ==================== 登录检查 ====================
+
+const ensureLogin = () => {
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		throw new Error('need login')
+	}
+}
+
+// ==================== API 调用函数 ====================
+
+const loadGuideInfo = async () => {
+	const guideKid = targetGuideKid.value
+	if (guideKid == null || guideKid == '') return
+	
+	loading.value = true
+	try {
+		const currentUserKid = getUserKidFromStore()
+		const params = {
+			userKid: guideKid,
+			currentUserKid: currentUserKid
+		} as UTSJSONObject
+		
+		const res = await getGuideDetail(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				
+				// 解析各字段
+				const imagePhotoVal = dataObj.get('imagePhoto')
+				const guideImgVal = dataObj.get('guideImg')
+				const nicknameVal = dataObj.get('nickname')
+				const sexVal = dataObj.get('sex')
+				const ageVal = dataObj.get('age')
+				const memberGuideKidVal = dataObj.get('memberGuideKid')
+				const shortKidVal = dataObj.get('shortKid')
+				const servicePriceVal = dataObj.get('servicePrice')
+				const connectedNumVal = dataObj.get('connectedNum')
+				const accessiblePlaceVal = dataObj.get('accessiblePlace')
+				const userFortesVal = dataObj.get('userFortes')
+				const serviceScoreVal = dataObj.get('serviceScore')
+				const guideDescribeVal = dataObj.get('guideDescribe')
+				const guideStatusVal = dataObj.get('guideStatus')
+				const officialAuthVal = dataObj.get('officialAuth')
+				const idAuthVal = dataObj.get('idAuth')
+				
+				// 更新 info
+				const newInfo = new GuideInfoData()
+				
+				// guideImg
+				if (imagePhotoVal != null && imagePhotoVal.toString() != '') {
+					newInfo.guideImg = imagePhotoVal.toString()
+				} else if (guideImgVal != null && guideImgVal.toString() != '') {
+					newInfo.guideImg = guideImgVal.toString()
+				}
+				
+				// 其他字段
+				if (nicknameVal != null && nicknameVal.toString() != '') {
+					newInfo.guideNickname = nicknameVal.toString()
+				}
+				if (sexVal != null && sexVal.toString() != '') {
+					newInfo.sex = sexVal.toString()
+				}
+				if (ageVal != null && ageVal.toString() != '') {
+					newInfo.age = ageVal.toString()
+				}
+				if (memberGuideKidVal != null && memberGuideKidVal.toString() != '') {
+					newInfo.memberGuideKid = memberGuideKidVal.toString()
+				} else {
+					newInfo.memberGuideKid = guideKid
+				}
+				if (shortKidVal != null && shortKidVal.toString() != '') {
+					newInfo.shortKid = shortKidVal.toString()
+				}
+				if (servicePriceVal != null && servicePriceVal.toString() != '') {
+					newInfo.servicePrice = servicePriceVal.toString()
+				}
+				if (connectedNumVal != null && connectedNumVal.toString() != '') {
+					newInfo.connectedNum = connectedNumVal.toString()
+				}
+				
+				// accessiblePlace
+				if (accessiblePlaceVal != null) {
+					newInfo.accessiblePlace = normalizeAccessiblePlace(accessiblePlaceVal)
+				}
+				
+				// userFortes
+				if (userFortesVal != null) {
+					newInfo.userFortes = formatFortes(userFortesVal)
+				}
+				
+				if (serviceScoreVal != null && serviceScoreVal.toString() != '') {
+					newInfo.serviceScore = serviceScoreVal.toString()
+				}
+				if (guideDescribeVal != null && guideDescribeVal.toString() != '') {
+					newInfo.guideDescribe = guideDescribeVal.toString()
+				}
+				if (guideStatusVal != null) {
+					const statusNum = parseInt(guideStatusVal.toString())
+					if (isNaN(statusNum) == false) {
+						newInfo.guideStatus = statusNum
+					}
+				}
+				
+				// guideKid
+				if (memberGuideKidVal != null && memberGuideKidVal.toString() != '') {
+					newInfo.guideKid = memberGuideKidVal.toString()
+				} else {
+					newInfo.guideKid = guideKid
+				}
+				
+				// 认证状态
+				if (officialAuthVal != null) {
+					const authNum = parseInt(officialAuthVal.toString())
+					if (isNaN(authNum) == false) {
+						newInfo.officialAuth = authNum
+					}
+				}
+				if (idAuthVal != null) {
+					const authNum = parseInt(idAuthVal.toString())
+					if (isNaN(authNum) == false) {
+						newInfo.idAuth = authNum
+					}
+				}
+				
+				// 推广设置：guideIdentity 和 operateRate
+				const guideIdentityVal = dataObj.get('guideIdentity')
+				if (guideIdentityVal != null) {
+					const identityNum = parseInt(guideIdentityVal.toString())
+					if (isNaN(identityNum) == false) {
+						newInfo.guideIdentity = identityNum
+					}
+				}
+				const operateRateVal = dataObj.get('operateRate')
+				if (operateRateVal != null) {
+					const rateNum = parseInt(operateRateVal.toString())
+					if (isNaN(rateNum) == false) {
+						// 如果 API 返回 0，使用默认值 20（所有向导默认佣金20%）
+						newInfo.operateRate = rateNum > 0 ? rateNum : 20
+					}
+				}
+
+				// VIP相关字段
+				const vipVal = dataObj.get('vip')
+				if (vipVal != null) {
+					const vipNum = parseInt(vipVal.toString())
+					if (isNaN(vipNum) == false) {
+						newInfo.vip = vipNum
+					}
+				}
+				const vipExpireTimeVal = dataObj.get('vipExpireTime')
+				if (vipExpireTimeVal != null && vipExpireTimeVal.toString() != '') {
+					newInfo.vipExpireTime = vipExpireTimeVal.toString()
+				}
+				const vipTypeVal = dataObj.get('vipType')
+				if (vipTypeVal != null) {
+					const vipTypeNum = parseInt(vipTypeVal.toString())
+					if (isNaN(vipTypeNum) == false) {
+						newInfo.vipType = vipTypeNum
+					}
+				}
+
+				// 礼物等级
+				const giftLevelVal = dataObj.get('giftLevel')
+				if (giftLevelVal != null) {
+					const giftLevelNum = parseInt(giftLevelVal.toString())
+					if (isNaN(giftLevelNum) == false) {
+						newInfo.giftLevel = giftLevelNum
+					}
+				}
+				
+				info.value = newInfo
+			}
+		}
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载向导信息', loading)
+		}
+	} finally {
+		loading.value = false
+		initFinish.value = true
+	}
+}
+
+const loadCommend = async (reset: boolean) => {
+	const guideKid = targetGuideKid.value
+	if (guideKid == null || guideKid == '') return
+	
+	const currentStatus = pageList.value.status
+	if (currentStatus == 'nomore' && reset == false) return
+	
+	try {
+		if (reset == true) {
+			pageList.value.pageNumber = 1
+			pageList.value.status = 'loading'
+			commendList.value = []
+		} else {
+			pageList.value.status = 'loading'
+		}
+		
+		const params = {
+			userKid: guideKid,
+			pageNumber: pageList.value.pageNumber,
+			pageSize: pageList.value.pageSize
+		} as UTSJSONObject
+		
+		const res = await getGuideEvaluateList(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				
+				const entitiesVal = dataObj.get('entities')
+				const countVal = dataObj.get('count')
+				
+				let entities: Array<UTSJSONObject> = []
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as Array<UTSJSONObject>
+				}
+				
+				let count = 0
+				if (countVal != null) {
+					const num = parseInt(countVal.toString())
+					if (isNaN(num) == false) {
+						count = num
+					}
+				}
+				
+				commendListAll.value = count
+				
+				if (pageList.value.pageNumber == 1) {
+					commendList.value = entities
+				} else {
+					const currentList = commendList.value
+					for (let i = 0; i < entities.length; i++) {
+						currentList.push(entities[i])
+					}
+					commendList.value = currentList
+				}
+				
+				const currentLength = commendList.value.length
+				const hasMore = entities.length > 0 && currentLength < count
+				pageList.value.status = hasMore == true ? 'loadmore' : 'nomore'
+			}
+		}
+	} catch (error: Error) {
+		handleSilentError(error, '加载评论')
+		pageList.value.status = 'loadmore'
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+// 返回上一页
+const handleBack = () => {
+	uni.navigateBack()
+}
+
+// 打开推广设置弹窗
+// 加载推广设置
+const loadPromotionSettings = () => {
+	const newSettings = new PromotionSettingsData()
+	
+	// 从 info 中获取当前设置
+	const guideStatus = info.value.guideStatus
+	newSettings.homeShow = guideStatus == 10
+	newSettings.topRecommend = info.value.guideIdentity == 20
+	
+	// operateRate: 如果为 0 则使用默认值 20（所有向导默认佣金20%）
+	const currentRate = info.value.operateRate
+	newSettings.operateRate = currentRate > 0 ? currentRate : 20
+	
+	promotionSettings.value = newSettings
+}
+
+// 打开推广设置弹窗
+const handlePromotion = () => {
+	// 加载当前推广设置
+	loadPromotionSettings()
+	showPromotionPopup.value = true
+}
+
+// 保存推广设置
+const handlePromotionSave = async (data: UTSJSONObject | null) => {
+	if (data == null) return
+	
+	try {
+		const dataStr = JSON.stringify(data)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		const homeShowVal = dataObj.get('homeShow')
+		const topRecommendVal = dataObj.get('topRecommend')
+		const operateRateVal = dataObj.get('operateRate')
+		
+		const homeShow = homeShowVal != null && homeShowVal.toString() == 'true'
+		const topRecommend = topRecommendVal != null && topRecommendVal.toString() == 'true'
+		let operateRate = 0
+		if (operateRateVal != null) {
+			const rate = parseInt(operateRateVal.toString())
+			if (isNaN(rate) == false) {
+				operateRate = rate
+			}
+		}
+		
+		loading.value = true
+		
+		const memberGuideKid = info.value.memberGuideKid
+		if (memberGuideKid == null || memberGuideKid == '') {
+			uni.showToast({ title: '向导信息错误', icon: 'none' })
+			return
+		}
+		
+		// 1. 更新上下架状态
+		const newGuideStatus = homeShow == true ? 10 : 20
+		if (newGuideStatus != info.value.guideStatus) {
+			const statusParams = { memberGuideKid: memberGuideKid } as UTSJSONObject
+			await toggleGuideStatus(statusParams)
+		}
+		
+		// 2. 更新推广设置（佣金费率、顶置推荐）
+		const promotionParams = {
+			memberGuideKid: memberGuideKid,
+			operateRate: operateRate,
+			guideIdentity: topRecommend == true ? 20 : 10
+		} as UTSJSONObject
+		
+		await updateGuidePromotion(promotionParams)
+		
+		// 更新本地状态
+		const newInfo = info.value
+		newInfo.guideStatus = newGuideStatus
+		newInfo.guideIdentity = topRecommend == true ? 20 : 10
+		newInfo.operateRate = operateRate
+		info.value = newInfo
+		
+		uni.showToast({ title: '保存成功', icon: 'success' })
+		
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '保存推广设置', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+const handleEdit = () => {
+	const memberGuideKid = info.value.memberGuideKid
+	const userKid = getUserKidFromStore()
+	let kid = ''
+	if (memberGuideKid != null && memberGuideKid != '') {
+		kid = memberGuideKid
+	} else if (userKid != '') {
+		kid = userKid
+	}
+	uni.navigateTo({ url: '/pages/index/components/addGuide?kid=' + kid })
+}
+
+const handleUserProfile = () => {
+	const guideKid = info.value.guideKid
+	if (guideKid != null && guideKid != '') {
+		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + guideKid })
+	}
+}
+
+// ==================== 生命周期 ====================
+
+onLoad((options: OnLoadOptions) => {
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化（解决 APP 端登录状态问题）
+	initUserInfoAction()
+	
+	// 初始化页面布局（状态栏高度等）
+	initPageLayout()
+	statusBarHeight.value = pageStatusBarHeight.value
+	
+	ensureLogin()
+	
+	let kid = ''
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const kidVal = optionsObj.get('kid')
+		if (kidVal != null && kidVal.toString() != '') {
+			kid = kidVal.toString()
+		}
+	}
+	
+	if (kid == '') {
+		kid = getUserKidFromStore()
+	}
+	
+	targetGuideKid.value = kid
+	pageList.value.userKid = kid
+	
+	loadGuideInfo()
+	loadCommend(true)
+})
+
+onShow(() => {
+	if (initFinish.value != true) return
+	loadGuideInfo()
+	loadCommend(true)
+})
+
+onReachBottom(() => {
+	ensureLogin()
+	const currentStatus = pageList.value.status
+	if (currentStatus == 'loadmore') {
+		pageList.value.pageNumber = pageList.value.pageNumber + 1
+		loadCommend(false)
+	}
+})
+</script>
+
+<style scoped>
+.page {
+	flex: 1;
+	background-color: #f5f6fa;
+	padding-bottom: 200rpx;
+}
+
+/* APP端状态栏占位 */
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #D0E6FE;
+}
+
+/* 顶部导航栏 */
+.header {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+.nav-bar {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-right {
+	width: 60rpx;
+	height: 60rpx;
+}
+
+.profile-section {
+	flex-direction: row;
+	align-items: center;
+	padding: 48rpx 36rpx;
+}
+
+.profile-meta {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 24rpx;
+}
+
+.name-row {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.nick-name {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #1d1e1f;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.age-sex-bg {
+	flex-direction: row;
+	align-items: flex-end;
+	justify-content: flex-end;
+	margin-left: 16rpx;
+}
+
+.sex-icon {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 96rpx;
+	height: 44rpx;
+}
+
+.girl {
+	width: 98rpx;
+	height: 44rpx;
+}
+
+.boy {
+	width: 96rpx;
+	height: 38rpx;
+	margin-top: 8rpx;
+}
+
+.age-text {
+	font-size: 24rpx;
+	padding-bottom: 6rpx;
+	padding-right: 12rpx;
+	text-align: right;
+}
+
+.pink {
+	color: #FF69B4;
+}
+
+.purple {
+	color: #9370DB;
+}
+
+.id-box {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 12rpx;
+	padding: 8rpx 28rpx;
+	border-radius: 20rpx;
+	background-color: #FFFFFF;
+}
+
+.light-blue {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.info-card {
+	margin-top: 0;
+	margin-bottom: 0;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	padding: 28rpx;
+	border-radius: 24rpx;
+	background-color: #FFFFFF;
+}
+
+.info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.info-icon {
+	width: 34rpx;
+	height: 34rpx;
+}
+
+.info-label {
+	margin-left: 16rpx;
+	font-size: 24rpx;
+	color: #1d1e1f;
+}
+
+.special {
+	width: 48rpx;
+}
+
+.info-value {
+	margin-left: 32rpx;
+	font-size: 24rpx;
+}
+
+.orange {
+	color: #FF6B00;
+}
+
+.color-text {
+	color: #666666;
+}
+
+.rate-row {
+	flex-direction: row;
+	align-items: center;
+	margin-left: 24rpx;
+}
+
+.star {
+	margin-right: 6rpx;
+}
+
+.space-between {
+	justify-content: space-between;
+}
+
+.comment-head {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 20rpx;
+	margin-bottom: 0;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	padding-top: 36rpx;
+	padding-bottom: 36rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-radius: 24rpx 24rpx 0 0;
+	background-color: #FFFFFF;
+}
+
+.title-icon {
+	width: 20rpx;
+	height: 76rpx;
+	background-color: #36A0EE;
+	border-radius: 4rpx;
+}
+
+.comment-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	margin-left: 16rpx;
+	color: #333333;
+}
+
+.title-count {
+	font-size: 24rpx;
+	color: #6f6f6f;
+	margin-left: 8rpx;
+}
+
+.view-all {
+	font-size: 24rpx;
+	color: #37B1F2;
+	margin-right: 8rpx;
+}
+
+.arrow {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.commend-list {
+	margin-top: 0;
+	margin-bottom: 20rpx;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	border-radius: 0 0 24rpx 24rpx;
+	padding-top: 0;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #FFFFFF;
+}
+
+.commend-item {
+	padding: 32rpx 0;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f1f1f1;
+}
+
+.commend-header {
+	flex-direction: row;
+	align-items: center;
+}
+
+.commend-meta {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 24rpx;
+}
+
+.commend-name {
+	font-size: 28rpx;
+	color: #1d1e1f;
+}
+
+.commend-stars {
+	flex-direction: row;
+	margin-top: 8rpx;
+}
+
+.commend-star {
+	font-size: 22rpx;
+	margin-right: 6rpx;
+	color: #C0C4CC;
+}
+
+.active-star {
+	color: #FF9F0A;
+}
+
+.commend-time {
+	font-size: 22rpx;
+	color: #9c9ea6;
+}
+
+.commend-content {
+	margin-top: 16rpx;
+	font-size: 26rpx;
+	color: #555555;
+	line-height: 40rpx;
+}
+
+.loadmore-box {
+	padding-top: 32rpx;
+}
+
+.footer-box {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	width: 750rpx;
+	height: 152rpx;
+	padding: 0 32rpx;
+	background-color: transparent;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.btn {
+	width: 280rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.bg-light {
+	background-color: rgba(46, 174, 242, 0.12);
+}
+
+.btn-text {
+	font-size: 30rpx;
+}
+
+.chat {
+	background-color: #37B1F2;
+}
+
+.white {
+	color: #FFFFFF;
+}
+
+.flex-row {
+	flex-direction: row;
+}
+
+.flex-column {
+	flex-direction: column;
+}
+
+.flex-1 {
+	flex: 1;
+}
+
+.align-center {
+	align-items: center;
+}
+
+.align-start {
+	align-items: flex-start;
+}
+
+.flex-center {
+	justify-content: center;
+}
+
+.bg-white {
+	background-color: #FFFFFF;
+}
+
+.bg-base {
+	background-color: #f5f6fa;
+}
+
+.relative {
+	position: relative;
+}
+
+.u-line-1 {
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+/* 性别年龄 + 认证图标行 */
+.info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 12rpx;
+}
+
+.gender-age-box {
+	flex-direction: row;
+	align-items: center;
+}
+
+.official-certification {
+	flex-direction: row;
+	align-items: center;
+	margin-left: 12rpx;
+}
+
+.name-authentication {
+	flex-direction: row;
+	align-items: center;
+	margin-left: 8rpx;
+}
+
+.cert-icon {
+	width: 32rpx;
+	height: 32rpx;
+}
+
+.auth-icon {
+	width: 32rpx;
+	height: 32rpx;
+}
+</style>

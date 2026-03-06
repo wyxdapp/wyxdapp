@@ -1,0 +1,2095 @@
+﻿<template>
+	<view v-if="show == true" class="submit-order-mask" @click="handleMaskClick">
+		<view class="submit-order-popup" @click.stop>
+			<view class="city-box relative">
+				<view class="page-back flex-row align-center flex-center" @click="close">
+					<UniIcons type="back" :size="44" class="back-icon-img" />
+				</view>
+				<view class="flex-row align-center top-tab flex-center bg-white">
+					<text class="fs-xl color-title font-bold">预约</text>
+				</view>
+				<scroll-view :enable-back-to-top="true" class="scroll-view bg-base" :scroll-y="true" :scroll-with-animation="true">
+					<view class="border-radius-26 bg-white plr-24 mlr-24 mt-24 pt-40 pb-22">
+						<view class="flex-row align-center space-between">
+							<text class="color-title fs-lg font-bold">预约日期</text>
+							</view>
+						<view class="mt-30">
+							<DatePicker 
+								v-model="chooseDate"
+								:minDate="minDate"
+								:maxDate="maxDate"
+								@change="handleDateChange"
+							/>
+						</view>
+					</view>
+					<view class="border-radius-26 bg-white plr-24 mlr-24 mt-24 pt-40 pb-40">
+						<view class="flex-row align-center space-between">
+							<text class="color-title fs-lg font-bold">预约天数</text>
+						</view>
+						<view class="mt-30 flex-row align-center">
+							<view class="number-btn" @click="decreaseDays">
+								<text>-</text>
+							</view>
+							<view class="number-value">
+								<text>{{formDataServiceHours}}</text>
+							</view>
+							<view class="number-btn" @click="increaseDays">
+								<text>+</text>
+							</view>
+						</view>
+					</view>
+					<view class="border-radius-26 bg-white plr-24 mlr-24 mt-24 pt-40 pb-40">
+						<view class="flex-row align-center space-between">
+							<text class="color-title fs-lg font-bold">联系信息</text>
+							<view class="flex-row align-center flex-center more-btn" @click="addContactVisity = true">
+								<text class="fs-sm light-blue mr-10">新增更多</text>
+								<text class="arrow-icon">→</text>
+							</view>
+						</view>
+						<template v-if="contactList != null && Array.isArray(contactList) == true && (contactList as Array<any>).length > 0">
+							<view class="mt-30 flex-row align-start flex-start flex-wrap">
+								<view 
+									@click="handlePhone(item)" 
+									:class="{'active': isContactActive(item)}" 
+									class="contact-block flex-row flex-center align-center fs-md mb-20 mr-20" 
+									v-for="(item,index) in (contactList as Array<any>)" 
+									:key="getContactKey(item, index)">
+									<text>{{ getContactName(item) }}</text>
+									<text v-if="isContactDefault(item) === true" class="default-tag ml-8">默认</text>
+								</view>
+							</view>
+							<view class="ptb-32 flex-row align-center space-between">
+								<view class="flex-row align-center">
+									<text class="fs-md color-title">游客</text>
+									<text class="fs-md color-title ml-40">{{ formDataRealname }} {{ formDataPhone }}</text>
+								</view>
+								<view class="flex-row align-center ops">
+									<text class="fs-md light-blue mr-24" @click="handleSetDefault">设为默认</text>
+									<text class="fs-md light-blue mr-24" @click="openEditContact">编辑</text>
+									<text class="fs-md red" @click="handleDelContact">删除</text>
+								</view>
+							</view>
+						</template>
+						<view class="mt-20">
+							<textarea 
+								placeholder="请输入对向导的性别、擅长、服务等需求" 
+								maxlength="120" 
+								v-model="formDataOrderRemarks" 
+								class="textarea-input"
+								:auto-height="true" />
+						</view>
+					</view>
+				</scroll-view>
+			</view>
+			<view class="flex-row plr-32 align-center space-between footer-box bg-white">
+				<view class="flex-row align-center">
+					<text class="fs-md color-title">费用合计: </text>
+					<text class="color-price fs-xl">￥{{formattedTotalMoney}}</text>
+				</view>
+				<view class="submit-btn flex-row align-center flex-center white fs-lg" @click="handleSubmitOrder">确定下单</view>
+			</view>
+			
+			<!-- 新增联系人弹窗 -->
+			<view v-if="addContactVisity" class="popup-mask" @click="addContactVisity = false">
+				<view class="popup-content" @click.stop>
+					<view class="popup-header">
+						<text class="popup-title">新增联系人</text>
+						<text class="popup-close" @click="addContactVisity = false">×</text>
+					</view>
+					<view class="popup-body">
+						<view class="form-item">
+							<text class="form-label">姓名</text>
+							<input 
+								class="form-input" 
+								v-model="addFormDataName" 
+								placeholder="请输入姓名"
+								placeholder-class="placeholder" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">电话</text>
+							<input 
+								class="form-input" 
+								v-model="addFormDataPhone" 
+								type="number"
+								maxlength="11"
+								placeholder="请输入手机号"
+								placeholder-class="placeholder" />
+						</view>
+					</view>
+					<view class="popup-footer">
+						<view class="add-submit flex-row align-center flex-center white fs-lg" @click="handleAddContact">确定</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 编辑联系人弹窗 -->
+			<view v-if="editContactVisity" class="popup-mask" @click="editContactVisity = false">
+				<view class="popup-content" @click.stop>
+					<view class="popup-header">
+						<text class="popup-title">编辑联系人</text>
+						<text class="popup-close" @click="editContactVisity = false">×</text>
+					</view>
+					<view class="popup-body">
+						<view class="form-item">
+							<text class="form-label">姓名</text>
+							<input 
+								class="form-input" 
+								v-model="editFormDataName" 
+								placeholder="请输入姓名"
+								placeholder-class="placeholder" />
+						</view>
+						<view class="form-item">
+							<text class="form-label">电话</text>
+							<input 
+								class="form-input" 
+								v-model="editFormDataPhone" 
+								type="number"
+								maxlength="11"
+								placeholder="请输入手机号"
+								placeholder-class="placeholder" />
+						</view>
+					</view>
+					<view class="popup-footer">
+						<view class="add-submit flex-row align-center flex-center white fs-lg" @click="handleUpdateContact">保存</view>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import DatePicker from '@/components/business/DatePicker.uvue'
+import { 
+	getContactList, 
+	addTravelUser, 
+	delTravelUser, 
+	updateTravelUser, 
+	setDefaultTravelUser,
+	createGuiderOrder,
+	CreateGuiderOrderParams,
+	createRouteOrder,
+	type CreateRouteOrderParams,
+	type GetContactListParams,
+	type SetDefaultTravelUserParams,
+	type UpdateTravelUserParams,
+	type AddTravelUserParams,
+	type DelTravelUserParams
+} from '@/api/order.uts'
+import { useOrderSubmission, SubmissionConfig } from '@/common/composables/useOrderSubmission.uts'
+import { buildGuiderOrderData, type GuiderOrderParams } from '@/common/utils/orderBuilder.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable
+} from '@/common/utils/loginHelper.uts'
+
+// 定义接口（必须在顶层，不能在函数内部）- UTS110111166
+interface ItemData {
+	kid?: string | null
+	id?: string | null
+	name?: string | null
+	realname?: string | null
+	realName?: string | null
+	travellerName?: string | null
+	phone?: string | null
+	phoneNumber?: string | null
+	travellerPhone?: string | null
+	mobile?: string | null
+	is_default?: string | number | boolean | null
+	isDefault?: string | number | boolean | null
+	defaultFlag?: string | number | boolean | null
+	defaultStatus?: string | number | boolean | null
+}
+
+// FormData 值接口（用于安全访问 formData.value 的属性）
+interface FormDataValue {
+	realname?: string | null
+	phone?: string | null
+	serviceHours?: number | null
+	orderRemarks?: string | null
+	totalMoney?: number | null
+	cityName?: number | null
+}
+
+// UserInfo 接口（用于安全访问 userInfo 的属性）
+// 注意：UTS 不支持索引签名 [key: string]: any，只能明确定义需要的字段
+// 重命名避免重复声明
+interface SubmitOrderUserInfoData {
+	kid?: string | number | null
+	// 如果需要访问其他字段，需要在此明确定义，不能使用索引签名
+}
+
+// ContactItem 接口（用于安全访问联系人项的属性）
+// 重命名避免重复声明
+interface SubmitOrderContactItem {
+	kid?: string | null
+	name?: string | null
+	phone?: string | null
+	is_default?: string | number | boolean | null
+}
+
+// EditFormData 接口（用于安全访问 editFormData.value 的属性）
+interface EditFormDataValue {
+	name?: string | null
+	phone?: string | null
+}
+
+// AddFormData 接口（用于安全访问 addFormData.value 的属性）
+interface AddFormDataValue {
+	name?: string | null
+	phone?: string | null
+}
+
+// ShowModalResult 接口（用于安全访问 uni.showModal 返回值的属性）
+interface ShowModalResult {
+	confirm?: boolean | null
+	cancel?: boolean | null
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, required: true },
+	price: { type: [String, Number], default: 0 },
+	guiderKid: { type: String, required: true },
+	lineKid: { type: String, default: '' },
+	lineTitle: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	'update:show': [value: boolean]
+	submit: [data: any]
+}>()
+
+// 用户存储 - 使用真实的用户状态
+import { useUserStore } from '@/stores/user.uts'
+// 导入 store 导出的函数（避免直接访问 userStore.userInfo）
+import { getUserId as getUserIdFromStore, getUserInfoFromStore } from '@/stores/user.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 获取用户 store 实例
+const userStore = useUserStore()
+
+// 数据
+const chooseDate = ref('')
+const maxDate = ref('2050-01-01')
+const minDate = ref('2022-01-01')
+
+const formData = ref({
+	serviceHours: 1,
+	orderRemarks: '',
+	phone: '',
+	realname: '',
+	totalMoney: 0,
+	cityName: 0
+})
+
+const contactList = ref([] as Array<any>)
+
+const addContactVisity = ref(false)
+const editContactVisity = ref(false)
+
+const addFormData = ref({
+	name: '',
+	phone: ''
+})
+
+const editFormData = ref({
+	name: '',
+	phone: ''
+})
+
+const serverPrice = ref(0)
+const contactId = ref('')
+
+// 使用订单提交 composable（避免解构赋值，直接获取整个对象）
+const orderSubmissionConfigRaw = {
+	successMessage: '下单成功',
+	shouldNavigateToPayment: true,
+	shouldNavigateBack: false
+} as any
+const orderSubmissionConfig = orderSubmissionConfigRaw as SubmissionConfig
+
+// 将 createGuiderOrder 包装为符合 OrderApiFunction 类型的函数
+// UTS 规范：直接使用 as any（不能用 as any as Interface，Android 会报 ClassCastException）
+const createGuiderOrderWrapper = async (params: any): Promise<any> => {
+	// 调用 createGuiderOrder，需要将 params 转换为 CreateGuiderOrderParams
+	const orderParams = params as CreateGuiderOrderParams
+	const result = await createGuiderOrder(orderParams)
+	return result as any
+}
+
+const orderSubmissionResult = useOrderSubmission(
+	createGuiderOrderWrapper,
+	userStore as any,
+	orderSubmissionConfig
+)
+
+// 定义返回对象接口，使用点访问（避免括号访问）
+interface OrderSubmissionResult {
+	isSubmitting: any
+	submitOrder: (orderData: any, options: any) => Promise<any>
+	resetSubmission?: () => void
+	validateLogin?: () => boolean
+	validateContact?: (phone: string | null, realname: string | null) => boolean
+}
+
+// 直接使用类型断言 + 点访问（避免括号访问）
+// 根据 UTS 规范，脚本中禁止括号访问，使用接口类型 + 点访问
+const orderSubmissionResultTyped = orderSubmissionResult as OrderSubmissionResult
+
+const isSubmit = orderSubmissionResultTyped.isSubmitting
+const submitOrder = orderSubmissionResultTyped.submitOrder
+
+// 辅助函数：获取 submitOrder 函数（用于在函数内部调用，避免 error18 和 invoke 错误）
+// 注意：返回具体函数类型，而不是 any，避免 any 类型函数调用触发 invoke 问题
+const getSubmitOrder = (): (orderData: any, options: any) => Promise<any> => {
+	const orderSubmissionResultTypedInner = orderSubmissionResult as OrderSubmissionResult
+	return orderSubmissionResultTypedInner.submitOrder
+}
+
+// 辅助函数：调用 submitOrder（用于在函数内部调用）
+// 注意：在函数内部，即使是顶层定义的变量也可能找不到（error18），需要使用辅助函数获取
+// 注意：在函数内部定义的变量可能找不到（error18），需要直接调用函数返回值，不使用中间变量
+const callSubmitOrder = async (orderData: any, options: any): Promise<any> => {
+	// 使用 getSubmitOrder() 函数获取 submitOrder，避免在函数内部直接访问顶层变量触发 error18
+	// 解决方案：直接调用 getSubmitOrder() 的返回值，此时为具体函数类型，不再是 any
+	try {
+		// 直接调用 getSubmitOrder() 的返回值，返回类型为 (orderData: any, options: any) => Promise<any>
+		const submitFn = getSubmitOrder()
+		return await submitFn(orderData, options)
+	} catch (e) {}
+	return null
+}
+
+// 辅助方法：安全访问对象属性（返回空字符串而不是 null，避免 Any 类型不能为 null）
+// 根据 UTS 规范，脚本中完全禁止括号访问，使用 JSON.parse + 接口类型 + 点访问
+const getItemProp = (item: any, key: string): string => {
+	try {
+		// 使用 JSON 序列化/反序列化来创建新对象，然后使用接口类型访问
+		const itemJson = JSON.stringify(item)
+		if (itemJson == '') return ''
+		
+		const parsed = JSON.parse(itemJson) as any
+		
+		const itemData = parsed as ItemData
+		// 不能使用 null 初始化 any 类型，使用空字符串
+		let value: any = ''
+		
+		// 使用显式字段分支 + 点访问（避免括号访问）
+		// 将 String? 转换为 any，避免类型不匹配
+		if (key === 'kid') {
+			const kidVal = itemData.kid
+			value = (kidVal != null) ? kidVal as any : ''
+		} else if (key === 'id') {
+			const idVal = itemData.id
+			value = (idVal != null) ? idVal as any : ''
+		} else if (key === 'name') {
+			const nameVal = itemData.name
+			value = (nameVal != null) ? nameVal as any : ''
+		} else if (key === 'realname') {
+			const realnameVal = itemData.realname
+			value = (realnameVal != null) ? realnameVal as any : ''
+		} else if (key === 'realName') {
+			const realNameVal = itemData.realName
+			value = (realNameVal != null) ? realNameVal as any : ''
+		} else if (key === 'travellerName') {
+			const travellerNameVal = itemData.travellerName
+			value = (travellerNameVal != null) ? travellerNameVal as any : ''
+		} else if (key === 'phone') {
+			const phoneVal = itemData.phone
+			value = (phoneVal != null) ? phoneVal as any : ''
+		} else if (key === 'phoneNumber') {
+			const phoneNumberVal = itemData.phoneNumber
+			value = (phoneNumberVal != null) ? phoneNumberVal as any : ''
+		} else if (key === 'travellerPhone') {
+			const travellerPhoneVal = itemData.travellerPhone
+			value = (travellerPhoneVal != null) ? travellerPhoneVal as any : ''
+		} else if (key === 'mobile') {
+			const mobileVal = itemData.mobile
+			value = (mobileVal != null) ? mobileVal as any : ''
+		} else if (key === 'is_default') {
+			const isDefaultVal = itemData.is_default
+			value = (isDefaultVal != null) ? isDefaultVal as any : ''
+		} else if (key === 'isDefault') {
+			const isDefaultVal = itemData.isDefault
+			value = (isDefaultVal != null) ? isDefaultVal as any : ''
+		} else if (key === 'defaultFlag') {
+			const defaultFlagVal = itemData.defaultFlag
+			value = (defaultFlagVal != null) ? defaultFlagVal as any : ''
+		} else if (key === 'defaultStatus') {
+			const defaultStatusVal = itemData.defaultStatus
+			value = (defaultStatusVal != null) ? defaultStatusVal as any : ''
+		}
+		
+		if (value != '') {
+			return value.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 日期变化处理
+const handleDateChange = (date: string) => {
+	chooseDate.value = date
+}
+
+// 联系人相关辅助方法
+const getContactKey = (item: any, index: number): string => {
+	const kid = getItemProp(item, 'kid')
+	if (kid != '') return kid
+	return index.toString()
+}
+
+const getContactName = (item: any): string => {
+	const nameVal = getItemProp(item, 'name')
+	const realnameVal = getItemProp(item, 'realname')
+	const name = (nameVal != '') ? nameVal : realnameVal
+	return name
+}
+
+const getContactPhone = (item: any): string => {
+	const phone = getItemProp(item, 'phone')
+	return phone
+}
+
+const isContactActive = (item: any): boolean => {
+	const name = getContactName(item)
+	const phone = getContactPhone(item)
+	
+	// 安全访问 formData.value 的属性（使用 JSON.parse + 接口类型 + 点访问，避免括号访问）
+	// 根据 UTS 规范，脚本中禁止括号访问，使用 JSON.parse + 接口类型 + 点访问
+	try {
+		const formDataJson = JSON.stringify(formData.value)
+		if (formDataJson == '') return false
+		
+		const formDataParsed = JSON.parse(formDataJson) as any
+		
+		const formDataValue = formDataParsed as FormDataValue
+		const realnameValue = (formDataValue.realname != null) ? formDataValue.realname.toString() : ''
+		const phoneValue = (formDataValue.phone != null) ? formDataValue.phone.toString() : ''
+		
+		// 确保都是字符串类型再比较
+		const nameStr = (name != '') ? name : ''
+		const phoneStr = (phone != '') ? phone : ''
+		
+		return realnameValue === nameStr && phoneValue === phoneStr
+	} catch (e) {
+		return false
+	}
+}
+
+const isContactDefault = (item: any): boolean => {
+	const isDefaultVal = getItemProp(item, 'is_default')
+	const isDefaultVal2 = getItemProp(item, 'isDefault')
+	const isDefault = (isDefaultVal != '') ? isDefaultVal : isDefaultVal2
+	
+	// 确保类型一致再比较（String 和 Int 不能直接比较）
+	// UTS 中 Number 不能作为构造函数使用，使用 parseInt 或直接与字符串比较
+	if (isDefault == '') return false
+	
+	// 尝试转换为数字比较（使用 parseInt，避免 Number 构造函数）
+	try {
+		const isDefaultStr = isDefault.toString()
+		const isDefaultNum = parseInt(isDefaultStr)
+		if (isDefaultNum == 10) return true
+	} catch (e) {}
+	
+	// 或者与字符串比较
+	if (isDefault.toString() == '10') return true
+	
+	return false
+}
+
+// 安全获取当前用户kid（使用 loginHelper 可靠版本）
+const getUserKid = (): string => {
+	// 优先使用 loginHelper 的可靠版本
+	const reliableUserId = getCurrentUserIdReliable()
+	if (reliableUserId != '') {
+		return reliableUserId
+	}
+	
+	// 降级使用 store 导出的函数（避免直接访问 userStore.userInfo）
+	const userId = getUserIdFromStore()
+	if (userId != '') {
+		return userId
+	}
+	
+	return ''
+}
+
+// 安全获取 formData.value 的属性（使用 JSON.parse + 接口类型 + 点访问）
+// 注意：函数返回类型不能直接使用接口类型（UTS110111163），返回 any 类型
+const getFormDataValue = (): any => {
+	try {
+		const formDataJson = JSON.stringify(formData.value)
+		if (formDataJson != '') {
+			const formDataParsed = JSON.parse(formDataJson) as any
+			return formDataParsed as FormDataValue
+		}
+	} catch (e) {}
+	// 返回默认值（使用 as any 再转接口类型，避免 UTS110111163）
+	const defaultRaw = {
+		realname: '',
+		phone: '',
+		serviceHours: 1,
+		orderRemarks: '',
+		totalMoney: 0,
+		cityName: 0
+	} as any
+	return defaultRaw as FormDataValue
+}
+
+// 安全设置 formData.value 的属性（通过整体赋值）
+// 注意：UTS 不支持 Partial 工具类型，使用 any 类型，通过 JSON.parse + 接口类型安全访问
+const setFormDataValue = (updates: any) => {
+	try {
+		const currentRaw = getFormDataValue()
+		const current = currentRaw as FormDataValue
+		
+		// 使用 JSON.parse + 接口类型安全访问 updates 的属性（避免直接属性访问错误）
+		const updatesJson = JSON.stringify(updates)
+		const updatesParsed = (updatesJson != '') 
+			? (JSON.parse(updatesJson) as any) as FormDataValue
+			: null
+		
+		// 构建更新后的对象（直接赋值，不使用 as any，避免类型不匹配）
+		const updatedRaw = {
+			realname: (updatesParsed != null && updatesParsed.realname != null) 
+				? updatesParsed.realname 
+				: current.realname,
+			phone: (updatesParsed != null && updatesParsed.phone != null) 
+				? updatesParsed.phone 
+				: current.phone,
+			serviceHours: (updatesParsed != null && updatesParsed.serviceHours != null) 
+				? updatesParsed.serviceHours 
+				: current.serviceHours,
+			orderRemarks: (updatesParsed != null && updatesParsed.orderRemarks != null) 
+				? updatesParsed.orderRemarks 
+				: current.orderRemarks,
+			totalMoney: (updatesParsed != null && updatesParsed.totalMoney != null) 
+				? updatesParsed.totalMoney 
+				: current.totalMoney,
+			cityName: (updatesParsed != null && updatesParsed.cityName != null) 
+				? updatesParsed.cityName 
+				: current.cityName
+		}
+		formData.value = updatedRaw
+	} catch (e) {}
+}
+
+// 计算属性（需要显式类型参数）
+const show = computed<boolean>({
+	get: (): boolean => props.show,
+	set: (val: boolean) => {
+		emit('update:show', val)
+	}
+})
+
+// 为模板提供 formData 属性的 computed 属性（避免模板中直接访问 formData.value 的属性）
+// 格式化后的总金额（供模板使用）
+const formattedTotalMoney = computed((): string => {
+	try {
+		const formDataValueRaw = getFormDataValue()
+		const formDataValue = formDataValueRaw as FormDataValue
+		const value = (formDataValue.totalMoney != null) ? (formDataValue.totalMoney as number) : 0
+		if (isNaN(value)) return '0.00'
+		const cents = Math.round(value * 100)
+		const absCents = (cents < 0) ? -cents : cents
+		const yuan = Math.floor(absCents / 100)
+		const fen = absCents % 100
+		const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+		const result = yuan.toString() + '.' + fenStr
+		return (cents < 0) ? ('-' + result) : result
+	} catch (e) {
+		return '0.00'
+	}
+})
+
+const formDataServiceHours = computed((): number => {
+	try {
+		const formDataValueRaw = getFormDataValue()
+		const formDataValue = formDataValueRaw as FormDataValue
+		return (formDataValue.serviceHours != null) ? (formDataValue.serviceHours as number) : 1
+	} catch (e) {
+		return 1
+	}
+})
+
+const formDataRealname = computed((): string => {
+	try {
+		const formDataValueRaw = getFormDataValue()
+		const formDataValue = formDataValueRaw as FormDataValue
+		return (formDataValue.realname != null) ? formDataValue.realname.toString() : ''
+	} catch (e) {
+		return ''
+	}
+})
+
+const formDataPhone = computed((): string => {
+	try {
+		const formDataValueRaw = getFormDataValue()
+		const formDataValue = formDataValueRaw as FormDataValue
+		return (formDataValue.phone != null) ? formDataValue.phone.toString() : ''
+	} catch (e) {
+		return ''
+	}
+})
+
+const formDataOrderRemarks = computed<string>({
+	get: (): string => {
+		try {
+			const formDataValueRaw = getFormDataValue()
+			const formDataValue = formDataValueRaw as FormDataValue
+			return (formDataValue.orderRemarks != null) ? formDataValue.orderRemarks.toString() : ''
+		} catch (e) {
+			return ''
+		}
+	},
+	set: (val: string) => {
+		setFormDataValue({
+			orderRemarks: val
+		})
+	}
+})
+
+const formDataTotalMoney = computed((): number => {
+	try {
+		const formDataValueRaw = getFormDataValue()
+		const formDataValue = formDataValueRaw as FormDataValue
+		return (formDataValue.totalMoney != null) ? (formDataValue.totalMoney as number) : 0
+	} catch (e) {
+		return 0
+	}
+})
+
+// 为模板提供 addFormData 属性的 computed 属性（避免模板中直接访问 addFormData.value 的属性）
+const addFormDataName = computed<string>({
+	get: (): string => {
+		try {
+			const addFormDataJson = JSON.stringify(addFormData.value)
+			if (addFormDataJson != '') {
+				const addFormDataParsed = JSON.parse(addFormDataJson) as any
+				const addFormDataValue = addFormDataParsed as AddFormDataValue
+				return (addFormDataValue.name != null) ? addFormDataValue.name.toString() : ''
+			}
+		} catch (e) {}
+		return ''
+	},
+	set: (val: string) => {
+		try {
+			const addFormDataJson = JSON.stringify(addFormData.value)
+			if (addFormDataJson != '') {
+				const addFormDataParsed = JSON.parse(addFormDataJson) as any
+				const current = addFormDataParsed as AddFormDataValue
+				const updatedRaw = {
+					name: val,
+					phone: (current.phone != null) ? current.phone.toString() : ''
+				}
+				addFormData.value = updatedRaw
+			}
+		} catch (e) {}
+	}
+})
+
+const addFormDataPhone = computed<string>({
+	get: (): string => {
+		try {
+			const addFormDataJson = JSON.stringify(addFormData.value)
+			if (addFormDataJson != '') {
+				const addFormDataParsed = JSON.parse(addFormDataJson) as any
+				const addFormDataValue = addFormDataParsed as AddFormDataValue
+				return (addFormDataValue.phone != null) ? addFormDataValue.phone.toString() : ''
+			}
+		} catch (e) {}
+		return ''
+	},
+	set: (val: string) => {
+		try {
+			const addFormDataJson = JSON.stringify(addFormData.value)
+			if (addFormDataJson != '') {
+				const addFormDataParsed = JSON.parse(addFormDataJson) as any
+				const current = addFormDataParsed as AddFormDataValue
+				const updatedRaw = {
+					name: (current.name != null) ? current.name.toString() : '',
+					phone: val
+				}
+				addFormData.value = updatedRaw
+			}
+		} catch (e) {}
+	}
+})
+
+// 为模板提供 editFormData 属性的 computed 属性（避免模板中直接访问 editFormData.value 的属性）
+const editFormDataName = computed<string>({
+	get: (): string => {
+		try {
+			const editFormDataJson = JSON.stringify(editFormData.value)
+			if (editFormDataJson != '') {
+				const editFormDataParsed = JSON.parse(editFormDataJson) as any
+				const editFormDataValue = editFormDataParsed as EditFormDataValue
+				return (editFormDataValue.name != null) ? editFormDataValue.name.toString() : ''
+			}
+		} catch (e) {}
+		return ''
+	},
+	set: (val: string) => {
+		try {
+			const editFormDataJson = JSON.stringify(editFormData.value)
+			if (editFormDataJson != '') {
+				const editFormDataParsed = JSON.parse(editFormDataJson) as any
+				const current = editFormDataParsed as EditFormDataValue
+				const updatedRaw = {
+					name: val,
+					phone: (current.phone != null) ? current.phone.toString() : ''
+				}
+				editFormData.value = updatedRaw
+			}
+		} catch (e) {}
+	}
+})
+
+const editFormDataPhone = computed<string>({
+	get: (): string => {
+		try {
+			const editFormDataJson = JSON.stringify(editFormData.value)
+			if (editFormDataJson != '') {
+				const editFormDataParsed = JSON.parse(editFormDataJson) as any
+				const editFormDataValue = editFormDataParsed as EditFormDataValue
+				return (editFormDataValue.phone != null) ? editFormDataValue.phone.toString() : ''
+			}
+		} catch (e) {}
+		return ''
+	},
+	set: (val: string) => {
+		try {
+			const editFormDataJson = JSON.stringify(editFormData.value)
+			if (editFormDataJson != '') {
+				const editFormDataParsed = JSON.parse(editFormDataJson) as any
+				const current = editFormDataParsed as EditFormDataValue
+				const updatedRaw = {
+					name: (current.name != null) ? current.name.toString() : '',
+					phone: val
+				}
+				editFormData.value = updatedRaw
+			}
+		} catch (e) {}
+	}
+})
+
+// 初始化最小日期（4天后）
+const initMinDate = () => {
+	const nowDate = new Date()
+	nowDate.setDate(nowDate.getDate() + 4)
+	const nowMonthNum = nowDate.getMonth() + 1
+	const nowMon = nowMonthNum < 10 ? ('0' + nowMonthNum.toString()) : nowMonthNum.toString()
+	const nowDayNum = nowDate.getDate()
+	const nowDay = nowDayNum < 10 ? ('0' + nowDayNum.toString()) : nowDayNum.toString()
+	minDate.value = nowDate.getFullYear() + '-' + nowMon + '-' + nowDay
+}
+
+// 获取联系人列表
+const Get_contact_list = async () => {
+	const userKid = getUserKid()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误
+		const paramsJson = JSON.stringify({ userKid: userKid })
+		const paramsParsed = JSON.parse(paramsJson) as any
+		const params = paramsParsed as GetContactListParams
+		
+		const res = await getContactList(params)
+		contactList.value = []
+		
+		let entitiesSource: Array<any> = []
+
+		// 使用 UTSJSONObject.get() 方法访问属性
+		try {
+			const resJson = JSON.stringify(res)
+			if (resJson != '') {
+				const resParsed = JSON.parse(resJson) as UTSJSONObject
+				
+				// 优先使用 res.data.entities（ContactListData 类型）
+				const dataValue = resParsed.get('data')
+				if (dataValue != null) {
+					const dataObj = dataValue as UTSJSONObject
+					const entitiesValue = dataObj.get('entities')
+					if (entitiesValue != null && Array.isArray(entitiesValue) == true) {
+						const entitiesArr = entitiesValue as Array<any>
+						entitiesSource = entitiesArr
+					}
+				}
+				
+				// 如果没有 data.entities，使用 res.entities
+				if (entitiesSource.length == 0) {
+					const entitiesValue = resParsed.get('entities')
+					if (entitiesValue != null && Array.isArray(entitiesValue) == true) {
+						const entitiesArr = entitiesValue as Array<any>
+						entitiesSource = entitiesArr
+					}
+				}
+			}
+		} catch (e) {}
+
+		// 确保 entitiesSource 是数组
+		if (Array.isArray(entitiesSource) != true) {
+			entitiesSource = []
+		}
+		
+		const resultList: Array<any> = []
+
+		for (let i = 0; i < (entitiesSource as Array<any>).length; i++) {
+			const item = (entitiesSource as Array<any>)[i]
+
+			const kidValue = (getItemProp(item, 'kid') != null && getItemProp(item, 'kid') != '') 
+				? getItemProp(item, 'kid') 
+				: getItemProp(item, 'id')
+			const nameValueTemp = getItemProp(item, 'name')
+			const realnameValue = getItemProp(item, 'realname')
+			const realNameValue = getItemProp(item, 'realName')
+			const travellerNameValue = getItemProp(item, 'travellerName')
+
+			let nameValue: string = ''
+			if (nameValueTemp != null && nameValueTemp != '') {
+				nameValue = nameValueTemp
+			} else if (realnameValue != null && realnameValue != '') {
+				nameValue = realnameValue
+			} else if (realNameValue != null && realNameValue != '') {
+				nameValue = realNameValue
+			} else if (travellerNameValue != null && travellerNameValue != '') {
+				nameValue = travellerNameValue
+			}
+
+			const phoneValueTemp = getItemProp(item, 'phone')
+			const phoneNumberValue = getItemProp(item, 'phoneNumber')
+			const travellerPhoneValue = getItemProp(item, 'travellerPhone')
+			const mobileValue = getItemProp(item, 'mobile')
+
+			let phoneValue: string = ''
+			if (phoneValueTemp != null && phoneValueTemp != '') {
+				phoneValue = phoneValueTemp
+			} else if (phoneNumberValue != null && phoneNumberValue != '') {
+				phoneValue = phoneNumberValue
+			} else if (travellerPhoneValue != null && travellerPhoneValue != '') {
+				phoneValue = travellerPhoneValue
+			} else if (mobileValue != null && mobileValue != '') {
+				phoneValue = mobileValue
+			}
+
+			const isDefaultRaw1 = getItemProp(item, 'is_default')
+			const isDefaultRaw2 = getItemProp(item, 'isDefault')
+			const isDefaultRaw3 = getItemProp(item, 'defaultFlag')
+			const isDefaultRaw4 = getItemProp(item, 'defaultStatus')
+
+			let flag: string = ''
+			if (isDefaultRaw1 != null && isDefaultRaw1 != '') {
+				flag = isDefaultRaw1
+			} else if (isDefaultRaw2 != null && isDefaultRaw2 != '') {
+				flag = isDefaultRaw2
+			} else if (isDefaultRaw3 != null && isDefaultRaw3 != '') {
+				flag = isDefaultRaw3
+			} else if (isDefaultRaw4 != null && isDefaultRaw4 != '') {
+				flag = isDefaultRaw4
+			}
+
+			const isDefaultNum = (flag != null && flag.toString() == '10') ? 10 : 0
+
+			if (kidValue != null && kidValue.toString() != '' && nameValue != null && nameValue.toString() != '' && phoneValue != null && phoneValue.toString() != '') {
+				resultList.push({
+					kid: kidValue.toString(),
+					name: nameValue.toString(),
+					phone: phoneValue.toString(),
+					is_default: isDefaultNum
+				})
+			}
+		}
+
+		// 默认联系人排前（使用 JSON.parse + 接口类型 + 点访问，避免括号访问）
+		const sortedList: Array<any> = []
+		
+		// 先添加默认联系人（is_default === 10）
+		for (let i = 0; i < resultList.length; i++) {
+			const item = resultList[i]
+			if (item != null) {
+				try {
+					// 使用 JSON.parse + 接口类型 + 点访问，避免括号访问（String.get 错误）
+					const itemJson = JSON.stringify(item)
+					if (itemJson != '') {
+						const itemParsed = JSON.parse(itemJson) as any
+						const itemData = itemParsed as SubmitOrderContactItem
+						const isDefault = itemData.is_default
+						
+						// 确保类型一致再比较（String/Number 和 Int 不能直接比较）
+						if (isDefault != null) {
+							// 尝试转换为数字比较
+							try {
+								const isDefaultStr = isDefault.toString()
+								const isDefaultNum = parseInt(isDefaultStr)
+								if (isDefaultNum == 10) {
+									sortedList.push(item)
+								}
+							} catch (e) {
+								// 或者与字符串比较
+								if (isDefault.toString() == '10') {
+									sortedList.push(item)
+								}
+							}
+						}
+					}
+				} catch (e) {}
+			}
+		}
+		
+		// 再添加非默认联系人
+		for (let i = 0; i < resultList.length; i++) {
+			const item = resultList[i]
+			if (item != null) {
+				try {
+					// 使用 JSON.parse + 接口类型 + 点访问，避免括号访问（String.get 错误）
+					const itemJson = JSON.stringify(item)
+					if (itemJson != '') {
+						const itemParsed = JSON.parse(itemJson) as any
+						const itemData = itemParsed as SubmitOrderContactItem
+						const isDefault = itemData.is_default
+						
+						// 确保类型一致再比较
+						let isDefaultValue = false
+						if (isDefault != null) {
+							try {
+								const isDefaultStr = isDefault.toString()
+								const isDefaultNum = parseInt(isDefaultStr)
+								if (isDefaultNum == 10) {
+									isDefaultValue = true
+								}
+							} catch (e) {
+								if (isDefault.toString() == '10') {
+									isDefaultValue = true
+								}
+							}
+						}
+						
+						// 如果不是默认联系人，添加到列表
+						if (isDefaultValue == false) {
+							sortedList.push(item)
+						}
+					}
+				} catch (e) {}
+			}
+		}
+
+		contactList.value = sortedList as any[]
+		
+		if (contactList.value != null && Array.isArray(contactList.value) == true && (contactList.value as Array<any>).length > 0) {
+			const first = (contactList.value as Array<any>)[0]
+			const realnameVal = getContactName(first)
+			const phoneVal = getContactPhone(first)
+			setFormDataValue({
+				realname: realnameVal,
+				phone: phoneVal
+			})
+			const kidVal = getItemProp(first, 'kid')
+			if (kidVal != null && kidVal.toString() != '') {
+				contactId.value = kidVal.toString()
+			} else {
+				contactId.value = ''
+			}
+		}
+		
+		addContactVisity.value = false
+	} catch (error) {
+		console.error('获取联系人列表失败:', error)
+		uni.showToast({
+			title: '获取联系人列表失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 选择天数变化
+const serviceHoursChange = () => {
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	const hoursVal = formDataValue.serviceHours
+	const hoursNum = (hoursVal != null) ? (hoursVal as number) : 0
+	const priceNum = serverPrice.value != null ? (serverPrice.value as number) : 0
+	setFormDataValue({
+		totalMoney: (hoursNum * priceNum) as number
+	})
+}
+
+// 减少天数
+const decreaseDays = () => {
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	const hoursVal = formDataValue.serviceHours
+	const hoursNum = (hoursVal != null) ? (hoursVal as number) : 0
+	if (hoursNum > 1) {
+		setFormDataValue({
+			serviceHours: (hoursNum - 1) as number
+		})
+		serviceHoursChange()
+	}
+}
+
+// 增加天数
+const increaseDays = () => {
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	const hoursVal = formDataValue.serviceHours
+	const hoursNum = (hoursVal != null) ? (hoursVal as number) : 0
+	if (hoursNum < 30) {
+		setFormDataValue({
+			serviceHours: (hoursNum + 1) as number
+		})
+		serviceHoursChange()
+	}
+}
+
+// 关闭弹窗
+const close = () => {
+	emit('update:show', false)
+}
+
+const handleMaskClick = () => {
+	close()
+}
+
+// 选择联系人
+const handlePhone = (row: any) => {
+	const phoneVal = getContactPhone(row)
+	const realnameVal = getContactName(row)
+	setFormDataValue({
+		phone: phoneVal,
+		realname: realnameVal
+	})
+	const kid = getItemProp(row, 'kid')
+	if (kid != null) {
+		contactId.value = kid.toString()
+	} else {
+		contactId.value = ''
+	}
+}
+
+// 设为默认
+const handleSetDefault = async () => {
+	if (contactId.value == null || contactId.value == '') {
+		uni.showToast({
+			title: '请先选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 使用 store 导出的函数获取用户信息（避免直接访问 userStore.userInfo）
+	const loginInfo = getUserInfoFromStore()
+	let hasKid = false
+	if (loginInfo != null) {
+		try {
+			const kidVal = loginInfo.get('kid')
+			hasKid = (kidVal != null && kidVal.toString() != '')
+		} catch (e) {}
+	}
+	if (hasKid == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 使用 getUserKid 函数，避免括号访问（String.get 错误）
+		const userKid = getUserKid()
+		if (userKid == '') {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			return
+		}
+		// 使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误
+		const paramsJson = JSON.stringify({ kid: contactId.value, userKid: userKid })
+		const paramsParsed = JSON.parse(paramsJson) as any
+		const params = paramsParsed as SetDefaultTravelUserParams
+		await setDefaultTravelUser(params)
+		uni.showToast({
+			title: '设置成功',
+			icon: 'success'
+		})
+		Get_contact_list()
+	} catch (error) {
+		console.error('设置默认联系人失败:', error)
+		uni.showToast({
+			title: '设置失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 打开编辑
+const openEditContact = () => {
+	if (contactId.value == null || contactId.value == '') {
+		uni.showToast({
+			title: '请先选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	const realnameVal = (formDataValue.realname != null && formDataValue.realname != '') ? formDataValue.realname.toString() : ''
+	const phoneVal = (formDataValue.phone != null && formDataValue.phone != '') ? formDataValue.phone.toString() : ''
+	editFormData.value = {
+		name: realnameVal,
+		phone: phoneVal
+	}
+	editContactVisity.value = true
+}
+
+// 提交编辑
+const handleUpdateContact = async () => {
+	const contactIdVal = contactId.value
+	if (contactIdVal == null || contactIdVal == '') {
+		uni.showToast({
+			title: '请先选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 使用 store 导出的函数获取用户信息（避免直接访问 userStore.userInfo）
+	const userInfo = getUserInfoFromStore()
+	let hasUserKid = false
+	if (userInfo != null) {
+		try {
+			const kidVal = userInfo.get('kid')
+			hasUserKid = (kidVal != null && kidVal.toString() != '')
+		} catch (e) {}
+	}
+	if (hasUserKid == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证（使用 JSON.parse + 接口类型安全访问 editFormData.value 的属性）
+	const editFormDataJson = JSON.stringify(editFormData.value)
+	const editFormDataParsed = (editFormDataJson != '') 
+		? (JSON.parse(editFormDataJson) as any) as EditFormDataValue
+		: null
+	
+	const nameVal = (editFormDataParsed != null && editFormDataParsed.name != null) 
+		? editFormDataParsed.name.toString() 
+		: ''
+	const nameValTrimmed = (nameVal != '') ? nameVal.trim() : ''
+	if (nameValTrimmed == '') {
+		uni.showToast({
+			title: '请输入姓名',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const phoneVal = (editFormDataParsed != null && editFormDataParsed.phone != null) 
+		? editFormDataParsed.phone.toString() 
+		: ''
+	const phoneValTrimmed = (phoneVal != null && phoneVal != '') ? phoneVal.trim() : ''
+	if (phoneValTrimmed == '') {
+		uni.showToast({
+			title: '请输入手机号',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const phoneReg = /^1[3-9]\d{9}$/
+	if (phoneReg.test(phoneValTrimmed) == false) {
+		uni.showToast({
+			title: '手机号码不正确',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误
+		const kidVal = contactIdVal.toString()
+		const updateParamsJson = JSON.stringify({
+			kid: kidVal,
+			name: nameValTrimmed,
+			phone: phoneValTrimmed
+		})
+		const updateParamsParsed = JSON.parse(updateParamsJson) as any
+		const updateParams = updateParamsParsed as UpdateTravelUserParams
+		await updateTravelUser(updateParams)
+		
+		editContactVisity.value = false
+		uni.showToast({
+			title: '保存成功',
+			icon: 'success'
+		})
+		Get_contact_list()
+	} catch (error) {
+		console.error('更新联系人失败:', error)
+		uni.showToast({
+			title: '保存失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 添加联系人确定
+const handleAddContact = async () => {
+	// 使用 store 导出的函数获取用户信息（避免直接访问 userStore.userInfo）
+	const userInfo = getUserInfoFromStore()
+	let hasUserKid = false
+	if (userInfo != null) {
+		try {
+			const kidVal = userInfo.get('kid')
+			hasUserKid = (kidVal != null && kidVal.toString() != '')
+		} catch (e) {}
+	}
+	if (hasUserKid == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证（使用 JSON.parse + 接口类型安全访问 addFormData.value 的属性）
+	const addFormDataJson = JSON.stringify(addFormData.value)
+	const addFormDataParsed = (addFormDataJson != '') 
+		? (JSON.parse(addFormDataJson) as any) as AddFormDataValue
+		: null
+	
+	const nameVal = (addFormDataParsed != null && addFormDataParsed.name != null) 
+		? addFormDataParsed.name.toString() 
+		: ''
+	const nameValTrimmed = (nameVal != '') ? nameVal.trim() : ''
+	if (nameValTrimmed == '') {
+		uni.showToast({
+			title: '请输入姓名',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const phoneVal = (addFormDataParsed != null && addFormDataParsed.phone != null) 
+		? addFormDataParsed.phone.toString() 
+		: ''
+	const phoneValTrimmed = (phoneVal != null && phoneVal != '') ? phoneVal.trim() : ''
+	if (phoneValTrimmed == '') {
+		uni.showToast({
+			title: '请输入手机号',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const phoneReg = /^1[3-9]\d{9}$/
+	if (phoneReg.test(phoneValTrimmed) == false) {
+		uni.showToast({
+			title: '手机号码不正确',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 使用 getUserKid 函数，避免括号访问（String.get 错误）
+		const userKid = getUserKid()
+		if (userKid == '') {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			return
+		}
+		
+		// 使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误
+		const addParamsJson = JSON.stringify({
+			userKid: userKid,
+			name: nameValTrimmed,
+			phone: phoneValTrimmed
+		})
+		const addParamsParsed = JSON.parse(addParamsJson) as any
+		const addParams = addParamsParsed as AddTravelUserParams
+		await addTravelUser(addParams)
+		
+		uni.showToast({
+			title: '添加成功',
+			icon: 'success'
+		})
+		Get_contact_list()
+		addFormData.value = {
+			name: '',
+			phone: ''
+		}
+	} catch (error) {
+		console.error('添加联系人失败:', error)
+		uni.showToast({
+			title: '添加失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 删除联系人
+const handleDelContact = async () => {
+	if (contactId.value == null || contactId.value == '') {
+		uni.showToast({
+			title: '请先选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 使用 store 导出的函数获取用户信息（避免直接访问 userStore.userInfo）
+	const loginInfo = getUserInfoFromStore()
+	let hasKid = false
+	if (loginInfo != null) {
+		try {
+			const kidVal = loginInfo.get('kid')
+			hasKid = (kidVal != null && kidVal.toString() != '')
+		} catch (e) {}
+	}
+	if (hasKid == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const confirmDelete = async () => {
+		try {
+			// 使用 getUserKid 函数，避免括号访问（String.get 错误）
+			const userKidInner = getUserKid()
+			if (userKidInner == '') {
+				uni.showToast({
+					title: '请先登录',
+					icon: 'none'
+				})
+				return
+			}
+			
+			// 使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误
+			const delParamsJson = JSON.stringify({ 
+				kid: contactId.value, 
+				userKid: userKidInner 
+			})
+			const delParamsParsed = JSON.parse(delParamsJson) as any
+			const delParams = delParamsParsed as DelTravelUserParams
+			const result = await delTravelUser(delParams)
+			const handleSuccess = () => {
+					setFormDataValue({
+						phone: '',
+						realname: ''
+					})
+				let filteredList: Array<any> = []
+				if (contactList.value != null && Array.isArray(contactList.value) == true) {
+					const contactListArr = contactList.value as Array<any>
+					const filteredListTemp: Array<any> = []
+					
+					// 使用 for 循环替代 filter，避免括号访问（String.get 错误）
+					for (let i = 0; i < contactListArr.length; i++) {
+						const s = contactListArr[i]
+						if (s != null) {
+							// 使用 JSON.parse + 接口类型 + 点访问，避免括号访问
+							try {
+								const sJson = JSON.stringify(s)
+								if (sJson != '') {
+									const sParsed = JSON.parse(sJson) as any
+									const sData = sParsed as SubmitOrderContactItem
+									const sKid = (sData.kid != null) ? sData.kid.toString() : ''
+									if (sKid != contactId.value) {
+										filteredListTemp.push(s)
+									}
+								}
+							} catch (e) {}
+						}
+					}
+					filteredList = filteredListTemp
+				}
+				contactList.value = filteredList
+				contactId.value = ''
+					
+				if (filteredList != null && Array.isArray(filteredList) == true && filteredList.length > 0) {
+					const first = filteredList[0]
+					if (first != null) {
+						// 使用 JSON.parse + 接口类型 + 点访问，避免括号访问（String.get 错误）
+						try {
+							const firstJson = JSON.stringify(first)
+							if (firstJson != '') {
+								const firstParsed = JSON.parse(firstJson) as any
+								const firstData = firstParsed as SubmitOrderContactItem
+								const firstName = (firstData.name != null) ? firstData.name.toString() : ''
+								const firstPhone = (firstData.phone != null) ? firstData.phone.toString() : ''
+								const firstKid = (firstData.kid != null) ? firstData.kid.toString() : ''
+								setFormDataValue({
+									realname: firstName,
+									phone: firstPhone
+								})
+								contactId.value = firstKid
+							}
+						} catch (e) {}
+					}
+				}
+					
+					uni.showToast({
+						title: '删除成功',
+						icon: 'success'
+					})
+			}
+			const handleFail = (error: any) => {
+				console.error('删除联系人失败:', error)
+				uni.showToast({
+					title: '删除失败',
+					icon: 'none'
+				})
+			}
+			// delTravelUser 返回 Promise，直接使用 await 处理
+			try {
+				await result
+				handleSuccess()
+			} catch (error) {
+				handleFail(error)
+			}
+				} catch (error) {
+					console.error('删除联系人失败:', error)
+					uni.showToast({
+						title: '删除失败',
+						icon: 'none'
+					})
+				}
+	}
+	
+	uni.showModal({
+		title: '提示',
+		content: '确定要删除该联系人吗？',
+		success: (res: any) => {
+			// 使用 JSON.parse + 接口类型安全访问 res 的属性，避免直接属性访问错误
+			try {
+				const resJson = JSON.stringify(res)
+				if (resJson != '') {
+					const resParsed = JSON.parse(resJson) as any
+					const resData = resParsed as ShowModalResult
+					if (resData.confirm == true) {
+						confirmDelete()
+					}
+				}
+			} catch (e) {}
+		}
+	})
+}
+
+// 路线订单提交（必须在 handleSubmitOrder 之前定义）
+const handleRouteOrderSubmit = async () => {
+	// 获取用户ID
+	const userKid = getUserKid()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 获取表单数据
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	
+	// 验证联系人信息
+	if (formDataValue.phone == null || formDataValue.phone == '') {
+		uni.showToast({
+			title: '请选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (formDataValue.realname == null || formDataValue.realname == '') {
+		uni.showToast({
+			title: '请输入联系人姓名',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证日期
+	if (chooseDate.value == '') {
+		uni.showToast({
+			title: '请选择出行日期',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 构建订单参数
+	const orderParamsJson = JSON.stringify({
+		userKid: userKid,
+		lineKid: props.lineKid,
+		orderTitle: props.lineTitle != '' ? props.lineTitle : '路线订单',
+		travelDate: chooseDate.value,
+		serviceHours: formDataValue.serviceHours,
+		phone: formDataValue.phone,
+		realname: formDataValue.realname,
+		totalMoney: formDataValue.totalMoney,
+		orderRemarks: formDataValue.orderRemarks
+	})
+	const orderParamsParsed = JSON.parse(orderParamsJson) as any
+	const orderParams = orderParamsParsed as CreateRouteOrderParams
+	
+	// 显示加载提示
+	uni.showLoading({
+		title: '创建订单中...'
+	})
+	
+	try {
+		// 调用创建路线订单API
+		const res = await createRouteOrder(orderParams)
+		
+		// 解析响应
+		const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+		const code = resObj.get('code')
+		
+		if (code != null && parseInt(code.toString()) == 200) {
+			// 获取订单ID
+			const dataVal = resObj.get('data')
+			let orderKid = ''
+			
+			if (dataVal != null) {
+				const dataObj = JSON.parse(JSON.stringify(dataVal)) as UTSJSONObject
+				const orderKidVal = dataObj.get('orderKid')
+				if (orderKidVal == null) {
+					const kidVal = dataObj.get('kid')
+					if (kidVal != null) {
+						orderKid = kidVal.toString()
+					}
+				} else {
+					orderKid = orderKidVal.toString()
+				}
+			}
+			
+			if (orderKid == '') {
+				uni.showToast({
+					title: '订单创建成功，但未获取到订单ID',
+					icon: 'none'
+				})
+				return
+			}
+			
+			// 跳转到支付页面
+			uni.hideLoading()
+			uni.showToast({
+				title: '订单创建成功',
+				icon: 'success'
+			})
+			
+			safeSetTimeout(() => {
+				// 关闭预订弹窗
+				close()
+				
+				// 跳转到支付页面（orderType=10表示路线订单）
+				uni.navigateTo({
+					url: '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid + '&orderType=10'
+				})
+			}, 500)
+		} else {
+			// 获取错误信息
+			const msgVal = resObj.get('msg')
+			const errorMsg = (msgVal != null && msgVal.toString() != '') 
+				? msgVal.toString() 
+				: '订单创建失败'
+			
+			uni.hideLoading()
+			uni.showToast({
+				title: errorMsg,
+				icon: 'none'
+			})
+		}
+	} catch (error: any) {
+		// 错误处理
+		uni.hideLoading()
+		
+		let errorMsg = '订单创建失败'
+		if (error != null) {
+			try {
+				const errorObj = JSON.parse(JSON.stringify(error)) as UTSJSONObject
+				const msgVal = errorObj.get('message')
+				if (msgVal != null && msgVal.toString() != '') {
+					errorMsg = msgVal.toString()
+				}
+			} catch (e) {
+				// 使用默认错误消息
+			}
+		}
+		
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	}
+}
+
+// 确认下单
+const handleSubmitOrder = async () => {
+	// 验证向导信息
+	if ((props.guiderKid == null) || (props.guiderKid == '')) {
+		if ((props.lineKid == null) || (props.lineKid == '')) {
+		uni.showToast({
+				title: '缺少必要参数',
+			icon: 'none'
+		})
+		return
+		} else {
+			// 路线订单创建逻辑
+			await handleRouteOrderSubmit()
+		return
+	}
+	}
+	
+	// 获取用户ID（使用 getUserKid 函数，避免括号访问（String.get 错误））
+	const userKid = getUserKid()
+	if (userKid == '') {
+		return // useOrderSubmission 会处理登录验证
+	}
+	
+	// 构建订单数据（使用 JSON.parse + 接口类型传递参数，避免匿名对象类型错误）
+	const formDataValueRaw = getFormDataValue()
+	const formDataValue = formDataValueRaw as FormDataValue
+	
+	const orderParamsJson = JSON.stringify({
+		userKid: userKid,
+		guideKid: props.guiderKid,
+		travelDate: chooseDate.value,
+		serviceHours: formDataValue.serviceHours,
+		phone: formDataValue.phone,
+		realname: formDataValue.realname,
+		totalMoney: formDataValue.totalMoney,
+		orderRemarks: formDataValue.orderRemarks,
+		cityName: formDataValue.cityName
+	})
+	const orderParamsParsed = JSON.parse(orderParamsJson) as any
+	const orderParams = orderParamsParsed as GuiderOrderParams
+	const orderData = buildGuiderOrderData(orderParams)
+	
+	// 提交订单（使用辅助函数调用，避免 error18 和 invoke 错误）
+	// 注意：直接调用 any 类型的函数会触发 invoke 错误，需要使用辅助函数包装
+	await callSubmitOrder(orderData, {
+		validateContact: true,
+		phone: formDataValue.phone,
+		realname: formDataValue.realname
+	})
+	
+	// 关闭弹窗
+	close()
+}
+
+// 监听显示状态（使用 computed 包装，避免 watch 返回类型不匹配）
+const showValue = computed((): boolean => props.show)
+watch(showValue, (newVal: boolean) => {
+	if (newVal == true) {
+		// 检查登录状态（使用 loginHelper 可靠版本）
+		const isLoggedIn = checkUserLoginReliable()
+		if (isLoggedIn == false) {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			safeSetTimeout(() => {
+				uni.navigateTo({
+					url: '/pagesUser/login/index'
+				})
+			}, 1500)
+			close()
+			return
+		}
+		
+		// 初始化价格和日期
+		let priceNum = 0 as number
+		try {
+			if (typeof props.price === 'string') {
+				const priceStr = (props.price != null) ? props.price.toString() : '0'
+				const parsedPrice = parseFloat(priceStr.replace(/[^\d.]/g, ''))
+				priceNum = (parsedPrice > 0) ? parsedPrice : 0
+			} else {
+				priceNum = (props.price != null) ? (props.price as number) : 0
+			}
+		} catch (e) {}
+		serverPrice.value = priceNum
+		setFormDataValue({
+			totalMoney: serverPrice.value
+		})
+		
+		// 获取联系人列表
+		Get_contact_list()
+	}
+})
+
+// 监听添加联系人弹窗状态（使用 computed 包装，避免 watch 返回类型不匹配）
+const addContactVisityValue = computed((): boolean => addContactVisity.value)
+watch(addContactVisityValue, (newVal: boolean) => {
+	if (newVal == true) {
+		addFormData.value = {
+			name: '',
+			phone: ''
+		}
+	}
+})
+
+// 初始化日期
+onMounted(() => {
+	initMinDate()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style lang="scss" scoped>
+.submit-order-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	display: flex;
+	align-items: flex-end;
+}
+
+.submit-order-popup {
+	width: 100%;
+	max-height: 1200rpx;
+	background-color: #f5f5f5;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	display: flex;
+	flex-direction: column;
+}
+
+/* 动画删除，避免不支持的 animation/keyframes */
+
+.add-submit {
+	width: 100%;
+	height: 160rpx;
+	background-color: #37B1F2;
+	border-radius: 104rpx;
+}
+
+.footer-box {
+	width: 100%;
+	height: 256rpx;
+	position: absolute;
+	z-index: 5;
+	bottom: 0;
+	left: 0;
+}
+
+.footer-box .submit-btn {
+	width: 576rpx;
+	height: 160rpx;
+	background-color: #37B1F2;
+	border-radius: 104rpx;
+}
+
+.city-box {
+	width: 100%;
+	height: 1200rpx;
+	box-sizing: border-box;
+	overflow: hidden;
+	padding-top: 180rpx;
+	padding-bottom: 256rpx;
+	.top-tab {
+		height: 180rpx;
+		width: 100%;
+		z-index: 1;
+		position: fixed;
+		left: 0;
+		top: 0;
+	}
+
+	.page-back {
+		width: 120rpx;
+		height: 180rpx;
+		left: 52rpx;
+		top: 0;
+		position: fixed;
+		z-index: 2;
+	}
+
+	.back-icon {
+		font-size: 64rpx;
+		color: #333333;
+	}
+	
+	.back-icon-img {
+		width: 44rpx;
+		height: 44rpx;
+	}
+
+	.scroll-view {
+		height: 100%;
+		width: 100%;
+		z-index: 3;
+		.more-btn {
+			width: 360rpx;
+			height: 100rpx;
+			border-radius: 56rpx;
+			border-width: 2rpx;
+			border-style: solid;
+			border-color: #2EAEF2;
+		}
+		.arrow-icon {
+			font-size: 48rpx;
+			color: #2EAEF2;
+		}
+		.date-block {
+			width: 316rpx;
+			height: 208rpx;
+			border-radius: 48rpx;
+			border-width: 4rpx;
+			border-style: solid;
+			border-color: #CFCFCF;
+			color: #999999;
+		}
+		.active {
+			border-color: #C6EBFF !important;
+			background: #C6EBFF !important;
+			color: #2EAEF2 !important;
+		}
+		.contact-block {
+			width: 312rpx;
+			height: 152rpx;
+			border-radius: 48rpx;
+			border-width: 4rpx;
+			border-style: solid;
+			border-color: #CFCFCF;
+			color: #999999;
+		}
+		.default-tag {
+			font-size: 44rpx;
+			color: #2EAEF2;
+			margin-left: 16rpx;
+		}
+		.ops-text {
+		}
+	}
+}
+
+.number-btn {
+	width: 128rpx;
+	height: 128rpx;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 64rpx;
+	color: #333333;
+}
+
+.number-value {
+	flex: 1;
+	text-align: center;
+	font-size: 64rpx;
+	color: #333333;
+	margin: 0 64rpx;
+}
+
+.textarea-input {
+	width: 100%;
+	min-height: 392rpx;
+	padding: 40rpx;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+	font-size: 56rpx;
+	color: #333333;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+}
+
+.textarea-input:focus {
+	background-color: #ffffff;
+	border-color: #2EAEF2;
+}
+
+// 日历弹窗
+.calendar-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.calendar-popup {
+	width: 90%;
+	max-width: 1200rpx;
+	background-color: #ffffff;
+	border-radius: 48rpx;
+	padding: 80rpx;
+}
+
+.calendar-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 80rpx;
+}
+
+.calendar-title {
+	font-size: 64rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.calendar-close {
+	font-size: 96rpx;
+	color: #999999;
+}
+
+.calendar-picker {
+	padding: 40rpx;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+	text-align: center;
+}
+
+// 弹窗样式
+.popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	align-items: flex-end;
+}
+
+.popup-content {
+	width: 100%;
+	background-color: #ffffff;
+	border-top-left-radius: 48rpx;
+	border-top-right-radius: 48rpx;
+}
+
+.popup-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 96rpx 96rpx 48rpx;
+	border-bottom: 2rpx solid #f0f0f0;
+}
+
+.popup-title {
+	font-size: 64rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.popup-close {
+	font-size: 96rpx;
+	color: #999999;
+}
+
+.popup-body {
+	padding: 96rpx;
+}
+
+.popup-footer {
+	padding: 48rpx 96rpx 96rpx;
+}
+
+.form-item {
+	display: flex;
+	flex-direction: column;
+	margin-bottom: 64rpx;
+}
+
+.form-label {
+	font-size: 56rpx;
+	color: #333333;
+	font-weight: 400;
+	margin-bottom: 32rpx;
+}
+
+.form-input {
+	width: 100%;
+	height: 160rpx;
+	padding: 0 40rpx;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+	font-size: 56rpx;
+	color: #333333;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+}
+
+.form-input:focus {
+	background-color: #ffffff;
+	border-color: #2EAEF2;
+}
+
+.placeholder {
+	color: #999999;
+}
+
+/* 重复的全局工具类已移除，使用 common/styles/components.css 中的全局样式 */
+
+/* 已使用全局样式：fs-sm, fs-md, fs-lg, fs-xl, color-title */
+
+.font-bold {
+	font-weight: bold;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.white {
+	color: #ffffff;
+}
+
+.red {
+	color: #ff0000;
+}
+</style>

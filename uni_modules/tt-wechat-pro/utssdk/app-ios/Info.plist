@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+	<key>WeChat</key>
+	<dict>
+		<key>appid</key>
+		<string>wx4a9aa1fbc92e1054</string>
+		<key>universalLink</key>
+		<string>https://www.wyxdapp.com/app/</string>
+	</dict>
+    <key>CFBundleURLTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>WeChat</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>wx4a9aa1fbc92e1054</string>
+        </array>
+      </dict>
+    </array>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>weixinULAPI</string>
+      <string>weixinURLParamsAPI</string>
+      <string>weixin</string>
+    </array>
+  </dict>
+</plist>

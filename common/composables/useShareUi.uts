@@ -1,0 +1,79 @@
+﻿/**
+ * 分享 UI 相关功能
+ * 
+ * 注意：此文件从 pagesBusiness/composables/useShareUi.uts 移动到主包
+ * 原因：pagesUser 和 pagesTrade 需要引用此 composable，避免跨分包引用错误
+ * 移动时间：2026-02-04
+ */
+
+export interface ShareCard {
+	title?: string | null
+	summary?: string | null
+	desc?: string | null
+	link?: string | null
+	url?: string | null
+}
+
+// ===== 直接导出的模块级函数（UTS 规范：避免从 composable 返回对象中访问方法）=====
+
+/**
+ * H5 分享到微信（复制链接到剪贴板）
+ */
+export function handleShareWechat(shareDataParam: UTSJSONObject | null): void {
+	try {
+		// 为避免 UTS 编译器在脚本中直接访问动态对象属性时报错（error18），
+		// 使用 JSON 序列化/反序列化后以本地变量安全访问属性。
+		let titleVal = ''
+		let summaryVal = ''
+		let descVal = ''
+		let linkVal = ''
+		let urlVal = ''
+		try {
+			const jsonStr = (shareDataParam != null) ? JSON.stringify(shareDataParam) : ''
+			if (jsonStr != null && jsonStr != '') {
+				const parsedObj = JSON.parse(jsonStr) as UTSJSONObject
+				if (parsedObj != null) {
+					const parsed = parsedObj as ShareCard
+					if (parsed != null) {
+						titleVal = (parsed.title != null && parsed.title != '') ? parsed.title.toString() : ''
+						summaryVal = (parsed.summary != null && parsed.summary != '') ? parsed.summary.toString() : ''
+						descVal = (parsed.desc != null && parsed.desc != '') ? parsed.desc.toString() : ''
+						linkVal = (parsed.link != null && parsed.link != '') ? parsed.link.toString() : ''
+						urlVal = (parsed.url != null && parsed.url != '') ? parsed.url.toString() : ''
+					}
+				}
+			}
+		} catch (e) {}
+
+		const body = (summaryVal != null && summaryVal != '') ? summaryVal : ((descVal != null && descVal != '') ? descVal : '')
+		const href = (linkVal != null && linkVal != '') ? linkVal : urlVal
+		const content = ((titleVal != null && titleVal != '') ? titleVal : '') + '\n' + (body != null ? body : '') + '\n\n' + (href != null ? href : '')
+
+		uni.setClipboardData({
+			data: content,
+			success: () => {
+				uni.showToast({ title: '链接已复制，去微信粘贴分享', icon: 'success' })
+			},
+			fail: () => {
+				uni.showToast({ title: '复制失败，请重试', icon: 'none' })
+			}
+		})
+	} catch (e) {
+		console.error('复制分享链接失败:', e)
+		uni.showToast({ title: '复制失败', icon: 'none' })
+	}
+}
+
+export function handleShareMoments(shareDataParam: UTSJSONObject | null): void {
+	// 朋友圈与微信好友行为相同：复制链接
+	handleShareWechat(shareDataParam)
+}
+
+export function handleCopyLink(shareDataParam: UTSJSONObject | null): void {
+	handleShareWechat(shareDataParam)
+}
+
+export function handleShowQrcode(_shareDataParam: UTSJSONObject | null): void {
+	// 占位：展示二维码功能（可在未来扩展）
+	uni.showToast({ title: '二维码功能开发中', icon: 'none' })
+}

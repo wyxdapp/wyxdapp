@@ -1,0 +1,162 @@
+<template>
+	<view class="location-info" :class="sizeClass">
+		<image 
+			class="location-icon" 
+			:class="iconSizeClass"
+			src="https://jiasu.wyxdapp.com/iconimages/n_index_position.png" 
+			mode="aspectFit"
+		/>
+		<text class="location-text" :class="textStyleClass">{{ displayText }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// Props
+const props = defineProps({
+	// 城市名称
+	city: { type: String, default: '' },
+	// 距离（米数或已格式化的字符串，如 "30.6km" 或 "30553"）
+	distance: { type: String, default: '' },
+	// 文字颜色类型: default(#666), light(#999), dark(#333)
+	textColor: { type: String, default: 'default' },
+	// 尺寸: normal, small
+	size: { type: String, default: 'normal' },
+	// 分隔符: dot(·), space( )
+	separator: { type: String, default: 'dot' }
+})
+
+// 格式化距离
+const formatDistanceValue = (meters: string): string => {
+	if (meters == '') return ''
+	
+	// 如果已经包含单位，直接返回
+	if (meters.indexOf('km') >= 0 || meters.indexOf('m') >= 0) {
+		return meters
+	}
+	
+	const v = parseFloat(meters)
+	if (isNaN(v) == true || v < 0) return ''
+	
+	if (v >= 1000) {
+		return (v / 1000).toFixed(1) + 'km'
+	}
+	return Math.round(v).toString() + 'm'
+}
+
+// 计算属性
+const formattedDistance = computed((): string => {
+	return formatDistanceValue(props.distance)
+})
+
+const separatorText = computed((): string => {
+	if (props.separator == 'space') {
+		return ' '
+	}
+	return ' · '
+})
+
+const displayText = computed((): string => {
+	const cityVal = props.city
+	const distVal = formattedDistance.value
+	
+	if (distVal != '' && cityVal != '') {
+		return cityVal + separatorText.value + distVal
+	}
+	if (cityVal != '') {
+		return cityVal
+	}
+	if (distVal != '') {
+		return distVal
+	}
+	return '未知位置'
+})
+
+const sizeClass = computed((): string => {
+	if (props.size == 'small') {
+		return 'size-small'
+	}
+	return 'size-normal'
+})
+
+const iconSizeClass = computed((): string => {
+	if (props.size == 'small') {
+		return 'icon-small'
+	}
+	return 'icon-normal'
+})
+
+const textStyleClass = computed((): string => {
+	let colorClass = 'text-default'
+	if (props.textColor == 'light') {
+		colorClass = 'text-light'
+	} else if (props.textColor == 'dark') {
+		colorClass = 'text-dark'
+	}
+	
+	let sizeTextClass = 'text-normal'
+	if (props.size == 'small') {
+		sizeTextClass = 'text-small'
+	}
+	
+	return colorClass + ' ' + sizeTextClass
+})
+</script>
+
+<style scoped>
+.location-info {
+	flex-direction: row;
+	align-items: center;
+}
+
+/* 尺寸 */
+.size-normal {
+	/* 默认尺寸 */
+}
+
+.size-small {
+	/* 小尺寸 */
+}
+
+/* 图标尺寸 */
+.location-icon {
+	margin-right: 8rpx;
+}
+
+.icon-normal {
+	width: 28rpx;
+	height: 28rpx;
+}
+
+.icon-small {
+	width: 24rpx;
+	height: 24rpx;
+}
+
+/* 文字样式 */
+.location-text {
+	/* 基础样式 */
+}
+
+.text-normal {
+	font-size: 24rpx;
+}
+
+.text-small {
+	font-size: 22rpx;
+}
+
+/* 颜色 */
+.text-default {
+	color: #666666;
+}
+
+.text-light {
+	color: #999999;
+}
+
+.text-dark {
+	color: #333333;
+}
+</style>

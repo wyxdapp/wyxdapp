@@ -1,0 +1,27 @@
+{
+  "name": "wyxd",
+  "version": "2.0.0",
+  "description": "网约向导 - uni-app x 版本",
+  "scripts": {
+    "dev": "uni",
+    "build": "uni build",
+    "check:style": "node scripts/check-style-issues.js",
+    "check:style:all": "node scripts/check-style-issues.js --all",
+    "fix:px": "node scripts/auto-fix-px.js",
+    "fix:px:all": "node scripts/auto-fix-px.js --all",
+    "optimize:check": "node scripts/project-optimization.js --check",
+    "optimize:fix": "node scripts/project-optimization.js --fix",
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "^3.4.0",
+    "fast-check": "^4.5.3",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
+  }
+}

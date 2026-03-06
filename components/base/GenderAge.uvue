@@ -1,0 +1,137 @@
+<template>
+	<view class="gender-age-container" :class="containerClass">
+		<image 
+			class="gender-bg-image" 
+			:class="imageClass"
+			:src="genderIcon" 
+			mode="aspectFill" 
+		/>
+		<view class="age-wrapper" :class="wrapperClass">
+			<text class="age-value" :class="textClass">{{ displayAge }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// Props
+const props = defineProps({
+	sex: { type: String, default: '男' },
+	age: { type: [String, Number], default: '' }
+})
+
+// 计算属性
+const isFemale = computed((): boolean => {
+	return props.sex == '女'
+})
+
+const containerClass = computed((): string => {
+	return isFemale.value == true ? 'female' : 'male'
+})
+
+const imageClass = computed((): string => {
+	return isFemale.value == true ? 'female-image' : 'male-image'
+})
+
+const wrapperClass = computed((): string => {
+	return isFemale.value == true ? 'female-wrapper' : 'male-wrapper'
+})
+
+const textClass = computed((): string => {
+	return isFemale.value == true ? 'female-text' : 'male-text'
+})
+
+const genderIcon = computed((): string => {
+	return isFemale.value == true 
+		? 'https://jiasu.wyxdapp.com/iconimages/n_index_girl.png' 
+		: 'https://jiasu.wyxdapp.com/iconimages/n_index_boy.png'
+})
+
+const displayAge = computed((): string => {
+	const ageVal = props.age
+	// props.age 有默认值，只需检查空字符串
+	if (ageVal == '') {
+		return '?'
+	}
+	return ageVal.toString()
+})
+</script>
+
+<style scoped>
+/* 容器 - 使用 flex 布局确保跨平台一致性 */
+.gender-age-container {
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+	overflow: hidden;
+}
+
+/* 女性容器尺寸 */
+.gender-age-container.female {
+	width: 98rpx;
+	height: 44rpx;
+}
+
+/* 男性容器尺寸 */
+.gender-age-container.male {
+	width: 96rpx;
+	height: 38rpx;
+}
+
+/* 背景图片 - 填满容器 */
+.gender-bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.gender-bg-image.female-image {
+	width: 98rpx;
+	height: 44rpx;
+}
+
+.gender-bg-image.male-image {
+	width: 96rpx;
+	height: 38rpx;
+}
+
+/* 年龄文字包装器 - 定位到右侧中间 */
+.age-wrapper {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+	padding-right: 16rpx;
+	padding-left: 40rpx;
+}
+
+.age-wrapper.female-wrapper {
+	height: 44rpx;
+	padding-top: 8rpx;
+}
+
+.age-wrapper.male-wrapper {
+	height: 38rpx;
+	padding-top: 2rpx;
+}
+
+/* 年龄文字 */
+.age-value {
+	font-size: 24rpx;
+	font-weight: normal;
+	text-align: center;
+}
+
+.age-value.female-text {
+	color: #FF69B4;
+}
+
+.age-value.male-text {
+	color: #9370DB;
+}
+</style>

@@ -1,0 +1,1994 @@
+<template>
+	<view class="login-page">
+		<!-- 背景 -->
+		<image class="bg-image" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill"></image>
+		
+		<!-- 返回按钮 -->
+		<view class="back-btn" @click="handleBack">
+			<image class="back-icon" src="https://jiasu.wyxdapp.com/iconimages/fanhui.png" mode="aspectFit"></image>
+		</view>
+		
+		<!-- 跳过按钮 - 右上角 -->
+		<view class="skip-btn" @click="handleSkipBinding">
+			<text class="skip-text">跳过</text>
+		</view>
+		
+		<!-- 手机号绑定表单 -->
+		<view class="login-form">
+			<view class="form-title">
+				<text class="form-title-text">手机号绑定</text>
+			</view>
+			
+			<view class="form-content">
+				<!-- 手机号输入 -->
+				<view class="input-wrapper">
+					<input
+						class="login-input"
+						type="number"
+						v-model="formPhone"
+						placeholder="请输入手机号"
+						:maxlength="11"
+						placeholder-class="input-placeholder"
+					/>
+				</view>
+
+				<!-- 验证码输入 -->
+				<view class="code-input-container">
+					<view class="input-wrapper code-input-wrapper">
+						<input
+							class="code-input"
+							type="number"
+							v-model="formCode"
+							placeholder="请输入验证码"
+							:maxlength="4"
+							placeholder-class="input-placeholder"
+						/>
+					</view>
+					<view 
+						:class="countdown > 0 || canGetCode == false ? 'send-code-btn send-code-btn-disabled' : 'send-code-btn'"
+						@click="getCode"
+					>
+						<text class="send-code-text">{{ codeButtonText }}</text>
+					</view>
+				</view>
+				
+				<!-- 确认按钮 -->
+				<view 
+					:class="canSubmit == true ? 'submit-btn' : 'submit-btn submit-btn-disabled'"
+					@click="handleBindPhone"
+				>
+					<text class="submit-btn-text">{{ loading == true ? '绑定中...' : '确认' }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 加载遮罩 -->
+		<view v-if="loading == true" class="loading-mask">
+			<view class="loading-content">
+				<view class="loading-spinner"></view>
+				<text class="loading-text">绑定中...</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useUserStore, setUserInfoDataAction, setLoginStatusAction, loginAction } from '@/stores/user'
+import { getMobileCode } from '@/pagesUser/services/smsService'
+import type { GetMobileCodeParams } from '@/pagesUser/services/smsService'
+import { wxLogin } from '@/pagesUser/services/authService'
+import type { WxLoginParams } from '@/pagesUser/services/authService'
+import { safeGet, safeClone, goToHome } from '@/common/utils/utsSafe.uts'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { saveToken } from '@/common/utils/security/tokenManager.uts'
+import { secureLog } from '@/common/utils/security/secureLogger.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+
+// ==================== 状态定义 ====================
+const userStore = useUserStore()
+
+// Helper: safely call user store actions (mirror to avoid dynamic invoke / error18)
+const callUserStoreAction = (actionName: string, payload?: UTSJSONObject | null): boolean => {
+	try {
+		if (actionName === 'login' || actionName === 'setUserInfo') {
+			try {
+				const rawJson = (payload != null) ? JSON.stringify(payload) : ''
+				if (rawJson != null && rawJson != '') uni.setStorageSync('userInfo', rawJson)
+				// try extract token
+				try {
+					if (rawJson != null && rawJson != '') {
+						const mTok = rawJson.match(/"token"\s*:\s*"([^"]+)"/)
+						if (mTok != null && mTok[1] != null) {
+							saveToken(mTok[1].toString())
+						}
+					}
+				} catch (e) {}
+				return true
+			} catch (e) {}
+		}
+	} catch (e) {}
+	return false
+}
+const form = ref<UTSJSONObject>({
+	phone: '',
+	code: ''
+})
+
+// ==================== 辅助函数 ====================
+// 安全获取 form.value 的属性值（必须在 form 定义之后，UTS 没有变量提升）
+const getFormProp = (key: string): string => {
+	try {
+		const formValue = form.value
+		if (formValue != null) {
+			const formJson = JSON.stringify(formValue)
+			if (formJson != null && formJson != '') {
+				const formParsed = JSON.parse(formJson) as UTSJSONObject
+				if (formParsed != null) {
+					const formObj = formParsed as UTSJSONObject
+					const val = formObj.get(key)
+					if (val != null && val != '') {
+						return val.toString()
+					}
+				}
+			}
+		}
+	} catch (e) {}
+	return ''
+}
+
+const loading = ref(false)
+const isGettingCode = ref(false)
+const codeCountdown = ref(0)
+const countdownTimer = ref<number | null>(null)
+
+// 表单字段使用独立 ref（UTS 不支持 computed getter/setter 语法）
+const formPhone = ref<string>('')
+const formCode = ref<string>('')
+
+// 同步 formPhone 到 form.value（在 formPhone 变化时更新 form）
+const syncFormPhone = (val: string): void => {
+	try {
+		const currentCode = getFormProp('code')
+		const raw = { phone: (val != null) ? val : '', code: (currentCode != null) ? currentCode : '' } as UTSJSONObject
+		const rawJson = JSON.stringify(raw)
+		if (rawJson != null && rawJson != '') {
+			const rawParsed = JSON.parse(rawJson) as UTSJSONObject
+			const rawObj = rawParsed as UTSJSONObject
+			form.value = rawObj
+		}
+	} catch (e) {}
+}
+
+// 同步 formCode 到 form.value（在 formCode 变化时更新 form）
+const syncFormCode = (val: string): void => {
+	try {
+		const currentPhone = getFormProp('phone')
+		const raw = { phone: (currentPhone != null) ? currentPhone : '', code: (val != null) ? val : '' } as UTSJSONObject
+		const rawJson = JSON.stringify(raw)
+		if (rawJson != null && rawJson != '') {
+			const rawParsed = JSON.parse(rawJson) as UTSJSONObject
+			const rawObj = rawParsed as UTSJSONObject
+			form.value = rawObj
+		}
+	} catch (e) {}
+}
+
+// ⭐ 新增：微信小程序手机号验证状态
+const showManualInput = ref(false)
+const isWechatMiniProgram = ref(false)
+
+// 绑定参数接口（必须在顶层定义）
+// 注意：UTS 中不能对对象字面量使用 as InterfaceType，会导致 ClassCastException
+// 因此这里只作为文档说明，实际使用 UTSJSONObject
+
+// 绑定参数（从页面参数获取）
+// UTS 不支持 ref<接口类型>，使用 ref<UTSJSONObject>
+// 使用 JSON.parse 创建 UTSJSONObject，避免 as InterfaceType 导致的 ClassCastException
+const bindingParamsInitJson = JSON.stringify({
+	openId: '',
+	xcxOpenId: '',
+	gzhOpenId: '',
+	appOpenId: '',
+	unionId: '',
+	loginType: '',
+	code: '',
+	type: ''
+})
+const bindingParamsInit = JSON.parse(bindingParamsInitJson) as UTSJSONObject
+const bindingParams = ref<UTSJSONObject>(bindingParamsInit)
+
+// 安全获取 bindingParams.value 的属性值（必须在 bindingParams 定义之后，UTS 没有变量提升）
+const getBindingParamValue = (key: string): string => {
+	try {
+		// bindingParams 现在是 ref<UTSJSONObject>，可以直接访问 value
+		const bindingParamsValue = bindingParams.value
+		if (bindingParamsValue != null) {
+			const resultVal = bindingParamsValue.get(key)
+			return (resultVal != null) ? resultVal.toString() : ''
+		}
+	} catch (e) {}
+	// 返回空字符串作为默认值
+	return ''
+}
+
+// 微信用户信息（必须在 getStoredWechatUserInfo 之前定义，UTS 没有变量提升）
+const wechatUserInfo = ref<UTSJSONObject | null>(null)
+
+// 获取存储的微信用户信息（必须在 onMounted 之前定义，UTS 没有函数提升）
+const getStoredWechatUserInfo = () => {
+	try {
+		const storedInfo = safeGetStorageSync('wechatUserInfo')
+		// 使用显式判断替代隐式真假判断
+		if (storedInfo != null) {
+			// UTS 不支持 typeof，使用类型检查
+			let parsedInfo: UTSJSONObject | null = null
+			if (typeof storedInfo === 'string' && storedInfo != '') {
+				try {
+					const parsed = JSON.parse(storedInfo) as UTSJSONObject
+					if (parsed != null) {
+						parsedInfo = parsed
+					}
+				} catch (e) {
+					// storedInfo is not valid JSON, skip
+				}
+			} else {
+				try {
+					parsedInfo = JSON.parse(JSON.stringify(storedInfo)) as UTSJSONObject
+				} catch (e) {
+					// cannot convert, skip
+				}
+			}
+			if (parsedInfo != null) {
+				wechatUserInfo.value = parsedInfo
+				console.log('获取到存储的微信用户信息:', wechatUserInfo.value)
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '获取微信用户信息')
+	}
+}
+
+// Accessor to return wxLogin function to avoid invoking dynamically-typed function directly
+const getWxLogin = () => {
+	return wxLogin
+}
+
+// 返回上一页 (提前定义以便模板使用)
+const handleBack = () => {
+	const pages = getCurrentPages()
+	if (pages.length > 1) {
+		uni.navigateBack()
+	} else {
+		uni.reLaunch({ url: '/pagesUser/login/index' })
+	}
+}
+
+// 执行跳过绑定（必须在 handleSkipBinding 之前定义，UTS 没有函数提升）
+const doSkipBinding = async () => {
+	loading.value = true
+	
+	try {
+		console.log('🚀 [BIND] 开始执行跳过绑定')
+		
+		// 获取绑定参数
+		const codeVal = getBindingParamValue('code')
+		const typeVal = getBindingParamValue('type')
+		const codeStr = (codeVal != null && codeVal != '') ? codeVal.toString() : ''
+		const typeStr = (typeVal != null && typeVal != '') ? typeVal.toString() : ''
+		
+		if (codeStr == '' || typeStr == '') {
+			throw new Error('绑定参数缺失，请重新登录')
+		}
+		
+		// 获取微信用户信息（用于昵称和头像）
+		let nicknameStr = ''
+		let avatarUrlStr = ''
+		const wechatUserInfoValue = wechatUserInfo.value
+		if (wechatUserInfoValue != null) {
+			try {
+				const wechatUserInfoJson = JSON.stringify(wechatUserInfoValue)
+				if (wechatUserInfoJson != null && wechatUserInfoJson != '') {
+					const wechatUserInfoParsed = JSON.parse(wechatUserInfoJson) as UTSJSONObject
+					if (wechatUserInfoParsed != null) {
+						const wechatUserInfoObj = wechatUserInfoParsed as UTSJSONObject
+						const nicknameVal = wechatUserInfoObj.get('nickname')
+						const headimgurlVal = wechatUserInfoObj.get('headimgurl')
+						if (nicknameVal != null && nicknameVal != '') {
+							nicknameStr = nicknameVal.toString()
+						}
+						if (headimgurlVal != null && headimgurlVal != '') {
+							avatarUrlStr = headimgurlVal.toString()
+						}
+					}
+				}
+			} catch (e) {}
+		}
+		
+		// 构建跳过绑定的请求参数
+		const skipParams = {
+			code: codeStr,
+			type: typeStr,
+			skipPhoneBinding: true,
+			nickname: nicknameStr,
+			image: avatarUrlStr
+		} as UTSJSONObject
+		
+		console.log('📱 [BIND] 跳过绑定请求参数:', skipParams)
+		
+		// 调用 wxLogin 接口
+		const res = await wxLogin(skipParams)
+		
+		// 安全访问响应数据
+		let rc: string = ''
+		let resData: UTSJSONObject | null = null
+		let resMsg: string = ''
+		if (res != null) {
+			try {
+				const resJson = JSON.stringify(res)
+				if (resJson != null && resJson != '') {
+					const resParsed = JSON.parse(resJson) as UTSJSONObject
+					if (resParsed != null) {
+						const resObj = resParsed as UTSJSONObject
+						const rcVal = resObj.get('code')
+						rc = (rcVal != null) ? rcVal.toString() : ''
+						const resDataVal = resObj.get('data')
+						if (resDataVal != null) {
+							resData = JSON.parse(JSON.stringify(resDataVal)) as UTSJSONObject
+						}
+						const resMsgVal = resObj.get('msg')
+						resMsg = (resMsgVal != null) ? resMsgVal.toString() : ''
+					}
+				}
+			} catch (e) {}
+		}
+		
+		if ((rc == '200') && resData != null) {
+			// 清除保存的绑定参数
+			uni.removeStorageSync('wx_bind_code')
+			uni.removeStorageSync('wx_bind_type')
+			
+			// 保存用户信息
+			try {
+				const called = callUserStoreAction('setUserInfo', resData)
+				if (called == false) {
+					try { setUserInfoDataAction(resData) } catch (e) {}
+				}
+			} catch (e) {
+				try { setUserInfoDataAction(resData) } catch (e) {}
+			}
+			try { setLoginStatusAction(true) } catch (e) {}
+			
+			// 保存 token 到 storage
+			// 🔒 认证关键数据空值检查：token 为空时触发重新登录
+			try {
+				const resDataJson = JSON.stringify(resData)
+				if (resDataJson != null && resDataJson != '') {
+					const resDataParsed = JSON.parse(resDataJson) as UTSJSONObject
+					if (resDataParsed != null) {
+						const resDataObj = resDataParsed as UTSJSONObject
+						const tokenVal = resDataObj.get('token')
+						const kidVal = resDataObj.get('kid')
+						if (tokenVal == null || tokenVal.toString() == '') {
+							console.warn('⚠️ [BIND] 跳过绑定返回的 token 为空，触发重新登录')
+							uni.showToast({ title: '登录凭证获取失败，请重新登录', icon: 'none', duration: 2000 })
+							setTimeout(() => { uni.reLaunch({ url: '/pagesUser/login/index' }) }, 2000)
+							return
+						}
+						saveToken(tokenVal.toString())
+						if (kidVal != null && kidVal != '') {
+							uni.setStorageSync('userKid', kidVal.toString())
+						}
+					}
+				}
+			} catch (e) {}
+			
+			uni.showToast({
+				title: '登录成功',
+				icon: 'success'
+			})
+			
+			// 跳转到首页
+			setTimeout(() => {
+				goToHome()
+			}, 1500)
+		} else {
+			let errorMessage = '登录失败'
+			if (resMsg != null && resMsg != '') {
+				errorMessage = resMsg.toString()
+			}
+			throw new Error(errorMessage)
+		}
+		
+	} catch (error) {
+		handlePageError(error, '跳过绑定', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+// 跳过绑定确认弹窗
+const handleSkipBinding = () => {
+	uni.showModal({
+		title: '确认跳过',
+		content: '跳过手机号绑定后，您将无法使用找回密码等功能。确定要跳过吗？',
+		confirmText: '确认跳过',
+		cancelText: '继续绑定',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doSkipBinding()
+			}
+		}
+	})
+}
+
+// ==================== 计算属性 ====================
+// 安全访问 form.value.phone，避免 error18
+const normalizedPhone = computed((): string => {
+	try {
+		const formValue = form.value
+		if (formValue != null) {
+			const formJson = JSON.stringify(formValue)
+			if (formJson != null && formJson != '') {
+				const formParsed = JSON.parse(formJson) as UTSJSONObject
+				if (formParsed != null) {
+					const formObj = formParsed as UTSJSONObject
+					const phoneVal = formObj.get('phone')
+					if (phoneVal != null && phoneVal != '') {
+						const phoneStr = phoneVal.toString()
+						return phoneStr.trim().replace(/\D/g, '')
+					}
+				}
+			}
+		}
+	} catch (e) {}
+	return ''
+})
+const codeReg = /^\d{4}$/
+
+const canGetCode = computed((): boolean => {
+	return normalizedPhone.value.length === 11 && isGettingCode.value == false && 
+		   codeCountdown.value === 0
+})
+
+const canSubmit = computed((): boolean => {
+	// 安全访问 form.value.code，避免 error18
+	let codeValue = ''
+	try {
+		const formValue = form.value
+		if (formValue != null) {
+			const formJson = JSON.stringify(formValue)
+			if (formJson != null && formJson != '') {
+				const formParsed = JSON.parse(formJson) as UTSJSONObject
+				if (formParsed != null) {
+					const formObj = formParsed as UTSJSONObject
+					const codeVal = formObj.get('code')
+					if (codeVal != null && codeVal != '') {
+						codeValue = codeVal.toString()
+					}
+				}
+			}
+		}
+	} catch (e) {}
+	return normalizedPhone.value.length === 11 && 
+		   codeReg.test(codeValue) == true && loading.value == false
+})
+
+const codeButtonText = computed((): string => {
+	if (isGettingCode.value == true) return '发送中...'
+	if (codeCountdown.value > 0) return codeCountdown.value.toString() + 's'
+	return '发送验证码'
+})
+
+// expose countdown alias for template (template used 'countdown')
+const countdown = computed((): number => {
+	try {
+		return (codeCountdown != null) ? (codeCountdown.value as number) : 0
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 微信小程序手机号验证方法 ====================
+const handleGetPhoneNumber = async (e: UTSJSONObject) => {
+	console.log('🔍 [BIND] 微信小程序手机号验证回调:', e)
+	
+	try {
+		// 使用 UTSJSONObject.get() 安全访问 e.detail
+		let errMsg = ''
+		let encryptedData = ''
+		let iv = ''
+		
+		if (e != null) {
+			try {
+				const eJson = JSON.stringify(e)
+				if (eJson != null && eJson != '') {
+					const eParsed = JSON.parse(eJson) as UTSJSONObject
+					if (eParsed != null) {
+						const eObj = eParsed as UTSJSONObject
+						const detailVal = eObj.get('detail')
+						if (detailVal != null) {
+							const detailJson = JSON.stringify(detailVal)
+							if (detailJson != null && detailJson != '') {
+								const detailParsed = JSON.parse(detailJson) as UTSJSONObject
+								if (detailParsed != null) {
+									const detailObj = detailParsed as UTSJSONObject
+									const errMsgVal = detailObj.get('errMsg')
+									const encryptedDataVal = detailObj.get('encryptedData')
+									const ivVal = detailObj.get('iv')
+									if (errMsgVal != null && errMsgVal != '') {
+										errMsg = errMsgVal.toString()
+									}
+									if (encryptedDataVal != null && encryptedDataVal != '') {
+										encryptedData = encryptedDataVal.toString()
+									}
+									if (ivVal != null && ivVal != '') {
+										iv = ivVal.toString()
+									}
+								}
+							}
+						}
+					}
+				}
+			} catch (parseErr) {
+				// 如果 JSON 方式失败，使用默认值
+			}
+		}
+		
+		// 检查用户是否同意授权
+		if (errMsg != 'getPhoneNumber:ok') {
+			handleSilentError(new Error('用户拒绝手机号授权'), '[BIND] 手机号授权')
+			uni.showToast({
+				title: '已取消手机号授权',
+				icon: 'none'
+			})
+			return
+		}
+		
+		// UTS 规范：禁止使用 ! 进行真假判断，改为显式判断
+		if (encryptedData == null || encryptedData == '' || iv == null || iv == '') {
+			handleSilentError(new Error('缺少加密数据'), '[BIND] 手机号授权')
+			uni.showToast({
+				title: '获取手机号信息失败',
+				icon: 'none'
+			})
+			return
+		}
+		
+		loading.value = true
+		console.log('📱 [BIND] 开始微信小程序手机号绑定')
+		
+		// 调用wxLogin接口，传入加密数据进行解密和绑定
+		// 安全访问 bindingParams.value 的属性
+		const codeVal = getBindingParamValue('code')
+		const typeVal = getBindingParamValue('type')
+		const codeStr = (codeVal != null && codeVal != '') ? codeVal.toString() : ''
+		const typeStr = (typeVal != null && typeVal != '') ? typeVal.toString() : ''
+		const res = await wxLogin({
+			code: codeStr,
+			type: typeStr,
+			encryptedData: encryptedData,
+			iv: iv
+		})
+		
+		// 保存用户信息（优先通过 callUserStoreAction，失败降级到导出的独立函数）
+		// 使用 UTSJSONObject.get() 安全访问 res.data
+		let resData: UTSJSONObject | null = null
+		if (res != null) {
+			try {
+				const resJson = JSON.stringify(res)
+				if (resJson != null && resJson != '') {
+					const resParsed = JSON.parse(resJson) as UTSJSONObject
+					if (resParsed != null) {
+						const resObj = resParsed as UTSJSONObject
+						const dataVal = resObj.get('data')
+						if (dataVal != null) {
+							resData = JSON.parse(JSON.stringify(dataVal)) as UTSJSONObject
+						}
+					}
+				}
+			} catch (e) {}
+		}
+		
+		if (resData != null) {
+			try {
+				const called = callUserStoreAction('setUserInfoData', resData)
+				if (called == false) {
+					try { setUserInfoDataAction(resData) } catch (e) {}
+				}
+			} catch (e) {
+				try { setUserInfoDataAction(resData) } catch (e) {}
+			}
+			try { setLoginStatusAction(true) } catch (e) {}
+			
+			// 🔒 认证关键数据空值检查：token 为空时触发重新登录
+			try {
+				const tokenVal = resData.get('token')
+				if (tokenVal == null || tokenVal.toString() == '') {
+					console.warn('⚠️ [BIND] 微信小程序绑定返回的 token 为空，触发重新登录')
+					uni.showToast({ title: '登录凭证获取失败，请重新登录', icon: 'none', duration: 2000 })
+					setTimeout(() => { uni.reLaunch({ url: '/pagesUser/login/index' }) }, 2000)
+					return
+				}
+			} catch (e) {}
+		}
+		
+		// 显示成功提示
+		uni.showToast({
+			title: '绑定成功',
+			icon: 'success'
+		})
+		
+		// 跳转到首页（根据平台选择）
+		setTimeout(() => {
+			goToHome()
+		}, 1500)
+		
+	} catch (error) {
+		handleSilentError(error, '微信小程序手机号绑定')
+		
+		// 根据错误类型显示不同提示 - 使用 UTSJSONObject.get() 安全访问
+		let errorMessage = '绑定失败'
+		if (error != null) {
+			try {
+				const errorJson = JSON.stringify(error)
+				if (errorJson != null && errorJson != '') {
+					const errorParsed = JSON.parse(errorJson) as UTSJSONObject
+					if (errorParsed != null) {
+						const errorObj = errorParsed as UTSJSONObject
+						const messageVal = errorObj.get('message')
+						if (messageVal != null && messageVal != '') {
+							const messageStr = messageVal.toString()
+							if (messageStr.includes('10001')) {
+								errorMessage = '需要绑定手机号'
+								// 显示手动输入选项
+								showManualInput.value = true
+							} else if (messageStr.includes('10002')) {
+								errorMessage = '微信授权已失效，请重新登录'
+							} else if (messageStr.includes('10003')) {
+								errorMessage = '应用配置错误'
+							} else {
+								errorMessage = messageStr
+							}
+						}
+					}
+				}
+			} catch (e) {
+				// 如果 JSON 方式失败，使用默认错误消息
+			}
+		}
+		
+		uni.showToast({
+			title: errorMessage,
+			icon: 'none',
+			duration: 2000
+		})
+	} finally {
+		loading.value = false
+	}
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	// ⭐ 首先获取存储的微信用户信息（用于昵称/头像）
+	getStoredWechatUserInfo()
+	
+	// 获取页面参数（兼容 pages 为空的场景）
+	let options: UTSJSONObject = new UTSJSONObject()
+	try {
+		const pages = getCurrentPages()
+		// 使用显式判断替代 pages &&
+		const hasPages = (pages != null && pages.length > 0)
+		const currentPage = (hasPages == true) ? pages[pages.length - 1] : null
+		// 安全访问 currentPage 的属性，避免 error18
+		if (currentPage != null) {
+			try {
+				const currentPageJson = JSON.stringify(currentPage)
+				if (currentPageJson != null && currentPageJson != '') {
+					const currentPageParsed = JSON.parse(currentPageJson) as UTSJSONObject
+					if (currentPageParsed != null) {
+						const currentPageObj = currentPageParsed as UTSJSONObject
+						const pageVal = currentPageObj.get('$page')
+						if (pageVal != null) {
+							try {
+								const pageJson = JSON.stringify(pageVal)
+								if (pageJson != null && pageJson != '') {
+									const pageParsed = JSON.parse(pageJson) as UTSJSONObject
+									if (pageParsed != null) {
+										const pageObj = pageParsed as UTSJSONObject
+										const optionsVal = pageObj.get('options')
+										if (optionsVal != null) {
+											try {
+												const optionsJson = JSON.stringify(optionsVal)
+												if (optionsJson != null && optionsJson != '') {
+													const optionsParsed = JSON.parse(optionsJson) as UTSJSONObject
+													if (optionsParsed != null) {
+														options = optionsParsed
+													}
+												}
+											} catch (e) {}
+										}
+									}
+								}
+							} catch (e) {}
+						}
+					}
+				}
+			} catch (e) {}
+		}
+	} catch (e) {
+		handleSilentError(e, '获取页面参数')
+	}
+	
+	console.log('🔍 绑定手机号页面参数:', options)
+	
+	// 安全访问 options 的属性，避免 error18
+	const getOptionsProp = (key: string): string => {
+		if (options == null) return ''
+		try {
+			const optionsJson = JSON.stringify(options)
+			if (optionsJson != null && optionsJson != '') {
+				const optionsParsed = JSON.parse(optionsJson) as UTSJSONObject
+				if (optionsParsed != null) {
+					const optionsObj = optionsParsed as UTSJSONObject
+					const val = optionsObj.get(key)
+					if (val != null && val != '') {
+						return val.toString()
+					}
+				}
+			}
+		} catch (e) {}
+		return ''
+	}
+	
+	// 安全获取 bindingParams.value 的属性（用于设置时的读取）
+	const getBindingParam = (key: string): string | null => {
+		try {
+			const bindingParamsValue = bindingParams.value
+			if (bindingParamsValue != null) {
+				const val = bindingParamsValue.get(key)
+				return (val != null) ? val.toString() : null
+			}
+		} catch (e) {}
+		return null
+	}
+	
+	// 获取所有 bindingParams 的值
+	const getCurrentBindingParams = (): UTSJSONObject => {
+		try {
+			const bindingParamsValue = bindingParams.value
+			if (bindingParamsValue != null) {
+				return bindingParamsValue
+			}
+		} catch (e) {}
+		// 返回默认空对象
+		const defaultJson = JSON.stringify({
+			openId: '',
+			xcxOpenId: '',
+			gzhOpenId: '',
+			appOpenId: '',
+			unionId: '',
+			loginType: '',
+			code: '',
+			type: ''
+		})
+		return JSON.parse(defaultJson) as UTSJSONObject
+	}
+	
+	// 安全设置 bindingParams.value 的属性
+	const setBindingParam = (key: string, value: string | number): void => {
+		try {
+			// 获取当前值
+			const currentParams = getCurrentBindingParams()
+			
+			// 获取当前各字段的值
+			const openIdVal = currentParams.get('openId')
+			const xcxOpenIdVal = currentParams.get('xcxOpenId')
+			const gzhOpenIdVal = currentParams.get('gzhOpenId')
+			const appOpenIdVal = currentParams.get('appOpenId')
+			const unionIdVal = currentParams.get('unionId')
+			const loginTypeVal = currentParams.get('loginType')
+			const codeVal = currentParams.get('code')
+			const typeVal = currentParams.get('type')
+			
+			const currentOpenId = (openIdVal != null && openIdVal != '') ? openIdVal.toString() : ''
+			const currentXcxOpenId = (xcxOpenIdVal != null && xcxOpenIdVal != '') ? xcxOpenIdVal.toString() : ''
+			const currentGzhOpenId = (gzhOpenIdVal != null && gzhOpenIdVal != '') ? gzhOpenIdVal.toString() : ''
+			const currentAppOpenId = (appOpenIdVal != null && appOpenIdVal != '') ? appOpenIdVal.toString() : ''
+			const currentUnionId = (unionIdVal != null && unionIdVal != '') ? unionIdVal.toString() : ''
+			const currentLoginType = (loginTypeVal != null && loginTypeVal != '') ? loginTypeVal.toString() : ''
+			const currentCode = (codeVal != null && codeVal != '') ? codeVal.toString() : ''
+			const currentType = (typeVal != null && typeVal != '') ? typeVal.toString() : ''
+			
+			// 构造新对象
+			const newParamsJson = JSON.stringify({
+				openId: (key == 'openId') ? value.toString() : currentOpenId,
+				xcxOpenId: (key == 'xcxOpenId') ? value.toString() : currentXcxOpenId,
+				gzhOpenId: (key == 'gzhOpenId') ? value.toString() : currentGzhOpenId,
+				appOpenId: (key == 'appOpenId') ? value.toString() : currentAppOpenId,
+				unionId: (key == 'unionId') ? value.toString() : currentUnionId,
+				loginType: (key == 'loginType') ? value.toString() : currentLoginType,
+				code: (key == 'code') ? value.toString() : currentCode,
+				type: (key == 'type') ? value.toString() : currentType
+			})
+			const newParams = JSON.parse(newParamsJson) as UTSJSONObject
+			bindingParams.value = newParams
+		} catch (e) {
+			handleSilentError(e, '设置 bindingParams')
+		}
+	}
+	
+	// 设置绑定参数
+	const loginTypeVal = getOptionsProp('loginType')
+	if (loginTypeVal != null && loginTypeVal != '') {
+		setBindingParam('loginType', parseInt(loginTypeVal))
+	}
+	const openIdVal = getOptionsProp('openId')
+	if (openIdVal != null && openIdVal != '') {
+		setBindingParam('openId', openIdVal)
+	}
+	const xcxOpenIdVal = getOptionsProp('xcxOpenId')
+	if (xcxOpenIdVal != null && xcxOpenIdVal != '') {
+		setBindingParam('xcxOpenId', xcxOpenIdVal)
+	}
+	const gzhOpenIdVal = getOptionsProp('gzhOpenId')
+	if (gzhOpenIdVal != null && gzhOpenIdVal != '') {
+		setBindingParam('gzhOpenId', gzhOpenIdVal)
+	}
+	const appOpenIdVal = getOptionsProp('appOpenId')
+	if (appOpenIdVal != null && appOpenIdVal != '') {
+		setBindingParam('appOpenId', appOpenIdVal)
+	}
+	const unionIdVal = getOptionsProp('unionId')
+	if (unionIdVal != null && unionIdVal != '') {
+		setBindingParam('unionId', unionIdVal)
+	}
+	
+	// 优先从 URL 参数获取 code 和 type（从登录页面跳转时传递）
+	const codeVal = getOptionsProp('code')
+	if (codeVal != null && codeVal != '') {
+		setBindingParam('code', codeVal)
+	} else {
+		// 如果 URL 中没有 code，尝试从 storage 获取（防止 URL 参数丢失）
+		const storedCodeValue = safeGetStorageSync('wx_bind_code') as string
+		const storedCode = (storedCodeValue != null && storedCodeValue != '') ? storedCodeValue : ''
+		if (storedCode != null && storedCode != '') {
+			setBindingParam('code', storedCode)
+		}
+	}
+	
+	const typeVal = getOptionsProp('type')
+	if (typeVal != null && typeVal != '') {
+		setBindingParam('type', typeVal)
+	} else {
+		// 如果 URL 中没有 type，尝试从 storage 获取
+		const storedTypeValue = safeGetStorageSync('wx_bind_type') as string
+		const storedType = (storedTypeValue != null && storedTypeValue != '') ? storedTypeValue : ''
+		if (storedType != null && storedType != '') {
+			setBindingParam('type', storedType)
+		}
+	}
+	
+	// 验证必要参数
+	// bindingParams 现在是 ref<UTSJSONObject>，可以直接访问
+	let hasCode = false
+	let hasType = false
+	try {
+		const bindingParamsValue = bindingParams.value
+		if (bindingParamsValue != null) {
+			const codeVal = bindingParamsValue.get('code')
+			const typeVal = bindingParamsValue.get('type')
+			if (codeVal != null && codeVal != '') {
+				hasCode = true
+			}
+			if (typeVal != null && typeVal != '') {
+				hasType = true
+			}
+		}
+	} catch (e) {}
+	
+	if (hasCode == false || hasType == false) {
+		handleSilentError(new Error('绑定参数缺失'), '[BIND] 页面参数校验')
+		uni.showToast({
+			title: '绑定参数缺失，请重新登录',
+			icon: 'none',
+			duration: 2000
+		})
+		// 延迟返回登录页面
+		setTimeout(() => {
+			uni.navigateBack()
+		}, 2000)
+		return
+	}
+	
+	// ⭐ 检测是否为微信小程序环境
+	// #ifdef MP-WEIXIN
+	isWechatMiniProgram.value = true
+	// #endif
+})
+
+onUnmounted(() => {
+	// 清理定时器
+	// 使用显式判断替代隐式真假判断
+	const timerVal = countdownTimer.value
+	if (timerVal != null) {
+		clearInterval(timerVal)
+		countdownTimer.value = null
+	}
+})
+
+// 监听 formPhone 变化，同步到 form.value
+watch(formPhone, (newVal: string, oldVal: string) => {
+	syncFormPhone(newVal)
+})
+
+// 监听 formCode 变化，同步到 form.value
+watch(formCode, (newVal: string, oldVal: string) => {
+	syncFormCode(newVal)
+})
+
+// ==================== 核心方法 ====================
+
+// 验证手机号（必须在 getCode 之前定义，UTS 没有函数提升）
+const validatePhone = (phone: string): boolean => {
+	const phoneReg = /^1[3-9]\d{9}$/
+	return phoneReg.test(phone.trim().replace(/\D/g, ''))
+}
+
+// 启动倒计时（必须在 getCode 之前定义，UTS 没有函数提升）
+const startCountdown = () => {
+	codeCountdown.value = 60
+	
+	const timerId = setInterval(() => {
+		codeCountdown.value--
+		
+		if (codeCountdown.value <= 0) {
+			const timerVal = countdownTimer.value
+			if (timerVal != null) {
+				clearInterval(timerVal)
+				countdownTimer.value = null
+			}
+		}
+	}, 1000) as number
+	countdownTimer.value = timerId as number | null
+}
+
+// 获取验证码
+const getCode = async () => {
+	// canGetCode.value 是 Boolean 类型，不能与字符串比较
+	if (canGetCode.value == null || canGetCode.value == false) return
+	
+	// 取整洁手机号（仅数字）
+	const phone = normalizedPhone.value
+	// 安全设置 form.value.phone，避免 error18
+	try {
+		const formValue = form.value
+		if (formValue != null) {
+			const formJson = JSON.stringify(formValue)
+			if (formJson != null && formJson != '') {
+				const formParsed = JSON.parse(formJson) as UTSJSONObject
+				if (formParsed != null) {
+					const formObj = formParsed as UTSJSONObject
+					// 使用 JSON 方式重新构造 form 对象
+					const codeVal = formObj.get('code')
+					const codeStr = (codeVal != null && codeVal != '') ? codeVal.toString() : ''
+					const newFormRaw = {
+						phone: phone,
+						code: codeStr
+					} as UTSJSONObject
+					const newFormJson = JSON.stringify(newFormRaw)
+					if (newFormJson != null && newFormJson != '') {
+						const newFormParsed = JSON.parse(newFormJson) as UTSJSONObject
+						if (newFormParsed != null) {
+							// form.value 需要 UTSJSONObject 类型，确保类型为 UTSJSONObject
+							const newFormObj = newFormParsed as UTSJSONObject
+							form.value = newFormObj
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {
+		// 如果 JSON 方式失败，直接赋值
+		// 安全访问 form.value.code，避免 error18 和 UTS110111120
+		let currentCode = ''
+		try {
+			const formValue = form.value
+			if (formValue != null) {
+				const formJson = JSON.stringify(formValue)
+				if (formJson != null && formJson != '') {
+					const formParsed = JSON.parse(formJson) as UTSJSONObject
+					if (formParsed != null) {
+						const formObj = formParsed as UTSJSONObject
+						const codeVal = formObj.get('code')
+						if (codeVal != null && codeVal != '') {
+							currentCode = codeVal.toString()
+						}
+					}
+				}
+			}
+		} catch (e2) {
+			// 如果安全访问也失败，使用空字符串
+			currentCode = ''
+		}
+		// form.value 需要 UTSJSONObject 类型，确保类型为 UTSJSONObject
+		const newFormRaw = {
+			phone: phone,
+			code: currentCode
+		} as UTSJSONObject
+		const newFormJson = JSON.stringify(newFormRaw)
+		if (newFormJson != null && newFormJson != '') {
+			const newFormParsed = JSON.parse(newFormJson) as UTSJSONObject
+			if (newFormParsed != null) {
+				const newFormObj = newFormParsed as UTSJSONObject
+				form.value = newFormObj
+			}
+		}
+	}
+	
+	// 验证手机号
+	if (validatePhone(phone) == false) {
+		uni.showToast({
+			title: '请输入正确的手机号码',
+			icon: 'none'
+		})
+		return
+	}
+	
+	isGettingCode.value = true
+	
+	try {
+		secureLog('BindMobile', '获取验证码', phone)
+		// UTS 规范：直接使用 UTSJSONObject（不能用 as Interface，Android 会报 ClassCastException）
+		const getMobileCodeParams = { phone: phone } as UTSJSONObject
+		// 直接调用导出的函数（getMobileCode 是 named export）
+		const res = await getMobileCode(getMobileCodeParams)
+		
+		uni.showToast({
+			title: '验证码发送成功',
+			icon: 'success'
+		})
+		
+		// 启动倒计时
+		startCountdown()
+		
+	} catch (error) {
+		handlePageError(error, '获取验证码', null)
+	} finally {
+		isGettingCode.value = false
+	}
+}
+
+// 验证手机号和启动倒计时函数已在前面定义，这里删除重复定义
+
+// 处理绑定手机号
+const handleBindPhone = async () => {
+	// canSubmit.value 是 Boolean 类型，不能与字符串比较
+	if (canSubmit.value == null || canSubmit.value == false) return
+	
+	// 验证手机号
+	const phone = normalizedPhone.value
+	// 安全设置 form.value.phone，避免 error18
+	try {
+		const formValue = form.value
+		if (formValue != null) {
+			const formJson = JSON.stringify(formValue)
+			if (formJson != null && formJson != '') {
+				const formParsed = JSON.parse(formJson) as UTSJSONObject
+				if (formParsed != null) {
+					const formObj = formParsed as UTSJSONObject
+					// 使用 JSON 方式重新构造 form 对象
+					const codeVal = formObj.get('code')
+					const codeStr = (codeVal != null && codeVal != '') ? codeVal.toString() : ''
+					const newFormRaw = {
+						phone: phone,
+						code: codeStr
+					} as UTSJSONObject
+					const newFormJson = JSON.stringify(newFormRaw)
+					if (newFormJson != null && newFormJson != '') {
+						const newFormParsed = JSON.parse(newFormJson) as UTSJSONObject
+						if (newFormParsed != null) {
+							// form.value 需要 UTSJSONObject 类型，确保类型为 UTSJSONObject
+							const newFormObj = newFormParsed as UTSJSONObject
+							form.value = newFormObj
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {
+		// 如果 JSON 方式失败，直接赋值
+		const currentCode = getFormProp('code')
+		const newFormRaw = {
+			phone: phone,
+			code: currentCode
+		} as UTSJSONObject
+		const newFormJson = JSON.stringify(newFormRaw)
+		if (newFormJson != null && newFormJson != '') {
+			const newFormParsed = JSON.parse(newFormJson) as UTSJSONObject
+			if (newFormParsed != null) {
+				// form.value 需要 UTSJSONObject 类型，确保类型为 UTSJSONObject
+				const newFormObj = newFormParsed as UTSJSONObject
+				form.value = newFormObj
+			}
+		}
+	}
+	if (validatePhone(phone) == false) {
+		uni.showToast({
+			title: '请输入正确的手机号码',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证验证码
+	const formCodeVal = getFormProp('code')
+	if (codeReg.test(formCodeVal) == false) {
+		uni.showToast({
+			title: '请输入4位数字验证码',
+			icon: 'none'
+		})
+		return
+	}
+	
+	loading.value = true
+	
+	try {
+		// 构建绑定参数
+		// 安全访问 form.value 的属性
+		const formPhoneVal = getFormProp('phone')
+		const formCodeVal = getFormProp('code')
+		const loginTypeVal = getBindingParamValue('loginType')
+		// 安全转换 loginType 为数字类型
+		let loginTypeNum: number | null = null
+		if (loginTypeVal != null) {
+			if (typeof loginTypeVal === 'number') {
+				loginTypeNum = loginTypeVal as number
+			} else {
+				const loginTypeStr = loginTypeVal.toString()
+				if (loginTypeStr != null && loginTypeStr != '') {
+					const parsedNum = parseInt(loginTypeStr)
+					// 检查 parseInt 结果是否有效
+					if (!isNaN(parsedNum)) {
+						loginTypeNum = parsedNum
+					}
+				}
+			}
+		}
+		// 使用显式数字比较，避免类型不匹配
+		const finalLoginType = (loginTypeNum != null && loginTypeNum > 0) ? loginTypeNum : 20
+		let bindParams: UTSJSONObject = {
+			phone: formPhoneVal,
+			code: formCodeVal,
+			loginType: finalLoginType
+		} as UTSJSONObject
+		// 本地缓存微信用户昵称/头像，避免直接给 bindParams 点赋值（UTS error18）
+		let bindParamsNickName: string = ''
+		let bindParamsAvatarUrl: string = ''
+		
+		// 添加openId（兼容旧逻辑，主要用于非微信 code 绑定场景）
+		// 安全访问 bindingParams.value 的属性
+		// 使用 JSON 方式重新构造 bindParams 对象，避免 error18
+		const openIdVal = getBindingParamValue('openId')
+		const xcxOpenIdVal = getBindingParamValue('xcxOpenId')
+		const gzhOpenIdVal = getBindingParamValue('gzhOpenId')
+		const appOpenIdVal = getBindingParamValue('appOpenId')
+		const unionIdVal = getBindingParamValue('unionId')
+		
+		// 重新构造 bindParams 对象，包含所有需要的字段
+		// 使用 JSON 方式构造对象，避免直接访问属性导致的 error18
+		// 先构造包含所有字段的 JSON 字符串，然后解析
+		const openIdStr = (openIdVal != null && openIdVal != '') ? openIdVal.toString() : ''
+		const xcxOpenIdStr = (xcxOpenIdVal != null && xcxOpenIdVal != '') ? xcxOpenIdVal.toString() : ''
+		const gzhOpenIdStr = (gzhOpenIdVal != null && gzhOpenIdVal != '') ? gzhOpenIdVal.toString() : ''
+		const appOpenIdStr = (appOpenIdVal != null && appOpenIdVal != '') ? appOpenIdVal.toString() : ''
+		const unionIdStr = (unionIdVal != null && unionIdVal != '') ? unionIdVal.toString() : ''
+		
+		// 构造包含所有字段的对象（在对象字面量中直接包含所有字段，避免后续动态添加）
+		// 使用 JSON.stringify + JSON.parse 来安全构造对象
+		const bindParamsRawTemp = {
+			phone: formPhoneVal,
+			code: formCodeVal,
+			loginType: finalLoginType
+		} as UTSJSONObject
+		
+		// 使用 JSON 方式添加可选字段，避免直接访问属性导致的 error18
+		const bindParamsRawTempJson = JSON.stringify(bindParamsRawTemp)
+		if (bindParamsRawTempJson != null && bindParamsRawTempJson != '') {
+			const bindParamsRawTempParsed = JSON.parse(bindParamsRawTempJson) as UTSJSONObject
+			if (bindParamsRawTempParsed != null) {
+				// 使用 UTSJSONObject 方式访问和设置属性
+				const bindParamsRawTempObj = bindParamsRawTempParsed as UTSJSONObject
+				// 重新构造包含所有字段的对象（使用类型断言访问属性，避免 error18）
+				const bindParamsRawFinalObj: UTSJSONObject = new UTSJSONObject()
+				// 安全访问 UTSJSONObject 的属性，避免 invoke 错误
+				const phoneVal = bindParamsRawTempObj.get('phone')
+				const codeValFromObj = bindParamsRawTempObj.get('code')
+				const loginTypeValFromObj = bindParamsRawTempObj.get('loginType')
+				// 使用已定义的变量，避免作用域问题
+				const phoneStr = (phoneVal != null) ? phoneVal.toString() : formPhoneVal
+				const codeStr = (codeValFromObj != null) ? codeValFromObj.toString() : formCodeVal
+				let loginTypeNum: number = finalLoginType
+				if (loginTypeValFromObj != null) {
+					if (typeof loginTypeValFromObj === 'number') {
+						loginTypeNum = loginTypeValFromObj
+					} else {
+						const loginTypeStr = loginTypeValFromObj.toString()
+						if (loginTypeStr != null && loginTypeStr != '') {
+							const parsedNum = parseInt(loginTypeStr)
+							if (!isNaN(parsedNum)) {
+								loginTypeNum = parsedNum
+							}
+						}
+					}
+				}
+				// 构造包含所有字段的对象字面量（可选字段使用空字符串占位，后续 JSON 过滤）
+				const bindParamsRawFinalObjAny = {
+					phone: (phoneStr != null) ? phoneStr : '',
+					code: (codeStr != null) ? codeStr : '',
+					loginType: (loginTypeNum != null) ? loginTypeNum : finalLoginType,
+					openId: (openIdStr != null && openIdStr != '') ? openIdStr : '',
+					xcxOpenId: (xcxOpenIdStr != null && xcxOpenIdStr != '') ? xcxOpenIdStr : '',
+					gzhOpenId: (gzhOpenIdStr != null && gzhOpenIdStr != '') ? gzhOpenIdStr : '',
+					appOpenId: (appOpenIdStr != null && appOpenIdStr != '') ? appOpenIdStr : '',
+					unionId: (unionIdStr != null && unionIdStr != '') ? unionIdStr : ''
+				} as UTSJSONObject
+				// 使用 JSON 序列化/反序列化创建最终对象
+				const bindParamsRawFinalJson = JSON.stringify(bindParamsRawFinalObj)
+				if (bindParamsRawFinalJson != null && bindParamsRawFinalJson != '') {
+					const bindParamsRawFinal = JSON.parse(bindParamsRawFinalJson) as UTSJSONObject
+					if (bindParamsRawFinal != null) {
+						// 使用 JSON 序列化/反序列化创建新对象，然后直接整体替换 bindParams
+						const bindParamsJson = JSON.stringify(bindParamsRawFinal)
+						if (bindParamsJson != null && bindParamsJson != '') {
+							const bindParamsParsed = JSON.parse(bindParamsJson) as UTSJSONObject
+							if (bindParamsParsed != null) {
+								// 直接替换 bindParams 对象为解析后的对象（避免对已有对象做点访问）
+								bindParams = bindParamsParsed as UTSJSONObject
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		// 添加微信用户信息（用于新用户昵称/头像）
+		// 安全访问 wechatUserInfo.value，避免隐式真假判断和 error18
+		const wechatUserInfoValue = wechatUserInfo.value
+		if (wechatUserInfoValue != null) {
+			try {
+				const wechatUserInfoJson = JSON.stringify(wechatUserInfoValue)
+				if (wechatUserInfoJson != null && wechatUserInfoJson != '') {
+					const wechatUserInfoParsed = JSON.parse(wechatUserInfoJson) as UTSJSONObject
+					if (wechatUserInfoParsed != null) {
+						const wechatUserInfoObj = wechatUserInfoParsed as UTSJSONObject
+						const nicknameVal = wechatUserInfoObj.get('nickname')
+						const headimgurlVal = wechatUserInfoObj.get('headimgurl')
+						if (nicknameVal != null && nicknameVal != '') {
+							bindParamsNickName = nicknameVal.toString()
+						}
+						if (headimgurlVal != null && headimgurlVal != '') {
+							bindParamsAvatarUrl = headimgurlVal.toString()
+						}
+					}
+				}
+			} catch (e) {
+				// 如果 JSON 方式失败，忽略
+			}
+		}
+		
+		console.log('绑定参数:', bindParams)
+		
+		// ========== 微信登录绑定流程 ==========
+		// 如果带有微信 code/type，则通过 wxLogin 完成绑定并登录
+		// 安全访问 bindingParams.value.code 和 bindingParams.value.type
+		const bindingCodeVal = getBindingParamValue('code')
+		if (bindingCodeVal == null || bindingCodeVal == '') {
+			// 无 code/type 时直接报错，提示重新登录
+			throw new Error('绑定参数缺失，请重新登录后重试')
+		}
+		
+		const wxTypeValue = getBindingParamValue('type')
+		const wxType = (wxTypeValue != null && wxTypeValue != '') ? wxTypeValue.toString() : 'web'
+		// 绑定使用微信登录接口，传递手机与验证码
+		// Helper to call wxLogin with typed params
+		const callWxLogin = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+			try {
+				// UTS 规范：直接使用 UTSJSONObject（不能用 as Interface，Android 会报 ClassCastException）
+				const wxLoginParams = params as UTSJSONObject
+				return await wxLogin(wxLoginParams) as UTSJSONObject
+			} catch (e) {
+				throw e
+			}
+		}
+		// Early save helper to avoid calling later-defined saveLoginData (UTS no hoisting)
+		const saveLoginDataEarly = (data: UTSJSONObject) => {
+			try {
+				// Use JSON round-trip to safely access fields on data (avoid error18)
+				const dataJson = JSON.stringify(data)
+				const parsed = (dataJson != null && dataJson != '') ? JSON.parse(dataJson) as UTSJSONObject : data
+
+				// ensure token field (use UTSJSONObject.get to avoid error18)
+				let phoneWebTokenVal: string = ''
+				try {
+					const parsedObj = parsed as UTSJSONObject
+					const phoneValAny = parsedObj.get('phoneWebToken')
+					const tokenValAny = parsedObj.get('token')
+					if (phoneValAny != null && phoneValAny != '') {
+						phoneWebTokenVal = phoneValAny.toString()
+					} else if (tokenValAny != null && tokenValAny != '') {
+						phoneWebTokenVal = tokenValAny.toString()
+					}
+				} catch (e) {
+					// fallback: use JSON round-trip + UTSJSONObject.get to safely access fields
+					try {
+						const parsedJson2 = JSON.stringify(parsed)
+						if (parsedJson2 != null && parsedJson2 != '') {
+							const parsedParsed2 = JSON.parse(parsedJson2) as UTSJSONObject
+							if (parsedParsed2 != null) {
+								const parsedObj2 = parsedParsed2 as UTSJSONObject
+								const phoneValAny2 = parsedObj2.get('phoneWebToken')
+								const tokenValAny2 = parsedObj2.get('token')
+								if (phoneValAny2 != null && phoneValAny2 != '') {
+									phoneWebTokenVal = phoneValAny2.toString()
+								} else if (tokenValAny2 != null && tokenValAny2 != '') {
+									phoneWebTokenVal = tokenValAny2.toString()
+								}
+							}
+						}
+					} catch (e2) {
+						// give up fallback silently
+					}
+				}
+
+				// ensure kid (extract from token if missing)
+				let kidValFinal: string = ''
+				try {
+					const parsedObj = parsed as UTSJSONObject
+					const kidValAny = parsedObj.get('kid')
+					if (kidValAny != null && kidValAny != '') {
+						kidValFinal = kidValAny.toString()
+					}
+				} catch (e) {}
+				if (kidValFinal == null || kidValFinal == '') {
+					// determine token source for extracting kid
+					let tokenForKid: string = ''
+					if (phoneWebTokenVal != null && phoneWebTokenVal != '') {
+						tokenForKid = phoneWebTokenVal
+					} else {
+						try {
+							const parsedJson3 = JSON.stringify(parsed)
+							if (parsedJson3 != null && parsedJson3 != '') {
+								const parsedParsed3 = JSON.parse(parsedJson3) as UTSJSONObject
+								if (parsedParsed3 != null) {
+									const parsedObj3 = parsedParsed3 as UTSJSONObject
+									const tokenValAny3 = parsedObj3.get('token')
+									if (tokenValAny3 != null && tokenValAny3 != '') {
+										tokenForKid = tokenValAny3.toString()
+									}
+								}
+							}
+						} catch (e3) {}
+					}
+					// explicit boolean check for tokenForKid (avoid type mismatch)
+					if (tokenForKid != null && tokenForKid != '') {
+						try {
+							const tokenStr = tokenForKid.toString()
+							const parts = tokenStr.split('.')
+							if (parts != null && Array.isArray(parts) == true && parts.length > 1) {
+								const payloadStr = atob(parts[1].toString())
+								if (payloadStr != null && payloadStr != '') {
+									const payloadParsed = JSON.parse(payloadStr) as UTSJSONObject
+									if (payloadParsed != null) {
+										try {
+											const payloadJson = JSON.stringify(payloadParsed)
+											if (payloadJson != null && payloadJson != '') {
+												const payloadParsed2 = JSON.parse(payloadJson) as UTSJSONObject
+												if (payloadParsed2 != null) {
+													const payloadObj = payloadParsed2 as UTSJSONObject
+													const userKidVal = payloadObj.get('userKid')
+													const kidVal1 = payloadObj.get('kid')
+													const userIdVal = payloadObj.get('userId')
+													const idVal = payloadObj.get('id')
+													const chosen = (userKidVal != null && userKidVal != '') ? userKidVal
+														: ((kidVal1 != null && kidVal1 != '') ? kidVal1
+															: ((userIdVal != null && userIdVal != '') ? userIdVal : idVal))
+													if (chosen != null && chosen != '') {
+														kidValFinal = chosen.toString()
+													}
+												}
+											}
+										} catch (e) {}
+									}
+								}
+							}
+						} catch (e) {}
+					}
+					if (kidValFinal == null || kidValFinal == '') {
+						// fallback to common fields (use UTSJSONObject.get to avoid error18)
+						try {
+							const parsedJsonFallback = JSON.stringify(parsed)
+							if (parsedJsonFallback != null && parsedJsonFallback != '') {
+								const parsedCloneFallback = JSON.parse(parsedJsonFallback) as UTSJSONObject
+								try {
+									const parsedCloneObj = parsedCloneFallback as UTSJSONObject
+									const userKidVal = parsedCloneObj.get('userKid')
+									const userIdVal = parsedCloneObj.get('userId')
+									const idVal = parsedCloneObj.get('id')
+									if (userKidVal != null && userKidVal != '') {
+										kidValFinal = userKidVal.toString()
+									} else if (userIdVal != null && userIdVal != '') {
+										kidValFinal = userIdVal.toString()
+									} else if (idVal != null && idVal != '') {
+										kidValFinal = idVal.toString()
+									}
+								} catch (e) {
+									// cannot safely access properties; skip fallback to avoid error18
+								}
+							}
+						} catch (e) {}
+					}
+				}
+
+				// Create a safe clone to pass to userStore and storage (avoid direct dot writes on parsed)
+				let finalParsed: UTSJSONObject = new UTSJSONObject()
+				try {
+					const parsedJsonClone = JSON.stringify(parsed)
+					finalParsed = (parsedJsonClone != null && parsedJsonClone != '') ? JSON.parse(parsedJsonClone) as UTSJSONObject : {}
+				} catch (e) {
+					finalParsed = (parsed as UTSJSONObject)
+				}
+				// Merge token/kid into final JSON safely (avoid direct dot writes which trigger error18)
+				let finalJsonStr = ''
+				try {
+					const baseJson = JSON.stringify(finalParsed)
+					finalJsonStr = (baseJson != null) ? baseJson : '{}'
+				} catch (e) {
+					finalJsonStr = '{}'
+				}
+
+				// Append/override phoneWebToken and kid by simple JSON text merge
+				try {
+					let merged = finalJsonStr
+					if (phoneWebTokenVal != null && phoneWebTokenVal != '') {
+						merged = merged.substring(0, merged.length - 1) + `, "phoneWebToken": ${JSON.stringify(phoneWebTokenVal)} }`
+					}
+					if (kidValFinal != null && kidValFinal != '') {
+						merged = merged.substring(0, merged.length - 1) + `, "kid": ${JSON.stringify(kidValFinal)} }`
+					}
+					const finalSaved = JSON.parse(merged) as UTSJSONObject
+					try {
+						// update storage using safe clone; avoid typeof and property checks
+						let safeSaved: UTSJSONObject = finalSaved as UTSJSONObject
+						try {
+							// attempt to clone via utility; if it fails, fallback to original
+							safeSaved = safeClone(finalSaved)
+						} catch (e) {
+							safeSaved = finalSaved
+						}
+						// write to storage (prefer store action, fallback to storage)
+						try {
+							const called = callUserStoreAction('setUserInfo', safeSaved)
+							if (called == false) {
+								try { uni.setStorageSync('userInfo', safeSaved) } catch (e) {}
+							}
+						} catch (e) {
+							try { uni.setStorageSync('userInfo', safeSaved) } catch (e) {}
+						}
+						// also write userKid and token using safe variables
+						try {
+							const finalKidStr = (kidValFinal != null && kidValFinal != '') ? kidValFinal.toString() : ''
+							uni.setStorageSync('userKid', finalKidStr)
+						} catch (e) {}
+						try {
+							const finalTokenStr = (phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal.toString() : ''
+							saveToken(finalTokenStr)
+						} catch (e) {}
+					} catch (e) {}
+				} catch (e) {
+					// fallback: save original parsed object as JSON string
+					try {
+						uni.setStorageSync('userInfo', JSON.stringify(finalParsed))
+					} catch (e2) {}
+				}
+
+				// Save userKid and token using the safe variables we already computed
+				try {
+					const finalKidStr = (kidValFinal != null && kidValFinal != '') ? kidValFinal.toString() : ''
+					uni.setStorageSync('userKid', finalKidStr)
+				} catch (e) {}
+				try {
+					const finalTokenStr = (phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal.toString() : ''
+					saveToken(finalTokenStr)
+				} catch (e) {}
+				try {
+					uni.removeStorageSync('wechatUserInfo')
+				} catch (e) {}
+			} catch (e) {}
+		}
+		// 使用之前从 wechatUserInfo 提取的本地变量，避免直接访问 bindParams 的属性（error18）
+		const nicknameStr = (bindParamsNickName != null && bindParamsNickName != '') ? bindParamsNickName.toString() : ''
+		const avatarUrlStr = (bindParamsAvatarUrl != null && bindParamsAvatarUrl != '') ? bindParamsAvatarUrl.toString() : ''
+		// 使用 JSON.parse + 接口类型传递参数，避免匿名对象参数导致的 error17
+		const wxLoginParamsJson = JSON.stringify({
+			code: bindingCodeVal.toString(),
+			type: wxType,
+			phone: formPhoneVal,
+			smsCode: formCodeVal,
+			nickname: nicknameStr,
+			image: avatarUrlStr
+		})
+		const wxLoginParamsParsed = JSON.parse(wxLoginParamsJson) as UTSJSONObject
+		// 避免直接调用动态类型函数导致 invoke 错误，通过 wrapper 调用
+		const res = await callWxLogin((wxLoginParamsParsed != null) ? wxLoginParamsParsed : ({ code: bindingCodeVal.toString(), type: wxType, phone: formPhoneVal, smsCode: formCodeVal, nickname: nicknameStr, image: avatarUrlStr } as UTSJSONObject))
+		
+		// 安全访问 res.code、res.data、res.msg、res.message（UTS 不支持可选链操作符 ?.）
+		let rc: string = ''
+		let resData: string = ''
+		let resMsg: string = ''
+		let resMessage: string = ''
+		if (res != null) {
+			try {
+				const resJson = JSON.stringify(res)
+				if (resJson != null && resJson != '') {
+					const resParsed = JSON.parse(resJson) as UTSJSONObject
+					if (resParsed != null) {
+						const resObj = resParsed as UTSJSONObject
+						const rcVal = resObj.get('code')
+						rc = (rcVal != null) ? rcVal.toString() : ''
+						const resDataVal = resObj.get('data')
+						resData = (resDataVal != null) ? resDataVal.toString() : ''
+						const resMsgVal = resObj.get('msg')
+						resMsg = (resMsgVal != null) ? resMsgVal.toString() : ''
+						const resMessageVal = resObj.get('message')
+						resMessage = (resMessageVal != null) ? resMessageVal.toString() : ''
+					}
+				}
+			} catch (e) {}
+		}
+		
+		const resMsgStr = (resMsg != null && resMsg != '') ? resMsg.toString() : ''
+		const hasExpiredCode = (resMsgStr != null && resMsgStr != '' && resMsgStr.includes('授权code已失效'))
+		
+		// 判断是否成功：code == 200（数字或字符串）
+		let rcNum = 0
+		if (rc != null && rc != '') {
+			try {
+				rcNum = parseInt(rc.toString())
+				if (isNaN(rcNum) == true) {
+					rcNum = 0
+				}
+			} catch (e) {
+				rcNum = 0
+			}
+		}
+		const isSuccess = (rcNum == 200)
+		
+		if (isSuccess == true) {
+			// 清除保存的绑定参数（避免重复使用）
+			uni.removeStorageSync('wx_bind_code')
+			uni.removeStorageSync('wx_bind_type')
+			
+			// 保存用户信息（如果有数据）
+			if (resData != null && resData != '') {
+				try {
+					const resDataObj = JSON.parse(JSON.stringify(resData)) as UTSJSONObject
+					saveLoginDataEarly(resDataObj)
+				} catch (e) {}
+			}
+			
+			uni.showToast({
+				title: '绑定成功',
+				icon: 'success'
+			})
+			
+			// 跳转逻辑：根据平台跳转到不同页面
+			setTimeout(() => {
+				goToHome()
+			}, 1000)
+		} else if (rcNum == 10002 || hasExpiredCode == true) {
+			// 微信 code 过期：清理后引导重新授权
+			uni.removeStorageSync('wx_bind_code')
+			uni.removeStorageSync('wx_bind_type')
+			uni.removeStorageSync('wxCode')
+			uni.removeStorageSync('wx_oauth_state')
+			
+			uni.showToast({
+				title: '授权已过期，请重新授权',
+				icon: 'none',
+				duration: 1500
+			})
+			
+			setTimeout(() => {
+				uni.reLaunch({ url: '/pagesUser/login/index' })
+			}, 500)
+		} else {
+			// 使用已获取的 resMsg 和 resMessage
+			let errorMessage = '绑定失败'
+			if (resMsg != null && resMsg != '') {
+				errorMessage = resMsg.toString()
+			} else if (resMessage != null && resMessage != '') {
+				errorMessage = resMessage.toString()
+			}
+			throw new Error(errorMessage)
+		}
+		
+	} catch (error) {
+		handleSilentError(error, '绑定手机号')
+		
+		let errorMsg = '绑定失败，请重试'
+		let errorCode = ''
+		// 安全访问 error.message 和 error.code，避免 error18
+		if (error != null) {
+			try {
+				const errorJson = JSON.stringify(error)
+				if (errorJson != null && errorJson != '') {
+					const errorParsed = JSON.parse(errorJson) as UTSJSONObject
+					if (errorParsed != null) {
+						const errorObj = errorParsed as UTSJSONObject
+						const messageVal = errorObj.get('message')
+						const codeVal = errorObj.get('code')
+						if (codeVal != null && codeVal != '') {
+							errorCode = codeVal.toString()
+						}
+						if (messageVal != null && messageVal != '') {
+							const messageStr = messageVal.toString()
+							if (messageStr.includes('已存在')) {
+								errorMsg = '手机号已绑定其他账号'
+							} else if (messageStr.includes('验证码')) {
+								errorMsg = '验证码错误或已过期'
+							} else {
+								errorMsg = messageStr
+							}
+							// 检查是否包含错误码
+							if (messageStr.includes('10005')) {
+								errorCode = '10005'
+							}
+						}
+					}
+				}
+			} catch (e) {
+				// 如果 JSON 方式失败，使用默认错误消息
+			}
+		}
+		
+		// 检测错误码 10005（绑定过程异常），提示用户可跳过绑定
+		if (errorCode == '10005') {
+			uni.showModal({
+				title: '绑定遇到问题',
+				content: '手机号绑定失败，是否跳过绑定直接登录？',
+				confirmText: '跳过绑定',
+				cancelText: '重试',
+				success: (res: UniShowModalResult) => {
+					if (res.confirm == true) {
+						doSkipBinding()
+					}
+				}
+			})
+			return
+		}
+		
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	} finally {
+		loading.value = false
+	}
+}
+
+// 保存登录数据
+const saveLoginData = (data: UTSJSONObject) => {
+	try {
+		// 使用 JSON 序列化/反序列化安全访问对象，避免直接点访问导致 error18
+		const dataJson = JSON.stringify(data)
+		const parsed = (dataJson != null && dataJson != '') ? JSON.parse(dataJson) as UTSJSONObject : data
+
+		// 确保有 token 字段（优先使用 phoneWebToken）- 使用 UTSJSONObject.get() 安全访问
+		let phoneWebTokenVal: string = ''
+		let kidVal: string = ''
+		let tokenVal: string = ''
+		
+		try {
+			const parsedObj = parsed as UTSJSONObject
+			const phoneWebTokenAny = parsedObj.get('phoneWebToken')
+			const tokenAny = parsedObj.get('token')
+			const kidAny = parsedObj.get('kid')
+			const userKidAny = parsedObj.get('userKid')
+			const userIdAny = parsedObj.get('userId')
+			const idAny = parsedObj.get('id')
+			
+			if (phoneWebTokenAny != null && phoneWebTokenAny != '') {
+				phoneWebTokenVal = phoneWebTokenAny.toString()
+			} else if (tokenAny != null && tokenAny != '') {
+				phoneWebTokenVal = tokenAny.toString()
+				tokenVal = tokenAny.toString()
+			}
+			
+			if (kidAny != null && kidAny != '') {
+				kidVal = kidAny.toString()
+			} else if (userKidAny != null && userKidAny != '') {
+				kidVal = userKidAny.toString()
+			} else if (userIdAny != null && userIdAny != '') {
+				kidVal = userIdAny.toString()
+			} else if (idAny != null && idAny != '') {
+				kidVal = idAny.toString()
+			}
+		} catch (e) {
+			// 如果 UTSJSONObject 方式失败，使用 JSON 方式
+		}
+
+		// 如果没有 kid，尝试从 token 中解析
+		if (kidVal == null || kidVal == '') {
+			const tokenForKid = (phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal : tokenVal
+			if (tokenForKid != null && tokenForKid != '') {
+				try {
+					const tokenStr = tokenForKid.toString()
+					const parts = tokenStr.split('.')
+					if (parts != null && Array.isArray(parts) == true && parts.length > 1) {
+						const payloadStr = atob(parts[1].toString())
+						if (payloadStr != null && payloadStr != '') {
+							const payloadParsed = JSON.parse(payloadStr) as UTSJSONObject
+							if (payloadParsed != null) {
+								const payloadObj = payloadParsed as UTSJSONObject
+								const userKidVal = payloadObj.get('userKid')
+								const kidVal1 = payloadObj.get('kid')
+								const userIdVal = payloadObj.get('userId')
+								const idVal = payloadObj.get('id')
+								if (userKidVal != null && userKidVal != '') {
+									kidVal = userKidVal.toString()
+								} else if (kidVal1 != null && kidVal1 != '') {
+									kidVal = kidVal1.toString()
+								} else if (userIdVal != null && userIdVal != '') {
+									kidVal = userIdVal.toString()
+								} else if (idVal != null && idVal != '') {
+									kidVal = idVal.toString()
+								}
+							}
+						}
+					}
+				} catch (e) {
+					// ignore
+				}
+			}
+		}
+
+		console.log('保存用户信息:', parsed)
+
+		// 同步到 Pinia（优先通过 callUserStoreAction，然后调用导出的独立函数作为降级）
+		try {
+			const called = callUserStoreAction('login', parsed)
+			if (called == false) {
+				try { loginAction(parsed) } catch (e) { handleSilentError(e, 'Pinia 登录状态更新') }
+			}
+		} catch (e) {
+			try { loginAction(parsed) } catch (e2) { handleSilentError(e2, 'Pinia 登录状态更新') }
+		}
+		
+		// 保存到 storage（兼容旧逻辑，callUserStoreAction 已尝试写入 storage）
+		try {
+			const called2 = callUserStoreAction('setUserInfo', parsed)
+			if (called2 == false) {
+				try { uni.setStorageSync('userInfo', parsed) } catch (e) {}
+			}
+		} catch (e) {
+			try { uni.setStorageSync('userInfo', parsed) } catch (e) {}
+		}
+		try {
+			const finalKidStr = (kidVal != null && kidVal != '') ? kidVal.toString() : ''
+			uni.setStorageSync('userKid', finalKidStr)
+		} catch (e) {}
+		try {
+			const finalTokenStr = (phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal.toString() : ''
+			saveToken(finalTokenStr)
+		} catch (e) {}
+	
+	// 清除临时存储的微信信息
+	uni.removeStorageSync('wechatUserInfo')
+	} catch (e) {}
+}
+
+// 获取存储的微信用户信息函数已在前面定义（第141行），这里删除重复定义
+</script>
+
+<style scoped>
+.login-page {
+	position: relative;
+	width: 750rpx;
+	height: 100%;
+	overflow: hidden;
+	background-color: transparent;
+}
+
+.bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	width: 750rpx;
+	height: 100%;
+}
+
+.back-btn {
+	position: absolute;
+	top: 88rpx;
+	left: 32rpx;
+	width: 84rpx;
+	height: 84rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+.skip-btn {
+	position: absolute;
+	top: 88rpx;
+	right: 32rpx;
+	height: 84rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.skip-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.login-form {
+	position: absolute;
+	top: 25%;
+	left: 0;
+	right: 0;
+	flex-direction: column;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+}
+
+.form-title {
+	margin-bottom: 80rpx;
+}
+
+.form-title-text {
+	font-size: 64rpx;
+	color: #ffffff;
+	font-weight: bold;
+	letter-spacing: 2rpx;
+	line-height: 1.2;
+}
+
+.form-content {
+	flex-direction: column;
+}
+
+.input-wrapper {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 32rpx;
+	background-color: rgba(255, 255, 255, 0.95);
+	border-radius: 16rpx;
+	height: 96rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+}
+
+.login-input {
+	flex: 1;
+	height: 96rpx;
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.input-placeholder {
+	color: #999999;
+	font-size: 30rpx;
+}
+
+.code-input-container {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 32rpx;
+}
+
+.code-input-wrapper {
+	flex: 1;
+	margin-bottom: 0;
+}
+
+.code-input {
+	flex: 1;
+	height: 96rpx;
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.send-code-btn {
+	flex-shrink: 0;
+	min-width: 200rpx;
+	height: 96rpx;
+	margin-left: 16rpx;
+	background-color: #1890ff;
+	border-radius: 16rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.send-code-btn-disabled {
+	background-color: #cccccc;
+}
+
+.send-code-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.submit-btn {
+	width: 100%;
+	height: 96rpx;
+	margin-top: 16rpx;
+	background-color: #1890ff;
+	border-radius: 48rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn-disabled {
+	background-color: #cccccc;
+}
+
+.submit-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+
+.loading-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-content {
+	flex-direction: column;
+	align-items: center;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	padding-top: 48rpx;
+	padding-bottom: 48rpx;
+	background-color: rgba(0, 0, 0, 0.8);
+	border-radius: 16rpx;
+}
+
+.loading-spinner {
+	width: 64rpx;
+	height: 64rpx;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: rgba(255, 255, 255, 0.3);
+	border-top-color: #ffffff;
+	border-radius: 32rpx;
+	margin-bottom: 24rpx;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+</style>

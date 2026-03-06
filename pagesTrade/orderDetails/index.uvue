@@ -1,0 +1,2088 @@
+<template>
+	<view class="page" v-if="initDataFlag == true">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="goBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">订单详情</text>
+				<view class="nav-right" @click="handleShare">
+					<uni-icons type="redo" size="22" color="#333333"></uni-icons>
+				</view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- 顶部背景区域 -->
+		<!-- #ifndef H5 -->
+		<view class="page-header" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="page-header">
+			<!-- H5端保留返回和分享按钮 -->
+			<view class="header-left-btn" @click="goBack">
+				<Icon name="back" :size="40" color="#FFFFFF" />
+			</view>
+			<view class="header-right-btn" @click="handleShare">
+				<Icon name="share" :size="40" color="#FFFFFF" />
+			</view>
+		<!-- #endif -->
+			<!-- 背景图片 -->
+			<image class="page-header-bg" src="https://jiasu.wyxdapp.com/iconimages/order_details_bg.png" mode="aspectFill" />
+			<!-- 状态标题 -->
+			<view class="header-content">
+				<view class="status-row">
+					<image 
+						v-if="statusIcon != ''" 
+						class="status-icon" 
+						:src="statusIcon" 
+						mode="aspectFit" 
+					/>
+					<text class="header-title">{{statusText}}</text>
+				</view>
+				<!-- 超时提示或其他状态信息 -->
+				<template v-if="type == 1">
+					<template v-if="refundStatu == REFUND_STATUS_PENDING">
+						<text class="header-subtitle">退款中，等待向导确认退款</text>
+					</template>
+					<template v-else-if="refundStatu == REFUND_STATUS_SUCCESS">
+						<text class="header-subtitle">订单已取消，退款已原路退回</text>
+					</template>
+					<template v-else-if="refundStatu == REFUND_STATUS_FAILED">
+						<text class="header-subtitle">退款被拒绝</text>
+					</template>
+					<template v-else-if="orderStatu == ORDER_STATUS_PENDING && isSpecialOrderType == false">
+						<text class="header-subtitle">请支付订单费用</text>
+					</template>
+					<template v-else-if="orderStatu == ORDER_STATUS_CONFIRMED && isSpecialOrderType == false">
+						<text class="header-subtitle">等待向导接单</text>
+					</template>
+					<text v-else-if="orderStatu == ORDER_STATUS_IN_PROGRESS" class="header-subtitle">已付款</text>
+					<text v-else-if="orderStatu == ORDER_STATUS_CANCELLED" class="header-subtitle">交易已完成，期待您的评价</text>
+					<text v-else-if="orderStatu == ORDER_STATUS_REFUNDING" class="header-subtitle">感谢您本次购买，期待您再次光临</text>
+					<text v-else-if="orderStatu == ORDER_STATUS_CLOSED" class="header-subtitle">订单已取消</text>
+					<text v-else-if="orderStatu == ORDER_STATUS_REFUNDED && refundStatu != REFUND_STATUS_PENDING && refundStatu != REFUND_STATUS_SUCCESS && refundStatu != REFUND_STATUS_FAILED" class="header-subtitle">订单已取消</text>
+				</template>
+			</view>
+		</view>
+		<!-- 主内容区 -->
+		<view class="content-body">
+			<!-- 订单信息卡片 -->
+			<view class="order-card">
+				<view class="order-main">
+					<!-- 导游预约 -->
+					<template v-if="orderType == 20 || orderType == ORDER_TYPE_CUSTOM">
+						<view class="order-avatar" @click="goToGuideInfo">
+							<Avatar
+								:url="orderCardDisplayPic"
+								:userId="guideKid"
+								:customSize="120"
+								clickMode="none"
+							/>
+						</view>
+						<view class="order-info">
+							<view class="order-name-row">
+								<text class="order-name">{{guideName}}</text>
+								<!-- 推广订单标签 -->
+								<view v-if="isPromotionOrder == true" class="promotion-badge">
+									<text class="promotion-badge-text">推广</text>
+								</view>
+							</view>
+							<text class="order-title">{{orderTitle}}</text>
+							<view class="order-time">
+								<image class="time-icon" :src="cosStartTimeIconUrl" mode="aspectFill" />
+								<text class="time-text">出发时间：{{travelDate}}</text>
+							</view>
+						</view>
+					</template>
+					<!-- 定制预约 -->
+					<template v-if="orderType == 10">
+						<view class="order-avatar">
+							<ImageSelf :width="120" :height="120" borderRadius="16rpx" :preView="false" :url="firstPicUrl"></ImageSelf>
+						</view>
+						<view class="order-info">
+							<view class="order-name-row">
+								<text class="order-title order-title-custom">{{orderTitle}}</text>
+								<!-- 推广订单标签 -->
+								<view v-if="isPromotionOrder == true" class="promotion-badge">
+									<text class="promotion-badge-text">推广</text>
+								</view>
+							</view>
+							<view class="order-time">
+								<image class="time-icon" :src="cosStartTimeIconUrl" mode="aspectFill" />
+								<text class="time-text">出发时间：{{travelDate}}</text>
+							</view>
+						</view>
+					</template>
+				</view>
+				<!-- 底部价格行 -->
+				<view class="order-footer">
+					<text class="footer-text" v-if="orderType == 20">购买天数：{{travelTotalTime}}</text>
+					<text class="footer-text footer-pay-label">需付款：</text>
+					<text class="footer-pay-price">¥{{totalMoney}}</text>
+				</view>
+				<!-- 推广订单佣金显示 -->
+				<view v-if="isPromotionOrder == true" class="commission-row">
+					<text class="footer-text">预计佣金</text>
+					<text class="commission-text">¥{{commissionAmount}}</text>
+				</view>
+			</view>
+			<!-- 推广订单向导信息卡片（推广收入订单时显示） -->
+			<view class="info-card" v-if="isPromotionOrder == true && guideName != '' && guideKid != ''">
+				<view class="info-card-header">
+					<view class="card-title-line"></view>
+					<text class="card-title">向导信息</text>
+				</view>
+				<view class="promotion-guide-row" @click="goToGuideInfo">
+					<Avatar
+						:url="guideAvatar != '' ? guideAvatar : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'"
+						:userId="guideKid"
+						:customSize="80"
+						clickMode="none"
+					/>
+					<text class="promotion-guide-name">{{guideName}}</text>
+					<view class="promotion-badge">
+						<text class="promotion-badge-text">推广</text>
+					</view>
+				</view>
+			</view>
+			<!-- 联系人信息卡片 - 游客信息（收入订单 type=2 时显示） -->
+			<view class="info-card" v-if="type == 2">
+				<view class="info-card-header">
+					<view class="card-title-line"></view>
+					<text class="card-title">游客信息</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">姓名</text>
+					<text class="info-value">{{touristName}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">电话</text>
+					<text class="info-value">{{touristPhone}}</text>
+					<view class="copy-btn" @click="copyTouristPhone">
+						<text class="copy-text">复制</text>
+					</view>
+				</view>
+			</view>
+			<!-- 联系人信息卡片 - 向导信息（支出订单 type=1 时显示，待抢单时不显示） -->
+			<view class="info-card" v-if="type == 1 && orderStatu != 5 && orderStatu != 6 && orderStatu != 7 && guideName != '' && guideName != '等待向导接单'">
+				<view class="info-card-header">
+					<view class="card-title-line"></view>
+					<text class="card-title">向导信息</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">姓名</text>
+					<text class="info-value">{{guideName}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">电话</text>
+					<text class="info-value">{{guidePhone}}</text>
+					<view class="copy-btn" @click="copyGuidePhone">
+						<text class="copy-text">复制</text>
+					</view>
+				</view>
+			</view>
+			<!-- 订单信息卡片 -->
+			<view class="info-card">
+				<view class="info-card-header">
+					<view class="card-title-line"></view>
+					<text class="card-title">订单信息</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">订单编号</text>
+					<text class="info-value">{{shortKid}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">订单备注</text>
+					<text class="info-value">{{orderRemarks}}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">创建时间</text>
+					<text class="info-value">{{createTime}}</text>
+				</view>
+			</view>
+			<!-- 横向操作按钮 -->
+			<view class="action-btns" v-if="orderStatu != 5">
+				<view class="action-btn" @click="goToChat">
+					<uni-icons type="chat" :size="20" color="#666666"></uni-icons>
+					<text class="action-text">聊天</text>
+				</view>
+				<view class="action-btn" @click="callPhone">
+					<uni-icons type="phone" :size="20" color="#666666"></uni-icons>
+					<text class="action-text">电话</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 底部占位 -->
+		<view class="footer-placeholder"></view>
+		
+		<!-- 底部固定按钮 -->
+		<view class="footer-box">
+			<template v-if="type == 1">
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_PENDING || orderStatu == 5 || orderStatu == ORDER_STATUS_PAID || (orderStatu == ORDER_STATUS_CONFIRMED && isSpecialOrderType == true)" @click="handleCancelOrder">
+					<text class="footer-btn-text">取消订单</text>
+				</view>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="orderStatu == ORDER_STATUS_PENDING || orderStatu == 5 || orderStatu == ORDER_STATUS_PAID || (orderStatu == ORDER_STATUS_CONFIRMED && isSpecialOrderType == true)" @click="handlePay">
+					<text class="footer-btn-text footer-btn-primary-text">去付款</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_CANCELLED) || orderStatu == ORDER_STATUS_CLOSED || (orderStatu == ORDER_STATUS_REFUNDED && refundStatu == REFUND_STATUS_SUCCESS) || (orderStatu == ORDER_STATUS_REFUNDED && refundStatu != REFUND_STATUS_PENDING && refundStatu != REFUND_STATUS_SUCCESS && refundStatu != REFUND_STATUS_FAILED)" @click="handleDeleteOrder">
+					<text class="footer-btn-text">删除订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel" v-if="orderStatu == ORDER_STATUS_REFUNDING" @click="handleDeleteOrder">
+					<text class="footer-btn-text">删除订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel" v-if="(orderStatu == ORDER_STATUS_REFUNDED && refundStatu == REFUND_STATUS_FAILED)" @click="handleDeleteOrder">
+					<text class="footer-btn-text">删除订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_IN_PROGRESS || orderStatu == 6 || (orderStatu == ORDER_STATUS_CONFIRMED && isSpecialOrderType == false)) && refundStatu != REFUND_STATUS_PENDING" @click="handleApplyRefund">
+					<text class="footer-btn-text">申请退款</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_COMPLETED && refundStatu != REFUND_STATUS_PENDING" @click="handleApplyRefund">
+					<text class="footer-btn-text">申请退款</text>
+				</view>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="orderStatu == ORDER_STATUS_COMPLETED && refundStatu != REFUND_STATUS_PENDING" @click="handleCompleteOrder">
+					<text class="footer-btn-text footer-btn-primary-text">确认完成</text>
+				</view>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="orderStatu == ORDER_STATUS_CANCELLED" @click="handleEvaluate">
+					<text class="footer-btn-text footer-btn-primary-text">评价</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel" v-if="refundStatu == REFUND_STATUS_PENDING" @click="handleCancelRefund">
+					<text class="footer-btn-text">取消退款</text>
+				</view>
+				<view class="footer-btn footer-btn-primary" v-if="orderStatu == ORDER_STATUS_REFUNDED && refundStatu == REFUND_STATUS_FAILED" @click="handleReRefund">
+					<text class="footer-btn-text footer-btn-primary-text">重新退款</text>
+				</view>
+			</template>
+			<template v-if="type == 2">
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_CANCELLED) || orderStatu == ORDER_STATUS_CLOSED || (orderStatu == ORDER_STATUS_REFUNDED && refundStatu == REFUND_STATUS_SUCCESS) || (orderStatu == ORDER_STATUS_REFUNDED && refundStatu != REFUND_STATUS_PENDING && refundStatu != REFUND_STATUS_SUCCESS && refundStatu != REFUND_STATUS_FAILED)" @click="handleDeleteOrder">
+					<text class="footer-btn-text">删除订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel" v-if="orderStatu == ORDER_STATUS_REFUNDING || (orderStatu == ORDER_STATUS_REFUNDED && refundStatu == REFUND_STATUS_FAILED)" @click="handleDeleteOrder">
+					<text class="footer-btn-text">删除订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_PENDING || orderStatu == 5) && refundStatu != REFUND_STATUS_PENDING" @click="handleIncomeCancelOrder">
+					<text class="footer-btn-text">取消订单</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_PENDING || orderStatu == 5) && refundStatu != REFUND_STATUS_PENDING" @click="handleModifyPrice">
+					<text class="footer-btn-text">改价</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_IN_PROGRESS && refundStatu != REFUND_STATUS_PENDING" @click="handleRejectOrder">
+					<text class="footer-btn-text">拒绝</text>
+				</view>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="orderStatu == ORDER_STATUS_IN_PROGRESS && refundStatu != REFUND_STATUS_PENDING" @click="handleAcceptOrder">
+					<text class="footer-btn-text footer-btn-primary-text">接受</text>
+				</view>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="orderStatu == ORDER_STATUS_CANCELLED && refundStatu != REFUND_STATUS_PENDING" @click="handleEvaluate">
+					<text class="footer-btn-text footer-btn-primary-text">评价</text>
+				</view>
+				<view class="footer-btn footer-btn-cancel" @click="handleRejectRefund" v-if="refundStatu == REFUND_STATUS_PENDING">
+					<text class="footer-btn-text">拒绝退款</text>
+				</view>
+				<view class="footer-btn footer-btn-primary" @click="handleAcceptRefund" v-if="refundStatu == REFUND_STATUS_PENDING">
+					<text class="footer-btn-text footer-btn-primary-text">同意退款</text>
+				</view>
+			</template>	
+		</view>
+		<Loading :show="loading" fullscreen />
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import ImageSelf from '@/components/base/ImageSelf.uvue'
+import CountDown from '@/components/base/CountDown.uvue'
+import Loading from '@/components/base/Loading.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import Icon from '@/components/base/Icon.uvue'
+import { getGuiderOrderInfo, setOrderCancel, delOrderInfo, setOrderComplete, applyOrderRefound, guiderAcceptOrder, guiderRejectOrder, guiderAcceptRefound, guiderRejectRefound, updateGuiderOrderPrice, cancelRefund, queryRefundDetail } from '@/common/services/orderService.uts'
+import { getNotificationHistory, markNotificationRead } from '@/api/notification.uts'
+import { GetNotificationHistoryParams } from '@/api/types/notificationTypes.uts'
+import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { 
+	getChatList as getChatListFn, 
+	getChatListRef,
+	handleShareToChat as handleShareToChatFn
+} from '@/common/composables/useChatAndShare.uts'
+import { 
+	handleShareWechat as handleShareWechatFn,
+	handleShareMoments as handleShareMomentsFn,
+	handleCopyLink as handleCopyLinkFn,
+	handleShowQrcode as handleShowQrcodeFn
+} from '@/common/composables/useShareUi.uts'
+
+// ==================== 辅助函数（必须在使用前定义）====================
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { ORDER_STATUS_PENDING, ORDER_STATUS_PAID, ORDER_STATUS_CONFIRMED, ORDER_STATUS_IN_PROGRESS, ORDER_STATUS_COMPLETED, ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDING, ORDER_STATUS_REFUNDED, ORDER_STATUS_CLOSED, REFUND_STATUS_PENDING, REFUND_STATUS_SUCCESS, REFUND_STATUS_FAILED, ORDER_TYPE_CUSTOM, ORDER_TYPE_GUIDE, ORDER_TYPE_LINE } from '@/common/config/businessCodes.uts'
+import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// COS 图片 URL
+const cosStartTimeIconUrl = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_startTime.png'
+
+// 从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// 从 UTSJSONObject 类型获取字符串属性
+const getAnyString = (data: UTSJSONObject | null, key: string): string => {
+	const obj = toJsonObj(data)
+	return getObjString(obj, key)
+}
+
+// 从 UTSJSONObject 类型获取数字属性
+const getAnyNumber = (data: UTSJSONObject | null, key: string): number => {
+	const obj = toJsonObj(data)
+	return getObjNumber(obj, key)
+}
+
+// 判断是否为推广订单（兼容 boolean/string 类型）
+const parseIsPromotionOrder = (data: UTSJSONObject | null): boolean => {
+	if (data == null) return false
+	const val = data.get('isPromotionOrder')
+	if (val == null) return false
+	if (val == true) return true
+	if (val.toString() == 'true' || val.toString() == '1') return true
+	return false
+}
+
+// 格式化佣金金额为两位小数字符串
+const formatCommission = (data: UTSJSONObject | null): string => {
+	if (data == null) return '0.00'
+	const val = data.get('commissionAmount')
+	if (val == null) return '0.00'
+	const num = parseFloat(val.toString())
+	if (isNaN(num) == true || num <= 0) return '0.00'
+	const cents = Math.round(num * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	return yuan.toString() + '.' + fenStr
+}
+
+// ==================== 响应式数据 ====================
+const loading = ref<boolean>(false)
+const initDataFlag = ref<boolean>(false)
+const initData = ref<UTSJSONObject | null>(null)
+const timestamp = ref<number>(0)
+const type = ref<number>(1) // 1: 支出, 2: 收入
+const orderKid = ref<string>('')
+
+// 订单数据字段（拆分为独立 ref，避免直接访问对象属性）
+const orderStatu = ref<number>(0)
+const refundStatu = ref<number>(0)
+const orderType = ref<number>(0)
+const guideName = ref<string>('')
+const guideKid = ref<string>('')
+const guidePhone = ref<string>('')
+const touristName = ref<string>('')
+const touristKid = ref<string>('')
+const touristPhone = ref<string>('')
+const touristOrderDetailsPic = ref<string>('')
+const guideAvatar = ref<string>('')
+const orderCardDisplayPic = ref<string>('') // 向导预约订单卡片展示图
+const orderTitle = ref<string>('')
+const totalMoney = ref<string>('0')
+const travelDate = ref<string>('')
+const travelTotalTime = ref<string>('')
+const shortKid = ref<string>('')
+const orderRemarks = ref<string>('')
+const createTime = ref<string>('')
+const firstPicUrl = ref<string>('')
+const refundKid = ref<string>('')
+
+// 推广订单相关字段
+const isPromotionOrder = ref<boolean>(false)
+const commissionAmount = ref<string>('0.00')
+
+// 当前用户是否为向导
+const isCurrentUserGuide = ref<boolean>(false)
+
+const userStore = useUserStore()
+
+// 分享相关状态
+const showSharePopup = ref(false)
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	desc: '',
+	summary: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+} as UTSJSONObject)
+const shareChatList = ref<Array<UTSJSONObject>>([])
+
+// 判断是否为特殊订单（会员/礼物/抽奖）
+const isSpecialOrderType = ref<boolean>(false)
+
+// 更新特殊订单类型判断
+const updateIsSpecialOrderType = () => {
+	const ot = orderType.value
+	if (ot == ORDER_TYPE_CUSTOM || ot == ORDER_TYPE_GUIDE || ot == ORDER_TYPE_LINE) {
+		isSpecialOrderType.value = true
+	} else {
+		isSpecialOrderType.value = false
+	}
+}
+
+// ==================== 计算属性（使用独立 ref 替代）====================
+
+// 联系人姓名
+const contactName = ref<string>('')
+// 联系人电话
+const contactPhone = ref<string>('')
+// 状态文本
+const statusText = ref<string>('状态有误')
+// 状态图标
+const statusIcon = ref<string>('')
+
+// 更新联系人信息
+const updateContactInfo = () => {
+	if (type.value == 1) {
+		contactName.value = guideName.value
+		contactPhone.value = guidePhone.value
+	} else {
+		contactName.value = touristName.value
+		contactPhone.value = touristPhone.value
+	}
+}
+
+// 更新状态文本
+const updateStatusText = () => {
+	const os = orderStatu.value
+	const rs = refundStatu.value
+	const ot = orderType.value
+	if (os == 5) {
+		statusText.value = '待抢单'
+	} else if (os == 6) {
+		statusText.value = '待抢单·已付款'
+	} else if (os == 7) {
+		statusText.value = '待抢单·已退款'
+	} else if (os == ORDER_STATUS_PENDING) {
+		statusText.value = '待付款'
+	} else if (os == ORDER_STATUS_PAID) {
+		statusText.value = '付款中'
+	} else if (os == ORDER_STATUS_CONFIRMED) {
+		// 特殊订单（会员/礼物/抽奖）付款成功即完成（虚拟商品无需服务）
+		if (ot == ORDER_TYPE_CUSTOM || ot == ORDER_TYPE_GUIDE || ot == ORDER_TYPE_LINE) {
+			statusText.value = '已完成'
+		} else {
+			// 🔧 修复：如果有退款状态，优先显示退款状态
+			if (rs == REFUND_STATUS_PENDING) {
+				statusText.value = '退款中'
+			} else if (rs == REFUND_STATUS_SUCCESS) {
+				statusText.value = '退款成功'
+			} else if (rs == REFUND_STATUS_FAILED) {
+				statusText.value = '退款失败'
+			} else {
+				// 普通订单付款成功后等待导游接单
+				statusText.value = '待接单'
+			}
+		}
+	} else if (os == ORDER_STATUS_IN_PROGRESS) {
+		// 🔧 修复：如果有退款状态，优先显示退款状态
+		if (rs == REFUND_STATUS_PENDING) {
+			statusText.value = '退款中'
+		} else if (rs == REFUND_STATUS_SUCCESS) {
+			statusText.value = '退款成功'
+		} else if (rs == REFUND_STATUS_FAILED) {
+			statusText.value = '退款失败'
+		} else {
+			statusText.value = '待接单'
+		}
+	} else if (os == ORDER_STATUS_COMPLETED) {
+		// 🔧 修复：如果有退款状态，优先显示退款状态
+		if (rs == REFUND_STATUS_PENDING) {
+			statusText.value = '退款中'
+		} else if (rs == REFUND_STATUS_SUCCESS) {
+			statusText.value = '退款成功'
+		} else if (rs == REFUND_STATUS_FAILED) {
+			statusText.value = '退款失败'
+		} else {
+			statusText.value = '进行中'
+		}
+	} else if (os == ORDER_STATUS_CANCELLED) {
+		statusText.value = '待评价'
+	} else if (os == ORDER_STATUS_REFUNDING) {
+		statusText.value = '已评价'
+	} else if (os == ORDER_STATUS_REFUNDED && rs == REFUND_STATUS_PENDING) {
+		statusText.value = '退款中'
+	} else if (os == ORDER_STATUS_REFUNDED && rs == REFUND_STATUS_SUCCESS) {
+		statusText.value = '退款成功'
+	} else if (os == ORDER_STATUS_REFUNDED && rs == REFUND_STATUS_FAILED) {
+		statusText.value = '退款失败'
+	} else if (os == ORDER_STATUS_REFUNDED) {
+		statusText.value = '订单已取消'
+	} else if (os == ORDER_STATUS_CLOSED) {
+		statusText.value = '订单已取消'
+	} else {
+		statusText.value = '状态缺失'
+	}
+}
+
+// 更新状态图标
+const updateStatusIcon = () => {
+	const os = orderStatu.value
+	const rs = refundStatu.value
+	const ts = timestamp.value
+	
+	// 🔧 修复：任何订单状态下，如果有退款状态，优先显示退款图标
+	if (rs == REFUND_STATUS_PENDING || rs == REFUND_STATUS_SUCCESS || rs == REFUND_STATUS_FAILED) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_refund.png'
+	} else if (os == ORDER_STATUS_PENDING && ts > 0) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_waitPay.png'
+	} else if (os == ORDER_STATUS_PENDING && ts == 0) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_close.png'
+	} else if (os == ORDER_STATUS_CONFIRMED && (isSpecialOrderType.value == true)) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_waitSay.png'
+	} else if (os == ORDER_STATUS_PAID || os == ORDER_STATUS_IN_PROGRESS || os == ORDER_STATUS_COMPLETED || (os == ORDER_STATUS_CONFIRMED && isSpecialOrderType.value == false)) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_doing.png'
+	} else if (os == ORDER_STATUS_CANCELLED || os == ORDER_STATUS_REFUNDING) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_waitSay.png'
+	} else if (os == ORDER_STATUS_REFUNDED || os == ORDER_STATUS_CLOSED) {
+		statusIcon.value = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_close.png'
+	} else {
+		statusIcon.value = ''
+	}
+}
+
+// 从订单数据更新所有字段
+const updateOrderFields = (data: UTSJSONObject | null) => {
+	if (data == null) return
+	
+	orderStatu.value = getObjNumber(data, 'orderStatu')
+	refundStatu.value = getObjNumber(data, 'refundStatu')
+	orderType.value = getObjNumber(data, 'orderType')
+	guideName.value = getObjString(data, 'guideName')
+	guideKid.value = getObjString(data, 'guideKid')
+	guidePhone.value = getObjString(data, 'guidePhone')
+	touristName.value = getObjString(data, 'touristName')
+	touristKid.value = getObjString(data, 'touristKid')
+	touristPhone.value = getObjString(data, 'touristPhone')
+	touristOrderDetailsPic.value = getObjString(data, 'touristOrderDetailsPic')
+	// 兼容后端返回的向导头像字段：优先 guideAvatar，其次 guideImg
+	guideAvatar.value = getObjString(data, 'guideAvatar')
+	if (guideAvatar.value == '') {
+		guideAvatar.value = getObjString(data, 'guideImg')
+	}
+	// 不再将 guideAvatar 填充到 touristOrderDetailsPic
+	// 向导预约订单的展示图根据 type 决定：
+	// - 支出订单（type=1）：显示向导头像（guideAvatar）
+	// - 收入订单（type=2）：显示游客头像（touristOrderDetailsPic）
+	if (type.value == 1) {
+		// 支出订单：展示向导头像
+		orderCardDisplayPic.value = guideAvatar.value != '' ? guideAvatar.value : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	} else {
+		// 收入订单：展示游客头像
+		orderCardDisplayPic.value = touristOrderDetailsPic.value != '' ? touristOrderDetailsPic.value : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	}
+	orderTitle.value = getObjString(data, 'orderTitle')
+	totalMoney.value = getObjString(data, 'totalMoney')
+	travelDate.value = getObjString(data, 'travelDate')
+	travelTotalTime.value = getObjString(data, 'travelTotalTime')
+	shortKid.value = getObjString(data, 'shortKid')
+	orderRemarks.value = getObjString(data, 'orderRemarks')
+	createTime.value = getObjString(data, 'createTime')
+	refundKid.value = getObjString(data, 'refundKid')
+	
+	// 解析推广订单相关字段
+	isPromotionOrder.value = parseIsPromotionOrder(data)
+	commissionAmount.value = formatCommission(data)
+	
+	// 处理 picUrls 数组（如果后端返回了路线图片）
+	const picUrlsVal = data.get('picUrls')
+	if (picUrlsVal != null && Array.isArray(picUrlsVal) == true) {
+		const picUrls = picUrlsVal as Array<any>
+		if (picUrls.length > 0) {
+			const firstPic = picUrls[0]
+			if (firstPic != null) {
+				firstPicUrl.value = getAnyString(firstPic, 'picUrl')
+			}
+		}
+	}
+	// 如果 picUrls 为空，路线订单不再回退到 guideAvatar（路线订单应显示路线主图）
+	// 仅向导预约订单才使用 guideAvatar 作为回退
+	if (firstPicUrl.value == '' && guideAvatar.value != '' && orderType.value != 10) {
+		firstPicUrl.value = guideAvatar.value
+	}
+	
+	if (orderRemarks.value == '') {
+		orderRemarks.value = '无'
+	}
+	
+	// 更新派生数据
+	updateIsSpecialOrderType()
+	
+	// 支出订单待接单状态：向导昵称显示"等待向导接单"
+	if (type.value == 1) {
+		const os = orderStatu.value
+		const isWaitingGuide = (os == ORDER_STATUS_CONFIRMED && isSpecialOrderType.value == false) || os == ORDER_STATUS_IN_PROGRESS
+		if (isWaitingGuide == true) {
+			guideName.value = '等待向导接单'
+		}
+	}
+	
+	updateContactInfo()
+	updateStatusText()
+	updateStatusIcon()
+}
+
+// 初始化倒计时
+const initDropTime = (val: string): number => {
+	if (val == null || val == '') return 0
+	const nowTime = Math.floor(Date.now() / 1000)
+	const dateStr = val.replace(/-/g, "/")
+	const creatTime = Math.floor(new Date(dateStr).getTime() / 1000) + 1800
+	if (nowTime >= creatTime) {
+		return 0
+	}
+	return creatTime - nowTime
+}
+
+// 获取用户 Kid
+const getUserKid = (): string => {
+	try {
+		const storeObj = toJsonObj(userStore)
+		if (storeObj == null) return ''
+		const userInfoVal = storeObj.get('userInfo')
+		if (userInfoVal == null) return ''
+		const userInfoObj = toJsonObj(userInfoVal)
+		if (userInfoObj == null) return ''
+		const kidVal = userInfoObj.get('kid')
+		if (kidVal != null && kidVal.toString() != '') {
+			return kidVal.toString()
+		}
+		return ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 获取用户 ID
+const getUserId = (): string => {
+	try {
+		const storeObj = toJsonObj(userStore)
+		if (storeObj == null) return ''
+		const userIdVal = storeObj.get('userId')
+		if (userIdVal != null && userIdVal.toString() != '') {
+			return userIdVal.toString()
+		}
+		return ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 标记订单相关通知为已读
+const markOrderNotificationsRead = async (targetOrderId: string, targetShortId: string) => {
+	try {
+		const userId = getUserId()
+		if (userId == '') return
+		
+		const params = new GetNotificationHistoryParams()
+		params.userId = userId
+		params.page = 1
+		params.size = 50
+		const history = await getNotificationHistory(params)
+		const historyObj = toJsonObj(history)
+		if (historyObj == null) return
+		
+		const code = getObjNumber(historyObj, 'code')
+		if (code != 200) return
+		
+		const dataVal = historyObj.get('data')
+		if (dataVal == null) return
+		const dataObj = toJsonObj(dataVal)
+		if (dataObj == null) return
+		
+		const entitiesVal = dataObj.get('entities')
+		if (entitiesVal == null || Array.isArray(entitiesVal) == false) return
+		
+		const entities = entitiesVal as Array<any>
+		let i = 0
+		while (i < entities.length) {
+			const item = entities[i]
+			const itemObj = toJsonObj(item)
+			if (itemObj != null) {
+				const isReadVal = itemObj.get('isRead')
+				const isRead = (isReadVal != null && isReadVal.toString() == 'true')
+				
+				if (isRead == false) {
+					const itemOrderKid = getObjString(itemObj, 'orderKid')
+					const itemShortOrderId = getObjString(itemObj, 'shortOrderId')
+					
+					const matchOrder = (itemOrderKid != '' && itemOrderKid == targetOrderId)
+					const matchShort = (itemShortOrderId != '' && targetShortId != '' && itemShortOrderId == targetShortId)
+					
+					if (matchOrder == true || matchShort == true) {
+						let notifId = getObjString(itemObj, 'kid')
+						if (notifId == '') {
+							notifId = getObjString(itemObj, 'id')
+						}
+						if (notifId == '') {
+							notifId = getObjString(itemObj, 'notificationId')
+						}
+						if (notifId != '') {
+							try {
+								await markNotificationRead(notifId)
+							} catch (e) {
+								handleSilentError(e, '标记通知已读')
+							}
+						}
+					}
+				}
+			}
+			i = i + 1
+		}
+		
+		// 刷新未读数并更新徽章
+		await updateTabBarBadge()
+	} catch (e) {
+		handleSilentError(e, '标记订单通知已读')
+	}
+}
+
+// 更新 TabBar 徽章
+const updateTabBarBadge = async () => {
+	try {
+		const userId = getUserId()
+		if (userId == '') return
+		
+		const params = new GetNotificationHistoryParams()
+		params.userId = userId
+		params.page = 1
+		params.size = 1
+		const result = await getNotificationHistory(params)
+		const resultObj = toJsonObj(result)
+		if (resultObj == null) return
+		
+		const code = getObjNumber(resultObj, 'code')
+		if (code != 200) return
+		
+		const dataVal = resultObj.get('data')
+		if (dataVal == null) return
+		const dataObj = toJsonObj(dataVal)
+		if (dataObj == null) return
+		
+		const unreadCount = getObjNumber(dataObj, 'count')
+		if (unreadCount > 0) {
+			let badgeText = unreadCount.toString()
+			if (unreadCount > BADGE_COUNT_MAX_DISPLAY) {
+				badgeText = BADGE_COUNT_MAX_DISPLAY.toString() + '+'
+			}
+			uni.setTabBarBadge({ index: 2, text: badgeText })
+		} else {
+			uni.removeTabBarBadge({ index: 2 })
+		}
+	} catch (e) {
+		handleSilentError(e, '更新徽章')
+	}
+}
+
+// 获取订单信息
+const getOrderInfo = async (id: string) => {
+	loading.value = true
+	try {
+		const params = { orderKid: id } as UTSJSONObject
+		const res = await getGuiderOrderInfo(params)
+		const resObj = toJsonObj(res)
+		
+		if (resObj == null) {
+			uni.showToast({ title: '获取订单信息失败', icon: 'error' })
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		const dataVal = resObj.get('data')
+		
+		if (code == 200 && dataVal != null) {
+			const dataObj = toJsonObj(dataVal)
+			initData.value = dataObj
+			initDataFlag.value = true
+			
+			// 更新所有字段
+			updateOrderFields(dataObj)
+			
+			// 更新当前用户角色：基于订单类型（type=2 为收入订单，即当前用户是向导）
+			isCurrentUserGuide.value = (type.value == 2)
+			
+			// 初始化倒计时
+			timestamp.value = initDropTime(createTime.value)
+			updateStatusIcon()
+			
+			// 标记相关通知为已读
+			await markOrderNotificationsRead(id, shortKid.value)
+		} else {
+			const msg = getObjString(resObj, 'msg')
+			let errMsg = '获取订单信息失败'
+			if (msg != '') {
+				errMsg = msg
+			}
+			uni.showToast({ title: errMsg, icon: 'error' })
+		}
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取订单信息', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 刷新订单信息
+const refreshOrderInfo = async () => {
+	if (orderKid.value != '') {
+		await getOrderInfo(orderKid.value)
+	}
+}
+
+// 倒计时变化
+const handleDropTimeChange = (e: number) => {
+	if (e == 0) {
+		timestamp.value = 0
+		updateStatusIcon()
+	}
+}
+
+// 返回上一页
+const goBack = () => {
+	uni.navigateBack()
+}
+
+// 分享订单
+const handleShare = async () => {
+	console.log('[OrderDetails] handleShare called')
+	
+	try {
+		// 构建分享标题
+		const status = statusText.value
+		const title = orderTitle.value
+		const shareTitle = status + '：' + title
+		
+		// 构建分享描述
+		const orderNoVal = shortKid.value
+		const priceVal = totalMoney.value
+		const timeVal = travelDate.value
+		const shareDesc = '订单编号：' + orderNoVal + '\n价格：¥' + priceVal + '\n出发时间：' + timeVal
+		
+		// 构建分享链接
+		const kid = orderKid.value
+		let shareLink = 'https://m.wyxdapp.com/#/pagesTrade/orderDetails/index?orderKid=' + kid
+		
+		// 获取推广短号
+		let referrerShortKid = ''
+		try {
+			// 🔧 修复：优先使用 getUserShortKid()，再 fallback 到 store 和缓存 profile
+			referrerShortKid = getUserShortKid()
+			if (referrerShortKid == '') {
+				const storeObj = toJsonObj(userStore)
+				if (storeObj != null) {
+					const userInfoVal = storeObj.get('userInfo')
+					if (userInfoVal != null) {
+						const userInfoJson = JSON.stringify(userInfoVal)
+						if (userInfoJson != null && userInfoJson != '') {
+							const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+							const shortKidVal = userInfoObj.get('shortKid')
+							if (shortKidVal != null && shortKidVal.toString() != '') {
+								referrerShortKid = shortKidVal.toString()
+							}
+						}
+					}
+				}
+			}
+			// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+			if (referrerShortKid == '') {
+				const currentUserKidForRef = getUserKid()
+				if (currentUserKidForRef != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidForRef, currentUserKidForRef)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+							}
+						}
+					} catch (e2) {}
+				}
+			}
+			if (referrerShortKid != '') {
+				shareLink = shareLink + '&ref=' + referrerShortKid
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 获取分享图片
+		let imageUrl = 'https://jiasu.wyxdapp.com/iconimages/order_default.png'
+		if (touristOrderDetailsPic.value != '') {
+			imageUrl = touristOrderDetailsPic.value
+		} else if (firstPicUrl.value != '') {
+			imageUrl = firstPicUrl.value
+		}
+		
+		// 构建分享数据
+		const newPayload: UTSJSONObject = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: imageUrl,
+			userId: '',
+			referrerShortKid: referrerShortKid
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleShare] 分享数据构建完成')
+	} catch (e) {
+		handleSilentError(e, '构建分享数据')
+		sharePayload.value = {
+			title: '订单详情',
+			summary: '查看订单详情',
+			desc: '查看订单详情',
+			link: 'https://m.wyxdapp.com',
+			url: 'https://m.wyxdapp.com',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		if (result != null && Array.isArray(result) == true) {
+			shareChatList.value = result as Array<UTSJSONObject>
+		} else {
+			shareChatList.value = []
+		}
+	} catch (e) {
+		handleSilentError(e, '获取会话列表')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+// 分享到聊天
+const handleShareToChat = (data: UTSJSONObject) => {
+	console.log('[OrderDetails] handleShareToChat called')
+	
+	// 从 data 中提取 chatItem
+	let chatItem: UTSJSONObject = {} as UTSJSONObject
+	try {
+		const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+		const chatItemVal = dataObj.get('chatItem')
+		if (chatItemVal != null) {
+			chatItem = chatItemVal as UTSJSONObject
+		}
+	} catch (e) {
+		handleSilentError(e, '解析分享数据')
+	}
+	
+	if (chatItem == null) {
+		uni.showToast({
+			title: '分享失败，会话信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 构建订单信息对象
+	const orderInfo = {
+		kid: orderKid.value,
+		orderNo: shortKid.value,
+		orderTitle: orderTitle.value,
+		totalMoney: totalMoney.value,
+		travelDate: travelDate.value,
+		touristName: touristName.value,
+		touristAvatar: touristOrderDetailsPic.value != '' ? touristOrderDetailsPic.value : firstPicUrl.value
+	}
+	
+	console.log('[OrderDetails] handleShareToChat - orderInfo:', JSON.stringify(orderInfo))
+	
+	const shareData = {
+		chatItem: chatItem
+	} as UTSJSONObject
+	
+	handleShareToChatFn(shareData, orderInfo)
+}
+
+const handleShareWechat = () => {
+	handleShareWechatFn(sharePayload.value)
+}
+
+const handleShareMoments = () => {
+	handleShareMomentsFn(sharePayload.value)
+}
+
+const handleCopyLink = () => {
+	handleCopyLinkFn(sharePayload.value)
+}
+
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(sharePayload.value)
+}
+
+// 复制订单号
+const copyOrderId = () => {
+	const val = shortKid.value
+	uni.setClipboardData({
+		data: val,
+		success: () => {
+			uni.showToast({ title: '复制成功', icon: 'success' })
+		},
+		fail: () => {
+			uni.showToast({ title: '复制失败', icon: 'error' })
+		}
+	})
+}
+
+// 复制游客电话
+const copyTouristPhone = () => {
+	const val = touristPhone.value
+	if (val == '') return
+	uni.setClipboardData({
+		data: val,
+		success: () => {
+			uni.showToast({ title: '复制成功', icon: 'success' })
+		},
+		fail: () => {
+			uni.showToast({ title: '复制失败', icon: 'error' })
+		}
+	})
+}
+
+// 复制向导电话
+const copyGuidePhone = () => {
+	const val = guidePhone.value
+	if (val == '') return
+	uni.setClipboardData({
+		data: val,
+		success: () => {
+			uni.showToast({ title: '复制成功', icon: 'success' })
+		},
+		fail: () => {
+			uni.showToast({ title: '复制失败', icon: 'error' })
+		}
+	})
+}
+
+// 打电话（基于订单类型：支出拨打向导电话，收入拨打游客预留电话）
+const callPhone = () => {
+	let phone = ''
+	if (type.value == 2) {
+		// 收入订单：拨打游客预留电话
+		phone = touristPhone.value
+	} else {
+		// 支出订单：拨打向导电话
+		phone = guidePhone.value
+	}
+	if (phone != '') {
+		uni.makePhoneCall({ phoneNumber: phone })
+	}
+}
+
+// 拨打游客电话
+const callTouristPhone = () => {
+	const phone = touristPhone.value
+	if (phone != '' && phone != null) {
+		uni.makePhoneCall({ phoneNumber: phone })
+	}
+}
+
+// 拨打向导电话
+const callGuidePhone = () => {
+	const phone = guidePhone.value
+	if (phone != '' && phone != null) {
+		uni.makePhoneCall({ phoneNumber: phone })
+	}
+}
+
+// 跳转到聊天（基于订单类型：支出联系向导，收入联系游客，待接单联系客服）
+const goToChat = () => {
+	let targetUserId = ''
+	if (type.value == 1) {
+		// 支出订单：待接单状态跳转到 admin 客服
+		const os = orderStatu.value
+		const isWaitingGuide = (os == ORDER_STATUS_CONFIRMED && isSpecialOrderType.value == false) || os == ORDER_STATUS_IN_PROGRESS
+		if (isWaitingGuide == true) {
+			targetUserId = 'admin'
+		} else {
+			targetUserId = guideKid.value
+		}
+	} else {
+		// 收入订单：联系游客
+		targetUserId = touristKid.value
+	}
+	if (targetUserId != '') {
+		uni.navigateTo({ url: '/pagesTrade/news/detail?targetUserId=' + targetUserId })
+	}
+}
+
+// 跳转到向导信息
+const goToGuideInfo = () => {
+	const kid = guideKid.value
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/guideInfo/index?kid=' + kid })
+	}
+}
+
+// 取消订单（实现函数必须在调用前定义）
+const doCancelOrder = async () => {
+	loading.value = true
+	try {
+		const userKid = getUserKid()
+		if (userKid == '') {
+			uni.showToast({ title: '用户信息不存在，请重新登录', icon: 'error' })
+			loading.value = false
+			return
+		}
+		const params = { orderKid: orderKid.value, userKid: userKid } as UTSJSONObject
+		await setOrderCancel(params)
+		uni.showToast({ title: '取消成功', icon: 'success' })
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '取消订单', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 取消订单（调用函数）
+const handleCancelOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认取消订单？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doCancelOrder()
+			}
+		}
+	})
+}
+
+// 去付款
+const handlePay = () => {
+	uni.navigateTo({ url: '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid.value })
+}
+
+// 删除订单（实现函数必须在调用前定义）
+const doDeleteOrder = async () => {
+	loading.value = true
+	try {
+		const userId = getUserId()
+		const params = { orderKid: orderKid.value, userKid: userId } as UTSJSONObject
+		await delOrderInfo(params)
+		uni.showToast({ title: '删除成功', icon: 'success' })
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '删除订单', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 删除订单（调用函数）
+const handleDeleteOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认删除订单？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doDeleteOrder()
+			}
+		}
+	})
+}
+
+// 重新下单
+const handleReOrder = () => {
+	uni.showToast({ title: '功能开发中', icon: 'none' })
+}
+
+// 申请退款
+const handleApplyRefund = () => {
+	uni.navigateTo({ url: '/pagesTrade/payment/applyRefound/index?orderKid=' + orderKid.value })
+}
+
+// 确认完成（实现函数必须在调用前定义）
+const doCompleteOrder = async () => {
+	loading.value = true
+	try {
+		const params = { orderKid: orderKid.value } as UTSJSONObject
+		await setOrderComplete(params)
+		orderStatu.value = 60
+		updateStatusText()
+		updateStatusIcon()
+		uni.showToast({ title: '已确认完成', icon: 'success' })
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '确认完成', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 确认完成（调用函数）
+const handleCompleteOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认服务已完成？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doCompleteOrder()
+			}
+		}
+	})
+}
+
+// 评价
+const handleEvaluate = () => {
+	uni.navigateTo({ url: '/pagesTrade/appraise/index?orderKid=' + orderKid.value })
+}
+
+// 撤销退款（实现函数必须在调用前定义）
+const doCancelRefund = async () => {
+	loading.value = true
+	try {
+		let userId = getUserKid()
+		if (userId == '') {
+			userId = getUserId()
+		}
+		const params = { orderKid: orderKid.value, userKid: userId } as UTSJSONObject
+		await cancelRefund(params)
+		await refreshOrderInfo()
+		uni.showToast({ title: '已撤销退款', icon: 'success' })
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '撤销退款', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 撤销退款（调用函数）
+const handleCancelRefund = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认撤销退款申请？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doCancelRefund()
+			}
+		}
+	})
+}
+
+// 重新退款
+const handleReRefund = () => {
+	uni.navigateTo({ url: '/pagesTrade/payment/applyRefound/index?orderKid=' + orderKid.value })
+}
+
+// 修改价格（实现函数必须在调用前定义）
+const doModifyPrice = async (newPrice: number) => {
+	loading.value = true
+	try {
+		const params = {
+			orderKid: orderKid.value,
+			orderPrice: newPrice,
+			orderAmount: newPrice
+		} as UTSJSONObject
+		await updateGuiderOrderPrice(params)
+		totalMoney.value = newPrice.toString()
+		uni.showToast({ title: '价格已修改', icon: 'success' })
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '修改订单价格', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 修改价格（向导端）
+const handleModifyPrice = () => {
+	const currentPrice = totalMoney.value
+	uni.showModal({
+		title: '修改订单价格',
+		editable: true,
+		placeholderText: '当前价格：￥' + currentPrice,
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true && res.content != null) {
+				const val = res.content.trim()
+				if (val == '') {
+					uni.showToast({ title: '请输入价格', icon: 'none' })
+					return
+				}
+				const num = parseFloat(val)
+				if (isNaN(num) == true || num <= 0) {
+					uni.showToast({ title: '价格必须大于0', icon: 'none' })
+					return
+				}
+				doModifyPrice(num)
+			}
+		}
+	})
+}
+
+// 收入订单取消（实现函数必须在调用前定义）
+const doIncomeCancelOrder = async () => {
+	loading.value = true
+	try {
+		const userKid = getUserKid()
+		if (userKid == '') {
+			uni.showToast({ title: '用户信息不存在，请重新登录', icon: 'error' })
+			loading.value = false
+			return
+		}
+		const params = { orderKid: orderKid.value, userKid: userKid } as UTSJSONObject
+		await setOrderCancel(params)
+		uni.showToast({ title: '取消成功', icon: 'success' })
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '取消订单', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 收入订单取消（调用函数）
+const handleIncomeCancelOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认取消订单？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doIncomeCancelOrder()
+			}
+		}
+	})
+}
+
+// 拒绝订单（实现函数必须在调用前定义）
+const doRejectOrder = async () => {
+	loading.value = true
+	try {
+		const params = { orderKid: orderKid.value } as UTSJSONObject
+		await guiderRejectOrder(params)
+		uni.showToast({ title: '已拒绝', icon: 'success' })
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '拒绝订单', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 拒绝订单（向导端）
+const handleRejectOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认拒绝该订单？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doRejectOrder()
+			}
+		}
+	})
+}
+
+// 接受订单（实现函数必须在调用前定义）
+const doAcceptOrder = async () => {
+	loading.value = true
+	try {
+		const params = { orderKid: orderKid.value } as UTSJSONObject
+		await guiderAcceptOrder(params)
+		orderStatu.value = 50
+		updateStatusText()
+		updateStatusIcon()
+		uni.showToast({ title: '已接受', icon: 'success' })
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '接受订单', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 接受订单（向导端）
+const handleAcceptOrder = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确认接受该订单？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doAcceptOrder()
+			}
+		}
+	})
+}
+
+// 同意退款（实现函数必须在调用前定义）
+const doAcceptRefund = async () => {
+	loading.value = true
+	try {
+		const params = { refundKid: refundKid.value } as UTSJSONObject
+		await guiderAcceptRefound(params)
+		uni.showToast({ title: '已同意', icon: 'success' })
+		orderStatu.value = 80
+		refundStatu.value = 20
+		updateStatusText()
+		updateStatusIcon()
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '同意退款', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 同意退款（向导端）
+const handleAcceptRefund = () => {
+	uni.showModal({
+		title: '提示',
+		content: '是否同意该订单退款?',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doAcceptRefund()
+			}
+		}
+	})
+}
+
+// 拒绝退款（实现函数必须在调用前定义）
+const doRejectRefund = async () => {
+	loading.value = true
+	try {
+		const params = { refundKid: refundKid.value } as UTSJSONObject
+		await guiderRejectRefound(params)
+		uni.showToast({ title: '已拒绝', icon: 'success' })
+		orderStatu.value = 80
+		refundStatu.value = 30
+		updateStatusText()
+		updateStatusIcon()
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '拒绝退款', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 拒绝退款（向导端）
+const handleRejectRefund = () => {
+	uni.showModal({
+		title: '提示',
+		content: '是否拒绝该订单退款?',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doRejectRefund()
+			}
+		}
+	})
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	
+	if (options == null) {
+		uni.showToast({ title: '订单id出错', icon: 'error' })
+		return
+	}
+	
+	const optionsStr = JSON.stringify(options)
+	const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+	
+	const orderKidVal = optionsObj.get('orderKid')
+	if (orderKidVal == null || orderKidVal.toString() == '') {
+		uni.showToast({ title: '订单id出错', icon: 'error' })
+		return
+	}
+	
+	const typeVal = optionsObj.get('type')
+	if (typeVal != null && typeVal.toString() != '') {
+		const typeNum = parseInt(typeVal.toString())
+		if (isNaN(typeNum) == false) {
+			type.value = typeNum
+		}
+	}
+	
+	orderKid.value = orderKidVal.toString()
+	getOrderInfo(orderKid.value)
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style lang="scss" scoped>
+.page {
+	width: 750rpx;
+	min-height: 1334rpx;
+	background-color: #F5F5F5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-right {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+}
+/* #endif */
+
+/* ==================== 顶部区域 ==================== */
+.page-header {
+	width: 750rpx;
+	height: 320rpx;
+	position: relative;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 0 24rpx;
+}
+
+.page-header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 320rpx;
+}
+
+.header-left-btn {
+	position: absolute;
+	top: 20rpx;
+	left: 24rpx;
+	width: 72rpx;
+	height: 72rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.header-right-btn {
+	position: absolute;
+	top: 20rpx;
+	right: 24rpx;
+	width: 72rpx;
+	height: 72rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.header-content {
+	flex-direction: column;
+	align-items: center;
+	margin-top: 20rpx;
+}
+
+.status-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 12rpx;
+}
+
+.status-icon {
+	width: 64rpx;
+	height: 64rpx;
+	margin-right: 12rpx;
+}
+
+.header-title {
+	font-size: 36rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+}
+
+.header-subtitle {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.header-countdown {
+	flex-direction: row;
+	align-items: center;
+}
+
+/* ==================== 主内容区 ==================== */
+.content-body {
+	width: 750rpx;
+	flex: 1;
+	padding: 24rpx;
+	margin-top: -40rpx;
+}
+
+/* ==================== 订单卡片 ==================== */
+.order-card {
+	width: 100%;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+}
+
+.order-main {
+	flex-direction: row;
+	margin-bottom: 20rpx;
+}
+
+.order-avatar {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 20rpx;
+	flex-shrink: 0;
+}
+
+.order-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.order-name-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8rpx;
+}
+
+.order-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.order-price {
+	font-size: 28rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.order-title {
+	font-size: 24rpx;
+	color: #666666;
+	margin-bottom: 8rpx;
+}
+
+.order-title-custom {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.order-time {
+	flex-direction: row;
+	align-items: center;
+}
+
+.time-icon {
+	width: 24rpx;
+	height: 24rpx;
+	margin-right: 8rpx;
+}
+
+.time-text {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.order-footer {
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+	padding-top: 20rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #F5F5F5;
+}
+
+.footer-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.footer-pay-label {
+	margin-left: 24rpx;
+}
+
+.footer-pay-price {
+	font-size: 28rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+	margin-left: 8rpx;
+}
+
+/* ==================== 信息卡片 ==================== */
+.info-card {
+	width: 100%;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+}
+
+.info-card-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.card-title-line {
+	width: 6rpx;
+	height: 28rpx;
+	background-color: #36A0EE;
+	border-radius: 3rpx;
+	margin-right: 12rpx;
+}
+
+.card-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.info-row:last-child {
+	margin-bottom: 0;
+}
+
+.info-label {
+	width: 140rpx;
+	font-size: 24rpx;
+	color: #666666;
+	flex-shrink: 0;
+}
+
+.info-value {
+	flex: 1;
+	font-size: 24rpx;
+	color: #333333;
+}
+
+.info-phone {
+	color: #37B1F2;
+	/* text-decoration 不支持，使用边框模拟下划线 */
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #37B1F2;
+}
+
+.copy-btn {
+	width: 88rpx;
+	height: 48rpx;
+	border-radius: 24rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+}
+
+.copy-text {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+/* ==================== 横向操作按钮 ==================== */
+.action-btns {
+	width: 100%;
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 40rpx;
+}
+
+.action-btn {
+	flex: 1;
+	height: 88rpx;
+	background-color: #FFFFFF;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.action-btn:last-child {
+	margin-right: 0;
+}
+
+.action-icon {
+	width: 40rpx;
+	height: 40rpx;
+	margin-right: 12rpx;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+/* ==================== 底部按钮 ==================== */
+.footer-placeholder {
+	width: 750rpx;
+	height: 140rpx;
+}
+
+.footer-box {
+	width: 750rpx;
+	height: 128rpx;
+	background-color: #FFFFFF;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+	padding: 0 24rpx;
+}
+
+.footer-btn {
+	height: 72rpx;
+	padding: 0 40rpx;
+	border-radius: 36rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	min-width: 160rpx;
+	margin-left: 20rpx;
+}
+
+.footer-btn-cancel {
+	background-color: #FFFFFF;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+}
+
+.footer-btn-primary {
+	background-color: #37B1F2;
+}
+
+.footer-btn-half {
+	flex: 1;
+	margin-left: 10rpx;
+	margin-right: 10rpx;
+}
+
+.footer-btn-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+}
+
+.footer-btn-primary-text {
+	color: #FFFFFF;
+}
+
+/* ==================== 倒计时样式 ==================== */
+.countdown-white {
+	:deep(.countdown-value) {
+		color: #FFFFFF;
+		background-color: transparent;
+	}
+	:deep(.countdown-separator) {
+		color: #FFFFFF;
+	}
+}
+
+/* ==================== 推广订单样式 ==================== */
+.promotion-badge {
+	margin-left: 12rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	background-color: #FF6B35;
+	border-radius: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.promotion-badge-text {
+	font-size: 20rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+
+.commission-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 8rpx;
+}
+
+.commission-text {
+	font-size: 28rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.promotion-guide-row {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 8rpx;
+}
+
+.promotion-guide-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-left: 16rpx;
+}
+</style>

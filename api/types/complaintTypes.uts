@@ -1,0 +1,12 @@
+/**
+ * 投诉举报模块类型定义
+ * 对应 API 文件: api/complaint.uts
+ */
+
+// 提交投诉举报请求参数
+export class SubmitComplaintParams {
+	complaintType: number = 0
+	targetKid: string = ''
+	reason: number = 0
+	explain: string = ''
+}

@@ -1,0 +1,708 @@
+/**
+ * 腾讯云COS上传工具类 - 前端直传方案
+ * 适配 uni-app x (uvue) 环境
+ * 使用预签名URL直传到COS
+ * 
+ * 🔧 重要：UTS 在 Android 上不支持 `as InterfaceType` 接口类型转换
+ * 必须使用类（class）而不是接口（interface）来定义数据结构
+ */
+
+import { imageCompressor } from './imageCompressor.uts'
+import { getSceneCompressConfig } from './config.uts'
+import { API_BASE_URL } from '@/utils/config.uts'
+import { RADIX_BASE36 } from '@/common/config/generatorConfig.uts'
+import { toUTSJSON, getString, getObject } from '@/common/utils/typeConverter'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 压缩信息类
+ */
+export class CompressionInfo {
+	originalSize: number = 0
+	compressedSize: number = 0
+	compressionRatio: string = '0%'
+	
+	constructor(originalSize: number, compressedSize: number, compressionRatio: string) {
+		this.originalSize = originalSize
+		this.compressedSize = compressedSize
+		this.compressionRatio = compressionRatio
+	}
+	
+	/**
+	 * 转换为可序列化的 JSON 对象
+	 */
+	toJSON(): UTSJSONObject {
+		const result = {
+			originalSize: this.originalSize,
+			compressedSize: this.compressedSize,
+			compressionRatio: this.compressionRatio
+		} as UTSJSONObject
+		return result
+	}
+}
+
+/**
+ * 上传数据类
+ */
+export class UploadData {
+	originalUrl: string = ''
+	compressedUrl: string = ''
+	thumbnailUrl: string | null = null
+	filename: string = ''
+	scene: string = ''
+	compressionInfo: CompressionInfo | null = null
+	
+	constructor(
+		originalUrl: string,
+		compressedUrl: string,
+		thumbnailUrl: string | null,
+		filename: string,
+		scene: string,
+		compressionInfo: CompressionInfo | null
+	) {
+		this.originalUrl = originalUrl
+		this.compressedUrl = compressedUrl
+		this.thumbnailUrl = thumbnailUrl
+		this.filename = filename
+		this.scene = scene
+		this.compressionInfo = compressionInfo
+	}
+	
+	/**
+	 * 转换为可序列化的 JSON 对象
+	 */
+	toJSON(): UTSJSONObject {
+		const result = {
+			originalUrl: this.originalUrl,
+			compressedUrl: this.compressedUrl,
+			thumbnailUrl: this.thumbnailUrl,
+			filename: this.filename,
+			scene: this.scene,
+			compressionInfo: this.compressionInfo != null ? {
+				originalSize: this.compressionInfo!.originalSize,
+				compressedSize: this.compressionInfo!.compressedSize,
+				compressionRatio: this.compressionInfo!.compressionRatio
+			} : null
+		} as UTSJSONObject
+		return result
+	}
+}
+
+/**
+ * 上传结果类
+ */
+export class UploadResult {
+	success: boolean = false
+	data: UploadData | null = null
+	error: string = ''
+	
+	constructor(success: boolean, data: UploadData | null, error: string) {
+		this.success = success
+		this.data = data
+		this.error = error
+	}
+	
+	/**
+	 * 转换为可序列化的 JSON 对象
+	 */
+	toJSON(): UTSJSONObject {
+		const result = {
+			success: this.success,
+			data: this.data != null ? this.data!.toJSON() : null,
+			error: this.error
+		} as UTSJSONObject
+		return result
+	}
+}
+
+/**
+ * 预签名URL响应类
+ */
+class PresignResponse {
+	uploadUrl: string = ''
+	finalUrl: string = ''
+	key: string = ''
+	
+	constructor(uploadUrl: string, finalUrl: string, key: string) {
+		this.uploadUrl = uploadUrl
+		this.finalUrl = finalUrl
+		this.key = key
+	}
+}
+
+/**
+ * POST Object 签名响应类
+ */
+class PostSignResponse {
+	uploadUrl: string = ''
+	key: string = ''
+	policy: string = ''
+	qSignAlgorithm: string = ''
+	qAk: string = ''
+	qKeyTime: string = ''
+	qSignature: string = ''
+	finalUrl: string = ''
+	
+	constructor(
+		uploadUrl: string,
+		key: string,
+		policy: string,
+		qSignAlgorithm: string,
+		qAk: string,
+		qKeyTime: string,
+		qSignature: string,
+		finalUrl: string
+	) {
+		this.uploadUrl = uploadUrl
+		this.key = key
+		this.policy = policy
+		this.qSignAlgorithm = qSignAlgorithm
+		this.qAk = qAk
+		this.qKeyTime = qKeyTime
+		this.qSignature = qSignature
+		this.finalUrl = finalUrl
+	}
+}
+
+
+/**
+ * COS上传器类 - 前端直传
+ */
+export class COSUploader {
+	private baseUrl = API_BASE_URL
+	
+	/**
+	 * 创建失败结果 - 返回普通对象以便 Android 端正确序列化
+	 */
+	private createFailResult(errorMsg: string): UTSJSONObject {
+		const result = {
+			success: false,
+			data: null,
+			error: errorMsg
+		} as UTSJSONObject
+		return result
+	}
+	
+	/**
+	 * 创建成功结果 - 返回普通对象以便 Android 端正确序列化
+	 */
+	private createSuccessResult(
+		finalUrl: string,
+		filename: string,
+		scene: string,
+		originalSize: number,
+		compressedSize: number,
+		compressionRatio: string
+	): UTSJSONObject {
+		const result = {
+			success: true,
+			data: {
+				originalUrl: finalUrl,
+				compressedUrl: finalUrl,
+				thumbnailUrl: null,
+				filename: filename,
+				scene: scene,
+				compressionInfo: {
+					originalSize: originalSize,
+					compressedSize: compressedSize,
+					compressionRatio: compressionRatio
+				}
+			},
+			error: ''
+		} as UTSJSONObject
+		return result
+	}
+	
+	/**
+	 * 生成随机文件名
+	 */
+	private generateFilename(): string {
+		const timestamp = Date.now()
+		const random = Math.random().toString(RADIX_BASE36).slice(2, 8)
+		return `${timestamp}_${random}`
+	}
+	
+	/**
+	 * 获取文件扩展名
+	 */
+	private getFileExtension(filePath: string): string {
+		const index = filePath.lastIndexOf('.')
+		if (index >= 0) {
+			return filePath.substring(index)
+		}
+		return '.jpg'
+	}
+	
+	/**
+	 * 获取预签名URL
+	 */
+	private async getPresignedUrl(
+		scene: string,
+		filename: string,
+		contentType: string = 'image/jpeg'
+	): Promise<PresignResponse> {
+		return new Promise<PresignResponse>((resolve, reject) => {
+			const params = `scene=${encodeURIComponent(scene)}&filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(contentType)}`
+			
+			uni.request({
+				url: `${this.baseUrl}/chat/file/presign`,
+				method: 'POST',
+				data: params,
+				header: {
+					'Content-Type': 'application/x-www-form-urlencoded'
+				},
+				success: (res) => {
+					console.log('📥 预签名接口响应:', {
+						statusCode: res.statusCode,
+						data: res.data
+					})
+					
+					if (res.statusCode == 200) {
+						let isSuccess = false
+						let uploadUrl = ''
+						let finalUrl = ''
+						let key = ''
+						let msg = '获取预签名URL失败'
+						
+						try {
+							// 优化：使用 toUTSJSON + getObject/getString 替代 JSON.stringify + JSON.parse
+							const dataParsed = toUTSJSON(res.data)
+							if (dataParsed != null) {
+								const codeVal = dataParsed.get('code')
+								if (codeVal != null && (codeVal.toString() == '200')) {
+									isSuccess = true
+								}
+								
+								const dataDataParsed = getObject(dataParsed, 'data')
+								if (dataDataParsed != null) {
+									uploadUrl = getString(dataDataParsed, 'uploadUrl')
+									finalUrl = getString(dataDataParsed, 'finalUrl')
+									key = getString(dataDataParsed, 'key')
+								}
+								
+								const msgStr = getString(dataParsed, 'msg')
+								if (msgStr != '') {
+									msg = msgStr
+								}
+							}
+						} catch (e: any) {
+							handleSilentError(e as any, '解析预签名URL响应')
+						}
+						
+						if (isSuccess == true && uploadUrl != '') {
+							resolve(new PresignResponse(uploadUrl, finalUrl, key))
+						} else {
+							console.error('❌ 后端返回错误:', res.data)
+							reject(new Error(msg))
+						}
+					} else {
+						reject(new Error('获取预签名URL失败: HTTP ' + res.statusCode.toString()))
+					}
+				},
+				fail: (error) => {
+					reject(error)
+				}
+			})
+		})
+	}
+	
+	/**
+	 * 获取 POST Object 签名（用于 APP 端直传）
+	 */
+	private async getPostObjectSign(
+		scene: string,
+		filename: string,
+		contentType: string = 'image/jpeg'
+	): Promise<PostSignResponse> {
+		return new Promise<PostSignResponse>((resolve, reject) => {
+			const params = `scene=${encodeURIComponent(scene)}&filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(contentType)}`
+			
+			uni.request({
+				url: `${this.baseUrl}/chat/file/postSign`,
+				method: 'POST',
+				data: params,
+				header: {
+					'Content-Type': 'application/x-www-form-urlencoded'
+				},
+				success: (res) => {
+					console.log('📥 POST Object签名接口响应:', {
+						statusCode: res.statusCode,
+						data: res.data
+					})
+					
+					if (res.statusCode == 200) {
+						let isSuccess = false
+						let uploadUrl = ''
+						let key = ''
+						let policy = ''
+						let qSignAlgorithm = ''
+						let qAk = ''
+						let qKeyTime = ''
+						let qSignature = ''
+						let finalUrl = ''
+						let msg = '获取签名失败'
+						
+						try {
+							// 优化：使用 toUTSJSON + getObject/getString 替代 JSON.stringify + JSON.parse
+							const dataParsed = toUTSJSON(res.data)
+							if (dataParsed != null) {
+								const codeVal = dataParsed.get('code')
+								if (codeVal != null && (codeVal.toString() == '200')) {
+									isSuccess = true
+								}
+								
+								const dataDataParsed = getObject(dataParsed, 'data')
+								if (dataDataParsed != null) {
+									uploadUrl = getString(dataDataParsed, 'uploadUrl')
+									key = getString(dataDataParsed, 'key')
+									policy = getString(dataDataParsed, 'policy')
+									qSignAlgorithm = getString(dataDataParsed, 'qSignAlgorithm')
+									qAk = getString(dataDataParsed, 'qAk')
+									qKeyTime = getString(dataDataParsed, 'qKeyTime')
+									qSignature = getString(dataDataParsed, 'qSignature')
+									finalUrl = getString(dataDataParsed, 'finalUrl')
+								}
+								
+								const msgStr = getString(dataParsed, 'msg')
+								if (msgStr != '') {
+									msg = msgStr
+								}
+							}
+						} catch (e) {
+							console.error('❌ 解析签名响应失败:', e)
+						}
+						
+						if (isSuccess == true && uploadUrl != '' && qSignature != '') {
+							resolve(new PostSignResponse(uploadUrl, key, policy, qSignAlgorithm, qAk, qKeyTime, qSignature, finalUrl))
+						} else {
+							console.error('❌ 后端返回错误:', res.data)
+							reject(new Error(msg))
+						}
+					} else {
+						reject(new Error('获取签名失败: HTTP ' + res.statusCode.toString()))
+					}
+				},
+				fail: (error) => {
+					console.error('❌ 请求签名接口失败:', error)
+					reject(error)
+				}
+			})
+		})
+	}
+	
+	/**
+	 * 使用预签名URL上传文件到COS（H5端使用PUT方法）
+	 */
+	private async uploadToCOSWithPresign(
+		filePath: string,
+		uploadUrl: string,
+		contentType: string = 'image/jpeg',
+		onProgress?: (progress: number) => void
+	): Promise<void> {
+		// #ifdef H5
+		return new Promise<void>((resolve, reject) => {
+			fetch(filePath)
+				.then(response => response.blob())
+				.then(blob => {
+					return fetch(uploadUrl, {
+						method: 'PUT',
+						headers: {
+							'Content-Type': contentType
+						},
+						body: blob
+					})
+				})
+				.then(response => {
+					if (response.ok) {
+						if (onProgress != null) {
+							onProgress(100)
+						}
+						resolve()
+					} else {
+						reject(new Error('上传失败: HTTP ' + response.status.toString()))
+					}
+				})
+				.catch(error => {
+					reject(error)
+				})
+		})
+		// #endif
+		
+		// #ifndef H5
+		// APP 端不使用此方法，使用 uploadToCOSWithPostSign
+		return new Promise<void>((resolve, reject) => {
+			reject(new Error('APP端请使用 POST Object 方式上传'))
+		})
+		// #endif
+	}
+	
+	/**
+	 * 使用 POST Object 方式上传文件到COS（APP端使用）
+	 * 通过 formData 传递签名信息，支持 uni.uploadFile 的 POST 方法
+	 */
+	private async uploadToCOSWithPostSign(
+		filePath: string,
+		postSign: PostSignResponse,
+		onProgress?: (progress: number) => void
+	): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
+			console.log('📤 [POST Object] 开始上传:', {
+				filePath: filePath,
+				uploadUrl: postSign.uploadUrl,
+				key: postSign.key
+			})
+			
+			console.log('📋 [POST Object] 签名参数:', {
+				key: postSign.key,
+				policy: postSign.policy.substring(0, 50) + '...',
+				qSignAlgorithm: postSign.qSignAlgorithm,
+				qAk: postSign.qAk,
+				qKeyTime: postSign.qKeyTime,
+				qSignature: postSign.qSignature
+			})
+			
+			const formData = new UTSJSONObject()
+			formData.set('key', postSign.key)
+			formData.set('policy', postSign.policy)
+			formData.set('q-sign-algorithm', postSign.qSignAlgorithm)
+			formData.set('q-ak', postSign.qAk)
+			formData.set('q-key-time', postSign.qKeyTime)
+			formData.set('q-sign-time', postSign.qKeyTime)
+			formData.set('q-signature', postSign.qSignature)
+			
+			console.log('📋 [POST Object] formData 构建完成')
+			
+			uni.uploadFile({
+				url: postSign.uploadUrl,
+				filePath: filePath,
+				name: 'file',
+				formData: formData,
+				success: (res) => {
+					console.log('📤 [POST Object] 上传响应:', {
+						statusCode: res.statusCode,
+						data: res.data
+					})
+					
+					if (res.statusCode >= 200 && res.statusCode < 300) {
+						if (onProgress != null) {
+							onProgress(100)
+						}
+						resolve()
+					} else {
+						let errorMsg = '上传失败: HTTP ' + res.statusCode.toString()
+						if (res.data != null && res.data != '') {
+							errorMsg = errorMsg + ' - ' + res.data.toString().substring(0, 200)
+						}
+						console.error('📤 [POST Object] 上传失败:', errorMsg)
+						reject(new Error(errorMsg))
+					}
+				},
+				fail: (error) => {
+					console.error('📤 [POST Object] 上传请求失败:', error)
+					// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+					let errMsg = '未知错误'
+					try {
+						const errorObj = toUTSJSON(error)
+						const errMsgStr = getString(errorObj, 'errMsg')
+						if (errMsgStr != '') {
+							errMsg = errMsgStr
+						}
+					} catch (e: any) {
+						handleSilentError(e as any, '解析上传错误信息')
+					}
+					reject(new Error('上传失败: ' + errMsg))
+				}
+			})
+		})
+	}
+
+	/**
+	 * 上传图片（自动压缩 + 前端直传COS）
+	 * @param filePath 图片路径
+	 * @param scene 上传场景（chat/avatar/dynamic等）
+	 * @param onProgress 进度回调
+	 */
+	async uploadImage(
+		filePath: string,
+		scene: string = 'chat',
+		onProgress?: (progress: number) => void
+	): Promise<UTSJSONObject> {
+		try {
+			console.log('🚀 开始上传图片（前端直传）:', {
+				filePath,
+				scene
+			})
+			
+			const compressResult = await imageCompressor.compressByScene(filePath, scene)
+			const sceneConfig = getSceneCompressConfig(scene)
+			
+			// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+			let format = 'jpg'
+			try {
+				const sceneConfigObj = toUTSJSON(sceneConfig)
+				const formatStr = getString(sceneConfigObj, 'format')
+				if (formatStr != '') {
+					format = formatStr
+				}
+			} catch (e: any) {
+				handleSilentError(e as any, '解析上传场景配置')
+			}
+			
+			const targetFormat = format.toLowerCase()
+			const contentType = targetFormat == 'webp' ? 'image/webp' : 'image/jpeg'
+			
+			const filename = this.generateFilename()
+			const ext = targetFormat == 'webp' ? '.webp' : this.getFileExtension(filePath)
+			const fullFilename = `${filename}${ext}`
+			
+			let finalUrl = ''
+			
+			// #ifdef H5
+			console.log('📝 [H5] 获取预签名URL...')
+			const presign = await this.getPresignedUrl(scene, fullFilename, contentType)
+			
+			await this.uploadToCOSWithPresign(
+				compressResult.tempFilePath,
+				presign.uploadUrl,
+				contentType,
+				onProgress
+			)
+			
+			finalUrl = presign.finalUrl
+			// #endif
+			
+			// #ifndef H5
+			console.log('📝 [APP] 获取POST Object签名...')
+			const postSign = await this.getPostObjectSign(scene, fullFilename, contentType)
+			
+			await this.uploadToCOSWithPostSign(
+				compressResult.tempFilePath,
+				postSign,
+				onProgress
+			)
+			
+			finalUrl = postSign.finalUrl
+			// #endif
+			
+			return this.createSuccessResult(
+				finalUrl,
+				fullFilename,
+				scene,
+				compressResult.originalSize,
+				compressResult.compressedSize,
+				compressResult.compressionRatio
+			)
+		} catch (error: any) {
+			handleSilentError(error as any, '上传图片')
+			let errorMsg = '上传失败'
+			if (error instanceof Error) {
+				errorMsg = error.message
+			}
+			uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+			return this.createFailResult(errorMsg)
+		}
+	}
+	
+	/**
+	 * 上传通用媒体文件（视频/音频）
+	 */
+	private async uploadMediaFile(
+		filePath: string,
+		scene: string,
+		contentType: string,
+		onProgress?: (progress: number) => void
+	): Promise<UTSJSONObject> {
+		try {
+			console.log('🚀 开始上传媒体文件（前端直传）:', {
+				filePath: filePath,
+				scene: scene,
+				contentType: contentType
+			})
+			
+			const filename = this.generateFilename()
+			const ext = this.getFileExtension(filePath)
+			const fullFilename = `${filename}${ext}`
+			
+			let finalUrl = ''
+			
+			// #ifdef H5
+			console.log('📝 [H5] 获取媒体文件预签名URL...')
+			const presign = await this.getPresignedUrl(scene, fullFilename, contentType)
+			
+			await this.uploadToCOSWithPresign(
+				filePath,
+				presign.uploadUrl,
+				contentType,
+				onProgress
+			)
+			
+			finalUrl = presign.finalUrl
+			// #endif
+			
+			// #ifndef H5
+			console.log('📝 [APP] 获取媒体文件POST Object签名...')
+			const postSign = await this.getPostObjectSign(scene, fullFilename, contentType)
+			
+			await this.uploadToCOSWithPostSign(
+				filePath,
+				postSign,
+				onProgress
+			)
+			
+			finalUrl = postSign.finalUrl
+			// #endif
+			
+			return this.createSuccessResult(finalUrl, fullFilename, scene, 0, 0, '0%')
+		} catch (error: any) {
+			handleSilentError(error as any, '上传媒体文件')
+			let errorMsg = '上传失败'
+			if (error instanceof Error) {
+				errorMsg = error.message
+			}
+			uni.showToast({ title: '上传失败，请重试', icon: 'none' })
+			return this.createFailResult(errorMsg)
+		}
+	}
+	
+	async uploadChatImage(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'chat', onProgress)
+	}
+	
+	async uploadAvatar(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'avatar', onProgress)
+	}
+	
+	async uploadDynamic(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'dynamic', onProgress)
+	}
+	
+	async uploadDynamicVideo(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadMediaFile(filePath, 'dynamicVideo', 'video/mp4', onProgress)
+	}
+	
+	async uploadChatVideo(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadMediaFile(filePath, 'chatVideo', 'video/mp4', onProgress)
+	}
+	
+	async uploadChatAudio(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadMediaFile(filePath, 'chatAudio', 'audio/mpeg', onProgress)
+	}
+	
+	async uploadIdCard(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'idcard', onProgress)
+	}
+	
+	async uploadDriverCard(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'drivercard', onProgress)
+	}
+	
+	async uploadGuideCard(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'guide', onProgress)
+	}
+	
+	async uploadMerchant(filePath: string, onProgress?: (progress: number) => void): Promise<UTSJSONObject> {
+		return this.uploadImage(filePath, 'idcard', onProgress)
+	}
+}
+
+export const cosUploader = new COSUploader()

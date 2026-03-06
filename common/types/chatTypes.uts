@@ -1,0 +1,303 @@
+/**
+ * 聊天相关类型定义
+ * 用于聊天详情页面和相关 Composable
+ */
+
+import { Ref } from 'vue'
+
+/**
+ * 消息状态常量
+ */
+export const MessageStatus = {
+	SENDING: 'sending',
+	SENT: 'sent',
+	FAILED: 'failed',
+	UPLOADING: 'uploading'
+}
+
+/**
+ * 消息类型常量
+ */
+export const MessageTypeStr = {
+	TEXT: 'text',
+	IMAGE: 'image',
+	VIDEO: 'video',
+	VOICE: 'voice',
+	SHARE: 'share',
+	GIFT: 'gift'
+}
+
+/**
+ * 本地聊天消息类
+ * 用于前端消息列表的数据结构
+ */
+export class LocalChatMessage {
+	id: string = ''
+	senderId: string = ''
+	receiverId: string = ''
+	fromUserKid: string = ''
+	toUserKid: string = ''
+	type: string = ''
+	content: string = ''
+	createTime: string = ''
+	status: string = ''
+	duration: number = 0
+}
+
+
+/**
+ * 联系方式数据类
+ * 用于联系方式弹窗显示
+ */
+export class ContactInfoData {
+	realname: string = ''
+	contactPhone: string = ''
+	qqNumber: string = ''
+	weixinNumber: string = ''
+}
+
+/**
+ * 联系方式弹窗数据类
+ * 用于 ContactPopup 组件的数据传递
+ */
+export class ContactPopupDataClass {
+	userName: string = ''
+	contactInfo: ContactInfoData = new ContactInfoData()
+}
+
+/**
+ * 聊天消息选项类（用于 Composable 参数）
+ * 注意：UTS 中使用 class 而非 interface
+ * scrollIntoView 和 scrollIntoViewId 是 Ref<string> 类型，由调用方传入
+ */
+export class ChatMessagesOptions {
+	currentUserId: string = ''
+	targetUserId: string = ''
+	currentUserAvatar: string = ''
+	pageSize: number = 20
+	scrollIntoView: Ref<string> | null = null
+	scrollIntoViewId: Ref<string> | null = null
+}
+
+/**
+ * 媒体上传选项类
+ */
+export class ChatMediaOptions {
+	currentUserId: string = ''
+	targetUserId: string = ''
+}
+
+/**
+ * 礼物赠送选项类
+ */
+export class ChatGiftOptions {
+	currentUserId: string = ''
+	targetUserId: string = ''
+}
+
+
+/**
+ * useChatGift 返回值类型
+ */
+export class ChatGiftResult {
+	showGiftSelector: Ref<boolean>
+	handleShowGiftSelector: () => void
+	closeGiftSelector: () => void
+	handleSelectGift: (gift: any, source: string) => Promise<void>
+	sendGiftMessage: (gift: any) => Promise<void>
+	sendGiftMessageFromPending: (giftStr: string) => Promise<void>
+	
+	constructor(
+		showGiftSelector: Ref<boolean>,
+		handleShowGiftSelector: () => void,
+		closeGiftSelector: () => void,
+		handleSelectGift: (gift: any, source: string) => Promise<void>,
+		sendGiftMessage: (gift: any) => Promise<void>,
+		sendGiftMessageFromPending: (giftStr: string) => Promise<void>
+	) {
+		this.showGiftSelector = showGiftSelector
+		this.handleShowGiftSelector = handleShowGiftSelector
+		this.closeGiftSelector = closeGiftSelector
+		this.handleSelectGift = handleSelectGift
+		this.sendGiftMessage = sendGiftMessage
+		this.sendGiftMessageFromPending = sendGiftMessageFromPending
+	}
+}
+
+/**
+ * useChatMedia 返回值类型
+ */
+export class ChatMediaResult {
+	uploadImage: (filePath: string) => Promise<string>
+	sendImage: (filePath: string) => Promise<void>
+	handleChooseImage: () => void
+	uploadChatVideo: (filePath: string) => Promise<string>
+	sendVideo: (filePath: string) => Promise<void>
+	handleChooseVideo: () => void
+	sendVoice: (filePath: string, duration: number) => Promise<void>
+	sendCustomEmoji: (imageUrl: string) => Promise<void>
+	
+	constructor(
+		uploadImage: (filePath: string) => Promise<string>,
+		sendImage: (filePath: string) => Promise<void>,
+		handleChooseImage: () => void,
+		uploadChatVideo: (filePath: string) => Promise<string>,
+		sendVideo: (filePath: string) => Promise<void>,
+		handleChooseVideo: () => void,
+		sendVoice: (filePath: string, duration: number) => Promise<void>,
+		sendCustomEmoji: (imageUrl: string) => Promise<void>
+	) {
+		this.uploadImage = uploadImage
+		this.sendImage = sendImage
+		this.handleChooseImage = handleChooseImage
+		this.uploadChatVideo = uploadChatVideo
+		this.sendVideo = sendVideo
+		this.handleChooseVideo = handleChooseVideo
+		this.sendVoice = sendVoice
+		this.sendCustomEmoji = sendCustomEmoji
+	}
+}
+
+/**
+ * useChatVoice 返回值类型
+ */
+export class ChatVoiceResult {
+	showVoicePanel: Ref<boolean>
+	voiceRecordDuration: Ref<number>
+	voiceRecordVolume: Ref<number>
+	isVoiceCancelArea: Ref<boolean>
+	handleVoiceStart: (onSuccess: ((filePath: string, duration: number) => void) | null) => void
+	handleVoiceEnd: () => Promise<any>
+	handleVoiceCancel: () => void
+	handleVoiceModeChange: (mode: boolean) => void
+	updateDuration: (duration: number) => void
+	updateVolume: (volume: number) => void
+	setVoiceCancelArea: (isCancel: boolean) => void
+	onDurationChange: (callback: (duration: number) => void) => void
+	onVolumeChange: (callback: (volume: number) => void) => void
+	
+	constructor(
+		showVoicePanel: Ref<boolean>,
+		voiceRecordDuration: Ref<number>,
+		voiceRecordVolume: Ref<number>,
+		isVoiceCancelArea: Ref<boolean>,
+		handleVoiceStart: (onSuccess: ((filePath: string, duration: number) => void) | null) => void,
+		handleVoiceEnd: () => Promise<any>,
+		handleVoiceCancel: () => void,
+		handleVoiceModeChange: (mode: boolean) => void,
+		updateDuration: (duration: number) => void,
+		updateVolume: (volume: number) => void,
+		setVoiceCancelArea: (isCancel: boolean) => void,
+		onDurationChange: (callback: (duration: number) => void) => void,
+		onVolumeChange: (callback: (volume: number) => void) => void
+	) {
+		this.showVoicePanel = showVoicePanel
+		this.voiceRecordDuration = voiceRecordDuration
+		this.voiceRecordVolume = voiceRecordVolume
+		this.isVoiceCancelArea = isVoiceCancelArea
+		this.handleVoiceStart = handleVoiceStart
+		this.handleVoiceEnd = handleVoiceEnd
+		this.handleVoiceCancel = handleVoiceCancel
+		this.handleVoiceModeChange = handleVoiceModeChange
+		this.updateDuration = updateDuration
+		this.updateVolume = updateVolume
+		this.setVoiceCancelArea = setVoiceCancelArea
+		this.onDurationChange = onDurationChange
+		this.onVolumeChange = onVolumeChange
+	}
+}
+
+/**
+ * useChatVoicePlayer 返回值类型
+ */
+export class ChatVoicePlayerResult {
+	isVoicePlaying: Ref<boolean>
+	playingVoiceMessageId: Ref<string>
+	playVoice: (message: any) => void
+	stopVoice: () => void
+	setupPlayListeners: () => void
+	cleanupPlayListeners: () => void
+	destroy: () => void
+	
+	constructor(
+		isVoicePlaying: Ref<boolean>,
+		playingVoiceMessageId: Ref<string>,
+		playVoice: (message: any) => void,
+		stopVoice: () => void,
+		setupPlayListeners: () => void,
+		cleanupPlayListeners: () => void,
+		destroy: () => void
+	) {
+		this.isVoicePlaying = isVoicePlaying
+		this.playingVoiceMessageId = playingVoiceMessageId
+		this.playVoice = playVoice
+		this.stopVoice = stopVoice
+		this.setupPlayListeners = setupPlayListeners
+		this.cleanupPlayListeners = cleanupPlayListeners
+		this.destroy = destroy
+	}
+}
+
+/**
+ * useChatMessages 返回值类型
+ */
+export class ChatMessagesResult {
+	messageList: Ref<Array<any>>
+	loading: Ref<boolean>
+	loadingHistory: Ref<boolean>
+	page: Ref<number>
+	pageSize: Ref<number>
+	hasMoreHistory: Ref<boolean>
+	loadMessages: () => void
+	loadMoreHistory: () => void
+	sendTextMessage: (content: string, messageType: number) => void
+	retryMessage: (msg: any) => void
+	scrollToBottom: () => void
+	addLocalMessage: (message: any) => void
+	updateLocalMessageStatus: (messageId: string, status: string, newContent: string) => void
+	mergeNewMessages: (newMessages: Array<any>) => void
+	resetPagination: () => void
+	deleteLocalMessage: (messageId: string) => boolean
+	copyMessageContent: (content: string) => void
+	clearAllMessages: () => Promise<boolean>
+	
+	constructor(
+		messageList: Ref<Array<any>>,
+		loading: Ref<boolean>,
+		loadingHistory: Ref<boolean>,
+		page: Ref<number>,
+		pageSize: Ref<number>,
+		hasMoreHistory: Ref<boolean>,
+		loadMessages: () => void,
+		loadMoreHistory: () => void,
+		sendTextMessage: (content: string, messageType: number) => void,
+		retryMessage: (msg: any) => void,
+		scrollToBottom: () => void,
+		addLocalMessage: (message: any) => void,
+		updateLocalMessageStatus: (messageId: string, status: string, newContent: string) => void,
+		mergeNewMessages: (newMessages: Array<any>) => void,
+		resetPagination: () => void,
+		deleteLocalMessage: (messageId: string) => boolean,
+		copyMessageContent: (content: string) => void,
+		clearAllMessages: () => Promise<boolean>
+	) {
+		this.messageList = messageList
+		this.loading = loading
+		this.loadingHistory = loadingHistory
+		this.page = page
+		this.pageSize = pageSize
+		this.hasMoreHistory = hasMoreHistory
+		this.loadMessages = loadMessages
+		this.loadMoreHistory = loadMoreHistory
+		this.sendTextMessage = sendTextMessage
+		this.retryMessage = retryMessage
+		this.scrollToBottom = scrollToBottom
+		this.addLocalMessage = addLocalMessage
+		this.updateLocalMessageStatus = updateLocalMessageStatus
+		this.mergeNewMessages = mergeNewMessages
+		this.resetPagination = resetPagination
+		this.deleteLocalMessage = deleteLocalMessage
+		this.copyMessageContent = copyMessageContent
+		this.clearAllMessages = clearAllMessages
+	}
+}

@@ -1,0 +1,24 @@
+/**
+ * ASCII 字符编码常量模块
+ * 用于字符分类判断，替代裸 ASCII 码值
+ */
+
+// === ASCII 字符范围 ===
+/** 字符 '0' 的 ASCII 码 */
+export const CHAR_CODE_0 = 48
+/** 字符 '3' 的 ASCII 码 */
+export const CHAR_CODE_3 = 51
+/** 字符 '9' 的 ASCII 码 */
+export const CHAR_CODE_9 = 57
+/** 字符 'A' 的 ASCII 码 */
+export const CHAR_CODE_A = 65
+/** 字符 'Z' 的 ASCII 码 */
+export const CHAR_CODE_Z = 90
+/** 字符 'a' 的 ASCII 码 */
+export const CHAR_CODE_a = 97
+/** 字符 'z' 的 ASCII 码 */
+export const CHAR_CODE_z = 122
+
+// === 手机号 ===
+/** 中国手机号码长度 */
+export const CHINA_PHONE_NUMBER_LENGTH = 11

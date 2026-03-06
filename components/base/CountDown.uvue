@@ -1,0 +1,159 @@
+<template>
+	<view class="countdown-wrapper">
+		<view class="countdown-item" v-for="(item, index) in (timeParts as Array<any>)" :key="index">
+			<text class="countdown-value">{{ getItemValue(item) }}</text>
+			<text class="countdown-separator" v-if="index < (timeParts as Array<any>).length - 1">:</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	timestamp: { type: Number, required: true } // 剩余秒数
+})
+
+const emit = defineEmits<{
+	change: [value: number]
+}>()
+
+interface CountDownItem {
+	value: string
+}
+
+const timer = ref<number>(0)
+// props.timestamp 是 number 类型（非空），直接使用
+const currentTime = ref<number>(props.timestamp)
+
+// 安全获取 item 的 value
+const getItemValue = (item: any): string => {
+	// item 类型是 any（非空），使用 JSON 序列化检查空值
+	const itemStr = JSON.stringify(item)
+	if (itemStr == '' || itemStr == '{}' || itemStr == 'null') return '00'
+	try {
+		const obj = item as CountDownItem
+		const value = obj.value
+		// value 是 string 类型（非空），直接返回
+		return value.toString()
+	} catch (e) {}
+	return '00'
+}
+
+// 格式化时间
+const timeParts = computed((): Array<any> => {
+	// currentTime.value 是 number 类型（非空），直接使用
+	const time = currentTime.value
+	// ✅ 修复：显式类型转换确保类型正确
+	const hours = Math.floor(time / 3600) as number
+	const minutes = Math.floor((time % 3600) / 60) as number
+	const seconds = (time % 60) as number
+	
+	// ✅ 修复：UTS 使用 .toString() 而非 String() 构造函数
+	const h = hours < 10 ? ('0' + hours.toString()) : hours.toString()
+	const m = minutes < 10 ? ('0' + minutes.toString()) : minutes.toString()
+	const s = seconds < 10 ? ('0' + seconds.toString()) : seconds.toString()
+	
+	return [
+		{ value: h },
+		{ value: m },
+		{ value: s }
+	]
+})
+
+// 停止倒计时
+const stopCountdown = () => {
+	const t = timer.value
+	if (t > 0) {
+		clearInterval(t)
+		timer.value = 0
+	}
+}
+
+// 开始倒计时
+const startCountdown = () => {
+	stopCountdown()
+	// currentTime.value 是 number 类型（非空），直接使用
+	const current = currentTime.value
+	if (current <= 0) return
+	
+	const intervalId = setInterval(() => {
+		// currentTime.value 是 number 类型（非空），直接使用
+		const time = currentTime.value
+		if (time > 0) {
+			const newTime = (time - 1) as number
+			currentTime.value = newTime
+			emit('change', newTime)
+		} else {
+			stopCountdown()
+			emit('change', 0)
+		}
+	}, 1000) as number
+	// 定时器 ID 明确为 number，避免 Any -> Number 赋值错误
+	timer.value = intervalId as number
+}
+
+// 监听 timestamp 变化
+watch((): number => {
+	// props.timestamp 是 number 类型（非空），直接使用
+	return props.timestamp
+}, (newVal: number) => {
+	// newVal 是 number 类型（非空），直接使用
+	currentTime.value = newVal
+	if (newVal > 0 && timer.value == 0) {
+		startCountdown()
+	} else if (newVal <= 0) {
+		stopCountdown()
+	}
+}, { immediate: true })
+
+onMounted(() => {
+	// currentTime.value 是 number 类型（非空），直接使用
+	const current = currentTime.value
+	if (current > 0) {
+		startCountdown()
+	}
+})
+
+onUnmounted(() => {
+	stopCountdown()
+})
+</script>
+
+<style scoped>
+.countdown-wrapper {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: nowrap;
+	align-items: center;
+	justify-content: center;
+	margin-right: 16rpx;
+	margin-left: 16rpx;
+}
+
+.countdown-item {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.countdown-value {
+	font-size: 36rpx;
+	color: #666666;
+	font-weight: bold;
+	background-color: #F4F4F4;
+	padding: 8rpx 16rpx;
+	border-radius: 8rpx;
+	min-width: 60rpx;
+	text-align: center;
+}
+
+.countdown-separator {
+	font-size: 36rpx;
+	color: #666666;
+	margin: 0 4rpx;
+}
+</style>
+
+

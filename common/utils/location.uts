@@ -1,0 +1,1278 @@
+/**
+ * 定位工具类
+ * 
+ * 🔒 隐私合规优化：
+ * - APP 端：使用系统隐私声明，GPS 定位会自动处理权限
+ * - H5 端：IP 定位不涉及敏感权限
+ * 
+ * APP 端定位方案：
+ * 1. GPS 定位（uni.getLocation）
+ * 2. 逆地址解析（经纬度转城市）
+ * 3. 缓存定位
+ * 4. 默认位置（中国）
+ * 
+ * H5 端定位方案：
+ * 1. 腾讯地图 IP 定位（基于 IP 地址，不涉及 GPS/WIFI）
+ * 2. 缓存定位
+ * 3. 默认位置（中国）
+ * 
+ * Requirements: 2.5, 3.1, 3.2, 3.3, 9.2, 9.5
+ */
+
+import config from '@/utils/config'
+import { 
+	parseLocationError, 
+	logLocationError, 
+	showLocationErrorPrompt,
+	LocationErrorType 
+} from './locationErrorHandler.uts'
+import { isAndroid, isIOS, getUserAgent } from '@/common/utils/systemInfo.uts'
+import { 
+	LOCATION_PRIVACY_CONFIG, 
+	LOCATION_PRIVACY_STORAGE_KEY, 
+	LOCATION_PRIVACY_VERSION 
+} from '@/common/config/locationPrivacy.uts'
+import { checkPrivacyBeforeCall } from '@/common/utils/privacyManager.uts'
+import { SK_HAS_SUCCESSFUL_LOCATION } from '@/common/config/storageKeys.uts'
+import { RANDOM_RANGE_10K } from '@/common/config/generatorConfig.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON } from '@/common/utils/typeConverter'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { ERR_MSG_LOCATION } from '@/common/config/errorMessages.uts'
+
+// 定位结果类
+export class LocationResult {
+	latitude: number = 0
+	longitude: number = 0
+	city: string = ''
+	province: string = ''
+	district: string = ''
+	nation: string = ''
+	adcode: string = ''
+	fromCache: boolean = false
+	fromIpLocation: boolean = false
+	fromGps: boolean = false
+	provider: 'gps' | 'tencent' | 'amap' | 'cache' | 'default' = 'default'
+}
+
+// 缓存key
+const LOCATION_CACHE_KEY = 'WYXD_LOCATION'
+const LOCATION_CACHE_TIME = 30 * 60 * 1000 // 30分钟缓存
+
+// GPS定位超时配置
+const FIRST_LOCATION_TIMEOUT = 15000  // 首次定位15秒
+const NORMAL_LOCATION_TIMEOUT = 10000 // 后续定位10秒
+
+// 🔧 修复：使用Promise缓存防止重复显示隐私对话框
+let privacyDialogPromise: Promise<boolean> | null = null
+
+/**
+ * 检查用户是否已查看定位隐私说明
+ * @returns true: 已查看, false: 未查看
+ */
+export function checkLocationPrivacyViewed(): boolean {
+	try {
+		const viewedData = safeGetStorageSync(LOCATION_PRIVACY_STORAGE_KEY)
+		if (viewedData == null || viewedData == '') {
+			return false
+		}
+		
+		// 解析存储的数据
+		const viewedStr = viewedData.toString()
+		const viewedObj = JSON.parse(viewedStr) as UTSJSONObject
+		
+		// 检查版本号
+		const versionVal = viewedObj.get('version')
+		const version = (versionVal != null) ? versionVal.toString() : ''
+		
+		// 检查是否已同意
+		const agreedVal = viewedObj.get('agreed')
+		const agreed = (agreedVal != null && agreedVal.toString() == 'true')
+		
+		// 版本匹配且已同意
+		return (version == LOCATION_PRIVACY_VERSION && agreed == true)
+	} catch (e) {
+		console.error('检查定位隐私查看状态失败:', e)
+		return false
+	}
+}
+
+/**
+ * 保存用户已查看定位隐私说明的标记
+ */
+export function saveLocationPrivacyViewed(): void {
+	try {
+		const viewedData: UTSJSONObject = {
+			version: LOCATION_PRIVACY_VERSION,
+			agreed: true,
+			timestamp: Date.now()
+		}
+		safeSetStorageSync(LOCATION_PRIVACY_STORAGE_KEY, JSON.stringify(viewedData))
+	} catch (e) {
+		console.error('保存定位隐私查看状态失败:', e)
+	}
+}
+
+/**
+ * 重置定位隐私查看状态（测试用）
+ */
+export function resetLocationPrivacyViewed(): void {
+	try {
+		uni.removeStorageSync(LOCATION_PRIVACY_STORAGE_KEY)
+		console.log('🔄 [Location Privacy] 已重置隐私查看状态')
+	} catch (e) {
+		console.error('重置定位隐私查看状态失败:', e)
+	}
+}
+
+/**
+ * 从完整地址中提取城市名
+ * 例如：湖南省长沙市宁乡市新康西路1号 -> 长沙市
+ */
+const extractCityFromAddress = (address: string): string => {
+	if (address == null || address == '') return '未知'
+	
+	// 尝试匹配 "XX市" 格式（不包括县级市如"宁乡市"）
+	// 先找省级行政区后面的市
+	let cityMatch = ''
+	
+	// 查找 "省" 后面的 "市"
+	const provinceIdx = address.indexOf('省')
+	if (provinceIdx >= 0) {
+		const afterProvince = address.substring(provinceIdx + 1)
+		const cityIdx = afterProvince.indexOf('市')
+		if (cityIdx >= 0) {
+			cityMatch = afterProvince.substring(0, cityIdx + 1)
+		}
+	}
+	
+	// 如果没找到省，直接找第一个 "市"
+	if (cityMatch == '') {
+		const cityIdx = address.indexOf('市')
+		if (cityIdx >= 0) {
+			// 向前查找城市名开始位置
+			let startIdx = 0
+			// 跳过省份
+			const provinceEndIdx = address.indexOf('省')
+			if (provinceEndIdx >= 0 && provinceEndIdx < cityIdx) {
+				startIdx = provinceEndIdx + 1
+			}
+			cityMatch = address.substring(startIdx, cityIdx + 1)
+		}
+	}
+	
+	if (cityMatch != '') {
+		return cityMatch
+	}
+	
+	// 如果没有找到市，返回原地址的前10个字符
+	if (address.length > 10) {
+		return address.substring(0, 10)
+	}
+	return address
+}
+
+/**
+ * 从完整地址中提取省份名
+ * 例如：湖南省长沙市宁乡市新康西路1号 -> 湖南省
+ */
+const extractProvinceFromAddress = (address: string): string => {
+	if (address == null || address == '') return ''
+	
+	const provinceIdx = address.indexOf('省')
+	if (provinceIdx >= 0) {
+		return address.substring(0, provinceIdx + 1)
+	}
+	
+	// 处理直辖市
+	const municipalities = ['北京', '上海', '天津', '重庆']
+	for (let i = 0; i < municipalities.length; i = i + 1) {
+		if (address.indexOf(municipalities[i]) == 0) {
+			return municipalities[i] + '市'
+		}
+	}
+	
+	return ''
+}
+
+
+/**
+ * 处理腾讯定位成功数据
+ */
+function handleTencentLocationSuccess(data: any, resolve: (value: LocationResult) => void, reject: (reason?: any) => void) {
+	// UTS 规范：使用 toUTSJSON 安全转换 any 类型
+	const dataObj = toUTSJSON(data)
+	if (dataObj == null) {
+		reject(new Error('腾讯IP定位数据转换失败'))
+		return
+	}
+	const statusVal = dataObj.get('status')
+	const statusNum = (statusVal != null) ? parseInt(statusVal.toString()) : -1
+	
+	// 检查API状态码
+	if (statusNum != 0) {
+		const messageVal = dataObj.get('message')
+		const messageStr = (messageVal != null) ? messageVal.toString() : '未知错误'
+		console.error('腾讯IP定位API状态错误:', statusNum, messageStr)
+		reject(new Error(`腾讯IP定位API错误: ${messageStr}`))
+		return
+	}
+	
+	// 检查结果数据
+	const resultVal = dataObj.get('result')
+	if (resultVal == null) {
+		console.error('腾讯IP定位缺少result字段')
+		reject(new Error('腾讯IP定位返回数据缺少result'))
+		return
+	}
+	
+	// UTS 规范：将 result 转为 UTSJSONObject
+	const result = toUTSJSON(resultVal)
+	if (result == null) {
+		reject(new Error('腾讯IP定位result数据转换失败'))
+		return
+	}
+	
+	const locationVal = result.get('location')
+	if (locationVal == null) {
+		console.error('腾讯IP定位缺少location字段')
+		reject(new Error('腾讯IP定位返回数据缺少location'))
+		return
+	}
+	
+	const adInfoVal = result.get('ad_info')
+	if (adInfoVal == null) {
+		console.error('腾讯IP定位缺少ad_info字段')
+		reject(new Error('腾讯IP定位返回数据缺少ad_info'))
+		return
+	}
+	
+	// 转换为 UTSJSONObject
+	const location = toUTSJSON(locationVal)
+	const adInfo = toUTSJSON(adInfoVal)
+	if (location == null || adInfo == null) {
+		reject(new Error('腾讯IP定位位置数据转换失败'))
+		return
+	}
+	
+	// 提取城市信息
+	const cityVal = adInfo.getString('city')
+	const districtVal = adInfo.getString('district')
+	const provinceVal = adInfo.getString('province')
+	const cityName = (cityVal != null && cityVal != '') ? cityVal : ((districtVal != null && districtVal != '') ? districtVal : ((provinceVal != null) ? provinceVal : ''))
+	if (cityName == null || cityName === '' || cityName.trim() === '') {
+		console.error('腾讯IP定位城市信息为空')
+		reject(new Error('腾讯IP定位返回城市为空'))
+		return
+	}
+	
+	// 成功返回
+	const provinceResult = provinceVal != null ? provinceVal : ''
+	const districtResult = districtVal != null ? districtVal : ''
+	const nationVal = adInfo.getString('nation')
+	const nationResult = nationVal != null ? nationVal : '中国'
+	const adcodeVal = adInfo.getString('adcode')
+	const adcodeResult = adcodeVal != null ? adcodeVal : ''
+	const latVal = location.get('lat')
+	const lngVal = location.get('lng')
+	const latNum = (latVal != null) ? parseFloat(latVal.toString()) : 0.0
+	const lngNum = (lngVal != null) ? parseFloat(lngVal.toString()) : 0.0
+	// UTS 规范：使用 new 创建 class 实例，不能使用对象字面量
+	const resultLocation = new LocationResult()
+	resultLocation.latitude = latNum
+	resultLocation.longitude = lngNum
+	resultLocation.city = cityName
+	resultLocation.province = provinceResult
+	resultLocation.district = districtResult
+	resultLocation.nation = nationResult
+	resultLocation.adcode = adcodeResult
+	resultLocation.fromIpLocation = true
+	resultLocation.provider = 'tencent'
+	resolve(resultLocation)
+}
+
+/**
+ * IP定位及后续备选方案流程
+ * H5 端：腾讯 IP 定位 → 缓存 → 默认城市
+ * APP 端：腾讯 IP 定位 → 高德 IP 定位 → 缓存 → 默认城市
+ */
+function processIpLocationFallback(resolve: (value: LocationResult) => void, reject: (reason?: any) => void) {
+	;(async () => {
+		// 优先级1: 腾讯地图IP定位
+		try {
+			const location = await tryTencentIpLocation()
+			cacheLocation(location)
+			resolve(location)
+			return
+		} catch (tencentError) {
+			console.log('⚠️ [Location] 腾讯IP定位失败，尝试备选方案')
+		}
+
+		// #ifndef H5
+		// 优先级2: 高德地图IP定位（仅非H5端，H5端高德不支持CORS）
+		try {
+			const location = await tryAmapIpLocation()
+			cacheLocation(location)
+			resolve(location)
+			return
+		} catch (amapError) {
+			console.log('⚠️ [Location] 高德IP定位失败')
+		}
+		// #endif
+
+		// 优先级3: 使用缓存
+		const cachedLocation = getCachedLocation()
+		if (cachedLocation != null) {
+			console.log('💾 [Location] 使用缓存位置')
+			resolve(cachedLocation)
+			return
+		}
+
+		// 优先级4: 使用默认城市
+		console.log('📍 [Location] 使用默认城市')
+		const defaultLocation = getDefaultLocation()
+		resolve(defaultLocation)
+	})()
+}
+
+/**
+ * 检查设备定位服务是否已开启（仅 Android）
+ * 注意：uni-app x 中暂时无法直接检查定位服务状态
+ * 改为通过 uni.getLocation 的错误码来判断
+ * @returns true: 假设已开启
+ */
+export function checkLocationServiceEnabled(): boolean {
+	// uni-app x 中暂时无法直接调用 Android 原生 API 检查定位服务
+	// 改为通过 uni.getLocation 的错误码来判断
+	// 如果定位服务未开启，uni.getLocation 会返回错误码 LOCATION_ERROR_PERMISSION_DENIED
+	return true
+}
+
+/**
+ * 检查定位服务是否可用
+ * 综合判断设备定位服务和应用权限状态
+ * @returns true: 可用, false: 不可用
+ */
+export function isLocationServiceAvailable(): boolean {
+	// 检查设备定位服务状态
+	const serviceEnabled = checkLocationServiceEnabled()
+	
+	// 🔧 修复：简化权限检查逻辑
+	// 不再依赖 hasSuccessfulLocation 存储值，因为这会导致首次启动时误判
+	// 系统隐私声明已处理权限问题，直接返回服务状态即可
+	return serviceEnabled
+}
+
+/**
+ * 获取位置信息（平台差异化方案）
+ * 
+ * 🔒 隐私合规说明：
+ * - H5 端：IP 定位不涉及敏感权限
+ * - APP 端：GPS 定位由系统隐私声明自动处理
+ * 
+ * APP 端：GPS 定位 → 逆地址解析 → 缓存 → 默认城市
+ * H5 端：腾讯 IP 定位 → 缓存 → 默认城市
+ */
+export function getLocationInfo(): Promise<LocationResult> {
+	console.log('🔍 [Location] getLocationInfo 被调用')
+	return new Promise((resolve, reject) => {
+		// 🔒 隐私合规守卫：确保腾讯定位SDK不会在同意前被调用
+		if (checkPrivacyBeforeCall() == false) {
+			console.log('⚠️ [Location] 用户未同意隐私政策，返回默认位置')
+			resolve(getDefaultLocation())
+			return
+		}
+		
+		// #ifdef H5
+		// H5 端：IP 定位不涉及敏感权限（无 GPS、无 WIFI BSSID）
+		console.log('🌐 [Location] H5 端使用 IP 定位')
+		processIpLocationFallback(resolve, reject)
+		return
+		// #endif
+
+		// #ifndef H5
+		// 非 H5 端（APP、小程序等）：使用 GPS 定位
+		console.log('📱 [Location] 非 H5 端定位流程开始')
+		
+		// 优先返回缓存（如果有效），同时后台更新
+		const cachedLocation = getCachedLocation()
+		if (cachedLocation != null) {
+			console.log('💾 [Location] 使用缓存位置')
+			resolve(cachedLocation)
+			
+			// 后台更新定位（不阻塞）
+			backgroundUpdateLocation()
+			return
+		}
+		
+		// 无缓存，执行GPS定位 + 降级策略
+		console.log('💾 [Location] 缓存数据为空')
+		tryGpsLocationWithFallback(resolve, reject)
+		// #endif
+	})
+}
+
+/**
+ * 显示隐私对话框并等待用户响应
+ * 🔧 修复：使用Promise缓存防止重复显示
+ */
+function showPrivacyDialog(): Promise<boolean> {
+	// 🔧 UTS修复：使用临时变量避免smart cast问题
+	const existingPromise = privacyDialogPromise
+	if (existingPromise != null) {
+		console.log('⚠️ [Location Privacy] 隐私说明对话框已在显示中，返回现有Promise')
+		return existingPromise
+	}
+	
+	console.log('🔒 [Location Privacy] 首次定位，显示用途说明')
+	
+	// 创建新的Promise并缓存
+	const newPromise = new Promise<boolean>((resolve: (value: boolean) => void, reject: (reason?: any) => void) => {
+		// 提取配置值为局部变量,确保类型正确
+		const dialogTitle: string = LOCATION_PRIVACY_CONFIG.dialogTitle
+		const dialogContent: string = LOCATION_PRIVACY_CONFIG.dialogContent
+		const agreeText: string = LOCATION_PRIVACY_CONFIG.agreeButtonText
+		const cancelText: string = LOCATION_PRIVACY_CONFIG.cancelButtonText
+		
+		// 显示用途说明对话框
+		uni.showModal({
+			title: dialogTitle,
+			content: dialogContent,
+			confirmText: agreeText,
+			cancelText: cancelText,
+			success: (res: UniShowModalResult) => {
+				// 清除Promise缓存
+				privacyDialogPromise = null
+				
+				if (res.confirm == true) {
+					// 用户同意，保存标记
+					saveLocationPrivacyViewed()
+					resolve(true)
+				} else {
+					// 用户取消
+					resolve(false)
+				}
+			},
+			fail: (err: any) => {
+				// 清除Promise缓存
+				privacyDialogPromise = null
+				
+				console.error('显示定位用途说明失败:', err)
+				reject(new Error('显示定位用途说明失败'))
+			}
+		})
+	})
+	
+	privacyDialogPromise = newPromise
+	return newPromise
+}
+
+/**
+ * 尝试GPS定位（优化版）
+ * 移除自定义权限弹窗，让系统自动处理权限申请
+ * 添加前置可用性检查
+ * 🔒 隐私合规：首次定位前显示用途说明
+ * 🔧 修复：等待用户响应后再执行GPS定位，不立即降级
+ */
+function tryGpsLocation(): Promise<LocationResult> {
+	return new Promise((resolve, reject) => {
+		// 🔒 隐私合规检查：首次定位前显示用途说明
+		const hasViewedPrivacy = checkLocationPrivacyViewed()
+		
+		if (hasViewedPrivacy == false) {
+			// 显示隐私对话框并等待用户响应
+			showPrivacyDialog()
+				.then((agreed: boolean) => {
+					if (agreed == true) {
+						// 用户同意，继续执行GPS定位
+						proceedWithGpsLocation(resolve, reject)
+					} else {
+						// 用户取消，拒绝定位
+						reject(new Error('用户取消定位权限'))
+					}
+				})
+				.catch((err: any | null): void => {
+					// 显示对话框失败，提示用户定位失败
+					handleSilentError(err as any, '定位隐私对话框')
+					uni.showToast({ title: ERR_MSG_LOCATION, icon: 'none' })
+					reject(err)
+				})
+		} else {
+			// 已查看过，直接执行定位
+			proceedWithGpsLocation(resolve, reject)
+		}
+	})
+}
+
+/**
+ * 执行GPS定位的实际逻辑（从tryGpsLocation中提取）
+ */
+function proceedWithGpsLocation(
+	resolve: (value: LocationResult) => void,
+	reject: (reason?: any) => void
+): void {
+	// 检查是否首次定位，决定超时时间
+	const hasLocated = safeGetStorageSync(SK_HAS_SUCCESSFUL_LOCATION)
+	const timeout = (hasLocated == 'true') ? NORMAL_LOCATION_TIMEOUT : FIRST_LOCATION_TIMEOUT
+	
+	// 🔧 新增：前置检查定位服务可用性
+	const isAvailable = isLocationServiceAvailable()
+	console.log(`🔍 [Location] 定位服务可用性检查: ${isAvailable}`)
+	
+	// 直接调用GPS定位，系统会自动弹出权限申请
+	doGpsLocation(resolve, reject, timeout)
+}
+
+/**
+ * 执行GPS定位（优化版）
+ * @param resolve 成功回调
+ * @param reject 失败回调
+ * @param timeoutMs 超时时间（毫秒），默认15秒
+ */
+function doGpsLocation(
+	resolve: (value: LocationResult) => void, 
+	reject: (reason?: any) => void,
+	timeoutMs: number = 15000
+): void {
+	console.log(`🔍 [Location] 开始GPS定位，超时时间: ${timeoutMs}ms`)
+	
+	// 防止重复回调
+	let isResolved = false
+	
+	// 设置超时
+	const timeout = setTimeout(() => {
+		if (isResolved == false) {
+			isResolved = true
+			console.error('⏱️ [Location] GPS定位超时')
+			reject(new Error(`GPS定位超时(${timeoutMs}ms)`))
+		}
+	}, timeoutMs)
+	
+	uni.getLocation({
+		type: 'gcj02', // 国测局坐标系
+		altitude: false,
+		geocode: true, // 尝试获取地址信息
+		isHighAccuracy: true, // 🔧 修复：启用高精度定位，提高GPS定位成功率
+		highAccuracyExpireTime: 4000, // 🔧 修复：高精度定位超时时间4秒
+		// UTS 规范：使用 any 类型并通过 UTSJSONObject 安全访问
+		success: (res: any) => {
+			if (isResolved == false) {
+				isResolved = true
+				clearTimeout(timeout)
+				
+				// 将 res 转为 UTSJSONObject 安全访问
+				const resObj = toUTSJSON(res)
+				if (resObj == null) return
+				const latVal = resObj.get('latitude')
+				const lngVal = resObj.get('longitude')
+				const latitude = (latVal != null) ? parseFloat(latVal.toString()) : 0.0
+				const longitude = (lngVal != null) ? parseFloat(lngVal.toString()) : 0.0
+				
+				// 🔧 增强：详细的成功日志
+				console.log(`📍 [Location] 定位结果 - 纬度: ${latitude}, 经度: ${longitude}`)
+				
+				// 检查是否有地址信息
+				const addressVal = resObj.get('address')
+				if (addressVal != null) {
+					// 检查 addressVal 是否为字符串类型
+					const addressStr = addressVal.toString()
+					let addr: UTSJSONObject | null = null
+					
+					// 尝试解析为对象，如果是字符串则跳过
+					try {
+						// 检查是否是 JSON 对象（以 { 开头）
+						if (addressStr.indexOf('{') == 0) {
+							addr = JSON.parse(addressStr) as UTSJSONObject
+						} else {
+							// addressVal 本身可能是对象
+							const typeCheck = typeof addressVal
+							if (typeCheck == 'object') {
+								addr = toUTSJSON(addressVal)
+							}
+						}
+					} catch (e) {
+						// 解析失败，addressVal 可能是纯字符串地址
+						addr = null
+					}
+					
+					let addrCity = '未知'
+					let addrProvince = ''
+					let addrDistrict = ''
+					let addrCountry = '中国'
+					let addrAdcode = ''
+					
+					if (addr != null) {
+						const cityStr = addr.getString('city')
+						const districtStr = addr.getString('district')
+						const provinceStr = addr.getString('province')
+						const countryStr = addr.getString('country')
+						const adcodeStr = addr.getString('adcode')
+						
+						addrCity = (cityStr != null && cityStr != '') ? cityStr : ((districtStr != null && districtStr != '') ? districtStr : ((provinceStr != null) ? provinceStr : '未知'))
+						addrProvince = (provinceStr != null) ? provinceStr : ''
+						addrDistrict = (districtStr != null) ? districtStr : ''
+						addrCountry = (countryStr != null) ? countryStr : '中国'
+						addrAdcode = (adcodeStr != null) ? adcodeStr : ''
+					} else if (addressStr != '') {
+						// 如果是纯字符串地址，尝试从中提取城市名
+						// 格式通常是：省份+城市+区县+详细地址
+						// 例如：湖南省长沙市宁乡市新康西路1号
+						addrCity = extractCityFromAddress(addressStr)
+						// 尝试提取省份
+						addrProvince = extractProvinceFromAddress(addressStr)
+					}
+					
+					// UTS 规范：使用 new 创建 class 实例
+					const gpsResult = new LocationResult()
+					gpsResult.latitude = latitude
+					gpsResult.longitude = longitude
+					gpsResult.city = addrCity
+					gpsResult.province = addrProvince
+					gpsResult.district = addrDistrict
+					gpsResult.nation = addrCountry
+					gpsResult.adcode = addrAdcode
+					gpsResult.fromGps = true
+					gpsResult.provider = 'gps'
+					// 标记已成功定位过
+					safeSetStorageSync(SK_HAS_SUCCESSFUL_LOCATION, 'true')
+					resolve(gpsResult)
+				} else {
+					// 只有经纬度，需要反向地理编码
+					// 这里可以调用腾讯地图逆地理编码API
+					reverseGeocode(latitude, longitude)
+						.then(location => {
+							// UTS 规范：不能使用展开运算符，直接修改属性
+							location.fromGps = true
+							location.provider = 'gps'
+							// 标记已成功定位过
+							safeSetStorageSync(SK_HAS_SUCCESSFUL_LOCATION, 'true')
+							resolve(location)
+						})
+						.catch((err: any | null): void => {
+							// 🔧 优化：逆地理编码失败时，返回包含经纬度的基础位置信息
+							console.log('⚠️ [Location] 逆地理编码失败，返回基础位置信息')
+							const basicResult = new LocationResult()
+							basicResult.latitude = latitude
+							basicResult.longitude = longitude
+							basicResult.city = '未知'
+							basicResult.province = ''
+							basicResult.district = ''
+							basicResult.nation = '中国'
+							basicResult.adcode = ''
+							basicResult.fromGps = true
+							basicResult.provider = 'gps'
+							// 标记已成功定位过
+							safeSetStorageSync(SK_HAS_SUCCESSFUL_LOCATION, 'true')
+							resolve(basicResult)
+						})
+				}
+			}
+		},
+		fail: (err: any) => {
+			if (isResolved == false) {
+				isResolved = true
+				clearTimeout(timeout)
+				
+				// 详细错误日志
+				const errObj = toUTSJSON(err)
+				if (errObj == null) {
+					reject(new Error('GPS定位失败: 未知错误'))
+					return
+				}
+				const errCodeVal = errObj.get('errCode')
+				const errMsgVal = errObj.get('errMsg')
+				const errCodeNum = (errCodeVal != null) ? parseInt(errCodeVal.toString()) : 0
+				const errMsg = (errMsgVal != null) ? errMsgVal.toString() : '未知错误'
+				
+				// 🔧 增强：详细的错误分析和日志
+				console.error(`❌ [Location] GPS定位失败详情:`)
+				console.error(`   错误码: ${errCodeNum}`)
+				console.error(`   错误信息: ${errMsg}`)
+				
+				// 使用 systemInfo 工具获取平台信息（替代 plus.os.name）
+				const platformInfo = isAndroid() == true ? 'Android' : (isIOS() == true ? 'iOS' : 'Unknown')
+				console.error(`   平台: ${platformInfo}`)
+				
+				// 使用 getUserAgent 获取设备信息（替代 plus.device.model）
+				const deviceInfo = getUserAgent()
+				console.error(`   设备信息: ${deviceInfo}`)
+				
+				// 解析错误类型
+				const errorType = parseLocationError(errCodeNum, errMsg)
+				
+				// 记录详细错误日志
+				logLocationError(errorType, errCodeNum, errMsg, 'GPS定位')
+				
+				console.error(`❌ [Location] GPS定位失败 - 错误码: ${errCodeNum}, 错误信息: ${errMsg}`)
+				
+				// 🔧 修复：使用 UTSJSONObject 传递错误信息，避免作用域问题
+				const errorData: UTSJSONObject = {
+					errCode: errCodeNum,
+					errMsg: errMsg,
+					message: `GPS定位失败: ${errMsg} (${errCodeNum})`
+				}
+				reject(errorData)
+			}
+		}
+	})
+}
+
+/**
+ * 通用JSONP请求
+ */
+function jsonpRequest(url: string): Promise<any> {
+	return new Promise((resolve, reject) => {
+		// #ifdef H5
+		const callbackName = 'jsonp_cb_' + Date.now() + '_' + Math.floor(Math.random() * RANDOM_RANGE_10K)
+		
+		// 处理URL，确保有callback参数
+		const finalUrl = url.includes('callback=') ? url.replace(/callback=([^&]*)/, `callback=${callbackName}`) : (url + (url.includes('?') ? '&' : '?') + `callback=${callbackName}`)
+		
+		const win = window as any
+		let timeoutId: number | null = null
+		
+		// 清理函数
+		const cleanup = () => {
+			if (timeoutId != null) clearTimeout(timeoutId)
+			if (win[callbackName] != null) delete win[callbackName]
+			const script = document.getElementById(callbackName)
+			if (script != null && script.parentNode != null) script.parentNode.removeChild(script)
+		}
+		
+		// 定义回调
+		win[callbackName] = (res: any) => {
+			cleanup()
+			resolve(res)
+		}
+		
+		// 创建script
+		const script = document.createElement('script')
+		script.id = callbackName
+		script.src = finalUrl
+		script.onerror = () => {
+			cleanup()
+			reject(new Error('JSONP request failed'))
+		}
+		
+		document.body.appendChild(script)
+		
+		// 超时处理
+		timeoutId = setTimeout(() => {
+			cleanup()
+			reject(new Error('JSONP request timeout'))
+		}, 10000)
+		// #endif
+		
+		// #ifndef H5
+		reject(new Error('JSONP only supports H5'))
+		// #endif
+	})
+}
+
+/**
+ * 腾讯地图IP定位
+ */
+function tryTencentIpLocation(): Promise<LocationResult> {
+	return new Promise((resolve, reject) => {
+		// #ifdef H5
+		const url = `https://apis.map.qq.com/ws/location/v1/ip?key=${config.map_key}&output=jsonp`
+		;(async () => {
+			try {
+				const data = await jsonpRequest(url)
+				handleTencentLocationSuccess(data, resolve, reject)
+			} catch (err) {
+				console.error('腾讯IP定位JSONP失败:', err)
+				reject(err)
+			}
+		})()
+		return
+		// #endif
+
+		// #ifndef H5
+		const url = `https://apis.map.qq.com/ws/location/v1/ip?key=${config.map_key}&output=json`
+		uni.request({
+			url: url,
+			method: 'GET',
+			timeout: 10000,
+			dataType: 'json',
+			// UTS 规范：使用 UTSJSONObject 安全访问 any 类型属性
+			success: (res: any) => {
+				try {
+					const resObj = toUTSJSON(res)
+					if (resObj == null) {
+						reject(new Error('腾讯IP定位返回数据转换失败'))
+						return
+					}
+					const statusCodeVal = resObj.get('statusCode')
+					const statusCode = (statusCodeVal != null) ? parseInt(statusCodeVal.toString()) : 0
+					
+					if (statusCode != 200) {
+						reject(new Error(`腾讯IP定位HTTP错误: ${statusCode}`))
+						return
+					}
+					
+					const dataVal = resObj.get('data')
+					// UTS 规范：Any? 不能赋值给 Any，需要判空处理
+					if (dataVal == null) {
+						reject(new Error('腾讯IP定位返回数据为空'))
+						return
+					}
+					let data: any = dataVal as any
+					if (typeof dataVal === 'string') {
+						const parsedData = JSON.parse(dataVal as string)
+						if (parsedData != null) {
+							data = parsedData as any
+						}
+					}
+					handleTencentLocationSuccess(data, resolve, reject)
+				} catch (error) {
+					reject(error)
+				}
+			},
+			// UTS 规范：error 对象不支持 errMsg 属性访问
+			fail: (err: any) => {
+				const errObj = toUTSJSON(err)
+				const errMsgVal = (errObj != null) ? errObj.getString('errMsg') : null
+				const errMsg = (errMsgVal != null) ? errMsgVal : '未知错误'
+				reject(new Error(`腾讯IP定位请求失败: ${errMsg}`))
+			}
+		})
+		// #endif
+	})
+}
+
+// ... handleTencentLocationSuccess 保持不变 ...
+
+/**
+ * 高德地图IP定位（备选）
+ */
+function tryAmapIpLocation(): Promise<LocationResult> {
+	return new Promise((resolve, reject) => {
+		// UTS 规范：不能使用 ! 否定运算符，需要显式判断
+		const amapKey = config.amap_key
+		if (amapKey == null || amapKey === '') {
+			reject(new Error('未配置高德地图key'))
+			return
+		}
+
+		// #ifdef H5
+		// 高德Web服务API通常不支持JSONP，或者需要特定参数
+		// 尝试使用output=xml或json，高德API似乎不直接支持callback参数的JSONP
+		// 这里改为仅在App端使用高德，H5端如果腾讯失败则直接失败（或者尝试代理，但在前端无法直接控制）
+		// 更新：高德地图 Web服务 API 不支持 JSONP。
+		// 所以 H5 端直接 reject
+		reject(new Error('H5端不支持高德IP定位(CORS)'))
+		return
+		// #endif
+		
+		// #ifndef H5
+		const url = `https://restapi.amap.com/v3/ip?key=${config.amap_key}&output=json`
+		uni.request({
+			url: url,
+			method: 'GET',
+			timeout: 10000,
+			// UTS 规范：使用 toUTSJSON 安全转换
+			success: (res: any) => {
+				const resObj = toUTSJSON(res)
+				if (resObj == null) {
+					reject(new Error('高德IP定位请求失败'))
+					return
+				}
+				const statusCodeVal = resObj.get('statusCode')
+				const statusCode = (statusCodeVal != null) ? parseInt(statusCodeVal.toString()) : 0
+				const dataVal = resObj.get('data')
+				
+				if (statusCode == 200 && dataVal != null) {
+					const data = toUTSJSON(dataVal)
+					if (data == null) {
+						reject(new Error('高德IP定位数据转换失败'))
+						return
+					}
+					const statusStr = data.getString('status')
+					
+					if (statusStr == '1') {
+						const provinceStr = data.getString('province')
+						const cityStr = data.getString('city')
+						
+						if (provinceStr != null && cityStr != null) {
+							const districtStr = data.getString('district')
+							const adcodeStr = data.getString('adcode')
+							const districtVal = (districtStr != null) ? districtStr : ''
+							const adcodeVal = (adcodeStr != null) ? adcodeStr : ''
+							// UTS 规范：使用 new 创建 class 实例
+							const amapResult = new LocationResult()
+							amapResult.latitude = 0
+							amapResult.longitude = 0
+							amapResult.city = cityStr
+							amapResult.province = provinceStr
+							amapResult.district = districtVal
+							amapResult.nation = '中国'
+							amapResult.adcode = adcodeVal
+							amapResult.fromIpLocation = true
+							amapResult.provider = 'amap'
+							resolve(amapResult)
+						} else {
+							reject(new Error('高德IP定位返回城市为空'))
+						}
+					} else {
+						const infoStr = data.getString('info')
+						const errorMsg = (infoStr != null) ? infoStr : '未知错误'
+						reject(new Error(`高德IP定位失败: ${errorMsg}`))
+					}
+				} else {
+					reject(new Error('高德IP定位请求失败'))
+				}
+			},
+			fail: (err: any) => {
+				reject(err)
+			}
+		})
+		// #endif
+	})
+}
+
+/**
+ * 逆地理编码（经纬度转地址）
+ */
+function reverseGeocode(latitude: number, longitude: number): Promise<LocationResult> {
+	return new Promise((resolve, reject) => {
+		// #ifdef H5
+		const url = `https://apis.map.qq.com/ws/geocoder/v1/?location=${latitude},${longitude}&key=${config.map_key}&output=jsonp`
+		;(async () => {
+			try {
+				const data = await jsonpRequest(url)
+				if (data != null && data.status === 0) {
+					const result = data.result
+					const adInfo = result.ad_info
+					const adInfoCity = adInfo.city != null ? adInfo.city : (adInfo.district != null ? adInfo.district : (adInfo.province != null ? adInfo.province : ''))
+					const adInfoProvince = adInfo.province != null ? adInfo.province : ''
+					const adInfoDistrict = adInfo.district != null ? adInfo.district : ''
+					const adInfoNation = adInfo.nation != null ? adInfo.nation : '中国'
+					const adInfoAdcode = adInfo.adcode != null ? adInfo.adcode : ''
+					// UTS 规范：使用 new 创建 class 实例
+					const geoResult = new LocationResult()
+					geoResult.latitude = latitude
+					geoResult.longitude = longitude
+					geoResult.city = adInfoCity
+					geoResult.province = adInfoProvince
+					geoResult.district = adInfoDistrict
+					geoResult.nation = adInfoNation
+					geoResult.adcode = adInfoAdcode
+					geoResult.fromGps = true
+					geoResult.provider = 'gps'
+					resolve(geoResult)
+				} else {
+					reject(new Error('逆地理编码失败'))
+				}
+			} catch (err) {
+				reject(err)
+			}
+		})()
+		return
+		// #endif
+
+		// #ifndef H5
+		const url = `https://apis.map.qq.com/ws/geocoder/v1/?location=${latitude},${longitude}&key=${config.map_key}&output=json`
+		uni.request({
+			url: url,
+			method: 'GET',
+			timeout: 10000,
+			// UTS 规范：使用 toUTSJSON 安全转换
+			success: (res: any) => {
+				const resObj = toUTSJSON(res)
+				if (resObj == null) {
+					reject(new Error('逆地理编码失败'))
+					return
+				}
+				const statusCodeVal = resObj.get('statusCode')
+				const statusCode = (statusCodeVal != null) ? parseInt(statusCodeVal.toString()) : 0
+				const dataVal = resObj.get('data')
+				
+				if (statusCode == 200 && dataVal != null) {
+					const data = toUTSJSON(dataVal)
+					const statusNum = (data != null) ? data.get('status') : null
+					const status = (statusNum != null) ? parseInt(statusNum.toString()) : -1
+					
+					if (status == 0) {
+						const resultVal = (data != null) ? data.get('result') : null
+						if (resultVal != null) {
+							const result = toUTSJSON(resultVal)
+							const adInfoVal = (result != null) ? result.get('ad_info') : null
+							if (adInfoVal != null) {
+								const adInfo = toUTSJSON(adInfoVal)
+								if (adInfo == null) {
+									reject(new Error('逆地理编码失败'))
+									return
+								}
+								const cityStr = adInfo.getString('city')
+								const districtStr = adInfo.getString('district')
+								const provinceStr = adInfo.getString('province')
+								const nationStr = adInfo.getString('nation')
+								const adcodeStr = adInfo.getString('adcode')
+								
+								const adInfoCity = (cityStr != null && cityStr != '') ? cityStr : ((districtStr != null && districtStr != '') ? districtStr : ((provinceStr != null) ? provinceStr : ''))
+								const adInfoProvince = (provinceStr != null) ? provinceStr : ''
+								const adInfoDistrict = (districtStr != null) ? districtStr : ''
+								const adInfoNation = (nationStr != null) ? nationStr : '中国'
+								const adInfoAdcode = (adcodeStr != null) ? adcodeStr : ''
+								// UTS 规范：使用 new 创建 class 实例
+								const geoResult = new LocationResult()
+								geoResult.latitude = latitude
+								geoResult.longitude = longitude
+								geoResult.city = adInfoCity
+								geoResult.province = adInfoProvince
+								geoResult.district = adInfoDistrict
+								geoResult.nation = adInfoNation
+								geoResult.adcode = adInfoAdcode
+								geoResult.fromGps = true
+								geoResult.provider = 'gps'
+								resolve(geoResult)
+								return
+							}
+						}
+					}
+				}
+				reject(new Error('逆地理编码失败'))
+			},
+			fail: (err: any) => {
+				reject(err)
+			}
+		})
+		// #endif
+	})
+}
+
+/**
+ * 缓存位置信息
+ */
+function cacheLocation(location: LocationResult): void {
+	try {
+		// UTS 规范：不支持展开运算符，需要构建对象
+		const cacheData = new Map<string, any>()
+		cacheData.set('latitude', location.latitude)
+		cacheData.set('longitude', location.longitude)
+		cacheData.set('city', location.city)
+		cacheData.set('province', location.province)
+		cacheData.set('district', location.district)
+		cacheData.set('nation', location.nation)
+		cacheData.set('adcode', location.adcode)
+		cacheData.set('fromCache', location.fromCache)
+		cacheData.set('fromIpLocation', location.fromIpLocation)
+		cacheData.set('fromGps', location.fromGps)
+		cacheData.set('provider', location.provider)
+		cacheData.set('timestamp', Date.now())
+		
+		// 转换为 JSON 字符串
+		const cacheObj: UTSJSONObject = {
+			latitude: location.latitude,
+			longitude: location.longitude,
+			city: location.city,
+			province: location.province,
+			district: location.district,
+			nation: location.nation,
+			adcode: location.adcode,
+			fromCache: location.fromCache,
+			fromIpLocation: location.fromIpLocation,
+			fromGps: location.fromGps,
+			provider: location.provider,
+			timestamp: Date.now()
+		}
+		safeSetStorageSync(LOCATION_CACHE_KEY, JSON.stringify(cacheObj))
+		
+		// 标记已成功定位过（用于后续判断超时时间）
+		safeSetStorageSync(SK_HAS_SUCCESSFUL_LOCATION, 'true')
+	} catch (e) {
+		console.error('缓存位置信息失败:', e)
+	}
+}
+
+/**
+ * 获取缓存的位置信息
+ */
+function getCachedLocation(): LocationResult | null {
+	try {
+		const cached = safeGetStorageSync(LOCATION_CACHE_KEY)
+		
+		// 检查缓存数据是否为空
+		if (cached == null || cached == '') {
+			console.log('💾 [Location] 缓存数据为空')
+			return null
+		}
+		
+		// 安全解析 JSON
+		let cacheData: UTSJSONObject | null = null
+		try {
+			const cacheStr = cached.toString()
+			cacheData = JSON.parse(cacheStr) as UTSJSONObject
+		} catch (parseError) {
+			console.error('❌ [Location] 解析缓存数据失败:', parseError)
+			// 清除损坏的缓存数据
+			try {
+				uni.removeStorageSync(LOCATION_CACHE_KEY)
+			} catch (clearError) {
+				console.error('清除损坏缓存失败:', clearError)
+			}
+			return null
+		}
+		
+		// 验证 cacheData 不为 null
+		if (cacheData == null) {
+			console.error('❌ [Location] 缓存数据解析后为 null')
+			return null
+		}
+		
+		const now = Date.now()
+		const timestampVal = cacheData.get('timestamp')
+		const timestamp = (timestampVal != null) ? parseInt(timestampVal.toString()) : 0
+		
+		// 检查缓存是否过期
+		if (timestamp > 0 && (now - timestamp) < LOCATION_CACHE_TIME) {
+			// UTS 规范：使用 new 创建 class 实例
+			const cachedResult = new LocationResult()
+			const latVal = cacheData.get('latitude')
+			cachedResult.latitude = (latVal != null) ? parseFloat(latVal.toString()) : 0
+			const lngVal = cacheData.get('longitude')
+			cachedResult.longitude = (lngVal != null) ? parseFloat(lngVal.toString()) : 0
+			const cityVal = cacheData.getString('city')
+			cachedResult.city = (cityVal != null) ? cityVal : ''
+			const provinceVal = cacheData.getString('province')
+			cachedResult.province = (provinceVal != null) ? provinceVal : ''
+			const districtVal = cacheData.getString('district')
+			cachedResult.district = (districtVal != null) ? districtVal : ''
+			const nationVal = cacheData.getString('nation')
+			cachedResult.nation = (nationVal != null) ? nationVal : '中国'
+			const adcodeVal = cacheData.getString('adcode')
+			cachedResult.adcode = (adcodeVal != null) ? adcodeVal : ''
+			cachedResult.fromCache = true
+			cachedResult.provider = 'cache'
+			return cachedResult
+		} else {
+			console.log('⏰ [Location] 缓存已过期')
+			return null
+		}
+	} catch (e) {
+		console.error('❌ [Location] 获取缓存位置失败:', e)
+		return null
+	}
+}
+
+/**
+ * 获取默认位置（中国）
+ * 当定位失败时返回全国范围，不限制地域
+ */
+function getDefaultLocation(): LocationResult {
+	// UTS 规范：使用 new 创建 class 实例
+	const defaultResult = new LocationResult()
+	defaultResult.latitude = 0
+	defaultResult.longitude = 0
+	defaultResult.city = '中国'
+	defaultResult.province = ''
+	defaultResult.district = ''
+	defaultResult.nation = '中国'
+	defaultResult.provider = 'default'
+	return defaultResult
+}
+
+/**
+ * 清除位置缓存
+ */
+export function clearLocationCache(): void {
+	try {
+		uni.removeStorageSync(LOCATION_CACHE_KEY)
+	} catch (e) {
+		console.error('清除位置缓存失败:', e)
+	}
+}
+
+/**
+ * GPS定位 + 降级策略
+ * 🔧 修复：优化降级逻辑，减少不必要的日志
+ * 1. 尝试GPS定位（等待用户响应）
+ * 2. GPS失败 → 降级到IP定位（静默处理）
+ * 3. IP失败 → 返回默认位置
+ */
+function tryGpsLocationWithFallback(
+	resolve: (value: LocationResult) => void,
+	reject: (reason?: any) => void
+): void {
+	;(async () => {
+		// 1. 尝试GPS定位
+		try {
+			console.log('🛰️ [Location] 执行GPS定位')
+			const location = await tryGpsLocation()
+			cacheLocation(location)
+			resolve(location)
+			return
+		} catch (gpsError) {
+			// 🔧 修复：减少冗余日志，只在非用户取消时记录错误
+			let errCode = 0
+			let errMsg = '未知错误'
+			let isUserCancelled = false
+			
+			if (gpsError != null) {
+				try {
+					// 检查是否是用户取消
+					const errorStr = gpsError.toString()
+					if (errorStr.indexOf('用户取消') >= 0) {
+						isUserCancelled = true
+						console.log('ℹ️ [Location] 用户取消GPS定位，降级到IP定位')
+					} else {
+						const errObj = toUTSJSON(gpsError)
+						if (errObj != null) {
+							const errCodeVal = errObj.get('errCode')
+							const errMsgVal = errObj.get('errMsg')
+							errCode = (errCodeVal != null) ? parseInt(errCodeVal.toString()) : 0
+							errMsg = (errMsgVal != null) ? errMsgVal.toString() : '未知错误'
+						}
+					}
+				} catch (parseErr) {
+					console.error('解析GPS错误失败:', parseErr)
+				}
+			}
+			
+			// 只在非用户取消时记录详细错误
+			if (isUserCancelled == false) {
+				const errorType = parseLocationError(errCode, errMsg)
+				logLocationError(errorType, errCode, errMsg, 'GPS定位')
+				
+				// 对于SERVICE_DISABLED错误，静默处理
+				if (errorType == LocationErrorType.SERVICE_DISABLED) {
+					// SERVICE_DISABLED错误（基座问题），静默降级
+				}
+			}
+		}
+		
+		// 2. 尝试IP定位（降级方案）
+		try {
+			console.log('🌐 [Location] 尝试IP定位（降级方案）')
+			const location = await tryTencentIpLocation()
+			cacheLocation(location)
+			resolve(location)
+			return
+		} catch (ipError) {
+			console.log('⚠️ [Location] IP定位失败')
+		}
+		
+		// 3. 所有方式都失败，返回默认位置
+		console.log('📍 [Location] 使用默认城市')
+		const defaultLocation = getDefaultLocation()
+		resolve(defaultLocation)
+	})()
+}
+
+/**
+ * 后台更新定位
+ * 在返回缓存后，后台继续尝试GPS定位，成功后更新缓存
+ */
+function backgroundUpdateLocation(): void {
+	;(async () => {
+		try {
+			const freshLocation = await tryGpsLocation()
+			cacheLocation(freshLocation)
+			console.log('🔄 [Location] 后台更新定位成功')
+		} catch (err) {
+			console.log('⚠️ [Location] 后台更新定位失败，继续使用缓存')
+		}
+	})()
+}
+

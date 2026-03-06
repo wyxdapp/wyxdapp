@@ -1,0 +1,337 @@
+﻿<template>
+	<view class="notifications-page">
+		<scroll-view class="scroll-view" scroll-y :show-scrollbar="false" @scrolltolower="loadMore">
+			<view v-if="loading == true && notificationList.length == 0" class="loading-box">
+				<text class="loading-text">加载中...</text>
+			</view>
+			
+			<view v-else-if="notificationList.length > 0" class="notification-list">
+				<view 
+					v-for="(item, index) in notificationList" 
+					:key="index"
+					class="notification-item"
+					@click="handleNotificationClick(index)"
+				>
+					<view class="notification-icon" :class="getIconClass(index)">
+						<text class="icon-text">{{ getIconByIndex(index) }}</text>
+					</view>
+					<view class="notification-content">
+						<text class="notification-title">{{ getItemTitle(index) }}</text>
+						<text class="notification-desc">{{ getItemContent(index) }}</text>
+						<text class="notification-time">{{ getItemTime(index) }}</text>
+					</view>
+					<view v-if="isItemUnread(index) == true" class="unread-dot"></view>
+				</view>
+			</view>
+			
+			<ListStatus 
+				v-else 
+				status="empty" 
+				emptyText="暂无通知"
+			/>
+			
+			<view v-if="loadingMore == true" class="loading-more">
+				<text class="loading-more-text">加载中...</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 通知数据类
+class NotificationData {
+	id: string = ''
+	type: string = ''
+	title: string = ''
+	content: string = ''
+	createTime: string = ''
+	isRead: boolean = false
+	orderId: string = ''
+}
+
+// 响应式数据
+const loading = ref<boolean>(false)
+const loadingMore = ref<boolean>(false)
+const notificationList = ref<Array<NotificationData>>([])
+
+// 延迟函数
+const delay = (ms: number): Promise<void> => {
+	return new Promise((resolve: (value: void) => void) => {
+		safeSetTimeout(() => {
+			resolve()
+		}, ms)
+	})
+}
+
+// 初始化通知列表
+const initNotificationList = () => {
+	const list: Array<NotificationData> = []
+	
+	const item1 = new NotificationData()
+	item1.id = '1'
+	item1.type = 'order'
+	item1.title = '订单支付成功'
+	item1.content = '您的订单已支付成功，请等待导游确认'
+	item1.createTime = '2024-11-21 09:00'
+	item1.isRead = false
+	item1.orderId = '123'
+	list.push(item1)
+	
+	const item2 = new NotificationData()
+	item2.id = '2'
+	item2.type = 'service'
+	item2.title = '服务即将开始'
+	item2.content = '您预约的服务将在明天开始，请做好准备'
+	item2.createTime = '2024-11-20 18:00'
+	item2.isRead = true
+	item2.orderId = '122'
+	list.push(item2)
+	
+	const item3 = new NotificationData()
+	item3.id = '3'
+	item3.type = 'refund'
+	item3.title = '退款申请已通过'
+	item3.content = '您的退款申请已通过，款项将在3-5个工作日内退回'
+	item3.createTime = '2024-11-19 15:30'
+	item3.isRead = true
+	item3.orderId = '121'
+	list.push(item3)
+	
+	notificationList.value = list
+}
+
+// 辅助函数：获取通知标题
+const getItemTitle = (index: number): string => {
+	if (index < 0 || index >= notificationList.value.length) return ''
+	return notificationList.value[index].title
+}
+
+// 辅助函数：获取通知内容
+const getItemContent = (index: number): string => {
+	if (index < 0 || index >= notificationList.value.length) return ''
+	return notificationList.value[index].content
+}
+
+// 辅助函数：获取通知时间
+const getItemTime = (index: number): string => {
+	if (index < 0 || index >= notificationList.value.length) return ''
+	return notificationList.value[index].createTime
+}
+
+// 辅助函数：检查是否未读
+const isItemUnread = (index: number): boolean => {
+	if (index < 0 || index >= notificationList.value.length) return false
+	return notificationList.value[index].isRead == false
+}
+
+// 辅助函数：根据类型获取图标
+const getIconByIndex = (index: number): string => {
+	if (index < 0 || index >= notificationList.value.length) return '📢'
+	const type = notificationList.value[index].type
+	if (type == 'order') return '📦'
+	if (type == 'service') return '🎯'
+	if (type == 'refund') return '💰'
+	if (type == 'system') return '🔔'
+	return '📢'
+}
+
+// 辅助函数：获取图标样式类
+const getIconClass = (index: number): string => {
+	if (index < 0 || index >= notificationList.value.length) return 'type-system'
+	const type = notificationList.value[index].type
+	return 'type-' + type
+}
+
+// 加载通知列表
+const loadNotifications = async () => {
+	loading.value = true
+	try {
+		// TODO: 调用通知列表 API
+		await delay(1000)
+	} catch (error: Error) {
+		handleSilentError(error, '加载通知列表')
+	} finally {
+		loading.value = false
+	}
+}
+
+// 加载更多
+const loadMore = () => {
+	if (loadingMore.value == true) return
+	loadingMore.value = true
+	// TODO: 加载更多通知
+	safeSetTimeout(() => {
+		loadingMore.value = false
+	}, 1000)
+}
+
+// 点击通知
+const handleNotificationClick = (index: number) => {
+	if (index < 0 || index >= notificationList.value.length) return
+	
+	// 标记为已读
+	notificationList.value[index].isRead = true
+	
+	// 跳转到订单详情
+	const orderId = notificationList.value[index].orderId
+	if (orderId != null && orderId != '') {
+		uni.navigateTo({
+			url: '/pagesTrade/orderDetails/index?id=' + orderId
+		})
+	}
+}
+
+// 页面加载
+onLoad((options: OnLoadOptions) => {
+	initNotificationList()
+	loadNotifications()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style>
+.notifications-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.scroll-view {
+	flex: 1;
+}
+
+.loading-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 120rpx 0;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 120rpx 0;
+}
+
+.empty-icon {
+	font-size: 120rpx;
+	margin-bottom: 24rpx;
+}
+
+.notification-list {
+	padding: 20rpx 0;
+}
+
+.notification-item {
+	flex-direction: row;
+	align-items: flex-start;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #ffffff;
+	margin-bottom: 20rpx;
+}
+
+.notification-icon {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.icon-text {
+	font-size: 40rpx;
+}
+
+.notification-icon.type-order {
+	background-color: #E3F2FD;
+}
+
+.notification-icon.type-service {
+	background-color: #FFF3E0;
+}
+
+.notification-icon.type-refund {
+	background-color: #E8F5E9;
+}
+
+.notification-icon.type-system {
+	background-color: #F3E5F5;
+}
+
+.notification-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.notification-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.notification-desc {
+	font-size: 24rpx;
+	color: #666666;
+	margin-bottom: 12rpx;
+}
+
+.notification-time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.unread-dot {
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #FF5C5C;
+	border-radius: 8rpx;
+	margin-left: 10rpx;
+}
+
+.loading-more {
+	flex-direction: row;
+	justify-content: center;
+	padding: 20rpx 0;
+}
+
+.loading-more-text {
+	color: #999999;
+	font-size: 24rpx;
+}
+</style>

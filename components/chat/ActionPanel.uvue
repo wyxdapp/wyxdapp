@@ -1,0 +1,146 @@
+<template>
+	<view v-if="props.show" class="action-panel-mask" @click="handleClose">
+		<view class="action-panel" @click.stop>
+			<view class="action-grid">
+				<view class="action-item" @click="handleChooseImage">
+					<view class="action-icon-wrapper">
+						<image class="action-icon" src="https://jiasu.wyxdapp.com/iconimages/chat_pic.png" mode="aspectFit" />
+					</view>
+					<text class="action-label">图片</text>
+				</view>
+				
+				<view class="action-item" @click="handleChooseVideo">
+					<view class="action-icon-wrapper">
+						<image class="action-icon" src="https://jiasu.wyxdapp.com/iconimages/chat_video.png" mode="aspectFit" />
+					</view>
+					<text class="action-label">视频</text>
+				</view>
+				
+				<view class="action-item" @click="handleVoice">
+					<view class="action-icon-wrapper">
+						<image class="action-icon" src="https://jiasu.wyxdapp.com/iconimages/chat_voice.png" mode="aspectFit" />
+					</view>
+					<text class="action-label">语音</text>
+				</view>
+				
+				<view class="action-item" v-if="props.showGift == true" @click="handleGift">
+					<view class="action-icon-wrapper">
+						<image class="action-icon" src="https://jiasu.wyxdapp.com/iconimages/gift.png" mode="aspectFit" />
+					</view>
+					<text class="action-label">礼物</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+// ✅ 运行时 Props 声明 (符合 uni-app x 规范)
+const props = defineProps({
+	show: {
+		type: Boolean,
+		default: false
+	},
+	showGift: {
+		type: Boolean,
+		default: false
+	}
+})
+
+const emit = defineEmits<{
+	close: []
+	chooseImage: []
+	chooseVideo: []
+	voice: []
+	location: []
+	gift: []
+}>()
+
+const handleClose = () => {
+	emit('close')
+}
+
+const handleChooseImage = () => {
+	emit('chooseImage')
+	emit('close')
+}
+
+const handleChooseVideo = () => {
+	emit('chooseVideo')
+	emit('close')
+}
+
+const handleVoice = () => {
+	emit('voice')
+	emit('close')
+}
+
+const handleLocation = () => {
+	emit('location')
+	emit('close')
+}
+
+const handleGift = () => {
+	emit('gift')
+	emit('close')
+}
+</script>
+
+<style>
+.action-panel-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: transparent;
+	z-index: 1000;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.action-panel {
+	width: 750rpx;
+	background-color: #ffffff;
+	border-top-left-radius: 40rpx;
+	border-top-right-radius: 40rpx;
+	padding-top: 40rpx;
+	padding-bottom: 80rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.action-grid {
+	flex-direction: row;
+	justify-content: space-around;
+	align-items: flex-start;
+	width: 710rpx;
+}
+
+.action-item {
+	flex-direction: column;
+	align-items: center;
+	width: 160rpx;
+}
+
+.action-icon-wrapper {
+	width: 120rpx;
+	height: 120rpx;
+	background-color: #f7f8fa;
+	border-radius: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-icon {
+	width: 56rpx;
+	height: 56rpx;
+}
+
+.action-label {
+	font-size: 26rpx;
+	color: #666666;
+	margin-top: 16rpx;
+}
+</style>

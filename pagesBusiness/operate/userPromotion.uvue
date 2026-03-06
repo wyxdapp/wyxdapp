@@ -1,0 +1,757 @@
+<template>
+	<view class="promotion-page">
+		<!-- 推广码卡片 -->
+		<view class="promo-card">
+			<view class="card-header">
+				<text class="card-title">我的推广码</text>
+				<text class="card-subtitle">分享给好友，获得佣金收益</text>
+			</view>
+			
+			<view class="promo-code-box">
+				<text class="promo-code">{{ promoCode }}</text>
+				<view class="copy-btn" @click="copyPromoCode">
+					<text class="copy-btn-text">复制</text>
+				</view>
+			</view>
+			
+			<view class="promo-link-box">
+				<text class="promo-link u-line-1">{{ promoLink }}</text>
+				<view class="copy-btn" @click="copyPromoLink">
+					<text class="copy-btn-text">复制链接</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 推广统计 -->
+		<view class="stats-section">
+			<text class="section-title">推广统计</text>
+			<view class="stats-grid">
+				<view class="stat-box">
+					<text class="stat-value">{{ statsTotalInvites }}</text>
+					<text class="stat-label">累计邀请</text>
+				</view>
+				<view class="stat-box">
+					<text class="stat-value">{{ statsActiveUsers }}</text>
+					<text class="stat-label">活跃用户</text>
+				</view>
+				<view class="stat-box">
+					<text class="stat-value">¥{{ statsTotalEarnings }}</text>
+					<text class="stat-label">累计收益</text>
+				</view>
+				<view class="stat-box">
+					<text class="stat-value">¥{{ statsMonthEarnings }}</text>
+					<text class="stat-label">本月收益</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 推广用户列表 -->
+		<view class="users-section">
+			<text class="section-title">推广用户</text>
+			
+			<!-- 空状态 -->
+			<view v-if="userListLength == 0 && listLoading == false" class="empty-box">
+				<text class="empty-text">暂无推广用户</text>
+			</view>
+			
+			<!-- 加载中 -->
+			<view v-else-if="userListLength == 0 && listLoading == true" class="loading-box">
+				<text class="loading-text">加载中...</text>
+			</view>
+			
+			<!-- 用户列表 -->
+			<view v-else class="user-list">
+				<view 
+					v-for="(item, index) in userList" 
+					:key="getUserItemKey(item, index)"
+					class="user-item"
+					@click="handleUserClick(item)"
+				>
+					<Avatar
+						:url="getUserAvatar(item)"
+						:userId="getUserKid(item)"
+						size="large"
+						clickMode="none"
+					/>
+					<view class="user-info">
+						<text class="user-nickname">{{ getUserNickname(item) }}</text>
+						<text class="user-time">{{ getUserExtendTime(item) }}</text>
+					</view>
+					<FollowButton 
+						:targetUserKid="getUserKid(item)"
+						:isFollow="getUserIsFollowed(item)"
+						@change="onFollowChange"
+					/>
+				</view>
+				
+				<!-- 加载更多 -->
+				<view class="load-status">
+					<text v-if="listLoading == true" class="status-text">加载中...</text>
+					<text v-else-if="hasMore == false" class="status-text">没有更多了</text>
+					<view v-else class="load-more-btn" @click="loadMoreUsers">
+						<text class="status-text-more">点击加载更多</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 推广规则 -->
+		<view class="rules-section">
+			<text class="section-title">推广规则</text>
+			<view class="rules-card">
+				<view class="rule-item">
+					<text class="rule-icon">1</text>
+					<text class="rule-text">分享推广链接给好友，好友点击链接即绑定推荐关系</text>
+				</view>
+				<view class="rule-item">
+					<text class="rule-icon">2</text>
+					<text class="rule-text">好友下单成功，您可获得订单金额的佣金</text>
+				</view>
+				<view class="rule-item">
+					<text class="rule-icon">3</text>
+					<text class="rule-text">佣金实时到账，可随时提现</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 分享按钮 -->
+		<view class="share-section">
+			<Button type="primary" block @click="handleShare">
+				分享推广链接
+			</Button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import Button from '@/components/base/Button.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import FollowButton from '@/components/base/FollowButton.uvue'
+import { getUserId, getUserShortKid } from '@/stores/user.uts'
+import { getPromotionStats } from '@/pagesBusiness/api/operator.uts'
+import { getUserExtendStats, getPushUserList } from '@/api/userExtend.uts'
+import { getResponseCode, getResponseData, getStringProp, getNumberProp, getEntities, getDataCount, getItemKey } from '@/common/utils/utsSafe.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 推广码和链接
+const promoCode = ref<string>('')
+const promoLink = ref<string>('')
+
+// 统计数据（拆分为独立 ref）
+const statsTotalInvites = ref<number>(0)
+const statsActiveUsers = ref<number>(0)
+const statsTotalEarnings = ref<string>('0.00')
+const statsMonthEarnings = ref<string>('0.00')
+
+// 加载状态
+const loading = ref<boolean>(false)
+
+// 推广用户列表
+const userList = ref<Array<UTSJSONObject>>([])
+const listLoading = ref<boolean>(false)
+const page = ref<number>(1)
+const pageSize = ref<number>(10)
+const total = ref<number>(0)
+const hasMore = ref<boolean>(true)
+
+// 计算列表长度
+const userListLength = computed((): number => {
+	try {
+		const arr = userList.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 获取用户列表项 key
+const getUserItemKey = (item: UTSJSONObject, index: number): string => {
+	return getItemKey(item, index)
+}
+
+// 获取用户头像
+const getUserAvatar = (item: UTSJSONObject): string => {
+	return getStringProp(item, 'avatar')
+}
+
+// 获取用户 KID
+const getUserKid = (item: UTSJSONObject): string => {
+	return getStringProp(item, 'userKid')
+}
+
+// 获取用户昵称
+const getUserNickname = (item: UTSJSONObject): string => {
+	const nickname = getStringProp(item, 'nickname')
+	if (nickname != '') return nickname
+	return '用户'
+}
+
+// 获取绑定时间
+const getUserExtendTime = (item: UTSJSONObject): string => {
+	const extendTime = getStringProp(item, 'extendTime')
+	if (extendTime != '') {
+		// 只显示日期部分
+		if (extendTime.length >= 10) {
+			return extendTime.substring(0, 10) + ' 绑定'
+		}
+		return extendTime + ' 绑定'
+	}
+	return ''
+}
+
+// 获取关注状态
+const getUserIsFollowed = (item: UTSJSONObject): number => {
+	return getNumberProp(item, 'isFollowed')
+}
+
+/**
+ * 构建推广链接
+ * @param shortKid 用户短号（6-8位）
+ */
+const buildPromoLink = (shortKid: string): string => {
+	// 使用向导个人主页作为推广落地页，带上 ref 参数
+	// 注意：这里使用当前用户的 kid 作为向导 ID
+	const userKid = getUserId()
+	if (userKid != '' && shortKid != '') {
+		return `https://m.wyxdapp.com/#/pagesUser/persionInfo/index?id=${userKid}&ref=${shortKid}`
+	}
+	return ''
+}
+
+/**
+ * 加载推广号
+ * 升级说明：从导师推广号改为用户短号（6-8位）
+ */
+const loadPromoCode = () => {
+	// 从用户信息中获取用户短号（shortKid）
+	const shortKid = getUserShortKid()
+	if (shortKid != '') {
+		promoCode.value = shortKid
+		promoLink.value = buildPromoLink(shortKid)
+	} else {
+		promoCode.value = '暂无推广号'
+		promoLink.value = ''
+	}
+}
+
+/**
+ * 加载推广统计数据
+ */
+const loadStats = () => {
+	const userKid = getUserId()
+	if (userKid == '') {
+		console.warn('用户未登录，无法获取推广统计')
+		return
+	}
+	
+	loading.value = true
+	
+	getPromotionStats(userKid).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		const data = getResponseData(res)
+		
+		if (code == 200 && data != null) {
+			// 解析统计数据
+			const totalInvites = getNumberProp(data, 'totalInvites')
+			const activeUsers = getNumberProp(data, 'activeUsers')
+			const totalRevenue = getNumberProp(data, 'totalRevenue')
+			const monthRevenue = getNumberProp(data, 'monthRevenue')
+			
+			statsTotalInvites.value = totalInvites
+			statsActiveUsers.value = activeUsers
+			// 直接使用数值的字符串表示（后端已格式化）
+			const totalRevenueCents = Math.round(totalRevenue * 100)
+			const totalYuan = Math.floor(totalRevenueCents / 100)
+			const totalFen = totalRevenueCents % 100
+			const totalFenStr = (totalFen < 10) ? ('0' + totalFen.toString()) : totalFen.toString()
+			statsTotalEarnings.value = totalYuan.toString() + '.' + totalFenStr
+			const monthRevenueCents = Math.round(monthRevenue * 100)
+			const monthYuan = Math.floor(monthRevenueCents / 100)
+			const monthFen = monthRevenueCents % 100
+			const monthFenStr = (monthFen < 10) ? ('0' + monthFen.toString()) : monthFen.toString()
+			statsMonthEarnings.value = monthYuan.toString() + '.' + monthFenStr
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '获取推广统计')
+	}).finally(() => {
+		loading.value = false
+	})
+}
+
+/**
+ * 加载推广用户列表
+ */
+const loadUserList = (refresh: boolean) => {
+	const shortKid = getUserShortKid()
+	if (shortKid == '') {
+		console.warn('用户短号为空，无法获取推广用户列表')
+		return
+	}
+	
+	if (refresh == true) {
+		page.value = 1
+		userList.value = []
+	}
+	
+	if (listLoading.value == true) return
+	listLoading.value = true
+	
+	const currentUserKid = getUserId()
+	
+	getPushUserList(shortKid, currentUserKid, page.value, pageSize.value).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		const data = getResponseData(res)
+		
+		if (code == 200 && data != null) {
+			// PageInfo 返回的字段是 list 和 total，不是 entities 和 count
+			let items: Array<UTSJSONObject> = []
+			let totalCount = 0
+			
+			// 尝试获取 list 字段（PageInfo 格式）
+			const listVal = data.get('list')
+			if (listVal != null && Array.isArray(listVal) == true) {
+				items = listVal as Array<UTSJSONObject>
+			} else {
+				// 兼容 entities 字段
+				items = getEntities(data) as Array<UTSJSONObject>
+			}
+			
+			// 尝试获取 total 字段（PageInfo 格式）
+			const totalVal = data.get('total')
+			if (totalVal != null) {
+				const num = parseInt(totalVal.toString())
+				if (isNaN(num) == false) {
+					totalCount = num
+				}
+			} else {
+				// 兼容 count 字段
+				totalCount = getDataCount(data)
+			}
+			
+			total.value = totalCount
+			
+			if (refresh == true) {
+				userList.value = items
+			} else {
+				// 追加数据（不能用 push(...items)）
+				for (let i = 0; i < items.length; i = i + 1) {
+					userList.value.push(items[i])
+				}
+			}
+			
+			hasMore.value = userList.value.length < total.value
+			
+			// 更新统计中的累计邀请数
+			statsTotalInvites.value = total.value
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '获取推广用户列表')
+	}).finally(() => {
+		listLoading.value = false
+	})
+}
+
+/**
+ * 加载更多用户
+ */
+const loadMoreUsers = () => {
+	if (hasMore.value == true && listLoading.value == false) {
+		page.value = page.value + 1
+		loadUserList(false)
+	}
+}
+
+/**
+ * 点击用户项
+ */
+const handleUserClick = (item: UTSJSONObject) => {
+	const userKid = getUserKid(item)
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+/**
+ * 关注状态变化
+ */
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	// 更新列表中的关注状态
+	for (let i = 0; i < userList.value.length; i = i + 1) {
+		const item = userList.value[i]
+		const itemKid = getUserKid(item)
+		if (itemKid == targetUserKid) {
+			// 使用 JSON 序列化方式更新
+			const itemStr = JSON.stringify(item)
+			const itemObj = JSON.parse(itemStr) as UTSJSONObject
+			itemObj.set('isFollowed', isFollow == true ? 10 : 20)
+			userList.value[i] = itemObj
+			break
+		}
+	}
+}
+
+// 复制推广码
+const copyPromoCode = () => {
+	if (promoCode.value == '' || promoCode.value == '暂无推广号') {
+		uni.showToast({
+			title: '暂无推广号',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.setClipboardData({
+		data: promoCode.value,
+		success: () => {
+			uni.showToast({
+				title: '推广码已复制',
+				icon: 'success'
+			})
+		}
+	})
+}
+
+// 复制推广链接
+const copyPromoLink = () => {
+	if (promoLink.value == '') {
+		uni.showToast({
+			title: '暂无推广链接',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.setClipboardData({
+		data: promoLink.value,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制',
+				icon: 'success'
+			})
+		}
+	})
+}
+
+// 分享处理
+const handleShare = () => {
+	if (promoLink.value == '') {
+		uni.showToast({
+			title: '暂无推广链接',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const itemList: Array<string> = ['分享到微信', '分享到朋友圈', '复制链接']
+	uni.showActionSheet({
+		itemList: itemList,
+		success: (res: any | null) => {
+			// 使用 JSON 序列化访问 tapIndex
+			if (res != null) {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const tapIndexVal = resObj.get('tapIndex')
+				if (tapIndexVal != null) {
+					const tapIndex = parseInt(tapIndexVal.toString())
+					if (tapIndex == 0) {
+						// 分享到微信
+						// #ifdef APP-PLUS
+						uni.share({
+							provider: 'weixin',
+							scene: 'WXSceneSession',
+							type: 0,
+							href: promoLink.value,
+							title: '网约向导 - 发现专业向导',
+							summary: '点击链接，发现专业向导，定制专属行程',
+							success: () => {
+								uni.showToast({ title: '分享成功', icon: 'success' })
+							},
+							fail: (err: Error) => {
+								handleSilentError(err, '微信分享')
+								copyPromoLink()
+							}
+						})
+						// #endif
+						// #ifndef APP-PLUS
+						copyPromoLink()
+						// #endif
+					} else if (tapIndex == 1) {
+						// 分享到朋友圈
+						// #ifdef APP-PLUS
+						uni.share({
+							provider: 'weixin',
+							scene: 'WXSceneTimeline',
+							type: 0,
+							href: promoLink.value,
+							title: '网约向导 - 发现专业向导',
+							summary: '点击链接，发现专业向导，定制专属行程',
+							success: () => {
+								uni.showToast({ title: '分享成功', icon: 'success' })
+							},
+							fail: (err: Error) => {
+								handleSilentError(err, '朋友圈分享')
+								copyPromoLink()
+							}
+						})
+						// #endif
+						// #ifndef APP-PLUS
+						copyPromoLink()
+						// #endif
+					} else if (tapIndex == 2) {
+						copyPromoLink()
+					}
+				}
+			}
+		}
+	})
+}
+
+// 页面加载
+onLoad((options: OnLoadOptions) => {
+	loadPromoCode()
+	loadStats()
+	loadUserList(true)
+})
+</script>
+
+<style scoped>
+.promotion-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.promo-card {
+	background-color: #667eea;
+	border-radius: 16rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	margin-bottom: 20rpx;
+}
+
+.card-header {
+	margin-bottom: 32rpx;
+}
+
+.card-title {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.card-subtitle {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.promo-code-box,
+.promo-link-box {
+	flex-direction: row;
+	align-items: center;
+	background-color: rgba(255, 255, 255, 0.2);
+	border-radius: 12rpx;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	margin-bottom: 16rpx;
+}
+
+.promo-code,
+.promo-link {
+	flex: 1;
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.copy-btn {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+}
+
+.copy-btn-text {
+	font-size: 24rpx;
+	color: #667eea;
+}
+
+.stats-section,
+.rules-section,
+.users-section {
+	margin-bottom: 20rpx;
+}
+
+.section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 20rpx;
+}
+
+.stats-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.stat-box {
+	width: 330rpx;
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+	flex-direction: column;
+	align-items: center;
+}
+
+.stat-value {
+	font-size: 36rpx;
+	color: #37B1F2;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+}
+
+.stat-label {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 推广用户列表样式 */
+.user-list {
+	flex-direction: column;
+	width: 694rpx;
+}
+
+.user-item {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 16rpx;
+}
+
+.user-info {
+	flex: 1;
+	margin-left: 24rpx;
+	flex-direction: column;
+}
+
+.user-nickname {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.user-time {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.empty-box,
+.loading-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 60rpx;
+	padding-bottom: 60rpx;
+	background-color: #ffffff;
+	border-radius: 12rpx;
+}
+
+.empty-text,
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.load-status {
+	flex-direction: row;
+	justify-content: center;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+.status-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.load-more-btn {
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.status-text-more {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.rules-card {
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.rule-item {
+	flex-direction: row;
+	align-items: flex-start;
+	margin-bottom: 20rpx;
+}
+
+.rule-icon {
+	font-size: 24rpx;
+	margin-right: 16rpx;
+	width: 40rpx;
+	height: 40rpx;
+	line-height: 40rpx;
+	text-align: center;
+	border-radius: 20rpx;
+	background-color: #37B1F2;
+	color: #FFFFFF;
+}
+
+.rule-text {
+	flex: 1;
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+}
+
+.share-section {
+	margin-top: 40rpx;
+}
+
+.u-line-1 {
+	lines: 1;
+	text-overflow: ellipsis;
+}
+</style>

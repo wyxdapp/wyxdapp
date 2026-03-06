@@ -1,0 +1,71 @@
+import {
+  ERR_MSG_SERVER,
+  ERR_MSG_SERVER_502,
+  ERR_MSG_SERVER_503,
+  ERR_MSG_SERVER_504
+} from './errorMessages.uts'
+
+/**
+ * HTTP 状态码、业务响应码和 WebSocket 关闭码常量
+ * 集中管理所有 HTTP/业务码，提升代码可读性
+ */
+
+// === HTTP 状态码 ===
+
+/** HTTP 200 - 请求成功 */
+export const HTTP_OK = 200
+
+/** HTTP 401 - 未授权/登录过期 */
+export const HTTP_UNAUTHORIZED = 401
+
+/** HTTP 403 - 禁止访问 */
+export const HTTP_FORBIDDEN = 403
+
+/** HTTP 500 - 服务器内部错误 */
+export const HTTP_INTERNAL_SERVER_ERROR = 500
+
+/** HTTP 502 - 网关错误 */
+export const HTTP_BAD_GATEWAY = 502
+
+/** HTTP 503 - 服务不可用 */
+export const HTTP_SERVICE_UNAVAILABLE = 503
+
+/** HTTP 504 - 网关超时 */
+export const HTTP_GATEWAY_TIMEOUT = 504
+
+// === 业务响应码 ===
+
+/** 业务成功 */
+export const BUSINESS_SUCCESS = 200
+
+/** 账号被封禁 */
+export const BUSINESS_BANNED = 4031
+
+// === WebSocket 关闭码 ===
+
+/** WebSocket 正常关闭 */
+export const WS_CLOSE_NORMAL = 1000
+
+// === HTTP 5xx 友好消息映射 ===
+
+/**
+ * 根据 HTTP 5xx 状态码返回对应的友好消息
+ * @param statusCode HTTP 状态码
+ * @returns 友好消息字符串
+ */
+export function getHttp5xxMessage(statusCode: number): string {
+  if (statusCode === HTTP_INTERNAL_SERVER_ERROR) {
+    return ERR_MSG_SERVER
+  }
+  if (statusCode === HTTP_BAD_GATEWAY) {
+    return ERR_MSG_SERVER_502
+  }
+  if (statusCode === HTTP_SERVICE_UNAVAILABLE) {
+    return ERR_MSG_SERVER_503
+  }
+  if (statusCode === HTTP_GATEWAY_TIMEOUT) {
+    return ERR_MSG_SERVER_504
+  }
+  // 其他 5xx 状态码使用默认服务器错误消息
+  return ERR_MSG_SERVER
+}

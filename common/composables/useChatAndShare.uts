@@ -1,0 +1,359 @@
+import { ref } from 'vue'
+import { getConversations, GetConversationsParams } from '@/api/chat.uts'
+import ShareService from '@/common/utils/shareService.uts'
+import { 
+	buildProfileCardContent,
+	buildCustomCardContent,
+	buildDynamicCardContent,
+	buildOrderCardContent
+} from '@/common/utils/shareCardHelper.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { getUserId, getUserLoginStatus } from '@/stores/user'
+
+/**
+ * UTS 安全属性访问函数
+ */
+function safeGetProperty(obj: any | null, key: string): any | null {
+	if (obj == null) return null
+	try {
+		const json = JSON.stringify(obj)
+		if (json != null && json != '') {
+			const parsedAny = JSON.parse(json) as any
+			if (parsedAny != null) {
+				const parsedObj = parsedAny as UTSJSONObject
+				const val = parsedObj.get(key)
+				if (val != null) return val
+			}
+		}
+	} catch (e) {}
+	return null
+}
+
+/**
+ * 聊天项目数据类
+ * 🔧 修复：统一字段名称，与消息列表页保持一致
+ */
+class ChatItem {
+	targetUserId: string = ''
+	targetUserName: string = ''
+	targetUserAvatar: string = ''  // 🔧 修复：改为 targetUserAvatar，与消息列表页一致
+	avatar: string = ''  // 🔧 保留兼容性，指向 targetUserAvatar
+	lastMessage: string = ''
+	lastMessageTime: string = ''
+
+	constructor(
+		targetUserId: string = '',
+		targetUserName: string = '',
+		targetUserAvatar: string = '',
+		lastMessage: string = '',
+		lastMessageTime: string = ''
+	) {
+		this.targetUserId = targetUserId
+		this.targetUserName = targetUserName
+		this.targetUserAvatar = targetUserAvatar
+		this.avatar = targetUserAvatar  // 🔧 设置兼容性字段
+		this.lastMessage = lastMessage
+		this.lastMessageTime = lastMessageTime
+	}
+}
+
+// ===== 模块级状态（UTS 规范：避免从 composable 返回对象中访问属性）=====
+const chatListRef = ref<any[]>([])
+
+// ===== 直接导出的模块级函数 =====
+
+/**
+ * 获取聊天列表 ref（用于模板绑定）
+ */
+export function getChatListRef(): any {
+	return chatListRef
+}
+
+/**
+ * 获取聊天会话列表
+ * 🔧 修复：使用 getUserId() 导出函数直接获取用户 ID，而非通过 JSON 序列化访问 Store 嵌套属性
+ * Android 端无法通过 safeGetProperty 正确获取 userStore.userInfo.kid
+ */
+export async function getChatList(userStore: any | null): Promise<any[]> {
+	try {
+		console.log('[useChatAndShare] getChatList called')
+
+		// 🔧 修复：直接使用 getUserId() 导出函数获取用户 ID
+		// 不再使用 safeGetProperty(userStore, 'userInfo') + safeGetProperty(userInfo, 'kid') 的方式
+		// 因为 Android 端无法通过 JSON 序列化正确访问 Store 的嵌套属性
+		const isLogin = getUserLoginStatus()
+		const userKid = getUserId()
+		console.log('[useChatAndShare] isLogin:', isLogin, 'userKid:', userKid)
+
+		if (isLogin == false || userKid == null || userKid == '') {
+			console.log('[useChatAndShare] user not logged in or userKid is empty, returning empty array')
+			chatListRef.value = []
+			return chatListRef.value
+		}
+
+		const params = new GetConversationsParams()
+		params.userId = userKid.toString()
+		params.page = 1
+		params.size = 50
+		const response = await getConversations(params)
+		console.log('[useChatAndShare] getConversations response:', JSON.stringify(response))
+
+		// 🔧 修复：使用与消息列表页完全相同的逻辑
+		const responseObj = toJsonObj(response)
+		console.log('[useChatAndShare] responseObj:', responseObj != null ? 'not null' : 'null')
+
+		if (responseObj != null) {
+			// 🔧 修复：code 可能是字符串 "200" 或数字 200
+			const codeVal = safeGetProperty(responseObj, 'code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+			const code = parseInt(codeStr)
+			console.log('[useChatAndShare] code:', code, 'codeVal:', codeVal)
+
+			if (code == 200) {
+				// 🔧 修复：data 直接是数组，不是 { list: [], hasMore: true }
+				const dataVal = safeGetProperty(responseObj, 'data')
+				console.log('[useChatAndShare] dataVal:', dataVal != null ? 'not null' : 'null', typeof dataVal, Array.isArray(dataVal))
+
+				if (dataVal != null) {
+					// 检查 data 是否直接是数组
+					const isDataArray = Array.isArray(dataVal) == true
+
+					let listArr: any[] = []
+
+					if (isDataArray == true) {
+						// data 直接是数组
+						listArr = dataVal as any[]
+						console.log('[useChatAndShare] data 是数组，长度:', listArr.length)
+					} else {
+						// data 是对象，包含 list 字段
+						const dataObj = toJsonObj(dataVal)
+						if (dataObj != null) {
+							const listVal = safeGetProperty(dataObj, 'list')
+							if (listVal != null && Array.isArray(listVal) == true) {
+								listArr = listVal as any[]
+							}
+						}
+						console.log('[useChatAndShare] data 是对象，list长度:', listArr.length)
+					}
+
+					if (listArr.length > 0) {
+						const chatItems: any[] = []
+						for (let i = 0; i < listArr.length; i = i + 1) {
+							const conv = listArr[i]
+							const convObj = toJsonObj(conv)
+							if (convObj != null) {
+								const targetUserId = safeGetProperty(convObj, 'targetUserId')
+								const targetUserIdStr = (targetUserId != null && targetUserId != '') ? targetUserId.toString() : ''
+
+								const targetUserName = safeGetProperty(convObj, 'targetUserName')
+								const targetUserNameStr = (targetUserName != null && targetUserName != '') ? targetUserName.toString() : ''
+
+								const targetUserAvatar = safeGetProperty(convObj, 'targetUserAvatar')
+								const targetUserAvatarStr = (targetUserAvatar != null && targetUserAvatar != '') ? targetUserAvatar.toString() : ''
+
+								const lastMessage = safeGetProperty(convObj, 'lastMessage')
+								const lastMessageStr = (lastMessage != null && lastMessage != '') ? lastMessage.toString() : ''
+
+								const lastMessageTime = safeGetProperty(convObj, 'lastMessageTime')
+								const lastMessageTimeStr = (lastMessageTime != null && lastMessageTime != '') ? lastMessageTime.toString() : ''
+
+								console.log('[useChatAndShare] 解析会话:', targetUserNameStr, '头像:', targetUserAvatarStr)
+								
+								// 🔧 修复：使用普通对象而非 ChatItem 类实例
+								// Android 端 ChatItem 类实例在 JSON.stringify 时会变成空对象 {}
+								// 使用 UTSJSONObject 可以确保属性正确序列化和传递
+								const chatItemObj = {
+									targetUserId: targetUserIdStr,
+									targetUserName: targetUserNameStr,
+									targetUserAvatar: targetUserAvatarStr,
+									avatar: targetUserAvatarStr,
+									lastMessage: lastMessageStr,
+									lastMessageTime: lastMessageTimeStr
+								} as any
+								chatItems.push(chatItemObj)
+							}
+						}
+
+						chatListRef.value = chatItems
+						console.log('[useChatAndShare] 最终chatItems长度:', chatItems.length)
+						return chatListRef.value
+					}
+				}
+			}
+		}
+		chatListRef.value = []
+		return chatListRef.value
+	} catch (error) {
+		console.error('获取聊天会话列表失败:', error)
+		chatListRef.value = []
+		return chatListRef.value
+	}
+}
+
+/**
+ * 分享到聊天
+ * @param data - 包含 chatItem 的数据对象
+ * @param infoRef - 用户信息或路线信息，可以是 ref 对象或普通对象
+ */
+export async function handleShareToChat(data: any, infoRef: any | null): Promise<void> {
+	const chatItem = safeGetProperty(data, 'chatItem')
+	const targetUserId = safeGetProperty(chatItem, 'targetUserId')
+	if (chatItem == null || targetUserId == null || targetUserId == '') {
+		uni.showToast({
+			title: '无法分享，会话信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+
+	try {
+		const inviteCode = await ShareService.getCurrentUserInviteCode()
+		
+		// 🔧 修复：兼容 ref 对象和普通对象两种传参方式
+		// 在 UTS 中，ref 对象通过 JSON.stringify 序列化后，.value 属性可能会被展开
+		// 需要更智能地检测和处理
+		let infoForShare: any = {}
+		if (infoRef != null) {
+			try {
+				// 先尝试 JSON 序列化
+				const infoStr = JSON.stringify(infoRef)
+				console.log('[handleShareToChat] infoRef 序列化结果:', infoStr)
+				
+				if (infoStr != null && infoStr != '' && infoStr != '{}') {
+					const infoObj = JSON.parse(infoStr) as UTSJSONObject
+					
+					// 检查是否有 _value 或 value 属性（ref 对象的内部结构）
+					const valueVal = infoObj.get('_value')
+					const value2Val = infoObj.get('value')
+					
+					if (valueVal != null) {
+						// ref 对象的 _value 属性
+						infoForShare = valueVal
+						console.log('[handleShareToChat] 从 _value 获取信息')
+					} else if (value2Val != null) {
+						// ref 对象的 value 属性
+						infoForShare = value2Val
+						console.log('[handleShareToChat] 从 value 获取信息')
+					} else {
+						// 检查是否直接包含信息字段
+						const kidVal = infoObj.get('kid')
+						const nicknameVal = infoObj.get('nickname')
+						const imageVal = infoObj.get('image')
+						const titleVal = infoObj.get('title')
+						const descriptionVal = infoObj.get('description')
+						
+						if (kidVal != null || nicknameVal != null || imageVal != null || titleVal != null || descriptionVal != null) {
+							// 直接是信息对象
+							infoForShare = infoObj
+							console.log('[handleShareToChat] 直接使用信息对象')
+						} else {
+							// 尝试使用 safeGetProperty 获取 .value
+							const infoRefValue = safeGetProperty(infoRef, 'value')
+							if (infoRefValue != null) {
+								infoForShare = infoRefValue
+								console.log('[handleShareToChat] 通过 safeGetProperty 获取信息')
+							} else {
+								// 最后尝试直接使用
+								infoForShare = infoRef
+								console.log('[handleShareToChat] 直接使用 infoRef')
+							}
+						}
+					}
+				}
+			} catch (e) {
+				console.error('[handleShareToChat] 解析信息失败:', e)
+				// 尝试直接使用
+				infoForShare = infoRef
+			}
+		}
+		
+		console.log('[handleShareToChat] infoForShare:', JSON.stringify(infoForShare))
+		
+		// 🔧 新增：智能判断分享内容类型，构建相应的分享卡片
+		let shareMessage = ''
+		try {
+			const infoObj = JSON.parse(JSON.stringify(infoForShare)) as UTSJSONObject
+			
+			// 获取关键字段用于判断
+			const titleVal = infoObj.get('title')
+			const descriptionVal = infoObj.get('description')
+			const nicknameVal = infoObj.get('nickname')
+			const nameVal = infoObj.get('name')
+			const contentVal = infoObj.get('content')
+			const textVal = infoObj.get('text')
+			const kidVal = infoObj.get('kid')
+			const orderNoVal = infoObj.get('orderNo')
+			const totalMoneyVal = infoObj.get('totalMoney')
+			
+			console.log('[handleShareToChat] 字段检测:')
+			console.log('  - kid:', kidVal != null ? kidVal.toString() : 'null')
+			console.log('  - orderNo:', orderNoVal != null ? orderNoVal.toString() : 'null')
+			console.log('  - totalMoney:', totalMoneyVal != null ? totalMoneyVal.toString() : 'null')
+			console.log('  - title:', titleVal != null ? titleVal.toString().substring(0, 20) : 'null')
+			console.log('  - content:', contentVal != null ? contentVal.toString().substring(0, 20) : 'null')
+			console.log('  - text:', textVal != null ? textVal.toString().substring(0, 20) : 'null')
+			console.log('  - name:', nameVal != null ? nameVal.toString() : 'null')
+			console.log('  - nickname:', nicknameVal != null ? nicknameVal.toString() : 'null')
+			
+			// 判断分享内容类型
+			// 🔧 优先判断订单（orderNo/totalMoney 字段存在且不为空）
+			const hasOrderNo = (orderNoVal != null && orderNoVal.toString() != '')
+			const hasTotalMoney = (totalMoneyVal != null && totalMoneyVal.toString() != '')
+			const hasContent = (contentVal != null && contentVal.toString() != '')
+			const hasText = (textVal != null && textVal.toString() != '')
+			const hasName = (nameVal != null && nameVal.toString() != '')
+			const hasNickname = (nicknameVal != null && nicknameVal.toString() != '')
+			
+			if (hasOrderNo == true || hasTotalMoney == true) {
+				// 订单信息 - 使用 buildOrderCardContent
+				console.log('[handleShareToChat] ✅ 检测到订单信息（orderNo/totalMoney字段），使用 buildOrderCardContent')
+				shareMessage = buildOrderCardContent(infoObj)
+			} else if (hasContent == true || hasText == true) {
+				// 动态信息 - 使用 buildDynamicCardContent
+				console.log('[handleShareToChat] ✅ 检测到动态信息（content/text字段），使用 buildDynamicCardContent')
+				shareMessage = buildDynamicCardContent(infoObj)
+			} else if (hasName == true && hasNickname == false) {
+				// 路线/定制信息 - 使用 buildCustomCardContent
+				console.log('[handleShareToChat] ✅ 检测到路线/定制信息（name字段，无nickname），使用 buildCustomCardContent')
+				shareMessage = buildCustomCardContent(infoObj)
+			} else if (titleVal != null && titleVal.toString() != '' && descriptionVal != null) {
+				// 路线/定制信息 - 使用 buildCustomCardContent
+				console.log('[handleShareToChat] ✅ 检测到路线/定制信息（title+description），使用 buildCustomCardContent')
+				shareMessage = buildCustomCardContent(infoObj)
+			} else if (hasNickname == true) {
+				// 用户信息 - 使用 buildProfileCardContent
+				console.log('[handleShareToChat] ✅ 检测到用户信息（nickname字段），使用 buildProfileCardContent')
+				shareMessage = ShareService.buildShareCardMessage(infoObj, inviteCode)
+			} else {
+				// 默认使用用户信息格式
+				console.log('[handleShareToChat] ⚠️ 无法识别类型，使用默认用户信息格式')
+				shareMessage = ShareService.buildShareCardMessage(infoObj, inviteCode)
+			}
+		} catch (e) {
+			console.error('[handleShareToChat] 构建分享消息失败，使用默认格式:', e)
+			shareMessage = ShareService.buildShareCardMessage(infoForShare as UTSJSONObject, inviteCode)
+		}
+		
+		console.log('[handleShareToChat] shareMessage:', shareMessage)
+		uni.navigateTo({
+			url: `/pagesTrade/news/detail?targetUserId=${targetUserId.toString()}&shareMessage=${encodeURIComponent(shareMessage)}&messageType=6`,
+			success: () => {
+			},
+			fail: (err: any) => {
+				console.error('❌ 跳转失败:', err)
+				uni.showToast({
+					title: '跳转失败，请重试',
+					icon: 'none'
+				})
+			}
+		})
+	} catch (e) {
+		console.error('分享到聊天失败:', e)
+		uni.showToast({
+			title: '分享失败，请重试',
+			icon: 'none'
+		})
+	}
+}
+
+export { ChatItem }

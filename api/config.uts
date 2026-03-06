@@ -1,0 +1,55 @@
+import request from '@/utils/request.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/** 本地缓存键名 */
+const SETTINGS_CACHE_KEY = 'system_settings_cache'
+
+/**
+ * 缓存配置数据到本地存储
+ */
+const cacheSettings = (data: UTSJSONObject): void => {
+	try {
+		uni.setStorageSync(SETTINGS_CACHE_KEY, JSON.stringify(data))
+	} catch (e) {
+		console.error('[Config] 缓存配置数据失败:', e)
+	}
+}
+
+/**
+ * 从本地存储读取缓存的配置数据
+ */
+const getCachedSettings = (): UTSJSONObject | null => {
+	try {
+		const cached = uni.getStorageSync(SETTINGS_CACHE_KEY)
+		if (cached != null && cached.toString() != '') {
+			return JSON.parse(cached as string) as UTSJSONObject
+		}
+	} catch (e) {
+		console.error('[Config] 读取缓存配置失败:', e)
+	}
+	return null
+}
+
+/**
+ * 获取系统配置列表
+ * 后端通过 X-Partner-Id 请求头（由请求拦截器统一注入）获取商户标识
+ * @returns Promise 返回所有系统配置的键值对
+ */
+export const getSystemSettings = (): Promise<UTSJSONObject> {
+	return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: any) => void) => {
+		request.get('/admin/api/settings/list', null, false)
+			.then((res: UTSJSONObject) => {
+				cacheSettings(res)
+				resolve(res)
+			})
+			.catch((error: any | null) => {
+				handleSilentError(error as any, '获取系统配置')
+				const cached = getCachedSettings()
+				if (cached != null) {
+					resolve(cached)
+				} else {
+					reject(error)
+				}
+			})
+	})
+}

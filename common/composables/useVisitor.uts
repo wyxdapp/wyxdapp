@@ -1,0 +1,116 @@
+﻿/**
+ * 访客记录 - 模块级函数
+ * UTS 规范：直接导出函数，避免从 composable 返回对象中访问方法
+ * 
+ * 注意：此文件从 pagesTrade/composables/useVisitor.uts 移动到主包
+ * 原因：pagesUser 需要引用此 composable，避免跨分包引用错误
+ * 移动时间：2026-02-04
+ */
+
+import { addVisitor, AddVisitorParams } from '@/api/behavior.uts'
+
+/**
+ * 记录访客行为
+ * @param viewerKidRef 访问者ID的ref
+ * @param guiderKidRef 被访问者ID的ref
+ * @description 当用户访问他人主页时，记录访客信息
+ */
+export async function recordVisitor(viewerKidRef: UTSJSONObject | string | null, guiderKidRef: UTSJSONObject | string | null): Promise<void> {
+	try {
+		// 安全获取当前用户ID（访问者）
+		let currentUserKid: string = ''
+		if (viewerKidRef != null) {
+			// UTS 规范：使用 JSON 序列化安全访问 ref 的 .value 属性
+			const viewerStr = JSON.stringify(viewerKidRef)
+			if (viewerStr != null && viewerStr != '' && viewerStr != 'null' && viewerStr != '""') {
+				// 尝试解析为对象获取 value
+				try {
+					const viewerObj = JSON.parse(viewerStr) as UTSJSONObject
+					const valueVal = viewerObj.get('value')
+					const _valueVal = viewerObj.get('_value')
+					if (valueVal != null && valueVal.toString() != '') {
+						currentUserKid = valueVal.toString()
+					} else if (_valueVal != null && _valueVal.toString() != '') {
+						currentUserKid = _valueVal.toString()
+					} else {
+						// 可能直接是字符串
+						currentUserKid = viewerStr.replace(/"/g, '')
+					}
+				} catch (e) {
+					// 解析失败，可能是纯字符串
+					currentUserKid = viewerStr.replace(/"/g, '')
+				}
+			}
+		}
+
+		// 安全获取目标用户ID（被访问者）
+		let targetUserKid: string = ''
+		if (guiderKidRef != null) {
+			// UTS 规范：使用 JSON 序列化安全访问 ref 的 .value 属性
+			const guiderStr = JSON.stringify(guiderKidRef)
+			if (guiderStr != null && guiderStr != '' && guiderStr != 'null' && guiderStr != '""') {
+				// 尝试解析为对象获取 value
+				try {
+					const guiderObj = JSON.parse(guiderStr) as UTSJSONObject
+					const valueVal = guiderObj.get('value')
+					const _valueVal = guiderObj.get('_value')
+					if (valueVal != null && valueVal.toString() != '') {
+						targetUserKid = valueVal.toString()
+					} else if (_valueVal != null && _valueVal.toString() != '') {
+						targetUserKid = _valueVal.toString()
+					} else {
+						// 可能直接是字符串
+						targetUserKid = guiderStr.replace(/"/g, '')
+					}
+				} catch (e) {
+					// 解析失败，可能是纯字符串
+					targetUserKid = guiderStr.replace(/"/g, '')
+				}
+			}
+		}
+		
+		// 添加调试日志
+		console.log('🔍 [Visitor] recordVisitor 参数解析:')
+		console.log('  - viewerKidRef类型:', typeof viewerKidRef, '值:', viewerKidRef)
+		console.log('  - guiderKidRef类型:', typeof guiderKidRef, '值:', guiderKidRef)
+		console.log('  - currentUserKid:', currentUserKid)
+		console.log('  - targetUserKid:', targetUserKid)
+
+		// 验证被访问者ID是否有效
+		if (targetUserKid == null || targetUserKid == '') {
+			console.log('⚠️ [Visitor] 被访问者ID为空，跳过访客记录')
+			console.log('   - guiderKidRef原始值:', guiderKidRef)
+			return
+		}
+
+		// 验证是否为自己访问自己（只有当访客ID不为空时才检查）
+		if (currentUserKid != null && currentUserKid != '' && currentUserKid == targetUserKid) {
+			console.log('⚠️ [Visitor] 自己访问自己，跳过访客记录')
+			return
+		}
+
+		// 如果访客ID为空，设置为匿名访客"0"
+		if (currentUserKid == null || currentUserKid == '') {
+			currentUserKid = '0'
+			console.log('👤 [Visitor] 访客ID为空，使用匿名访客ID: 0（未登录用户）')
+		}
+
+		// 构造符合 AddVisitorParams 接口的参数对象（使用 UTSJSONObject）
+		const paramsObj = new UTSJSONObject()
+		paramsObj.set('userKid', targetUserKid)
+		paramsObj.set('visitUserKid', currentUserKid)
+		paramsObj.set('visitType', 'profile')
+		paramsObj.set('targetKid', targetUserKid)
+		
+		// 调用API记录访客
+		await addVisitor(paramsObj as AddVisitorParams)
+		
+		// 记录成功日志
+		const visitorDisplay = (currentUserKid != null && currentUserKid != '') ? currentUserKid : '匿名'
+
+		// 🔍 调试：验证访客记录是否触发了WebSocket推送
+		console.log('🔍 [Visitor] 访客记录完成，等待WebSocket推送301消息提醒更新')
+	} catch (error: any) {
+		console.error('❌ [Visitor] 主页访客记录失败:', error)
+	}
+}

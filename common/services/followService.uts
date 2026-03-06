@@ -1,0 +1,388 @@
+/**
+ * 关注服务 API
+ * 迁移自旧项目：D:\wyxdapp\wyxdweb\common\services\followService.js
+ */
+import { request } from '@/utils/request'
+import { toUTSJSON, getString, getNumber, getBoolean, getArray } from '@/common/utils/typeConverter'
+import { handleError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+// 参数接口定义
+export interface GetFollowingsParams {
+  userKid: string
+  page: number
+  size: number
+}
+
+export interface GetFollowersParams {
+  userKid: string
+  page: number
+  size: number
+}
+
+export interface AddFocusParams {
+  userKid: string
+  focusUserKid: string
+}
+
+export interface CancelFocusParams {
+  userKid: string
+  focusUserKid: string
+}
+
+// 响应接口定义
+export interface FollowResponse {
+  code: number
+  msg?: string | null
+  message?: string | null
+  data?: UTSJSONObject | null
+}
+
+export interface FollowListData {
+  items?: Array<UTSJSONObject> | null
+  total?: number | null
+  page?: number | null
+  size?: number | null
+}
+
+
+/**
+ * 安全获取字符串属性值（支持备选键名）
+ * 使用 typeConverter 替代 JSON.stringify + 正则匹配
+ */
+const getStrValFromRow = (obj: any, key1: string, key2?: string): string => {
+  const jsonObj = toUTSJSON(obj)
+  if (jsonObj == null) return ''
+  const val1 = getString(jsonObj, key1)
+  if (val1 != '') return val1
+  if (key2 != null) {
+    return getString(jsonObj, key2!!)
+  }
+  return ''
+}
+
+/**
+ * 安全获取布尔属性值
+ * 使用 typeConverter 替代 JSON.stringify + 字符串匹配
+ */
+const getBoolValFromRow = (obj: any, key: string): boolean => {
+  const jsonObj = toUTSJSON(obj)
+  if (jsonObj == null) return false
+  return getBoolean(jsonObj, key)
+}
+
+/**
+ * 映射关注列表用户数据行
+ * 后端返回的字段中：
+ * - userKid: 当前用户ID（发起关注的人，即"我"）
+ * - focusUserKid: 被关注用户ID（目标用户，即"我关注的人"）
+ * 所以关注列表应使用 focusUserKid 作为目标用户ID
+ */
+function mapFollowingRow(row: any): any {
+  return {
+    // 关注列表：使用 focusUserKid（我关注的人的ID）
+    userKid: getStrValFromRow(row, 'focusUserKid', 'kid'),
+    nickname: getStrValFromRow(row, 'nickname', 'userNickName'),
+    avatar: getStrValFromRow(row, 'avatar', 'image'),
+    mutual: getBoolValFromRow(row, 'mutual'),
+    isFollow: getBoolValFromRow(row, 'isFollow'),
+    time: getStrValFromRow(row, 'focusTime', 'time')
+  }
+}
+
+/**
+ * 映射粉丝列表用户数据行
+ * 后端返回的字段中：
+ * - userKid: 粉丝用户ID（关注我的人）
+ * - focusUserKid: 当前用户ID（被关注的人，即"我"）
+ * 所以粉丝列表应使用 userKid 作为目标用户ID
+ */
+function mapFollowerRow(row: any): any {
+  return {
+    // 粉丝列表：使用 userKid（关注我的人的ID）
+    userKid: getStrValFromRow(row, 'userKid', 'kid'),
+    nickname: getStrValFromRow(row, 'nickname', 'userNickName'),
+    avatar: getStrValFromRow(row, 'avatar', 'image'),
+    mutual: getBoolValFromRow(row, 'mutual'),
+    isFollow: getBoolValFromRow(row, 'isFollow'),
+    time: getStrValFromRow(row, 'focusTime', 'time')
+  }
+}
+
+
+/**
+ * 安全访问响应属性
+ * 使用 typeConverter 替代 JSON.stringify + JSON.parse 模式
+ */
+const getResponseCode = (resp: any): number => {
+  if (resp == null) return 500
+  const respObj = toUTSJSON(resp)
+  if (respObj == null) return 500
+  const codeVal = getNumber(respObj, 'code')
+  return codeVal != 0 ? codeVal : 500
+}
+
+const getResponseData = (resp: any): any => {
+  if (resp == null) return {}
+  const respObj = toUTSJSON(resp)
+  if (respObj == null) return {}
+  const dataVal = respObj.get('data')
+  if (dataVal != null) return dataVal
+  return {}
+}
+
+const getResponseMsg = (resp: any): string => {
+  if (resp == null) return ''
+  const respObj = toUTSJSON(resp)
+  if (respObj == null) return ''
+  const msgVal = getString(respObj, 'msg')
+  if (msgVal != '') return msgVal
+  return getString(respObj, 'message')
+}
+
+const getListDataItems = (listData: any | null): Array<any> => {
+  if (listData == null) return []
+  const listObj = toUTSJSON(listData)
+  if (listObj == null) return []
+  return getArray(listObj, 'items')
+}
+
+const getListDataTotal = (listData: any | null): number => {
+  if (listData == null) return 0
+  const listObj = toUTSJSON(listData)
+  if (listObj == null) return 0
+  return getNumber(listObj, 'total')
+}
+
+const getListDataPage = (listData: any | null, defaultPage: number): number => {
+  if (listData == null) return defaultPage
+  const listObj = toUTSJSON(listData)
+  if (listObj == null) return defaultPage
+  const pageVal = getNumber(listObj, 'page')
+  return pageVal != 0 ? pageVal : defaultPage
+}
+
+const getListDataSize = (listData: any | null, defaultSize: number): number => {
+  if (listData == null) return defaultSize
+  const listObj = toUTSJSON(listData)
+  if (listObj == null) return defaultSize
+  const sizeVal = getNumber(listObj, 'size')
+  return sizeVal != 0 ? sizeVal : defaultSize
+}
+
+
+/**
+ * 安全获取 any 对象的字符串属性
+ * 使用 typeConverter 替代 JSON.stringify + JSON.parse
+ */
+const getParamString = (params: any, key: string): string => {
+  if (params == null) return ''
+  const paramsObj = toUTSJSON(params)
+  if (paramsObj == null) return ''
+  return getString(paramsObj, key)
+}
+
+/**
+ * 安全获取 any 对象的数字属性
+ * 使用 typeConverter 替代 JSON.stringify + JSON.parse
+ */
+const getParamNumber = (params: any, key: string, defaultVal: number): number => {
+  if (params == null) return defaultVal
+  const paramsObj = toUTSJSON(params)
+  if (paramsObj == null) return defaultVal
+  const val = getNumber(paramsObj, key)
+  return val != 0 ? val : defaultVal
+}
+
+/**
+ * 获取关注列表
+ * 对应后端接口：POST /user/userFocus/queryFocusList
+ */
+export const getFollowings = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const pageVal = getParamNumber(params, 'page', 1)
+  const sizeVal = getParamNumber(params, 'size', 20)
+  
+  // 参数验证
+  if (userKidVal == '') {
+    console.error('[followService] getFollowings - userKid 为空')
+    return {
+      code: 400,
+      items: [] as Array<any>,
+      total: 0,
+      page: pageVal,
+      size: sizeVal
+    }
+  }
+  
+  // 直接使用 POST 接口
+  const postParams = {
+    userKid: userKidVal,
+    pageNumber: pageVal,
+    pageSize: sizeVal
+  } as UTSJSONObject
+  
+  try {
+    const resp = await request.post('/user/userFocus/queryFocusList', postParams, false)
+    
+    const code = getResponseCode(resp)
+    const ok = (code == 200)
+    const respData = (ok == true) ? getResponseData(resp) : {}
+    const items = getListDataItems(respData)
+    const mappedItems: Array<any> = []
+    for (let i = 0; i < items.length; i = i + 1) {
+      const item = items[i]
+      if (item != null) {
+        mappedItems.push(mapFollowingRow(item))
+      }
+    }
+    const total = getListDataTotal(respData)
+    const pageResult = getListDataPage(respData, pageVal)
+    const sizeResult = getListDataSize(respData, sizeVal)
+    
+    return {
+      code: ok == true ? 200 : code,
+      items: mappedItems,
+      total: total,
+      page: pageResult,
+      size: sizeResult
+    }
+  } catch (e: any) {
+    const errorOptions = new ErrorHandleOptions()
+    errorOptions.showToast = false
+    errorOptions.rethrow = false
+    handleError(e, '获取关注列表', errorOptions)
+    // 请求失败时返回空列表
+    return {
+      code: 500,
+      items: [] as Array<any>,
+      total: 0,
+      page: pageVal,
+      size: sizeVal
+    }
+  }
+}
+
+
+/**
+ * 获取粉丝列表
+ * 对应后端接口：POST /user/userFocus/queryFollowerList
+ */
+export const getFollowers = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const pageVal = getParamNumber(params, 'page', 1)
+  const sizeVal = getParamNumber(params, 'size', 20)
+  
+  // 参数验证
+  if (userKidVal == '') {
+    console.error('[followService] getFollowers - userKid 为空')
+    return {
+      code: 400,
+      items: [] as Array<any>,
+      total: 0,
+      page: pageVal,
+      size: sizeVal
+    }
+  }
+  
+  // 直接使用 POST 接口
+  const postParams = {
+    userKid: userKidVal,
+    pageNumber: pageVal,
+    pageSize: sizeVal
+  } as UTSJSONObject
+  
+  try {
+    const resp = await request.post('/user/userFocus/queryFollowerList', postParams, false)
+    
+    const code = getResponseCode(resp)
+    const ok = (code == 200)
+    const respData = (ok == true) ? getResponseData(resp) : {}
+    const items = getListDataItems(respData)
+    const mappedItems: Array<any> = []
+    for (let i = 0; i < items.length; i = i + 1) {
+      const item = items[i]
+      if (item != null) {
+        mappedItems.push(mapFollowerRow(item))
+      }
+    }
+    const total = getListDataTotal(respData)
+    const pageResult = getListDataPage(respData, pageVal)
+    const sizeResult = getListDataSize(respData, sizeVal)
+    
+    return {
+      code: ok == true ? 200 : code,
+      items: mappedItems,
+      total: total,
+      page: pageResult,
+      size: sizeResult
+    }
+  } catch (e: any) {
+    const errorOptions = new ErrorHandleOptions()
+    errorOptions.showToast = false
+    errorOptions.rethrow = false
+    handleError(e, '获取粉丝列表', errorOptions)
+    // 请求失败时返回空列表
+    return {
+      code: 500,
+      items: [] as Array<any>,
+      total: 0,
+      page: pageVal,
+      size: sizeVal
+    }
+  }
+}
+
+/**
+ * 关注用户
+ * 对应后端接口：POST /user/userFocus/addFocus
+ */
+export const addFocus = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const focusUserKidVal = getParamString(params, 'focusUserKid')
+  
+  const postParams = {
+    userKid: userKidVal,
+    focusUserKid: focusUserKidVal
+  } as UTSJSONObject
+  const resp = await request.post('/user/userFocus/addFocus', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const msg = getResponseMsg(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    msg: msg
+  }
+}
+
+/**
+ * 取消关注
+ * 对应后端接口：POST /user/userFocus/cancelFocus
+ */
+export const cancelFocus = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const focusUserKidVal = getParamString(params, 'focusUserKid')
+  
+  const postParams = {
+    userKid: userKidVal,
+    focusUserKid: focusUserKidVal
+  } as UTSJSONObject
+  const resp = await request.post('/user/userFocus/cancelFocus', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const msg = getResponseMsg(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    msg: msg
+  }
+}
+
+export default {
+  getFollowings,
+  getFollowers,
+  addFocus,
+  cancelFocus
+}

@@ -1,0 +1,94 @@
+/**
+ * 动态服务 API
+ */
+import request from '@/utils/request'
+import { getUserId } from '@/stores/user.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+
+/**
+ * 安全获取字符串属性
+ */
+function getParamString(params: UTSJSONObject, key: string): string {
+	try {
+		const val = params.get(key)
+		if (val != null) {
+			return val.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+/**
+ * 安全获取布尔属性
+ */
+function getParamBool(params: UTSJSONObject, key: string): boolean {
+	try {
+		const val = params.get(key)
+		if (val != null) {
+			const valStr = val.toString().toLowerCase()
+			if (valStr == 'true' || valStr == '1') {
+				return true
+			}
+		}
+	} catch (e) {}
+	return false
+}
+
+/**
+ * 发布动态
+ * 🔧 修复：API 路径从 /trends/publish 改为 /dynamic/releaseDynamic
+ */
+export const publishTrends = (params: UTSJSONObject) => {
+	return request.post('/dynamic/releaseDynamic', params, false)
+}
+
+/**
+ * 删除动态
+ * 🔧 修复：API 路径从 /trends/delete 改为 /dynamic/v1/deleteDynamic
+ */
+export const deleteTrends = (params: UTSJSONObject) => {
+	// 自动添加 userKid
+	const userKid = getUserId()
+	const kidVal = getParamString(params, 'kid')
+	const requestParams = {
+		discoverKid: kidVal,
+		userKid: userKid
+	} as UTSJSONObject
+	return request.post('/dynamic/v1/deleteDynamic', requestParams, false)
+}
+
+/**
+ * 顶置/取消顶置动态
+ * POST /dynamic/v1/setTop
+ * @param params { kid: string, isTop: boolean }
+ */
+export const setTrendsTop = (params: UTSJSONObject) => {
+	// 自动添加 userKid
+	const userKid = getUserId()
+	const kidVal = getParamString(params, 'kid')
+	const isTopVal = getParamBool(params, 'isTop')
+	const requestParams = {
+		kid: kidVal,
+		userKid: userKid,
+		isTop: isTopVal
+	} as UTSJSONObject
+	return request.post('/dynamic/v1/setTop', requestParams, false)
+}
+
+/**
+ * 设置/取消私密动态
+ * POST /dynamic/v1/setPrivate
+ * @param params { kid: string, isPrivate: boolean }
+ */
+export const setTrendsPrivate = (params: UTSJSONObject) => {
+	// 自动添加 userKid
+	const userKid = getUserId()
+	const kidVal = getParamString(params, 'kid')
+	const isPrivateVal = getParamBool(params, 'isPrivate')
+	const requestParams = {
+		kid: kidVal,
+		userKid: userKid,
+		isPrivate: isPrivateVal
+	} as UTSJSONObject
+	return request.post('/dynamic/v1/setPrivate', requestParams, false)
+}

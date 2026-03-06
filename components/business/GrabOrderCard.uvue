@@ -1,0 +1,141 @@
+<template>
+	<view class="grab-order-card" @click="handleClick">
+		<view class="grab-order-header">
+			<text class="grab-order-title">{{ orderTitle }}</text>
+			<text class="grab-order-price">¥{{ orderPrice }}</text>
+		</view>
+		<view class="grab-order-info">
+			<text class="grab-order-time">{{ serviceTime }}</text>
+			<text class="grab-order-location">{{ serviceAddress }}</text>
+		</view>
+		<view class="grab-order-footer">
+			<view class="grab-btn" @click.stop="handleGrab">
+				<text class="grab-btn-text">立即抢单</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+
+// Props
+const props = defineProps({
+	data: { type: Object, required: true }
+})
+
+// Emits
+const emit = defineEmits(['click', 'grab'])
+
+// 辅助函数
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.data, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return safeGetNumberProp(props.data, key)
+}
+
+// 计算属性
+const orderTitle = computed((): string => {
+	const title = getDataProp('orderTitle')
+	return (title != '') ? title : '待抢订单'
+})
+
+const orderPrice = computed((): string => {
+	const price = getDataNumberProp('orderPrice')
+	return price.toString()
+})
+
+const serviceTime = computed((): string => {
+	return getDataProp('serviceTime')
+})
+
+const serviceAddress = computed((): string => {
+	return getDataProp('serviceAddress')
+})
+
+// 事件处理
+const handleClick = () => {
+	emit('click', props.data)
+}
+
+const handleGrab = () => {
+	emit('grab', props.data)
+}
+</script>
+
+<style scoped>
+.grab-order-card {
+	flex-direction: column;
+	width: 694rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	margin-bottom: 20rpx;
+}
+
+.grab-order-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 16rpx;
+}
+
+.grab-order-title {
+	flex: 1;
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.grab-order-price {
+	font-size: 36rpx;
+	color: #FF6B35;
+	font-weight: bold;
+	margin-left: 20rpx;
+}
+
+.grab-order-info {
+	flex-direction: column;
+	margin-bottom: 20rpx;
+}
+
+.grab-order-time {
+	font-size: 26rpx;
+	color: #666666;
+	margin-bottom: 8rpx;
+}
+
+.grab-order-location {
+	font-size: 26rpx;
+	color: #999999;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.grab-order-footer {
+	flex-direction: row;
+	justify-content: flex-end;
+}
+
+.grab-btn {
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	background-color: #37B1F2;
+	border-radius: 32rpx;
+}
+
+.grab-btn-text {
+	font-size: 28rpx;
+	color: #FFFFFF;
+}
+</style>

@@ -1,0 +1,77 @@
+/**
+ * Android应用图标角标工具模块
+ * 仅在Android平台生效，其他平台静默跳过
+ * 
+ * ✅ 当前状态：已启用
+ * 
+ * 功能说明：
+ * - 前端角标功能已启用，使用 uni.setAppBadgeNumber API
+ * - Android 角标通过 WebSocket 301 消息实时更新（在线场景）
+ * - Android 角标通过 uni-push 华为推送通道更新（离线场景）
+ * - 两种机制互补，覆盖在线和离线场景
+ * 
+ * 使用场景：
+ * 1. 用户在线时，WebSocket 301消息推送后更新角标
+ * 2. 用户阅读消息后减少角标
+ * 3. 用户退出登录后清除角标
+ * 4. 应用切换到前台/后台时同步角标
+ * 
+ * 已知限制：
+ * - API 不支持 "99+" 字符串显示，超过 BADGE_COUNT_MAX_DISPLAY 时显示 BADGE_COUNT_MAX_DISPLAY
+ * - 小米设备在应用前台时会自动清空角标（系统行为）
+ * - 部分 Android 设备可能不支持角标功能（取决于系统和启动器）
+ */
+
+import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
+
+/**
+ * 设置Android应用图标角标数字
+ * @param count 角标数字，0表示清除角标
+ * 
+ * ✅ 已启用 uni.setAppBadgeNumber API
+ * 注意：API 不支持 "99+" 字符串，超过 BADGE_COUNT_MAX_DISPLAY 时显示 BADGE_COUNT_MAX_DISPLAY
+ */
+export const setAppBadgeNumber = (count: number) => {
+	// #ifdef APP-ANDROID
+	try {
+		// 计算角标数字（限制最大值为 BADGE_COUNT_MAX_DISPLAY）
+		let badgeCount = 0
+		if (count > 0) {
+			badgeCount = Math.floor(count)
+			// API 不支持 "99+" 字符串，限制最大值为 BADGE_COUNT_MAX_DISPLAY
+			if (badgeCount > BADGE_COUNT_MAX_DISPLAY) {
+				badgeCount = BADGE_COUNT_MAX_DISPLAY
+			}
+		}
+		
+		// 调用 uni.setAppBadgeNumber API
+		// UTS 规范：直接传递 number 类型参数
+		uni.setAppBadgeNumber(badgeCount)
+	} catch (e) {
+		console.error('❌ [AndroidBadge] Android角标设置异常:', e)
+	}
+	// #endif
+	
+	// #ifndef APP-ANDROID
+	// 非Android平台静默跳过，不执行任何操作
+	// #endif
+}
+
+/**
+ * 清除Android应用图标角标
+ * 
+ * ✅ 已启用，调用 setAppBadgeNumber(0)
+ */
+export const clearAppBadge = () => {
+	setAppBadgeNumber(0)
+}
+
+/**
+ * 获取当前Android应用图标角标数字
+ * 注意：Android平台无法直接获取当前角标数，返回-1表示不支持
+ * @returns 当前角标数，Android平台返回-1（不支持获取）
+ */
+export const getAppBadgeNumber = (): number => {
+	// Android平台无法直接获取当前角标数
+	return -1
+}

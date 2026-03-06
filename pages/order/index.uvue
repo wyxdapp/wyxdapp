@@ -1,0 +1,2403 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill" />
+		<view class="fixed-header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<!-- Tab 栏 - 与发现页面结构完全一致 -->
+			<view class="tabs-row">
+				<view class="tab-item" @click="switchTab(0)">
+					<text class="tab-text" :class="{ 'tab-text-active': tabIndex == 0 }">支出</text>
+					<view v-if="tabIndex == 0" class="tab-underline"></view>
+					<view v-if="expenditureDotVisible == true && tabIndex != 0" class="tab-dot"></view>
+				</view>
+				<view class="tab-item" @click="switchTab(1)">
+					<text class="tab-text" :class="{ 'tab-text-active': tabIndex == 1 }">收入</text>
+					<view v-if="tabIndex == 1" class="tab-underline"></view>
+					<view v-if="incomeDotVisible == true && tabIndex != 1" class="tab-dot"></view>
+				</view>
+			</view>
+			<view class="search-container">
+				<view class="search-box">
+					<image
+						class="search-icon"
+						src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png"
+						mode="aspectFit"
+					/>
+					<input
+						class="search-input"
+						type="text"
+						placeholder="搜索订单"
+						placeholder-class="search-placeholder"
+						v-model="currentSearchKeywordValue"
+						@input="handleSearchInput"
+					/>
+				</view>
+			</view>
+		</view>
+
+		<view v-if="isLoginValue == false" class="login-placeholder" :style="{ marginTop: headerHeight + 'px' }">
+			<text class="login-placeholder-title">登录后可查看订单列表</text>
+			<text class="login-placeholder-desc">登录后可查看你的支出和收入订单，并进行支付、退款等操作</text>
+			<view class="login-btn" @click="goToLogin">
+				<text class="login-btn-text">点击登录</text>
+			</view>
+		</view>
+
+		<swiper v-else class="swiper" :style="{ marginTop: headerHeight + 'px', height: contentHeight + 'px' }" :current="tabIndex" @change="handleSwiperChange">
+			<swiper-item class="swiper-item">
+				<scroll-view
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					:scroll-y="true"
+					:show-scrollbar="false"
+					@scrolltolower="onScrollToLower"
+					:lower-threshold="0"
+					refresher-enabled="true"
+					:refresher-triggered="expenditureRefreshing"
+					@refresherrefresh="onExpenditureRefresh"
+				>
+					<view
+						v-if="expenditureList.length > 0"
+						class="plr-24"
+					>
+						<view
+							v-for="(item, index) in expenditureList"
+							:key="getItemKey(item, index)"
+							class="mt-20 bg-white plr-28 border-radius-16 pb-32 order-card"
+							@click="handleOrderClick(item, true)"
+						>
+							<view class="flex-row space-between align-center ptb-32">
+								<view class="flex-row align-center" @click.stop="handleUserClick(item, true)">
+									<Avatar
+										:url="getItemAvatar(item, true)"
+										:userId="getItemUserId(item, true)"
+										:customSize="80"
+										clickMode="none"
+									/>
+									<text class="color-title fs-lg font-bold ml-16">
+										{{ getItemName(item, true) }}
+									</text>
+								</view>
+								<view class="flex-row align-center">
+									<text
+										class="fs-md"
+										:class="getStatusClass(item)"
+									>{{ getStatusText(item) }}</text>
+								</view>
+							</view>
+							<view class="border-line bg-light-base"></view>
+							<view class="flex-row align-center mt-32">
+								<text class="fs-md color-title">订单编号：</text>
+								<text class="fs-md color-title">{{ getItemOrderNo(item) }}</text>
+							</view>
+							<view class="flex-row align-center space-between mt-32">
+								<text class="fs-md color-title ellipsis">{{ getItemDesc(item) }}</text>
+								<view class="flex-row align-center">
+									<text class="mt-6 ml-6 fs-sm color-price">¥</text>
+									<text class="fs-lg color-price">{{ getItemPrice(item) }}</text>
+								</view>
+							</view>
+							<view class="flex-row align-center mt-24">
+								<image
+									class="start-time"
+									src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png"
+									mode="aspectFill"
+								/>
+								<text class="fs-md color-title ml-16">出发时间：</text>
+								<text class="fs-sm color-text">{{ getItemStartTime(item) }}</text>
+							</view>
+							<view class="mt-30 flex-row align-center flex-end btn-row" @click.stop>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="canApplyRefund(item) == true"
+									@click="handleExpenditureAction('refund', item)"
+								><text class="gray-btn-text">退款</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="canCancelOrder(item) == true"
+									@click="handleExpenditureAction('cancel', item)"
+								><text class="gray-btn-text">取消</text></view>
+								<view
+									class="btn blue-btn ml-24"
+									v-if="canPayOrder(item) == true"
+									@click="handleExpenditureAction('pay', item)"
+								><text class="blue-btn-text">付款</text></view>
+								<view
+									class="btn blue-btn ml-24"
+									v-if="getItemOrderStatus(item) == 50 && getItemRefundStatus(item) != REFUND_STATUS_PENDING"
+									@click="handleExpenditureAction('complete', item)"
+								><text class="blue-btn-text">确认完成</text></view>
+								<view
+									class="btn blue-btn ml-24"
+									v-if="getItemOrderStatus(item) == 60"
+									@click="handleExpenditureAction('comment', item)"
+								><text class="blue-btn-text">评价</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="getItemRefundStatus(item) == REFUND_STATUS_PENDING"
+									@click="handleExpenditureAction('cancelRefund', item)"
+								><text class="gray-btn-text">取消退款</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="canDeleteExpenditure(item) == true"
+									@click="handleExpenditureAction('delete', item)"
+								><text class="gray-btn-text">删除订单</text></view>
+							</view>
+						</view>
+					</view>
+
+					<view v-else class="flex-row align-center flex-center empty-wrapper">
+						<text class="empty-text">你还没订单哦，快去预约吧～</text>
+					</view>
+
+					<view class="ptb-32" v-if="expenditureList.length >= 5">
+						<text class="load-text" v-if="expenditureStatus == 'loadmore'">轻轻上拉</text>
+						<text class="load-text" v-else-if="expenditureStatus == 'loading'">努力加载中</text>
+						<text class="load-text" v-else>到底了哦~</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+
+			<swiper-item class="swiper-item">
+				<scroll-view
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					:scroll-y="true"
+					:show-scrollbar="false"
+					@scrolltolower="onScrollToLower"
+					:lower-threshold="0"
+					refresher-enabled="true"
+					:refresher-triggered="incomeRefreshing"
+					@refresherrefresh="onIncomeRefresh"
+				>
+					<view
+						v-if="incomeList.length > 0"
+						class="plr-24"
+					>
+						<view
+							v-for="(item, index) in incomeList"
+							:key="getItemKey(item, index)"
+							class="mt-20 bg-white plr-28 border-radius-16 pb-32 order-card"
+							@click="handleOrderClick(item, false)"
+						>
+							<view class="flex-row space-between align-center ptb-32">
+								<view class="flex-row align-center" @click.stop="handleUserClick(item, false)">
+									<Avatar
+										:url="getItemAvatar(item, false)"
+										:userId="getItemUserId(item, false)"
+										:customSize="80"
+										clickMode="none"
+									/>
+									<text class="color-title fs-lg font-bold ml-16">
+										{{ getItemName(item, false) }}
+									</text>
+									<!-- 推广订单标签 -->
+									<view v-if="isPromotionOrder(item) == true" class="promotion-badge">
+										<text class="promotion-badge-text">推广</text>
+									</view>
+								</view>
+								<view class="flex-row align-center">
+									<text
+										class="fs-md"
+										:class="getStatusClass(item)"
+									>{{ getStatusText(item) }}</text>
+								</view>
+							</view>
+							<view class="border-line bg-light-base"></view>
+							<view class="flex-row align-center mt-32">
+								<text class="fs-md color-title">订单编号：</text>
+								<text class="fs-md color-title">{{ getItemOrderNo(item) }}</text>
+							</view>
+							<view class="flex-row align-center space-between mt-32">
+								<text class="fs-md color-title ellipsis">{{ getItemDesc(item) }}</text>
+								<view class="flex-row align-center">
+									<text class="mt-6 ml-6 fs-sm color-price">¥</text>
+									<text class="fs-lg color-price">{{ getItemPrice(item) }}</text>
+								</view>
+							</view>
+							<!-- 推广订单佣金显示 -->
+							<view v-if="isPromotionOrder(item) == true" class="flex-row align-center space-between mt-16">
+								<text class="fs-md color-title">预计佣金</text>
+								<text class="commission-text">¥{{ getItemCommission(item) }}</text>
+							</view>
+							<view class="flex-row align-center mt-24">
+								<image
+									class="start-time"
+									src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png"
+									mode="aspectFill"
+								/>
+								<text class="fs-md color-title ml-16">出发时间：</text>
+								<text class="fs-sm color-text">{{ getItemStartTime(item) }}</text>
+							</view>
+							<view class="mt-30 flex-row align-center flex-end btn-row" @click.stop>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="getItemOrderStatus(item) == 10"
+									@click="handleIncomeAction('cancel', item)"
+								><text class="gray-btn-text">取消</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="getItemOrderStatus(item) == 10"
+									@click="onChangePriceClick(item)"
+								><text class="gray-btn-text">改价</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="canIncomeRejectAccept(item) == true"
+									@click="handleIncomeAction('reject', item)"
+								><text class="gray-btn-text">拒绝</text></view>
+								<view
+									class="btn blue-btn ml-24"
+									v-if="canIncomeRejectAccept(item) == true"
+									@click="handleIncomeAction('accept', item)"
+								><text class="blue-btn-text">接受</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="getItemRefundStatus(item) == REFUND_STATUS_PENDING"
+									@click="handleIncomeAction('rejectRefund', item)"
+								><text class="gray-btn-text">拒绝退款</text></view>
+								<view
+									class="btn blue-btn ml-24"
+									v-if="getItemRefundStatus(item) == REFUND_STATUS_PENDING"
+									@click="handleIncomeAction('agreeRefund', item)"
+								><text class="blue-btn-text">同意退款</text></view>
+								<view
+									class="btn gray-btn ml-24"
+									v-if="canDeleteIncome(item) == true"
+									@click="handleIncomeAction('delete', item)"
+								><text class="gray-btn-text">删除订单</text></view>
+							</view>
+						</view>
+					</view>
+
+					<view v-else class="flex-row align-center flex-center empty-wrapper">
+						<text class="empty-text">你还没订单哦，快去预约吧～</text>
+					</view>
+
+					<view class="ptb-32" v-if="incomeList.length >= 5">
+						<text class="load-text" v-if="incomeStatus == 'loadmore'">轻轻上拉</text>
+						<text class="load-text" v-else-if="incomeStatus == 'loading'">努力加载中</text>
+						<text class="load-text" v-else>到底了哦~</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+		</swiper>
+
+		<view v-if="priceDialogVisible == true" class="price-mask" @click="closePriceDialog">
+			<view class="price-popup" @click.stop>
+				<view class="price-header">
+					<text class="price-title">修改订单价格</text>
+					<text class="price-close" @click="closePriceDialog">×</text>
+				</view>
+				<view class="price-body">
+					<text class="price-label">新价格（元）</text>
+					<input
+						class="price-input"
+						type="digit"
+						v-model="priceInput"
+						placeholder="请输入新的订单金额"
+						placeholder-class="price-placeholder"
+					/>
+				</view>
+				<view class="price-footer flex-row space-between">
+					<view class="price-btn-cancel" @click="closePriceDialog">取消</view>
+					<view class="price-btn-confirm" @click="submitPriceChange">确定</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { useUserStore, getUserLoginStatus, getUserId } from '@/stores/user.uts'
+import { useUnreadStore, updateOrderUnreadCountDirect } from '@/stores/unread.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+// 🔧 新增：导入统一的登录状态管理工具
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	requireLoginReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	getCurrentUserIdReliable,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+import {
+	getExpenditureList,
+	getIncomeList,
+	cancelOrder,
+	completeOrder,
+	delOrderInfo,
+	guiderAcceptOrder,
+	guiderRejectOrder,
+	updateGuiderOrderPrice,
+	cancelRefund,
+	CancelRefundParams,
+	queryRefundDetail,
+	QueryRefundDetailParams,
+	guiderAcceptRefund,
+	GuiderAcceptRefundParams,
+	guiderRejectRefund,
+	GuiderRejectRefundParams
+} from '@/api/order.uts'
+import { 
+	getOrderNotificationsUnreadCountByType,
+	markOrderNotificationsReadByType,
+	getOrderNotificationsUnreadCount
+} from '@/common/services/notificationService.uts'
+import { useOrderNotificationStore, setOrderTabIndicators, setOrderUnreadCount } from '@/stores/orderNotification.uts'
+import Button from '@/components/base/Button.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { toUTSJSON } from '@/common/utils/typeConverter'
+import { ORDER_TYPE_CUSTOM, ORDER_TYPE_GUIDE, ORDER_TYPE_LINE, REFUND_STATUS_PENDING, REFUND_STATUS_SUCCESS, REFUND_STATUS_FAILED } from '@/common/config/businessCodes.uts'
+import { ORDER_LIST_CACHE_DURATION } from '@/common/config/timeoutConfig.uts'
+import { LOGIN_BOX_TOP_ORDER } from '@/common/config/uiConfig.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { GetExpenditureListParams, GetIncomeListParams, CancelOrderParams, RemoveOrderParams, CompleteOrderParams, AcceptOrderParams, RejectOrderParams, UpdateOrderPriceParams } from '@/api/types/orderTypes.uts'
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val == null) return ''
+	return val.toString()
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val == null) return 0
+	const num = parseInt(val.toString())
+	if (isNaN(num) == true) return 0
+	return num
+}
+
+const getObjFloat = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val == null) return 0
+	const num = parseFloat(val.toString())
+	if (isNaN(num) == true) return 0
+	return num
+}
+
+// 内联金额格式化（替代 money.uts）
+const formatMoney = (value: number): string => {
+	if (isNaN(value)) return '0.00'
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+// ========== Store 访问函数 ==========
+const orderNotificationStore = useOrderNotificationStore()
+const unreadStore = useUnreadStore()
+
+// 使用导出的独立函数获取登录状态（来自 stores/user.uts）
+// getUserLoginStatus() 和 getUserId() 已从 stores/user.uts 导入
+
+const getStoreExpenditureDot = (): boolean => {
+	try {
+		const storeObj = toJsonObj(orderNotificationStore)
+		if (storeObj == null) return false
+		const indicatorsVal = storeObj.get('tabIndicators')
+		if (indicatorsVal == null) return false
+		const indicatorsObj = toJsonObj(indicatorsVal)
+		if (indicatorsObj == null) return false
+		const dotVal = indicatorsObj.get('expenditureDot')
+		return dotVal == true
+	} catch (e) {
+		return false
+	}
+}
+
+const getStoreIncomeDot = (): boolean => {
+	try {
+		const storeObj = toJsonObj(orderNotificationStore)
+		if (storeObj == null) return false
+		const indicatorsVal = storeObj.get('tabIndicators')
+		if (indicatorsVal == null) return false
+		const indicatorsObj = toJsonObj(indicatorsVal)
+		if (indicatorsObj == null) return false
+		const dotVal = indicatorsObj.get('incomeDot')
+		return dotVal == true
+	} catch (e) {
+		return false
+	}
+}
+
+// ========== 响应式状态 ==========
+// 布局相关
+const headerHeight = ref<number>(0)
+const contentHeight = ref<number>(0)
+const loginBoxTop = ref<number>(LOGIN_BOX_TOP_ORDER)
+
+const tabIndex = ref<number>(0)
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// 登录状态（使用 ref 以便在 onMounted 中更新）
+const isLoginValue = ref<boolean>(false)
+
+// 支出订单状态
+const expenditurePageNumber = ref<number>(1)
+const expenditurePageSize = ref<number>(10)
+const expenditureList = ref<Array<UTSJSONObject>>([])
+const expenditureStatus = ref<string>('loadmore')
+const expenditureRefreshing = ref<boolean>(false)
+const expenditureSearchKeyword = ref<string>('')
+
+// 收入订单状态
+const incomePageNumber = ref<number>(1)
+const incomePageSize = ref<number>(10)
+const incomeList = ref<Array<UTSJSONObject>>([])
+const incomeStatus = ref<string>('loadmore')
+const incomeRefreshing = ref<boolean>(false)
+const incomeSearchKeyword = ref<string>('')
+
+// 修改价格弹窗状态
+const priceDialogVisible = ref<boolean>(false)
+const priceEditingOrderKid = ref<string>('')
+const priceInput = ref<string>('')
+
+// 标记是否需要在返回时刷新列表（导航到退款/付款/评价等页面后设置）
+const pendingRefresh = ref<boolean>(false)
+
+// ========== 计算属性 ==========
+// 🔧 修复：UTS Android 不支持 computed<string>({get,set}) 泛型写法
+// 改用 ref + watch 模式替代 writable computed
+const currentSearchKeywordValue = ref<string>('')
+
+// 同步：当 tabIndex 变化时，更新搜索关键词显示
+watch(
+	() : number => tabIndex.value,
+	() => {
+		if (tabIndex.value == 0) {
+			currentSearchKeywordValue.value = expenditureSearchKeyword.value
+		} else {
+			currentSearchKeywordValue.value = incomeSearchKeyword.value
+		}
+	}
+)
+
+// 同步：当搜索关键词输入变化时，更新对应 tab 的关键词
+watch(
+	() : string => currentSearchKeywordValue.value,
+	(val : string) => {
+		if (tabIndex.value == 0) {
+			expenditureSearchKeyword.value = val
+		} else {
+			incomeSearchKeyword.value = val
+		}
+	}
+)
+
+// 红点状态计算属性
+const expenditureDotVisible = computed((): boolean => {
+	return getStoreExpenditureDot()
+})
+
+const incomeDotVisible = computed((): boolean => {
+	return getStoreIncomeDot()
+})
+
+// Tab 切换函数
+const switchTab = (index: number) => {
+	if (tabIndex.value == index) return
+	tabIndex.value = index
+}
+
+// ========== 订单项辅助函数 ==========
+const getItemKey = (item: UTSJSONObject | null, index: number): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return index.toString()
+	const kid = getObjString(obj, 'kid')
+	if (kid != '') return kid
+	const orderKid = getObjString(obj, 'orderKid')
+	if (orderKid != '') return orderKid
+	return index.toString()
+}
+
+const getItemOrderKid = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	const orderKid = getObjString(obj, 'orderKid')
+	if (orderKid != '') return orderKid
+	return getObjString(obj, 'kid')
+}
+
+const getItemOrderStatus = (item: UTSJSONObject | null): number => {
+	const obj = toJsonObj(item)
+	if (obj == null) return 0
+	// 🔧 修复：后端字段名是 orderStatu，优先读取
+	let status = getObjNumber(obj, 'orderStatu')
+	if (status == 0) {
+		status = getObjNumber(obj, 'orderStatus')
+	}
+	return status
+}
+
+// 获取订单类型
+const getItemOrderType = (item: UTSJSONObject | null): number => {
+	const obj = toJsonObj(item)
+	if (obj == null) return 0
+	return getObjNumber(obj, 'orderType')
+}
+
+// 判断是否为特殊订单（会员/礼物/抽奖）
+// orderType: ORDER_TYPE_CUSTOM=会员订单, ORDER_TYPE_GUIDE=礼物订单, ORDER_TYPE_LINE=抽奖订单
+const isSpecialOrder = (item: UTSJSONObject | null): boolean => {
+	const orderType = getItemOrderType(item)
+	if (orderType == ORDER_TYPE_CUSTOM || orderType == ORDER_TYPE_GUIDE || orderType == ORDER_TYPE_LINE) {
+		return true
+	}
+	return false
+}
+
+// 判断是否可以支付（状态10/5 待付款）
+// 🔧 修复：状态30表示付款成功，不应该再显示付款按钮
+const canPayOrder = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	if (status == 10 || status == 5) return true
+	return false
+}
+
+// 判断是否可以取消（状态10/5 待付款）
+// 🔧 修复：状态30表示付款成功，不应该再显示取消按钮
+const canCancelOrder = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	if (status == 10 || status == 5) return true
+	return false
+}
+
+const getItemRefundStatus = (item: UTSJSONObject | null): number => {
+	const obj = toJsonObj(item)
+	if (obj == null) return 0
+	// 🔧 修复：后端字段名是 refundStatu，优先读取
+	let status = getObjNumber(obj, 'refundStatu')
+	if (status == 0) {
+		status = getObjNumber(obj, 'refundStatus')
+	}
+	return status
+}
+
+const getItemAvatar = (item: UTSJSONObject | null, isExpenditure: boolean): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return defaultAvatar
+	if (isExpenditure == true) {
+		let avatar = getObjString(obj, 'guideAvatar')
+		if (avatar == '') avatar = getObjString(obj, 'guideImg')
+		return avatar != '' ? avatar : defaultAvatar
+	} else {
+		// 收入订单：优先显示下单用户头像（userImg/userAvatar），而非联系人头像
+		let avatar = getObjString(obj, 'userImg')
+		if (avatar == '') avatar = getObjString(obj, 'userAvatar')
+		if (avatar == '') avatar = getObjString(obj, 'touristAvatar')
+		return avatar != '' ? avatar : defaultAvatar
+	}
+}
+
+const getItemUserId = (item: UTSJSONObject | null, isExpenditure: boolean): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	if (isExpenditure == true) {
+		let userKid = getObjString(obj, 'guideKid')
+		if (userKid == '') userKid = getObjString(obj, 'guideUserKid')
+		return userKid
+	} else {
+		let userKid = getObjString(obj, 'touristKid')
+		if (userKid == '') userKid = getObjString(obj, 'userKid')
+		return userKid
+	}
+}
+
+const getItemName = (item: UTSJSONObject | null, isExpenditure: boolean): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return isExpenditure == true ? '向导' : '游客'
+	if (isExpenditure == true) {
+		// 支出订单待抢单状态（status=5/6）：尚未匹配向导，显示"等待向导接单"
+		// 待接单状态（status=ORDER_STATUS_CONFIRMED 普通订单/ORDER_STATUS_IN_PROGRESS）：已匹配向导，显示向导昵称
+		const status = getItemOrderStatus(item)
+		const isWaitingGrab = (status == 5 || status == 6)
+		if (isWaitingGrab == true) {
+			return '等待向导接单'
+		}
+		let name = getObjString(obj, 'guideName')
+		if (name == '') name = getObjString(obj, 'guideNickname')
+		return name != '' ? name : '向导'
+	} else {
+		// 收入订单：优先显示下单用户昵称（userNickname），而非联系人姓名（touristName）
+		let name = getObjString(obj, 'userNickname')
+		if (name == '') name = getObjString(obj, 'touristName')
+		return name != '' ? name : '游客'
+	}
+}
+
+const getItemOrderNo = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '-'
+	let orderNo = getObjString(obj, 'orderNo')
+	if (orderNo == '') orderNo = getObjString(obj, 'shortKid')
+	return orderNo != '' ? orderNo : '-'
+}
+
+const getItemDesc = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '-'
+	let desc = getObjString(obj, 'orderDescribe')
+	if (desc == '') desc = getObjString(obj, 'orderTitle')
+	return desc != '' ? desc : '-'
+}
+
+const getItemPrice = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '0.00'
+	let price = getObjFloat(obj, 'orderPrice')
+	if (price == 0) price = getObjFloat(obj, 'totalMoney')
+	return formatMoney(price)
+}
+
+const getItemStartTime = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '-'
+	let time = getObjString(obj, 'startTime')
+	if (time == '') time = getObjString(obj, 'travelDate')
+	return time != '' ? time : '-'
+}
+
+// 判断是否为推广订单
+const isPromotionOrder = (item: UTSJSONObject | null): boolean => {
+	const obj = toJsonObj(item)
+	if (obj == null) return false
+	const val = obj.get('isPromotionOrder')
+	if (val == null) return false
+	if (val == true) return true
+	if (val.toString() == 'true' || val.toString() == '1') return true
+	return false
+}
+
+// 获取订单佣金金额
+const getItemCommission = (item: UTSJSONObject | null): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '0.00'
+	const commission = getObjFloat(obj, 'commissionAmount')
+	if (commission > 0) {
+		return formatMoney(commission)
+	}
+	return '0.00'
+}
+
+// ========== 状态判断函数 ==========
+const getStatusText = (item: UTSJSONObject | null): string => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	const orderType = getItemOrderType(item)
+	if (status == 5) return '待抢单'
+	if (status == 6) return '待抢单·已付款'
+	if (status == 7) return '待抢单·已退款'
+	if (status == 10) return '待付款'
+	if (status == 20) return '已付款'
+	if (status == 30) {
+		// 🔧 修复：status=ORDER_STATUS_CONFIRMED 表示付款成功
+		// 特殊订单（会员/礼物/抽奖）付款成功即完成（虚拟商品无需服务）
+		if (orderType == ORDER_TYPE_CUSTOM || orderType == ORDER_TYPE_GUIDE || orderType == ORDER_TYPE_LINE) {
+			return '已完成'
+		}
+		// 🔧 修复：如果有退款状态，优先显示退款状态
+		if (refundStatus == REFUND_STATUS_PENDING) return '退款中'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return '退款成功'
+		if (refundStatus == REFUND_STATUS_FAILED) return '退款失败'
+		// 普通订单付款成功后等待导游接单
+		return '待接单'
+	}
+	if (status == 40) {
+		// 🔧 修复：如果有退款状态，优先显示退款状态
+		if (refundStatus == REFUND_STATUS_PENDING) return '退款中'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return '退款成功'
+		if (refundStatus == REFUND_STATUS_FAILED) return '退款失败'
+		return '待接单'
+	}
+	if (status == 50) {
+		// 🔧 修复：进行中订单如果有退款状态，优先显示退款状态
+		if (refundStatus == REFUND_STATUS_PENDING) return '退款中'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return '退款成功'
+		if (refundStatus == REFUND_STATUS_FAILED) return '退款失败'
+		return '进行中'
+	}
+	if (status == 60) return '已完成'
+	if (status == 70) return '已评价'
+	if (status == 80) {
+		if (refundStatus == REFUND_STATUS_PENDING) return '退款中'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return '退款成功'
+		if (refundStatus == REFUND_STATUS_FAILED) return '退款失败'
+		return '已取消'
+	}
+	if (status == 90) return '已取消'
+	return '未知状态'
+}
+
+const getStatusClass = (item: UTSJSONObject | null): string => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	const orderType = getItemOrderType(item)
+	if (status == 5 || status == 6 || status == 10 || status == 20 || status == 60) {
+		return 'orange'
+	}
+	// 🔧 修复：待接单订单如果有退款状态，显示对应颜色
+	if (status == 40) {
+		if (refundStatus == REFUND_STATUS_PENDING) return 'orange'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return 'light-green'
+		if (refundStatus == REFUND_STATUS_FAILED) return 'title-font'
+		return 'orange'
+	}
+	// 🔧 修复：进行中订单如果有退款状态，显示对应颜色
+	if (status == 50) {
+		if (refundStatus == REFUND_STATUS_PENDING) return 'orange'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return 'light-green'
+		if (refundStatus == REFUND_STATUS_FAILED) return 'title-font'
+		return 'orange'
+	}
+	if (status == 7) {
+		return 'title-font'
+	}
+	// 🔧 修复：特殊订单（会员/礼物/抽奖）付款成功(status=ORDER_STATUS_CONFIRMED)显示绿色（已完成）
+	if (status == 30 && (orderType == ORDER_TYPE_CUSTOM || orderType == ORDER_TYPE_GUIDE || orderType == ORDER_TYPE_LINE)) {
+		return 'light-green'
+	}
+	// 普通订单 status=ORDER_STATUS_CONFIRMED 表示待接单，显示橙色
+	if (status == 30) {
+		if (refundStatus == REFUND_STATUS_PENDING) return 'orange'
+		if (refundStatus == REFUND_STATUS_SUCCESS) return 'light-green'
+		if (refundStatus == REFUND_STATUS_FAILED) return 'title-font'
+		return 'orange'
+	}
+	if (status == 80 && refundStatus == REFUND_STATUS_PENDING) {
+		return 'orange'
+	}
+	if (status == 70) {
+		return 'light-green'
+	}
+	if (status == 80 && refundStatus == REFUND_STATUS_SUCCESS) {
+		return 'light-green'
+	}
+	return 'title-font'
+}
+
+const canApplyRefund = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	// 🔧 修复：已有退款记录（退款中/退款成功）的订单不允许再次申请退款
+	if (refundStatus == REFUND_STATUS_PENDING || refundStatus == REFUND_STATUS_SUCCESS) return false
+	// 状态30（待接单）的普通订单已付款，允许申请退款；特殊订单（会员/礼物/抽奖）不允许
+	if (status == 30 && isSpecialOrder(item) == false) return true
+	return status == 40 || status == 50 || status == 6
+}
+
+const canCancelExpenditure = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	return status == 10 || status == 5
+}
+
+const canDeleteExpenditure = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	const orderType = getItemOrderType(item)
+	if (status == 90) return true
+	if (status == 7) return true
+	if (status == 60 || status == 70) return true
+	if (status == 80) return true
+	// 🔧 修复：特殊订单（会员/礼物/抽奖）付款成功(status=ORDER_STATUS_CONFIRMED)即完成，可以删除
+	if (status == 30 && (orderType == ORDER_TYPE_CUSTOM || orderType == ORDER_TYPE_GUIDE || orderType == ORDER_TYPE_LINE)) return true
+	return false
+}
+
+const canDeleteIncome = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	if (status == 90) return true
+	if (status == 60) return true
+	if (status == 80) return true
+	return false
+}
+
+// 收入订单待接单状态：显示拒绝/接受按钮
+// status=ORDER_STATUS_CONFIRMED（普通订单付款成功待接单）或 status=ORDER_STATUS_IN_PROGRESS（待接单）
+const canIncomeRejectAccept = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	if (status == 40) return true
+	if (status == 30) {
+		const orderType = getItemOrderType(item)
+		if (orderType != ORDER_TYPE_CUSTOM && orderType != ORDER_TYPE_GUIDE && orderType != ORDER_TYPE_LINE) {
+			return true
+		}
+	}
+	return false
+}
+
+const isOrderIncomplete = (item: UTSJSONObject | null): boolean => {
+	const status = getItemOrderStatus(item)
+	const refundStatus = getItemRefundStatus(item)
+	const orderType = getItemOrderType(item)
+	if (status == 90) return false
+	if (status == 60 || status == 70) return false
+	// 🔧 修复：特殊订单（会员/礼物/抽奖）付款成功(status=ORDER_STATUS_CONFIRMED)即完成，不是未完成订单
+	if (status == 30 && (orderType == ORDER_TYPE_CUSTOM || orderType == ORDER_TYPE_GUIDE || orderType == ORDER_TYPE_LINE)) return false
+	// 🔧 修复：任何状态下，退款成功或退款失败视为已完成
+	if (refundStatus == REFUND_STATUS_SUCCESS || refundStatus == REFUND_STATUS_FAILED) return false
+	// 退款中视为未完成
+	if (refundStatus == REFUND_STATUS_PENDING) return true
+	if (status == 80) {
+		return false
+	}
+	return true
+}
+
+// ========== 登录检查函数（使用统一的 loginHelper）==========
+// 🔧 重构：使用 loginHelper.uts 提供的统一函数
+const requireLogin = (showToast: boolean): boolean => {
+	return requireLoginReliable(showToast, '/pages/order/index')
+}
+
+const ensureLogin = (): boolean => {
+	const isLogin = checkUserLoginReliable()
+	const userId = getCurrentUserIdReliable()
+	if (isLogin == false || userId == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			uni.switchTab({ url: '/pages/news/index' })
+			setTimeout(() => {
+				uni.navigateTo({
+					url: '/pagesUser/login/index'
+				})
+			}, 100)
+		}, 1500)
+		return false
+	}
+	return true
+}
+
+const goToLogin = () => {
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+// ========== 未完成订单计数 ==========
+// 🔧 重构：此函数仅用于页面内显示，不再更新 TabBar 徽章
+// TabBar 徽章统一由 WebSocket 301 消息推送更新
+const calculateIncompleteOrderCount = (): number => {
+	let count = 0
+	for (let i = 0; i < expenditureList.value.length; i = i + 1) {
+		const item = expenditureList.value[i]
+		if (isOrderIncomplete(item) == true) {
+			count = count + 1
+		}
+	}
+	for (let i = 0; i < incomeList.value.length; i = i + 1) {
+		const item = incomeList.value[i]
+		if (isOrderIncomplete(item) == true) {
+			count = count + 1
+		}
+	}
+	// 🔧 移除：不再更新 TabBar 徽章，由 WebSocket 301 消息统一推送
+	// updateOrderUnreadCountDirect(count)
+	return count
+}
+
+// ========== 数据解析函数 ==========
+const parseEntitiesFromResponse = (res: UTSJSONObject | null): Array<UTSJSONObject> => {
+	const result: Array<UTSJSONObject> = []
+	if (res == null) return result
+	const resObj = toJsonObj(res)
+	if (resObj == null) return result
+	
+	const dataVal = resObj.get('data')
+	if (dataVal == null) return result
+	
+	// 尝试多种数据结构
+	if (Array.isArray(dataVal) == true) {
+		const arr = dataVal as Array<UTSJSONObject>
+		for (let i = 0; i < arr.length; i = i + 1) {
+			result.push(arr[i])
+		}
+		return result
+	}
+	
+	const dataObj = toJsonObj(dataVal)
+	if (dataObj == null) return result
+	
+	const entitiesVal = dataObj.get('entities')
+	if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+		const arr = entitiesVal as Array<UTSJSONObject>
+		for (let i = 0; i < arr.length; i = i + 1) {
+			result.push(arr[i])
+		}
+		return result
+	}
+	
+	const innerDataVal = dataObj.get('data')
+	if (innerDataVal != null) {
+		if (Array.isArray(innerDataVal) == true) {
+			const arr = innerDataVal as Array<UTSJSONObject>
+			for (let i = 0; i < arr.length; i = i + 1) {
+				result.push(arr[i])
+			}
+			return result
+		}
+		const innerDataObj = toJsonObj(innerDataVal)
+		if (innerDataObj != null) {
+			const innerEntitiesVal = innerDataObj.get('entities')
+			if (innerEntitiesVal != null && Array.isArray(innerEntitiesVal) == true) {
+				const arr = innerEntitiesVal as Array<UTSJSONObject>
+				for (let i = 0; i < arr.length; i = i + 1) {
+					result.push(arr[i])
+				}
+			}
+		}
+	}
+	
+	return result
+}
+
+// ========== 数据加载函数 ==========
+const loadExpenditureList = async () => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	expenditureStatus.value = 'loading'
+	// 🔧 修复：使用 getCurrentUserIdReliable 替代 getUserId，确保在 Store 未初始化时也能从 Storage 获取用户ID
+	const userId = getCurrentUserIdReliable()
+	
+	// 首屏缓存
+	if (expenditurePageNumber.value == 1) {
+		try {
+			const cached = uni.getStorageSync('order:expenditure:firstpage')
+			const cachedObj = toJsonObj(cached)
+			if (cachedObj != null) {
+				const ts = getObjNumber(cachedObj, 'ts')
+				const dataVal = cachedObj.get('data')
+				if (ts > 0 && Date.now() - ts < ORDER_LIST_CACHE_DURATION && dataVal != null && Array.isArray(dataVal) == true) {
+					expenditureList.value = dataVal as Array<UTSJSONObject>
+					expenditureStatus.value = 'loadmore'
+				}
+			}
+		} catch (e) {}
+	}
+	
+	try {
+		const params = new GetExpenditureListParams()
+		params.userKid = userId
+		params.pageNumber = expenditurePageNumber.value
+		params.pageSize = expenditurePageSize.value
+		const res = await getExpenditureList(params)
+		const entities = parseEntitiesFromResponse(res)
+		
+		if (expenditurePageNumber.value == 1) {
+			expenditureList.value = entities
+		} else {
+			for (let i = 0; i < entities.length; i = i + 1) {
+				expenditureList.value.push(entities[i])
+			}
+		}
+		
+		if (entities.length == 0 || entities.length < expenditurePageSize.value) {
+			expenditureStatus.value = 'nomore'
+		} else {
+			expenditureStatus.value = 'loadmore'
+		}
+		
+		// 缓存首页数据
+		if (expenditurePageNumber.value == 1) {
+			try {
+				const cacheData: Array<UTSJSONObject> = []
+				const maxLen = expenditureList.value.length > 10 ? 10 : expenditureList.value.length
+				for (let i = 0; i < maxLen; i = i + 1) {
+					cacheData.push(expenditureList.value[i])
+				}
+				const cacheObj = new UTSJSONObject()
+				cacheObj['ts'] = Date.now()
+				cacheObj['data'] = cacheData
+				safeSetStorageSync('order:expenditure:firstpage', JSON.stringify(cacheObj))
+			} catch (e) {}
+		}
+		
+		// 清除红点（保留红点标记逻辑，移除未读数 API 调用）
+		// 🔧 重构：未读数由 WebSocket 301 消息统一推送，不再调用 API
+		try {
+			if (getStoreExpenditureDot() == true && userId != '') {
+				await markOrderNotificationsReadByType(userId, 'ORDER_EXPENDITURE')
+				// 使用独立函数调用 - 仅更新红点状态
+				setOrderTabIndicators(false, getStoreIncomeDot())
+			}
+		} catch (e) {}
+		
+		calculateIncompleteOrderCount()
+	} catch (error) {
+		// 加载失败时回退页码，允许用户重试
+		if (expenditurePageNumber.value > 1) {
+			expenditurePageNumber.value = expenditurePageNumber.value - 1
+		}
+		expenditureStatus.value = 'loadmore'
+		console.error('获取支出订单失败:', error)
+		uni.showToast({
+			title: '获取支出订单失败',
+			icon: 'none'
+		})
+	}
+}
+
+const loadIncomeList = async () => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	incomeStatus.value = 'loading'
+	// 🔧 修复：使用 getCurrentUserIdReliable 替代 getUserId，确保在 Store 未初始化时也能从 Storage 获取用户ID
+	const userId = getCurrentUserIdReliable()
+	
+	// 首屏缓存
+	if (incomePageNumber.value == 1) {
+		try {
+			const cached = uni.getStorageSync('order:income:firstpage')
+			const cachedObj = toJsonObj(cached)
+			if (cachedObj != null) {
+				const ts = getObjNumber(cachedObj, 'ts')
+				const dataVal = cachedObj.get('data')
+				if (ts > 0 && Date.now() - ts < ORDER_LIST_CACHE_DURATION && dataVal != null && Array.isArray(dataVal) == true) {
+					incomeList.value = dataVal as Array<UTSJSONObject>
+					incomeStatus.value = 'loadmore'
+				}
+			}
+		} catch (e) {}
+	}
+	
+	try {
+		const params = new GetIncomeListParams()
+		params.guideKid = userId
+		params.pageNumber = incomePageNumber.value
+		params.pageSize = incomePageSize.value
+		const res = await getIncomeList(params)
+		const entities = parseEntitiesFromResponse(res)
+		
+		if (incomePageNumber.value == 1) {
+			incomeList.value = entities
+		} else {
+			for (let i = 0; i < entities.length; i = i + 1) {
+				incomeList.value.push(entities[i])
+			}
+		}
+		
+		if (entities.length == 0 || entities.length < incomePageSize.value) {
+			incomeStatus.value = 'nomore'
+		} else {
+			incomeStatus.value = 'loadmore'
+		}
+		
+		// 缓存首页数据
+		if (incomePageNumber.value == 1) {
+			try {
+				const cacheData: Array<UTSJSONObject> = []
+				const maxLen = incomeList.value.length > 10 ? 10 : incomeList.value.length
+				for (let i = 0; i < maxLen; i = i + 1) {
+					cacheData.push(incomeList.value[i])
+				}
+				const cacheObj = new UTSJSONObject()
+				cacheObj['ts'] = Date.now()
+				cacheObj['data'] = cacheData
+				safeSetStorageSync('order:income:firstpage', JSON.stringify(cacheObj))
+			} catch (e) {}
+		}
+		
+		// 清除红点（保留红点标记逻辑，移除未读数 API 调用）
+		// 🔧 重构：未读数由 WebSocket 301 消息统一推送，不再调用 API
+		try {
+			if (getStoreIncomeDot() == true && userId != '') {
+				await markOrderNotificationsReadByType(userId, 'ORDER_INCOME')
+				// 使用独立函数调用 - 仅更新红点状态
+				setOrderTabIndicators(getStoreExpenditureDot(), false)
+			}
+		} catch (e) {}
+		
+		calculateIncompleteOrderCount()
+	} catch (error) {
+		// 加载失败时回退页码，允许用户重试
+		if (incomePageNumber.value > 1) {
+			incomePageNumber.value = incomePageNumber.value - 1
+		}
+		incomeStatus.value = 'loadmore'
+		console.error('获取收入订单失败:', error)
+		uni.showToast({
+			title: '获取收入订单失败',
+			icon: 'none'
+		})
+	}
+}
+
+const syncOrderTabRedDotsFromServer = async () => {
+	// 🔧 修复：使用 getCurrentUserIdReliable 替代 getUserId
+	const userId = getCurrentUserIdReliable()
+	if (userId == '') return
+	try {
+		const exp = await getOrderNotificationsUnreadCountByType(userId, 'ORDER_EXPENDITURE')
+		const inc = await getOrderNotificationsUnreadCountByType(userId, 'ORDER_INCOME')
+		const expVal = exp != null ? exp : 0
+		const incVal = inc != null ? inc : 0
+		// 使用独立函数调用
+		setOrderTabIndicators(expVal > 0, incVal > 0)
+	} catch (error) {
+		handleSilentError(error, '同步订单红点')
+	}
+}
+
+const forceRefresh = () => {
+	try {
+		uni.removeStorageSync('order:expenditure:firstpage')
+		uni.removeStorageSync('order:income:firstpage')
+	} catch (e) {}
+	
+	if (tabIndex.value == 0) {
+		expenditurePageNumber.value = 1
+		expenditureList.value = []
+		expenditureStatus.value = 'loadmore'
+		loadExpenditureList()
+	} else {
+		incomePageNumber.value = 1
+		incomeList.value = []
+		incomeStatus.value = 'loadmore'
+		loadIncomeList()
+	}
+}
+
+// ========== 刷新和滚动事件 ==========
+const onExpenditureRefresh = () => {
+	expenditureRefreshing.value = true
+	expenditurePageNumber.value = 1
+	expenditureList.value = []
+	expenditureStatus.value = 'loadmore'
+	loadExpenditureList().finally(() => {
+		setTimeout(() => {
+			expenditureRefreshing.value = false
+			calculateIncompleteOrderCount()
+		}, 300)
+	})
+}
+
+const onIncomeRefresh = () => {
+	incomeRefreshing.value = true
+	incomePageNumber.value = 1
+	incomeList.value = []
+	incomeStatus.value = 'loadmore'
+	loadIncomeList().finally(() => {
+		setTimeout(() => {
+			incomeRefreshing.value = false
+			calculateIncompleteOrderCount()
+		}, 300)
+	})
+}
+
+const onScrollToLower = () => {
+	if (tabIndex.value == 0) {
+		if (expenditureStatus.value == 'loadmore') {
+			expenditureStatus.value = 'loading'
+			expenditurePageNumber.value = expenditurePageNumber.value + 1
+			loadExpenditureList()
+		}
+	} else {
+		if (incomeStatus.value == 'loadmore') {
+			incomeStatus.value = 'loading'
+			incomePageNumber.value = incomePageNumber.value + 1
+			loadIncomeList()
+		}
+	}
+}
+
+// ========== Tab 和搜索事件 ==========
+const handleSwiperChange = (e: any) => {
+	let current = 0
+	try {
+		if (e != null && typeof e === 'object') {
+			const eObj = toUTSJSON(e)
+			if (eObj != null) {
+				const detailVal = eObj.get('detail')
+				if (detailVal != null) {
+					const detailObj = toUTSJSON(detailVal)
+					if (detailObj != null) {
+						current = getObjNumber(detailObj, 'current')
+					}
+				}
+			}
+		}
+	} catch (err) {
+		console.error('handleSwiperChange error:', err)
+	}
+	if (tabIndex.value == current) return
+	tabIndex.value = current
+}
+
+// 搜索和筛选函数（必须在 handleSearchInput 和 handleFilterClick 之前定义）
+const handleExpenditureSearch = () => {
+	console.log('搜索订单:', expenditureSearchKeyword.value)
+}
+
+const handleIncomeSearch = () => {
+	console.log('搜索订单:', incomeSearchKeyword.value)
+}
+
+const handleSearchInput = () => {
+	const ok = requireLogin(false)
+	if (ok == false) return
+	if (tabIndex.value == 0) {
+		handleExpenditureSearch()
+	} else {
+		handleIncomeSearch()
+	}
+}
+
+// ========== 订单点击和操作 ==========
+const handleOrderClick = (item: UTSJSONObject | null, isExpenditure: boolean) => {
+	const orderKid = getItemOrderKid(item)
+	if (orderKid == '') return
+	const type = isExpenditure == true ? 1 : 2
+	pendingRefresh.value = true
+	uni.navigateTo({
+		url: '/pagesTrade/orderDetails/index?orderKid=' + orderKid + '&type=' + type.toString()
+	})
+}
+
+// 用户头像/昵称点击 - 跳转个人主页
+const handleUserClick = (item: UTSJSONObject | null, isExpenditure: boolean) => {
+	const obj = toJsonObj(item)
+	if (obj == null) return
+	
+	let userKid = ''
+	if (isExpenditure == true) {
+		// 支出订单 - 显示的是向导，跳转向导主页
+		userKid = getObjString(obj, 'guideKid')
+		if (userKid == '') userKid = getObjString(obj, 'guideUserKid')
+	} else {
+		// 收入订单 - 显示的是游客，跳转游客主页
+		userKid = getObjString(obj, 'touristKid')
+		if (userKid == '') userKid = getObjString(obj, 'userKid')
+	}
+	
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+// 从列表中查找订单索引
+const findOrderIndexInList = (list: Array<UTSJSONObject>, orderKid: string): number => {
+	for (let i = 0; i < list.length; i = i + 1) {
+		const itemKid = getItemOrderKid(list[i])
+		if (itemKid == orderKid) {
+			return i
+		}
+	}
+	return -1
+}
+
+// 从列表中移除订单
+const removeOrderFromList = (list: Array<UTSJSONObject>, orderKid: string): Array<UTSJSONObject> => {
+	const result: Array<UTSJSONObject> = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const itemKid = getItemOrderKid(list[i])
+		if (itemKid != orderKid) {
+			result.push(list[i])
+		}
+	}
+	return result
+}
+
+// 更新订单状态
+const updateOrderStatus = (item: UTSJSONObject | null, newStatus: number) => {
+	const itemObj = toJsonObj(item)
+	if (itemObj != null) {
+		itemObj.set('orderStatus', newStatus)
+		itemObj.set('orderStatu', newStatus)
+	}
+}
+
+// ========== 支出订单操作函数（必须在 handleExpenditureAction 之前定义）==========
+// 完成订单
+const doCompleteOrder = async (orderKid: string, item: UTSJSONObject | null) => {
+	try {
+		const params = new CompleteOrderParams()
+		params.orderKid = orderKid
+		await completeOrder(params)
+		// 更新本地状态并触发响应式更新
+		const idx = findOrderIndexInList(expenditureList.value, orderKid)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(expenditureList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('orderStatus', 60)
+				itemObj.set('orderStatu', 60)
+				expenditureList.value.splice(idx, 1, itemObj)
+			}
+		}
+		uni.showToast({ title: '已完成', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (e) {
+		console.error('完成订单失败:', e)
+		uni.showToast({ title: '完成订单失败', icon: 'none' })
+	}
+}
+
+// 取消订单
+const doCancelOrder = async (orderKid: string, userKid: string) => {
+	try {
+		const params = new CancelOrderParams()
+		params.orderKid = orderKid
+		params.userKid = userKid
+		await cancelOrder(params)
+		
+		uni.showToast({ title: '已取消', icon: 'success' })
+		
+		// 取消成功后刷新列表
+		setTimeout(() => {
+			expenditurePageNumber.value = 1
+			expenditureList.value = []
+			expenditureStatus.value = 'loadmore'
+			loadExpenditureList()
+			calculateIncompleteOrderCount()
+		}, 500)
+	} catch (e) {
+		console.error('取消订单失败:', e)
+		uni.showToast({ title: '取消订单失败', icon: 'none' })
+	}
+}
+
+// 删除支出订单
+const doDeleteExpenditureOrder = async (orderKid: string, userKid: string) => {
+	try {
+		const params = new RemoveOrderParams()
+		params.orderKid = orderKid
+		params.userKid = userKid
+		await delOrderInfo(params)
+		expenditureList.value = removeOrderFromList(expenditureList.value, orderKid)
+		uni.showToast({ title: '已删除', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (e) {
+		console.error('删除订单失败:', e)
+		uni.showToast({ title: '删除订单失败', icon: 'none' })
+	}
+}
+
+// 取消退款（支出订单）
+const doCancelRefund = async (orderKid: string, userKid: string) => {
+	try {
+		const params = new CancelRefundParams()
+		params.orderKid = orderKid
+		params.userKid = userKid
+		await cancelRefund(params)
+		uni.showToast({ title: '已撤销退款', icon: 'success' })
+		// 撤销成功后刷新列表
+		setTimeout(() => {
+			expenditurePageNumber.value = 1
+			expenditureList.value = []
+			expenditureStatus.value = 'loadmore'
+			loadExpenditureList()
+			calculateIncompleteOrderCount()
+		}, 500)
+	} catch (e) {
+		console.error('撤销退款失败:', e)
+		uni.showToast({ title: '撤销退款失败', icon: 'none' })
+	}
+}
+
+// ========== 支出订单操作 ==========
+const handleExpenditureAction = async (action: string, item: UTSJSONObject | null) => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	const orderKid = getItemOrderKid(item)
+	if (orderKid == '') return
+	const userId = getUserId()
+	
+	if (action == 'pay') {
+		pendingRefresh.value = true
+		uni.navigateTo({
+			url: '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid
+		})
+		return
+	}
+	
+	if (action == 'refund') {
+		pendingRefresh.value = true
+		uni.navigateTo({
+			url: '/pagesTrade/payment/applyRefound/index?orderKid=' + orderKid
+		})
+		return
+	}
+	
+	if (action == 'cancelRefund') {
+		uni.showModal({
+			title: '提示',
+			content: '确认撤销退款申请？撤销后订单将恢复到付款状态。',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doCancelRefund(orderKid, userId)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'comment') {
+		pendingRefresh.value = true
+		uni.navigateTo({
+			url: '/pagesTrade/appraise/index?orderKid=' + orderKid + '&type=0'
+		})
+		return
+	}
+	
+	if (action == 'complete') {
+		uni.showModal({
+			title: '提示',
+			content: '确认完成订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doCompleteOrder(orderKid, item)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'cancel') {
+		uni.showModal({
+			title: '提示',
+			content: '确认取消订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doCancelOrder(orderKid, userId)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'delete') {
+		uni.showModal({
+			title: '提示',
+			content: '确认删除订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doDeleteExpenditureOrder(orderKid, userId)
+				}
+			}
+		})
+	}
+}
+
+// ========== 收入订单操作函数（必须在 handleIncomeAction 之前定义）==========
+// 接受订单
+const doAcceptOrder = async (orderKid: string, item: UTSJSONObject | null) => {
+	try {
+		const params = new AcceptOrderParams()
+		params.orderKid = orderKid
+		await guiderAcceptOrder(params)
+		const idx = findOrderIndexInList(incomeList.value, orderKid)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(incomeList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('orderStatus', 50)
+				itemObj.set('orderStatu', 50)
+				incomeList.value.splice(idx, 1, itemObj)
+			}
+		}
+		uni.showToast({ title: '已接受', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (e) {
+		console.error('接受订单失败:', e)
+		uni.showToast({ title: '接受订单失败', icon: 'none' })
+	}
+}
+
+// 拒绝订单
+const doRejectOrder = async (orderKid: string, item: UTSJSONObject | null) => {
+	try {
+		const params = new RejectOrderParams()
+		params.orderKid = orderKid
+		await guiderRejectOrder(params)
+		const idx = findOrderIndexInList(incomeList.value, orderKid)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(incomeList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('orderStatus', 90)
+				itemObj.set('orderStatu', 90)
+				incomeList.value.splice(idx, 1, itemObj)
+			}
+		}
+		uni.showToast({ title: '已拒绝', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (e) {
+		console.error('拒绝订单失败:', e)
+		uni.showToast({ title: '拒绝订单失败', icon: 'none' })
+	}
+}
+
+// 取消收入订单
+const doCancelIncomeOrder = async (orderKid: string, userKid: string) => {
+	try {
+		const params = new CancelOrderParams()
+		params.orderKid = orderKid
+		params.userKid = userKid
+		await cancelOrder(params)
+		incomeList.value = removeOrderFromList(incomeList.value, orderKid)
+		uni.showToast({ title: '取消成功', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (error) {
+		let errMsg = '取消失败'
+		const errorObj = toJsonObj(error)
+		if (errorObj != null) {
+			const msg = getObjString(errorObj, 'message')
+			if (msg != '') {
+				errMsg = msg
+			}
+		}
+		uni.showToast({ title: errMsg, icon: 'none' })
+	}
+}
+
+// 删除收入订单
+const doDeleteIncomeOrder = async (orderKid: string, userKid: string) => {
+	try {
+		const params = new RemoveOrderParams()
+		params.orderKid = orderKid
+		params.userKid = userKid
+		await delOrderInfo(params)
+		incomeList.value = removeOrderFromList(incomeList.value, orderKid)
+		uni.showToast({ title: '已删除', icon: 'success' })
+		calculateIncompleteOrderCount()
+	} catch (e) {
+		console.error('删除订单失败:', e)
+		uni.showToast({ title: '删除订单失败', icon: 'none' })
+	}
+}
+
+// 获取退款记录的refundKid
+const getRefundKid = async (orderKid: string): Promise<string> => {
+	const params = new QueryRefundDetailParams()
+	params.orderKid = orderKid
+	const res = await queryRefundDetail(params)
+	const resObj = toJsonObj(res)
+	if (resObj == null) return ''
+	const dataVal = resObj.get('data')
+	if (dataVal == null) return ''
+	const refundObj = toJsonObj(dataVal)
+	if (refundObj == null) return ''
+	return getObjString(refundObj, 'kid')
+}
+
+// 同意退款（收入订单）
+const doAgreeRefund = async (orderKid: string) => {
+	try {
+		const refundKid = await getRefundKid(orderKid)
+		if (refundKid == '') {
+			uni.showToast({ title: '获取退款信息失败', icon: 'none' })
+			return
+		}
+		const params = new GuiderAcceptRefundParams()
+		params.refundKid = refundKid
+		await guiderAcceptRefund(params)
+		// 更新本地状态
+		const idx = findOrderIndexInList(incomeList.value, orderKid)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(incomeList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('refundStatu', 20)
+				itemObj.set('refundStatus', 20)
+				incomeList.value.splice(idx, 1, itemObj)
+			}
+		}
+		uni.showToast({ title: '已同意退款', icon: 'success' })
+	} catch (e) {
+		console.error('同意退款失败:', e)
+		uni.showToast({ title: '同意退款失败', icon: 'none' })
+	}
+}
+
+// 拒绝退款（收入订单）
+const doRejectRefund = async (orderKid: string, reason: string) => {
+	try {
+		const refundKid = await getRefundKid(orderKid)
+		if (refundKid == '') {
+			uni.showToast({ title: '获取退款信息失败', icon: 'none' })
+			return
+		}
+		const params = new GuiderRejectRefundParams()
+		params.refundKid = refundKid
+		params.refuseReason = reason
+		await guiderRejectRefund(params)
+		// 更新本地状态
+		const idx = findOrderIndexInList(incomeList.value, orderKid)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(incomeList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('refundStatu', 30)
+				itemObj.set('refundStatus', 30)
+				incomeList.value.splice(idx, 1, itemObj)
+			}
+		}
+		uni.showToast({ title: '已拒绝退款', icon: 'success' })
+	} catch (e) {
+		console.error('拒绝退款失败:', e)
+		uni.showToast({ title: '拒绝退款失败', icon: 'none' })
+	}
+}
+
+// ========== 收入订单操作 ==========
+const handleIncomeAction = async (action: string, item: UTSJSONObject | null) => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	const orderKid = getItemOrderKid(item)
+	if (orderKid == '') return
+	const userId = getUserId()
+	
+	if (action == 'cancel') {
+		uni.showModal({
+			title: '提示',
+			content: '确认取消订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doCancelIncomeOrder(orderKid, userId)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'accept') {
+		uni.showModal({
+			title: '提示',
+			content: '确认接受订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doAcceptOrder(orderKid, item)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'reject') {
+		uni.showModal({
+			title: '提示',
+			content: '确认拒绝订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doRejectOrder(orderKid, item)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'delete') {
+		uni.showModal({
+			title: '提示',
+			content: '确认删除订单？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doDeleteIncomeOrder(orderKid, userId)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'agreeRefund') {
+		uni.showModal({
+			title: '提示',
+			content: '确认同意该退款申请？同意后款项将退还给游客。',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					doAgreeRefund(orderKid)
+				}
+			}
+		})
+		return
+	}
+	
+	if (action == 'rejectRefund') {
+		uni.showModal({
+			title: '拒绝退款',
+			content: '请确认拒绝该退款申请',
+			editable: true,
+			placeholderText: '请输入拒绝原因',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					const reason = res.content != null ? res.content as string : ''
+					if (reason == '') {
+						uni.showToast({ title: '请输入拒绝原因', icon: 'none' })
+						return
+					}
+					doRejectRefund(orderKid, reason)
+				}
+			}
+		})
+		return
+	}
+}
+
+// ========== 修改价格弹窗 ==========
+const onChangePriceClick = (item: UTSJSONObject | null) => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	const orderKid = getItemOrderKid(item)
+	if (orderKid == '') return
+	
+	const itemObj = toJsonObj(item)
+	let currentPrice = 0
+	if (itemObj != null) {
+		currentPrice = getObjFloat(itemObj, 'orderPrice')
+		if (currentPrice == 0) {
+			currentPrice = getObjFloat(itemObj, 'totalMoney')
+		}
+	}
+	
+	priceEditingOrderKid.value = orderKid
+	priceInput.value = currentPrice > 0 ? currentPrice.toString() : ''
+	priceDialogVisible.value = true
+}
+
+const closePriceDialog = () => {
+	priceDialogVisible.value = false
+	priceEditingOrderKid.value = ''
+	priceInput.value = ''
+}
+
+const submitPriceChange = async () => {
+	const loginOk = ensureLogin()
+	if (loginOk == false) return
+	
+	if (priceEditingOrderKid.value == '') {
+		priceDialogVisible.value = false
+		return
+	}
+	
+	const val = priceInput.value
+	if (val == '') {
+		uni.showToast({ title: '请输入价格', icon: 'none' })
+		return
+	}
+	
+	const num = parseFloat(val)
+	if (isNaN(num) == true || num <= 0) {
+		uni.showToast({ title: '价格必须大于0', icon: 'none' })
+		return
+	}
+	
+	try {
+		const params = new UpdateOrderPriceParams()
+		params.orderKid = priceEditingOrderKid.value
+		params.orderPrice = num
+		params.orderAmount = num
+		await updateGuiderOrderPrice(params)
+		
+		// 更新本地数据并触发响应式更新
+		const idx = findOrderIndexInList(incomeList.value, priceEditingOrderKid.value)
+		if (idx >= 0) {
+			const itemObj = toJsonObj(incomeList.value[idx])
+			if (itemObj != null) {
+				itemObj.set('orderPrice', num)
+				itemObj.set('totalMoney', num)
+				// 替换数组元素以触发 Vue 响应式更新
+				incomeList.value.splice(idx, 1, itemObj)
+			}
+		}
+		
+		uni.showToast({ title: '价格已修改', icon: 'success' })
+		priceDialogVisible.value = false
+		priceEditingOrderKid.value = ''
+		priceInput.value = ''
+	} catch (e) {
+		console.error('修改订单价格失败:', e)
+		uni.showToast({ title: '修改价格失败', icon: 'none' })
+	}
+}
+
+// ========== 事件监听 ==========
+const handleOrderChanged = () => {
+	forceRefresh()
+}
+
+// ========== 布局初始化函数 ==========
+const initPageLayout = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 计算登录框顶部位置
+	loginBoxTop.value = pageStatusBarHeight.value + 64
+	
+	// 计算头部高度（与发现页面一致：状态栏 + Tab栏约90rpx = 状态栏 + 45px）
+	// 订单页面多了搜索栏，需要额外加上搜索栏高度（72rpx≈36px + 间距40rpx≈20px）
+	headerHeight.value = pageStatusBarHeight.value + 45 + 56
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	console.log('订单页面布局 - 状态栏高度:', pageStatusBarHeight.value, '头部高度:', headerHeight.value, '内容高度:', contentHeight.value)
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 600
+	}
+}
+
+// ========== 初始化函数 ==========
+const initPageData = () => {
+	// 🔧 优化：使用 checkUserLoginReliable 进行可靠的登录检查
+	const isLogin = checkUserLoginReliable()
+	const userId = getCurrentUserIdReliable()
+	
+	// 更新响应式登录状态
+	isLoginValue.value = isLogin
+	
+	console.log('📢 [订单页面] 初始化 - 登录状态:', isLogin, '用户ID:', userId)
+	
+	if (isLogin == false || userId == '') {
+		console.log('📢 [订单页面] 用户未登录，显示登录提示')
+		return
+	}
+	
+	try {
+		const dirty = uni.getStorageSync('order:dirty')
+		const dirtyObj = toJsonObj(dirty)
+		if (dirtyObj != null) {
+			const ts = getObjNumber(dirtyObj, 'ts')
+			if (ts > 0 && Date.now() - ts < 300000) {
+				forceRefresh()
+				uni.removeStorageSync('order:dirty')
+				return
+			}
+		}
+	} catch (e) {}
+	
+	loadExpenditureList()
+	syncOrderTabRedDotsFromServer()
+}
+
+// ========== 登录状态变化回调（必须在 onMounted 之前定义）==========
+const handleLoginStatusChange = (data: UTSJSONObject | null) => {
+	const dataObj = parseLoginStatusData(data)
+	if (dataObj == null) return
+	
+	const isLogin = getIsLoginFromData(dataObj)
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = isLogin
+	
+	console.log('📢 [订单页面] 登录状态变化:', isLogin, '之前状态:', wasLoggedIn)
+	
+	// 如果刚登录，加载数据
+	if (wasLoggedIn == false && isLogin == true) {
+		console.log('📢 [订单页面] 用户刚登录，加载订单数据')
+		initPageData()
+	}
+}
+
+// ========== 生命周期 ==========
+onMounted(() => {
+	// 初始化布局
+	initPageLayout()
+	
+	// 🔧 优化：注册登录状态变化监听
+	onLoginStatusChange(handleLoginStatusChange)
+	
+	// 🔧 优化：使用 waitForLoginStatus 等待 Store 初始化
+	// 返回 1=已登录，0=未登录
+	// UTS 规范：onMounted 不能是 async，使用 .then() 处理 Promise
+	waitForLoginStatus(2000).then((loginResult: number) => {
+		isLoginValue.value = (loginResult == 1)
+		
+		console.log('📢 [订单页面] onMounted - 登录状态:', isLoginValue.value)
+		
+		// 初始化页面数据
+		initPageData()
+	})
+	
+	try {
+		uni.$on('ORDER_CHANGED', handleOrderChanged)
+	} catch (e) {}
+})
+
+// 页面显示时重新检查登录状态（用户可能从登录页返回）
+onShow(() => {
+	// 🔧 优化：使用 checkUserLoginReliable 进行可靠的登录检查
+	const isLogin = checkUserLoginReliable()
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = isLogin
+	
+	console.log('📢 [订单页面] onShow - 登录状态:', isLogin, '之前状态:', wasLoggedIn)
+	
+	// 如果之前未登录，现在已登录，则加载数据
+	if (wasLoggedIn == false && isLogin == true) {
+		console.log('📢 [订单页面] 用户刚登录，加载订单数据')
+		initPageData()
+		return
+	}
+	
+	// 🔧 新增：从子页面返回时，如果有待刷新标记则刷新当前列表
+	if (pendingRefresh.value == true && isLogin == true) {
+		pendingRefresh.value = false
+		forceRefresh()
+	}
+})
+
+onUnmounted(() => {
+	// 🔧 优化：取消登录状态变化监听
+	offLoginStatusChange(handleLoginStatusChange)
+	
+	try {
+		uni.$off('ORDER_CHANGED', handleOrderChanged)
+	} catch (e) {}
+})
+
+// ========== Watch ==========
+const tabIndexComputed = computed((): number => {
+	return tabIndex.value
+})
+
+watch(tabIndexComputed, (val: number) => {
+	const isLogin = getUserLoginStatus()
+	if (val == 1 && isLogin == true && incomeList.value.length == 0 && incomePageNumber.value == 1) {
+		loadIncomeList()
+	}
+})
+</script>
+
+
+<style scoped lang="scss">
+.fix-page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+	position: relative;
+}
+
+.fixed-header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	z-index: 100;
+	background-color: transparent;
+}
+
+.bg-my-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 480rpx;
+}
+
+/* Tab 栏样式 - 与发现页面完全一致 */
+.tabs-row {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	height: 90rpx;
+	background-color: transparent;
+}
+
+.tab-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-right: 48rpx;
+	height: 90rpx;
+	position: relative;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.tab-text-active {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.tab-underline {
+	width: 40rpx;
+	height: 6rpx;
+	background-color: #37B1F2;
+	border-radius: 3rpx;
+	margin-top: 8rpx;
+}
+
+.tab-dot {
+	position: absolute;
+	top: 20rpx;
+	right: -8rpx;
+	width: 12rpx;
+	height: 12rpx;
+	border-radius: 6rpx;
+	background-color: #ff3b30;
+}
+
+.search-container {
+	margin-top: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.search-box {
+	flex-direction: row;
+	align-items: center;
+	background-color: #ffffff;
+	border-radius: 50rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	height: 72rpx;
+}
+
+.search-icon {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 16rpx;
+	opacity: 0.6;
+}
+
+.search-input {
+	flex: 1;
+	height: 72rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.search-placeholder {
+	color: #999999;
+	font-size: 28rpx;
+}
+
+.swiper {
+	width: 750rpx;
+	position: relative;
+	z-index: 10;
+	flex: 1;
+}
+
+.swiper-item {
+	width: 750rpx;
+	flex: 1;
+}
+
+.scroll-view {
+	width: 750rpx;
+	flex-direction: column;
+	flex: 1;
+}
+
+.order-card {
+	transition: all 0.2s ease;
+}
+
+.avatar {
+	width: 56rpx;
+	height: 56rpx;
+	border-radius: 30rpx;
+	background-color: #f0f0f0;
+}
+
+.border-line {
+	width: 694rpx;
+	height: 2rpx;
+}
+
+.start-time {
+	width: 40rpx;
+	height: 34rpx;
+	margin-bottom: 6rpx;
+}
+
+.btn-row {
+	min-height: 60rpx;
+	margin-top: 20rpx;
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	flex-wrap: nowrap;
+}
+
+.btn {
+	min-width: 140rpx;
+	height: 56rpx;
+	border-radius: 28rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.gray-btn {
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #cccccc;
+	background-color: #ffffff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.gray-btn-text {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.blue-btn {
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37b1f2;
+	background-color: #37b1f2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.blue-btn-text {
+	font-size: 26rpx;
+	color: #ffffff;
+}
+
+.price-mask {
+	position: fixed;
+	left: 0;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.price-popup {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	overflow: hidden;
+}
+
+.price-header {
+	padding-top: 28rpx;
+	padding-bottom: 28rpx;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.price-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: 700;
+}
+
+.price-close {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.price-body {
+	padding-top: 64rpx;
+	padding-bottom: 64rpx;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+}
+
+.price-label {
+	font-size: 26rpx;
+	color: #666666;
+	margin-bottom: 32rpx;
+}
+
+.price-input {
+	width: 472rpx;
+	height: 80rpx;
+	border-radius: 12rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	font-size: 30rpx;
+	color: #333333;
+	background-color: #f9f9f9;
+}
+
+.price-placeholder {
+	color: #b3b3b3;
+}
+
+.price-footer {
+	padding-top: 20rpx;
+	padding-bottom: 56rpx;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+}
+
+.price-btn-cancel,
+.price-btn-confirm {
+	flex: 1;
+	height: 76rpx;
+	border-radius: 38rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	font-size: 28rpx;
+}
+
+.price-btn-cancel {
+	margin-right: 20rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #cccccc;
+	color: #666666;
+	background-color: #ffffff;
+}
+
+.price-btn-confirm {
+	margin-left: 20rpx;
+	background-color: #37B1F2;
+	color: #ffffff;
+}
+
+.empty-wrapper {
+	height: 600rpx;
+}
+
+.empty-text {
+	color: #999999;
+	font-size: 28rpx;
+}
+
+.load-text {
+	text-align: center;
+	color: #999999;
+	font-size: 24rpx;
+}
+
+.ellipsis {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.login-placeholder {
+	padding-top: 80rpx;
+	padding-bottom: 40rpx;
+	padding-left: 60rpx;
+	padding-right: 60rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	position: relative;
+	z-index: 10;
+	background-color: transparent;
+}
+
+.login-placeholder-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+	text-align: center;
+}
+
+.login-placeholder-desc {
+	font-size: 26rpx;
+	color: #999999;
+	margin-bottom: 40rpx;
+	text-align: center;
+}
+
+/* 登录按钮（蓝色底色，白色文字） */
+.login-btn {
+	width: 400rpx;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.login-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.orange {
+	color: #ff9500;
+}
+
+.light-green {
+	color: #34c759;
+}
+
+.title-font {
+	color: #999999;
+}
+
+/* 推广订单标签样式 */
+.promotion-badge {
+	margin-left: 12rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	background-color: #FF6B35;
+	border-radius: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.promotion-badge-text {
+	font-size: 20rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+
+/* 佣金文字样式 */
+.commission-text {
+	font-size: 28rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+</style>

@@ -1,0 +1,442 @@
+﻿<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">绑定微信公众号</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 绑定说明 -->
+		<view class="bind-info">
+			<view class="info-icon">
+				<text class="icon-text">🔗</text>
+			</view>
+			<text class="info-title">绑定微信公众号</text>
+			<text class="info-desc">绑定后可以通过公众号接收订单通知</text>
+		</view>
+		
+		<!-- 绑定步骤 -->
+		<view class="steps-section">
+			<view class="step-item">
+				<view class="step-number">
+					<text class="step-number-text">1</text>
+				</view>
+				<view class="step-content">
+					<text class="step-title">授权微信登录</text>
+					<text class="step-desc">点击下方按钮，授权微信登录</text>
+				</view>
+			</view>
+			
+			<view class="step-item">
+				<view class="step-number">
+					<text class="step-number-text">2</text>
+				</view>
+				<view class="step-content">
+					<text class="step-title">绑定公众号</text>
+					<text class="step-desc">系统将自动绑定您的微信公众号</text>
+				</view>
+			</view>
+			
+			<view class="step-item">
+				<view class="step-number">
+					<text class="step-number-text">3</text>
+				</view>
+				<view class="step-content">
+					<text class="step-title">关注公众号</text>
+					<text class="step-desc">绑定成功后，扫码关注公众号即可接收通知</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 绑定按钮 -->
+		<view class="bind-button-section">
+			<view class="bind-btn" @click="handleBind">
+				<text class="bind-btn-text">{{ bindBtnText }}</text>
+			</view>
+		</view>
+		
+		<!-- 提示信息 -->
+		<view class="tips-section">
+			<text class="tips-text">• 绑定后可以接收订单支付、接单、退款等重要通知</text>
+			<text class="tips-text">• 绑定不会获取您的微信好友信息</text>
+			<text class="tips-text">• 您可以随时解除绑定</text>
+		</view>
+		
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { getCurrentUserIdReliable, checkUserLoginReliable } from '@/common/utils/loginHelper.uts'
+import { bindWechatMp } from '@/api/wechat.uts'
+import { getResponseCode, getResponseData, getStringProp } from '@/common/utils/utsSafe.uts'
+import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+
+// 绑定状态
+const binding = ref<boolean>(false)
+const bindBtnText = ref<string>('授权微信登录')
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.navigateTo({ url: '/pagesUser/my/setting/notification' })
+		}
+	})
+}
+
+// 处理绑定
+const handleBind = () => {
+	if (binding.value == true) return
+	
+	// 检查登录状态
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	binding.value = true
+	bindBtnText.value = '授权中...'
+	
+	// #ifdef H5
+	// H5 环境：使用微信网页授权
+	handleH5WechatAuth()
+	// #endif
+	
+	// #ifndef H5
+	// APP 环境：使用 uni.login
+	handleAppWechatAuth()
+	// #endif
+}
+
+// H5 微信授权
+// #ifdef H5
+const handleH5WechatAuth = () => {
+	// H5 环境：使用微信网页授权
+	// 1. 构建授权 URL
+	const appId = 'wx1234567890abcdef' // TODO: 从配置获取
+	const redirectUri = encodeURIComponent(window.location.href)
+	const state = 'bind_wechat_mp'
+	
+	const authUrl = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=snsapi_base&state=${state}#wechat_redirect`
+	
+	// 2. 跳转到微信授权页面
+	safeRedirect(authUrl)
+}
+
+// H5 环境：处理微信授权回调
+const handleH5WechatCallback = () => {
+	// 检查 URL 参数中是否有 code
+	const urlParams = getUrlParams()
+	const code = urlParams.get('code')
+	const state = urlParams.get('state')
+	
+	if (code != null && code != '' && state == 'bind_wechat_mp') {
+		// 有授权 code，调用后端接口
+		saveWechatOpenId(code)
+		
+		// 清除 URL 参数
+		const cleanUrl = window.location.origin + window.location.pathname
+		window.history.replaceState({}, document.title, cleanUrl)
+	}
+}
+// #endif
+
+// APP 微信授权
+// #ifndef H5
+const handleAppWechatAuth = () => {
+	uni.login({
+		provider: 'weixin',
+		success: (loginRes: UTSJSONObject) => {
+			if (loginRes != null) {
+				const loginResObj = JSON.parse(JSON.stringify(loginRes)) as UTSJSONObject
+				const codeVal = loginResObj.get('code')
+				
+				if (codeVal != null && codeVal.toString() != '') {
+					// 调用后端接口，保存 openid
+					saveWechatOpenId(codeVal.toString())
+				} else {
+					uni.showToast({
+						title: '授权失败，请重试',
+						icon: 'none'
+					})
+					binding.value = false
+					bindBtnText.value = '授权微信登录'
+				}
+			}
+		},
+		fail: () => {
+			uni.showToast({
+				title: '授权失败，请重试',
+				icon: 'none'
+			})
+			binding.value = false
+			bindBtnText.value = '授权微信登录'
+		}
+	})
+}
+// #endif
+
+// 保存微信 openid
+const saveWechatOpenId = (code: string) => {
+	// #ifdef H5
+	const platform = 'h5'
+	// #endif
+	// #ifndef H5
+	const platform = 'app'
+	// #endif
+	
+	// 调用后端接口保存 openid
+	bindWechatMp(code, platform).then((res: UTSJSONObject) => {
+		binding.value = false
+		bindBtnText.value = '授权微信登录'
+		
+		const responseCode = getResponseCode(res)
+		const responseData = getResponseData(res)
+		
+		if (responseCode == 200 && responseData != null) {
+			// 绑定成功
+			uni.showToast({
+				title: '绑定成功',
+				icon: 'success',
+				duration: 2000
+			})
+			
+			// 延迟返回通知设置页面
+			setTimeout(() => {
+				uni.navigateBack({
+					delta: 1,
+					success: () => {
+						// 返回成功，通知设置页面会自动刷新状态
+					}
+				})
+			}, 2000)
+		} else {
+			// 业务错误
+			const errorMsg = getStringProp(responseData, 'message')
+			uni.showToast({
+				title: errorMsg != '' ? errorMsg : '绑定失败',
+				icon: 'none'
+			})
+		}
+	}).catch((error: Error | null): void => {
+		binding.value = false
+		bindBtnText.value = '授权微信登录'
+		
+		if (!isAuthError(error)) {
+			handlePageError(error, '微信绑定', null)
+		}
+	})
+}
+
+// 生命周期
+onMounted(() => {
+	initPageLayout()
+	
+	// #ifdef H5
+	// H5 环境：检查是否有微信授权回调
+	handleH5WechatCallback()
+	// #endif
+})
+
+onLoad((options: OnLoadOptions) => {
+	// 可以接收参数，比如来源页面
+})
+</script>
+
+<style scoped>
+.page {
+	min-height: 100vh;
+	background-color: #f5f5f5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+	padding: 40rpx 32rpx;
+}
+
+.bind-info {
+	flex-direction: column;
+	align-items: center;
+	padding: 60rpx 32rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	margin-bottom: 32rpx;
+}
+
+.info-icon {
+	width: 120rpx;
+	height: 120rpx;
+	background-color: #07C160;
+	border-radius: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 24rpx;
+}
+
+.icon-text {
+	font-size: 60rpx;
+}
+
+.info-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.info-desc {
+	font-size: 28rpx;
+	color: #666666;
+	text-align: center;
+}
+
+.steps-section {
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	padding: 32rpx;
+	margin-bottom: 32rpx;
+	flex-direction: column;
+}
+
+.step-item {
+	flex-direction: row;
+	margin-bottom: 32rpx;
+}
+
+.step-item:last-child {
+	margin-bottom: 0;
+}
+
+.step-number {
+	width: 56rpx;
+	height: 56rpx;
+	background-color: #07C160;
+	border-radius: 28rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.step-number-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.step-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.step-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.step-desc {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.bind-button-section {
+	padding: 32rpx 0;
+	flex-direction: row;
+	justify-content: center;
+}
+
+.bind-btn {
+	width: 600rpx;
+	height: 88rpx;
+	background-color: #07C160;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.bind-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.tips-section {
+	padding: 32rpx;
+	flex-direction: column;
+}
+
+.tips-text {
+	font-size: 24rpx;
+	color: #999999;
+	line-height: 40rpx;
+	margin-bottom: 8rpx;
+}
+</style>

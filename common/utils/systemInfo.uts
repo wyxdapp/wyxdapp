@@ -1,0 +1,429 @@
+/**
+ * 系统信息缓存工具（轻量级，只缓存必要的环境信息）
+ * 解决频繁调用getSystemInfoSync的性能问题和代码重复问题
+ */
+
+import { toUTSJSON, getString, getObject } from '@/common/utils/typeConverter'
+
+// 缓存的系统信息
+let cachedSystemInfo: UTSJSONObject | null = null
+let cacheTimestamp = 0
+const CACHE_DURATION = 30000 // 30秒缓存
+
+// 缓存的系统信息 UTSJSONObject（解析一次，后续直接使用）
+let cachedSystemInfoObj: UTSJSONObject | null = null
+
+// 缓存的状态栏高度（单独缓存，因为不会变化）
+let cachedStatusBarHeight: number = 0
+let statusBarHeightInitialized = false
+
+// 缓存的安全区域底部高度（单独缓存，因为不会变化）
+let cachedSafeAreaBottom: number = 0
+let safeAreaBottomInitialized = false
+
+/**
+ * 获取缓存的系统信息
+ * @returns {UTSJSONObject | null} 系统信息对象
+ */
+const getCachedSystemInfo = (): UTSJSONObject | null => {
+	const now = Date.now()
+	
+	// 检查缓存是否过期（检查 cacheTimestamp 是否为 0 表示未初始化）
+	if (cacheTimestamp == 0 || (now - cacheTimestamp) > CACHE_DURATION) {
+		try {
+			cachedSystemInfo = toUTSJSON(uni.getSystemInfoSync())
+			cacheTimestamp = now
+			// 缓存过期时同步清除已解析的 UTSJSONObject 缓存
+			cachedSystemInfoObj = null
+			console.log('🔄 [SYSTEM] 系统信息已更新缓存')
+		} catch (error) {
+			console.error('❌ [SYSTEM] 获取系统信息失败:', error)
+			// 返回默认值，避免崩溃
+			cachedSystemInfo = toUTSJSON({
+				userAgent: '',
+				platform: 'unknown',
+				uniPlatform: 'unknown'
+			} as UTSJSONObject)
+			cachedSystemInfoObj = null
+		}
+	}
+	
+	return cachedSystemInfo
+}
+
+/**
+ * 获取缓存的系统信息 UTSJSONObject
+ * 模块加载后解析一次，后续直接返回缓存对象
+ * @returns {UTSJSONObject | null} 已解析的系统信息对象
+ */
+const getCachedSystemInfoObj = (): UTSJSONObject | null => {
+	// 先确保原始缓存是最新的
+	const raw = getCachedSystemInfo()
+	// 如果已有解析缓存，直接返回
+	if (cachedSystemInfoObj != null) {
+		return cachedSystemInfoObj
+	}
+	// 一次性解析并缓存
+	cachedSystemInfoObj = toUTSJSON(raw)
+	return cachedSystemInfoObj
+}
+
+
+/**
+ * 获取状态栏高度（px）
+ * APP端返回实际状态栏高度，H5端返回0
+ * @returns {number} 状态栏高度（px）
+ */
+export function getStatusBarHeight(): number {
+	// #ifdef H5
+	// H5端不需要状态栏占位
+	return 0
+	// #endif
+	
+	// #ifndef H5
+	// APP端获取状态栏高度
+	if (statusBarHeightInitialized == true) {
+		return cachedStatusBarHeight
+	}
+	
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const systemInfoObj = toUTSJSON(systemInfo)
+			const statusBarVal = systemInfoObj != null ? systemInfoObj.get('statusBarHeight') : null
+			if (statusBarVal != null) {
+				const sbHeight = parseInt(statusBarVal.toString())
+				if (isNaN(sbHeight) == false && sbHeight > 0) {
+					cachedStatusBarHeight = sbHeight
+					statusBarHeightInitialized = true
+					return cachedStatusBarHeight
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [SYSTEM] 获取状态栏高度失败:', e)
+	}
+	
+	// 默认值
+	cachedStatusBarHeight = 44
+	statusBarHeightInitialized = true
+	return cachedStatusBarHeight
+	// #endif
+}
+
+/**
+ * 获取窗口高度（px）
+ * @returns {number} 窗口高度（px）
+ */
+export function getWindowHeight(): number {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const systemInfoObj = toUTSJSON(systemInfo)
+			const windowHeightVal = systemInfoObj != null ? systemInfoObj.get('windowHeight') : null
+			if (windowHeightVal != null) {
+				const wHeight = parseInt(windowHeightVal.toString())
+				if (isNaN(wHeight) == false && wHeight > 0) {
+					return wHeight
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [SYSTEM] 获取窗口高度失败:', e)
+	}
+	return 667 // 默认值
+}
+
+/**
+ * 获取底部安全区域高度（px）
+ * iPhone X+ 等设备返回实际安全区域高度（约34px），其他设备返回0
+ * @returns {number} 底部安全区域高度（px）
+ */
+export function getSafeAreaBottom(): number {
+	// #ifdef H5
+	// H5端不需要安全区域处理
+	return 0
+	// #endif
+	
+	// #ifdef MP-WEIXIN
+	// 微信小程序端：小程序框架自身已处理安全区域，返回0避免重复填充
+	return 0
+	// #endif
+	
+	// #ifdef APP-PLUS
+	if (safeAreaBottomInitialized == true) {
+		return cachedSafeAreaBottom
+	}
+	
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const systemInfoObj = toUTSJSON(systemInfo)
+			
+			// 方式1：通过 safeAreaInsets.bottom 获取
+			const insetsObj = getObject(systemInfoObj, 'safeAreaInsets')
+			if (insetsObj != null) {
+				const bottomVal = insetsObj.get('bottom')
+				if (bottomVal != null) {
+					const bottom = parseInt(bottomVal.toString())
+					if (isNaN(bottom) == false && bottom >= 0) {
+						cachedSafeAreaBottom = bottom
+						safeAreaBottomInitialized = true
+						return cachedSafeAreaBottom
+					}
+				}
+			}
+			
+			// 方式2：通过 screenHeight - safeArea.bottom 计算
+			const safeAreaObj = getObject(systemInfoObj, 'safeArea')
+			if (safeAreaObj != null) {
+				const safeAreaBottomVal = safeAreaObj.get('bottom')
+				const screenHeightVal = systemInfoObj != null ? systemInfoObj.get('screenHeight') : null
+				if (safeAreaBottomVal != null && screenHeightVal != null) {
+					const safeBottom = parseInt(safeAreaBottomVal.toString())
+					const screenH = parseInt(screenHeightVal.toString())
+					if (isNaN(safeBottom) == false && isNaN(screenH) == false && screenH > safeBottom) {
+						cachedSafeAreaBottom = screenH - safeBottom
+						safeAreaBottomInitialized = true
+						return cachedSafeAreaBottom
+					}
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [SYSTEM] 获取安全区域底部高度失败:', e)
+	}
+	
+	// 默认值：无安全区域
+	cachedSafeAreaBottom = 0
+	safeAreaBottomInitialized = true
+	return cachedSafeAreaBottom
+	// #endif
+	
+	return 0
+}
+
+/**
+ * 获取屏幕宽度（px）
+ * @returns {number} 屏幕宽度（px）
+ */
+export function getScreenWidth(): number {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const systemInfoObj = toUTSJSON(systemInfo)
+			const screenWidthVal = systemInfoObj != null ? systemInfoObj.get('screenWidth') : null
+			if (screenWidthVal != null) {
+				const sWidth = parseInt(screenWidthVal.toString())
+				if (isNaN(sWidth) == false && sWidth > 0) {
+					return sWidth
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [SYSTEM] 获取屏幕宽度失败:', e)
+	}
+	return 375 // 默认值
+}
+
+
+/**
+ * 判断是否在微信浏览器中
+ * @returns {boolean} 是否在微信浏览器中
+ */
+export const isWechatBrowser = (): boolean => {
+	// #ifdef H5
+	try {
+		// 方法1: 检查 window.navigator.userAgent（最可靠）
+		if (typeof window != 'undefined' && window.navigator != null) {
+			const ua = window.navigator.userAgent.toLowerCase()
+			if (ua.indexOf('micromessenger') != -1) {
+				return true
+			}
+		}
+		
+		// 方法2: 检查 uni.getSystemInfoSync（备用方案）
+		const systemInfoObj = getCachedSystemInfoObj()
+		const userAgent = getString(systemInfoObj, 'userAgent')
+		const lowerUserAgent = userAgent.toLowerCase()
+		if (lowerUserAgent.indexOf('micromessenger') != -1) {
+			return true
+		}
+		
+		// 方法3: 检查微信 JS-SDK（小程序webview）
+		// #ifdef MP-WEIXIN
+		if (wx.miniProgram != null) {
+			return true
+		}
+		// #endif
+		
+		console.warn('⚠️ [WECHAT] 所有检测方法均未检测到微信环境')
+	} catch (error) {
+		console.error('❌ [WECHAT] 环境检测失败:', error)
+	}
+	return false
+	// #endif
+	
+	// #ifndef H5
+	// 非H5平台（小程序、APP）不需要检测微信浏览器
+	return false
+	// #endif
+}
+
+/**
+ * 判断是否为PC端
+ * @returns {boolean} 是否为PC端
+ */
+export const isPC = (): boolean => {
+	// #ifdef H5
+	const systemInfoObj = getCachedSystemInfoObj()
+	const userAgent = getString(systemInfoObj, 'userAgent')
+	const regex = /(Android|iPhone|SymbianOS|Windows Phone|iPad|iPod)/i
+	return regex.test(userAgent) == false
+	// #endif
+	
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
+ * 判断是否为Android设备
+ * @returns {boolean} 是否为Android设备
+ */
+export const isAndroid = (): boolean => {
+	// #ifdef H5
+	const systemInfoObj = getCachedSystemInfoObj()
+	const userAgent = getString(systemInfoObj, 'userAgent')
+	const lowerUA = userAgent.toLowerCase()
+	return lowerUA.indexOf('android') != -1
+	// #endif
+	
+	// #ifndef H5
+	const systemInfoObj = getCachedSystemInfoObj()
+	const platformVal = systemInfoObj != null ? systemInfoObj.get('platform') : null
+	const platform = (platformVal != null) ? platformVal.toString().toLowerCase() : ''
+	// 支持多种platform值：android, Android, ANDROID
+	return platform.indexOf('android') != -1
+	// #endif
+}
+
+/**
+ * 判断是否为iOS设备
+ * @returns {boolean} 是否为iOS设备
+ */
+export const isIOS = (): boolean => {
+	// #ifdef H5
+	const systemInfoObj = getCachedSystemInfoObj()
+	const userAgent = getString(systemInfoObj, 'userAgent')
+	const lowerUA = userAgent.toLowerCase()
+	return lowerUA.indexOf('iphone') != -1 || lowerUA.indexOf('ipad') != -1
+	// #endif
+	
+	// #ifndef H5
+	const systemInfoObj = getCachedSystemInfoObj()
+	const platformVal = systemInfoObj != null ? systemInfoObj.get('platform') : null
+	const platform = (platformVal != null) ? platformVal.toString().toLowerCase() : ''
+	// 支持多种platform值：ios, iOS, IOS, iphone, iPhone
+	return platform.indexOf('ios') != -1 || platform.indexOf('iphone') != -1
+	// #endif
+}
+
+/**
+ * 获取登录类型
+ * @returns {number} 30: 小程序, 20: H5（公众号）, 10: App
+ * 
+ * 重要说明：
+ * - type=10: APP 登录（使用微信开放平台）
+ * - type=20: H5 登录（微信浏览器内，使用公众号 AppID）
+ * - type=30: 小程序登录
+ * - type=40: PC 端专用，前端项目不使用
+ */
+export const getLoginType = (): number => {
+	// #ifdef MP-WEIXIN
+	return 30 // 小程序登录
+	// #endif
+	
+	// #ifdef H5
+	// H5 环境统一使用公众号登录（type=20）
+	// 前端 H5 只支持微信浏览器内访问，使用公众号 AppID 获取 code
+	return 20 // 公众号登录
+	// #endif
+	
+	// #ifdef APP-PLUS
+	return 10 // App登录
+	// #endif
+	
+	return 20 // 默认公众号登录
+}
+
+/**
+ * 检查微信环境（H5环境下的微信浏览器检查）
+ * @param {string} errorMessage 自定义错误消息
+ */
+export const requireWechatEnvironment = (errorMessage: string = '请在微信中打开此页面'): void => {
+	// #ifdef H5
+	if (isWechatBrowser() == false) {
+		throw new Error(errorMessage)
+	}
+	// #endif
+}
+
+/**
+ * 判断是否支持微信支付
+ * @returns {boolean} 是否支持微信支付
+ */
+export const supportWechatPay = (): boolean => {
+	// #ifdef MP-WEIXIN
+	return true // 小程序支持微信支付
+	// #endif
+	
+	// #ifdef H5
+	return isWechatBrowser() == true // H5环境只在微信浏览器中支持
+	// #endif
+	
+	// #ifdef APP-PLUS
+	return true // App支持微信支付
+	// #endif
+	
+	return false
+}
+
+/**
+ * 判断是否支持微信分享
+ * @returns {boolean} 是否支持微信分享
+ */
+export const supportWechatShare = (): boolean => {
+	// #ifdef MP-WEIXIN
+	return true // 小程序支持微信分享
+	// #endif
+	
+	// #ifdef H5
+	return isWechatBrowser() == true // H5环境只在微信浏览器中支持
+	// #endif
+	
+	// #ifdef APP-PLUS
+	return false // App不支持微信分享
+	// #endif
+	
+	return false
+}
+
+/**
+ * 获取User-Agent信息
+ * @returns {string} User-Agent字符串
+ */
+export const getUserAgent = (): string => {
+	const systemInfoObj = getCachedSystemInfoObj()
+	return getString(systemInfoObj, 'userAgent')
+}
+
+/**
+ * 清除缓存（用于测试或强制刷新）
+ */
+export const clearCache = (): void => {
+	cachedSystemInfo = null
+	cacheTimestamp = 0
+	cachedSystemInfoObj = null
+	console.log('🗑️ [SYSTEM] 系统信息缓存已清除')
+}

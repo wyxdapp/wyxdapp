@@ -1,0 +1,428 @@
+/**
+ * 微信分享服务
+ * 
+ * 用于在微信浏览器中初始化 JS-SDK 并配置分享内容
+ * 
+ * @author wyxdapp
+ * @version 1.0.0
+ * @since 2026-01-15
+ */
+
+import { isWechatBrowser } from '@/common/composables/useShareAndDeepLink.uts'
+import { API_BASE_URL } from '@/utils/config.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 分享数据
+ */
+class WxShareData {
+	title: string = ''
+	desc: string = ''
+	link: string = ''
+	imgUrl: string = ''
+	
+	constructor(title: string, desc: string, link: string, imgUrl: string) {
+		this.title = title
+		this.desc = desc
+		this.link = link
+		this.imgUrl = imgUrl
+	}
+}
+
+/**
+ * JS-SDK 签名数据
+ */
+class JsSdkSignature {
+	appId: string = ''
+	timestamp: number = 0
+	nonceStr: string = ''
+	signature: string = ''
+}
+
+// ==================== 状态变量 ====================
+
+/**
+ * JS-SDK 是否已初始化
+ */
+let jsSdkInitialized: boolean = false
+
+/**
+ * 当前分享配置
+ */
+let currentShareData: WxShareData | null = null
+
+// ==================== API 配置 ====================
+
+/**
+ * 签名接口 URL
+ */
+const JSSDK_SIGNATURE_URL = API_BASE_URL + '/api/wx/jssdk/signature'
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 安全获取对象属性
+ */
+function safeGetProperty(obj: UTSJSONObject | null, key: string): string | null {
+	if (obj == null) {
+		return null
+	}
+	try {
+		const val = obj.get(key)
+		if (val != null) {
+			return val.toString()
+		}
+	} catch (e) {}
+	return null
+}
+
+/**
+ * 获取当前页面 URL（不含 # 及其后面部分）
+ */
+function getCurrentPageUrl(): string {
+	// #ifdef H5
+	try {
+		if (typeof window !== 'undefined' && window.location != null) {
+			const href = window.location.href
+			const hashIndex = href.indexOf('#')
+			if (hashIndex >= 0) {
+				return href.substring(0, hashIndex)
+			}
+			return href
+		}
+	} catch (e) {
+		handleSilentError(e, '获取页面URL')
+	}
+	// #endif
+	return ''
+}
+
+// ==================== 核心函数 ====================
+
+/**
+ * 获取 JS-SDK 签名
+ */
+export function getJsSdkSignature(url: string): Promise<JsSdkSignature | null> {
+	return new Promise<JsSdkSignature | null>((resolve: (value: JsSdkSignature | null) => void) => {
+		// #ifdef H5
+		const encodedUrl = encodeURIComponent(url)
+		const requestUrl = JSSDK_SIGNATURE_URL + '?url=' + encodedUrl
+		
+		console.log('[WX-SHARE] 请求签名接口:', requestUrl)
+		
+		uni.request({
+			url: requestUrl,
+			method: 'GET',
+			success: (res: any) => {
+				try {
+					const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+					const dataVal = resObj.get('data')
+					
+					if (dataVal != null) {
+						const dataObj = JSON.parse(JSON.stringify(dataVal)) as UTSJSONObject
+						const codeVal = dataObj.get('code')
+						
+						if (codeVal != null && codeVal.toString() == '200') {
+							const signatureData = dataObj.get('data')
+							
+							if (signatureData != null) {
+								const sigObj = JSON.parse(JSON.stringify(signatureData)) as UTSJSONObject
+								
+								const signature = new JsSdkSignature()
+								
+								const appIdVal = sigObj.get('appId')
+								if (appIdVal != null) {
+									signature.appId = appIdVal.toString()
+								}
+								
+								const timestampVal = sigObj.get('timestamp')
+								if (timestampVal != null) {
+									signature.timestamp = parseInt(timestampVal.toString())
+								}
+								
+								const nonceStrVal = sigObj.get('nonceStr')
+								if (nonceStrVal != null) {
+									signature.nonceStr = nonceStrVal.toString()
+								}
+								
+								const signatureVal = sigObj.get('signature')
+								if (signatureVal != null) {
+									signature.signature = signatureVal.toString()
+								}
+								
+								console.log('[WX-SHARE] 获取签名成功:', signature.appId)
+								resolve(signature)
+								return
+							}
+						}
+					}
+					
+					console.error('[WX-SHARE] 获取签名失败: 响应格式错误')
+					resolve(null)
+					
+				} catch (e) {
+				handleSilentError(e, '解析微信签名响应')
+				resolve(null)
+			}
+			},
+			fail: (err: any) => {
+				console.error('[WX-SHARE] 请求签名接口失败:', err)
+				resolve(null)
+			}
+		})
+		// #endif
+		// #ifndef H5
+		resolve(null)
+		// #endif
+	})
+}
+
+/**
+ * 初始化微信 JS-SDK
+ */
+export function initWechatJsSdk(): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// #ifdef H5
+		// 检查是否为微信环境
+		if (isWechatBrowser() == false) {
+			console.log('[WX-SHARE] 非微信环境，跳过 JS-SDK 初始化')
+			resolve(false)
+			return
+		}
+		
+		// 检查 wx 对象是否存在
+		if (typeof wx === 'undefined') {
+			console.error('[WX-SHARE] wx 对象不存在，JS-SDK 未加载')
+			resolve(false)
+			return
+		}
+		
+		// 检查 wx.config 是否为函数
+		const wxObj = wx as any
+		if (wxObj == null || typeof wxObj.config !== 'function') {
+			console.error('[WX-SHARE] wx.config 不是函数，JS-SDK 可能未正确加载')
+			console.log('[WX-SHARE] wx 对象类型:', typeof wx)
+			console.log('[WX-SHARE] wx.config 类型:', typeof wxObj.config)
+			resolve(false)
+			return
+		}
+		
+		// 获取当前页面 URL
+		const url = getCurrentPageUrl()
+		if (url == '') {
+			console.error('[WX-SHARE] 获取页面 URL 失败')
+			resolve(false)
+			return
+		}
+		
+		console.log('[WX-SHARE] 开始初始化 JS-SDK, URL:', url)
+		
+		// 获取签名
+		getJsSdkSignature(url).then((signature: JsSdkSignature | null) => {
+			if (signature == null) {
+				console.error('[WX-SHARE] 获取签名失败')
+				resolve(false)
+				return
+			}
+			
+			// 配置 wx.config
+			try {
+				wxObj.config({
+					debug: false,
+					appId: signature.appId,
+					timestamp: signature.timestamp,
+					nonceStr: signature.nonceStr,
+					signature: signature.signature,
+					jsApiList: [
+						'updateAppMessageShareData',
+						'updateTimelineShareData'
+					]
+				})
+				
+				// 监听 ready 事件
+				wxObj.ready(() => {
+					console.log('[WX-SHARE] JS-SDK 初始化成功')
+					jsSdkInitialized = true
+					
+					// 如果有待配置的分享数据，立即配置
+					if (currentShareData != null) {
+						updateShareConfigInternal(currentShareData)
+					}
+					
+					resolve(true)
+				})
+				
+				// 监听 error 事件
+				wxObj.error((res: any) => {
+					console.error('[WX-SHARE] JS-SDK 初始化失败:', res)
+					jsSdkInitialized = false
+					resolve(false)
+				})
+				
+			} catch (e) {
+				handleSilentError(e, '配置微信JS-SDK')
+				resolve(false)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error, '初始化微信JS-SDK')
+			resolve(false)
+		})
+		// #endif
+		// #ifndef H5
+		resolve(false)
+		// #endif
+	})
+}
+
+/**
+ * 内部函数：更新分享配置
+ */
+function updateShareConfigInternal(shareData: WxShareData): void {
+	// #ifdef H5
+	if (typeof wx === 'undefined') {
+		console.warn('[WX-SHARE] wx 对象不存在')
+		return
+	}
+	
+	const wxObj = wx as any
+	if (wxObj == null) {
+		console.warn('[WX-SHARE] wx 对象为空')
+		return
+	}
+	
+	console.log('[WX-SHARE] 正在配置分享内容...')
+	console.log('[WX-SHARE] - 标题:', shareData.title)
+	console.log('[WX-SHARE] - 描述:', shareData.desc)
+	console.log('[WX-SHARE] - 链接:', shareData.link)
+	console.log('[WX-SHARE] - 图片:', shareData.imgUrl)
+	
+	try {
+		// 配置分享到好友
+		if (typeof wxObj.updateAppMessageShareData === 'function') {
+			wxObj.updateAppMessageShareData({
+				title: shareData.title,
+				desc: shareData.desc,
+				link: shareData.link,
+				imgUrl: shareData.imgUrl,
+				success: () => {
+					console.log('[WX-SHARE] ✅ 分享到好友配置成功')
+				},
+				fail: (err: any) => {
+					console.error('[WX-SHARE] ❌ 分享到好友配置失败:', err)
+				}
+			})
+		} else {
+			console.warn('[WX-SHARE] updateAppMessageShareData 不可用')
+		}
+		
+		// 配置分享到朋友圈
+		if (typeof wxObj.updateTimelineShareData === 'function') {
+			wxObj.updateTimelineShareData({
+				title: shareData.title,
+				link: shareData.link,
+				imgUrl: shareData.imgUrl,
+				success: () => {
+					console.log('[WX-SHARE] ✅ 分享到朋友圈配置成功')
+				},
+				fail: (err: any) => {
+					console.error('[WX-SHARE] ❌ 分享到朋友圈配置失败:', err)
+				}
+			})
+		} else {
+			console.warn('[WX-SHARE] updateTimelineShareData 不可用')
+		}
+		
+	} catch (e) {
+		handleSilentError(e, '配置微信分享内容')
+	}
+	// #endif
+}
+
+/**
+ * 更新分享配置
+ */
+export function updateShareConfig(title: string, desc: string, link: string, imgUrl: string): void {
+	// #ifdef H5
+	console.log('[WX-SHARE] updateShareConfig 被调用:')
+	console.log('[WX-SHARE] - title:', title)
+	console.log('[WX-SHARE] - desc:', desc)
+	console.log('[WX-SHARE] - link:', link)
+	console.log('[WX-SHARE] - imgUrl:', imgUrl)
+	
+	// 验证图片 URL
+	let validImgUrl = imgUrl
+	if (validImgUrl == '' || validImgUrl == null) {
+		validImgUrl = DEFAULT_SHARE_IMAGE
+		console.log('[WX-SHARE] 图片 URL 为空，使用默认分享图片')
+	}
+	
+	// 确保图片是 HTTPS（微信要求）
+	if (validImgUrl.indexOf('http://') == 0) {
+		validImgUrl = validImgUrl.replace('http://', 'https://')
+		console.log('[WX-SHARE] 图片 URL 已转换为 HTTPS:', validImgUrl)
+	}
+	
+	// 检查图片 URL 是否有效（基本验证）
+	if (validImgUrl.indexOf('https://') != 0) {
+		console.log('[WX-SHARE] 图片 URL 格式无效，使用默认分享图片')
+		validImgUrl = DEFAULT_SHARE_IMAGE
+	}
+	
+	// 验证标题和描述
+	let validTitle = title
+	if (validTitle == '' || validTitle == null) {
+		validTitle = '网约向导 - 个人主页'
+	}
+	
+	let validDesc = desc
+	if (validDesc == '' || validDesc == null) {
+		validDesc = '欢迎关注我的个人主页！'
+	}
+	
+	console.log('[WX-SHARE] 最终分享配置:')
+	console.log('[WX-SHARE] - validTitle:', validTitle)
+	console.log('[WX-SHARE] - validDesc:', validDesc)
+	console.log('[WX-SHARE] - link:', link)
+	console.log('[WX-SHARE] - validImgUrl:', validImgUrl)
+	
+	const shareData = new WxShareData(validTitle, validDesc, link, validImgUrl)
+	currentShareData = shareData
+	
+	// 如果 JS-SDK 已初始化，立即配置
+	if (jsSdkInitialized == true) {
+		console.log('[WX-SHARE] JS-SDK 已初始化，立即配置分享内容')
+		updateShareConfigInternal(shareData)
+	} else {
+		console.log('[WX-SHARE] JS-SDK 未初始化，分享配置已缓存，等待 ready 事件')
+		// 尝试重新初始化 JS-SDK
+		initWechatJsSdk().then((success: boolean) => {
+			if (success == true && currentShareData != null) {
+				console.log('[WX-SHARE] JS-SDK 重新初始化成功，配置分享内容')
+				updateShareConfigInternal(currentShareData as WxShareData)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error, '重新初始化微信JS-SDK')
+		})
+	}
+	// #endif
+}
+
+/**
+ * 检查 JS-SDK 是否已初始化
+ */
+export function isJsSdkInitialized(): boolean {
+	return jsSdkInitialized
+}
+
+/**
+ * 重置 JS-SDK 状态（用于页面切换时）
+ */
+export function resetJsSdkState(): void {
+	jsSdkInitialized = false
+	currentShareData = null
+}
+
+export { WxShareData, JsSdkSignature }

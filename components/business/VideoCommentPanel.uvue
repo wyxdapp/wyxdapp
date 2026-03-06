@@ -1,0 +1,665 @@
+﻿<template>
+	<view v-if="visible == true" class="comment-panel-mask" @click="onMaskClick">
+		<view class="comment-panel" @click.stop="onPanelClick">
+			<!-- 头部 -->
+			<view class="panel-header">
+				<text class="comment-count">{{ commentCountValue }}条评论</text>
+				<view class="close-btn" @click="onClose">
+					<text class="close-icon">×</text>
+				</view>
+			</view>
+			
+			<!-- 评论列表 -->
+			<scroll-view 
+				class="comment-list"
+				scroll-y="true"
+				:show-scrollbar="false"
+				@scrolltolower="loadMoreComments"
+			>
+				<view v-if="loading == true && commentListLength == 0" class="loading-box">
+					<text class="loading-text">加载中...</text>
+				</view>
+				
+				<view v-else-if="commentListLength == 0" class="empty-box">
+					<text class="empty-text">暂无评论，快来抢沙发~</text>
+				</view>
+				
+				<view v-else class="comment-items">
+					<view 
+						v-for="(comment, index) in commentList" 
+						:key="getCommentKey(comment, index)"
+						class="comment-item"
+					>
+						<Avatar 
+							:url="getCommentAvatar(comment)"
+							size="medium"
+							:customSize="72"
+							clickMode="none"
+						/>
+						<view class="comment-content">
+							<NicknameWithBadges
+								:nickname="getCommentNickname(comment)"
+								:vipType="getCommentVipType(comment)"
+								:giftLevel="getCommentGiftLevel(comment)"
+								size="small"
+							/>
+							<text class="comment-text">{{ getCommentContent(comment) }}</text>
+							<text class="comment-time">{{ getCommentTime(comment) }}</text>
+						</view>
+						<view class="comment-like" @click="onCommentLike(comment)">
+							<image 
+								class="comment-like-icon" 
+								:src="isCommentLiked(comment) == true ? 'https://jiasu.wyxdapp.com/iconimages/n_icon_upActive.png' : 'https://jiasu.wyxdapp.com/iconimages/n_icon_up.png'" 
+								mode="aspectFit"
+							></image>
+							<text class="comment-like-count">{{ getCommentLikeCount(comment) }}</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 加载更多 -->
+				<view v-if="commentListLength > 0" class="load-more">
+					<text v-if="loadStatus == 'loading'" class="load-more-text">加载中...</text>
+					<text v-else-if="loadStatus == 'nomore'" class="load-more-text">没有更多评论了</text>
+				</view>
+			</scroll-view>
+			
+			<!-- 输入框 -->
+			<view class="input-box">
+				<input 
+					class="comment-input"
+					v-model="inputContent"
+					placeholder="说点什么..."
+					placeholder-style="color: #999999"
+					@confirm="onSendComment"
+				/>
+				<view class="send-btn" :class="{ 'send-btn-active': canSend == true }" @click="onSendComment">
+					<text class="send-btn-text" :class="{ 'send-btn-text-active': canSend == true }">发送</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+import { checkUserLoginReliable, getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import request from '@/utils/request'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+
+// ==================== Props ====================
+const props = defineProps({
+	visible: {
+		type: Boolean,
+		default: false
+	},
+	videoKid: {
+		type: String,
+		default: ''
+	},
+	commentCount: {
+		type: Number,
+		default: 0
+	}
+})
+
+// ==================== Emits ====================
+const emit = defineEmits(['close', 'comment-sent'])
+
+// ==================== 状态 ====================
+const commentList = ref<Array<any>>([])
+const loading = ref<boolean>(false)
+const loadStatus = ref<string>('loadmore')
+const pageNumber = ref<number>(1)
+const pageSize = ref<number>(20)
+const totalCount = ref<number>(0)
+const inputContent = ref<string>('')
+
+// ==================== 辅助函数 ====================
+const getItemStringProp = (item: any, key: string): string => {
+	return safeGetStringProp(item, key)
+}
+
+const getItemNumberProp = (item: any, key: string): number => {
+	return safeGetNumberProp(item, key)
+}
+
+// ==================== 计算属性 ====================
+const commentCountValue = computed((): number => {
+	if (totalCount.value > 0) return totalCount.value
+	return props.commentCount
+})
+
+const commentListLength = computed((): number => {
+	try {
+		const list = commentList.value
+		if (Array.isArray(list) == true) {
+			return (list as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const canSend = computed((): boolean => {
+	return inputContent.value.trim() != ''
+})
+
+// ==================== 评论项辅助函数 ====================
+const getCommentKey = (comment: any, index: number): string => {
+	const kid = getItemStringProp(comment, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+const getCommentAvatar = (comment: any): string => {
+	let avatar = getItemStringProp(comment, 'userImage')
+	if (avatar == '') {
+		avatar = getItemStringProp(comment, 'avatar')
+	}
+	if (avatar == '') {
+		avatar = DEFAULT_AVATAR_LOCAL
+	}
+	return avatar
+}
+
+const getCommentNickname = (comment: any): string => {
+	let nickname = getItemStringProp(comment, 'nickName')
+	if (nickname == '') {
+		nickname = getItemStringProp(comment, 'nickname')
+	}
+	if (nickname == '') {
+		nickname = '用户'
+	}
+	return nickname
+}
+
+const getCommentVipType = (comment: any): string => {
+	const vip = getItemNumberProp(comment, 'vip')
+	const vipExpireTime = getItemStringProp(comment, 'vipExpireTime')
+
+	// vip=VIP_ACTIVATED 表示已开通
+	if (vip == 20) {
+		if (vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate > now) {
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				const vipTypeNum = getItemNumberProp(comment, 'vipType')
+				if (vipTypeNum == 20) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+			const vipTypeNum = getItemNumberProp(comment, 'vipType')
+			if (vipTypeNum == 20) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+}
+
+const getCommentGiftLevel = (comment: any): number => {
+	return getItemNumberProp(comment, 'giftLevel')
+}
+
+const getCommentContent = (comment: any): string => {
+	let content = getItemStringProp(comment, 'commentContent')
+	if (content == '') {
+		content = getItemStringProp(comment, 'content')
+	}
+	return content
+}
+
+const getCommentTime = (comment: any): string => {
+	return getItemStringProp(comment, 'createTime')
+}
+
+const getCommentLikeCount = (comment: any): number => {
+	return getItemNumberProp(comment, 'likeNum')
+}
+
+const isCommentLiked = (comment: any): boolean => {
+	const isLike = getItemNumberProp(comment, 'isLike')
+	return isLike == 10
+}
+
+// ==================== API 调用 ====================
+const fetchComments = async (isRefresh: boolean) => {
+	if (props.videoKid == '') return
+	
+	if (isRefresh == true) {
+		pageNumber.value = 1
+		loadStatus.value = 'loadmore'
+	}
+	
+	if (loadStatus.value == 'nomore') return
+	
+	loading.value = true
+	loadStatus.value = 'loading'
+	
+	try {
+		const userKid = getCurrentUserIdReliable()
+		const params = {
+			discoverKid: props.videoKid,
+			userKid: userKid,
+			pageNumber: pageNumber.value,
+			pageSize: pageSize.value
+		} as any
+		
+		const res = await request.post('/dynamic/v1/queryDynamicComment', params, false)
+		
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		
+		const dataVal = resObj.get('data')
+		let dataObj: UTSJSONObject | null = null
+		if (dataVal != null) {
+			const dataStr = JSON.stringify(dataVal)
+			dataObj = JSON.parse(dataStr) as UTSJSONObject
+		}
+		
+		let entities: Array<any> = []
+		let count = 0
+		
+		if (dataObj != null) {
+			const entitiesVal = dataObj.get('entities')
+			const countVal = dataObj.get('count')
+			
+			if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+				entities = entitiesVal as Array<any>
+			}
+			
+			if (countVal != null) {
+				const num = parseInt(countVal.toString())
+				if (isNaN(num) == false) count = num
+			}
+		}
+		
+		if (isRefresh == true) {
+			commentList.value = entities
+		} else {
+			const currentList = commentList.value
+			for (let i = 0; i < entities.length; i = i + 1) {
+				currentList.push(entities[i])
+			}
+			commentList.value = currentList
+		}
+		
+		totalCount.value = count
+		
+		const currentLength = commentList.value.length
+		if (currentLength >= count || entities.length < pageSize.value) {
+			loadStatus.value = 'nomore'
+		} else {
+			loadStatus.value = 'loadmore'
+			pageNumber.value = pageNumber.value + 1
+		}
+	} catch (error: any) {
+		console.error('获取评论列表失败:', error)
+		loadStatus.value = 'loadmore'
+	} finally {
+		loading.value = false
+	}
+}
+
+// 发送评论
+const sendComment = async () => {
+	const content = inputContent.value.trim()
+	if (content == '') return
+	
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == '' || props.videoKid == '') return
+	
+	try {
+		const params = {
+			discoverKid: props.videoKid,
+			userKid: userKid,
+			commentContent: content
+		} as any
+		
+		await request.post('/dynamic/v1/addDynamicComment', params, true)
+		
+		// 清空输入框
+		inputContent.value = ''
+		
+		// 刷新评论列表
+		fetchComments(true)
+		
+		// 通知父组件
+		emit('comment-sent', content)
+		
+		uni.showToast({
+			title: '评论成功',
+			icon: 'success'
+		})
+	} catch (error: any) {
+		let errorMsg = '评论失败'
+		if (error.message != null && error.message != '') {
+			errorMsg = error.message.toString()
+		}
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	}
+}
+
+// 评论点赞
+const likeComment = async (comment: any) => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getCurrentUserIdReliable()
+	const commentKid = getItemStringProp(comment, 'kid')
+	
+	if (userKid == '' || commentKid == '') return
+	
+	try {
+		const params = {
+			commentKid: commentKid,
+			userKid: userKid
+		} as any
+		
+		await request.post('/dynamic/v1/likeComment', params, false)
+		
+		// 更新评论列表中的点赞状态
+		const list = commentList.value
+		for (let i = 0; i < list.length; i = i + 1) {
+			const item = list[i]
+			const itemKid = getItemStringProp(item, 'kid')
+			if (itemKid == commentKid) {
+				const itemStr = JSON.stringify(item)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				const currentIsLike = getItemNumberProp(item, 'isLike')
+				const currentLikeNum = getItemNumberProp(item, 'likeNum')
+				
+				if (currentIsLike == 10) {
+					itemObj.set('isLike', 0)
+					itemObj.set('likeNum', currentLikeNum > 0 ? currentLikeNum - 1 : 0)
+				} else {
+					itemObj.set('isLike', 10)
+					itemObj.set('likeNum', currentLikeNum + 1)
+				}
+				list[i] = itemObj as any
+				break
+			}
+		}
+		commentList.value = list
+	} catch (error: any) {
+		console.error('评论点赞失败:', error)
+	}
+}
+
+// ==================== 事件处理 ====================
+const onClose = () => {
+	emit('close')
+}
+
+const onMaskClick = () => {
+	emit('close')
+}
+
+const onPanelClick = () => {
+	// 阻止冒泡，不关闭面板
+}
+
+const onSendComment = () => {
+	sendComment()
+}
+
+const onCommentLike = (comment: any) => {
+	likeComment(comment)
+}
+
+const loadMoreComments = () => {
+	if (loadStatus.value == 'loadmore') {
+		fetchComments(false)
+	}
+}
+
+// ==================== 监听 ====================
+watch(
+	(): boolean => { return props.visible },
+	(newVal: boolean) => {
+		if (newVal == true && props.videoKid != '') {
+			// 面板打开时加载评论
+			fetchComments(true)
+		}
+	}
+)
+
+watch(
+	(): string => { return props.videoKid },
+	(newVal: string) => {
+		if (props.visible == true && newVal != '') {
+			// videoKid 变化时重新加载
+			fetchComments(true)
+		}
+	}
+)
+</script>
+
+<style scoped>
+.comment-panel-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.comment-panel {
+	width: 750rpx;
+	height: 70%;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+/* 头部 */
+.panel-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	height: 100rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+	position: relative;
+}
+
+.comment-count {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.close-btn {
+	position: absolute;
+	right: 24rpx;
+	top: 24rpx;
+	width: 52rpx;
+	height: 52rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 48rpx;
+	color: #999999;
+}
+
+/* 评论列表 */
+.comment-list {
+	flex: 1;
+	flex-direction: column;
+}
+
+.loading-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.comment-items {
+	flex-direction: column;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.comment-item {
+	flex-direction: row;
+	margin-bottom: 32rpx;
+}
+
+.comment-avatar {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 36rpx;
+}
+
+.comment-content {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 20rpx;
+	margin-right: 20rpx;
+}
+
+.comment-nickname {
+	font-size: 26rpx;
+	color: #999999;
+	margin-bottom: 8rpx;
+}
+
+.comment-text {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.5;
+}
+
+.comment-time {
+	font-size: 22rpx;
+	color: #CCCCCC;
+	margin-top: 8rpx;
+}
+
+.comment-like {
+	flex-direction: column;
+	align-items: center;
+	width: 60rpx;
+}
+
+.comment-like-icon {
+	width: 32rpx;
+	height: 32rpx;
+}
+
+.comment-like-count {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 4rpx;
+}
+
+.load-more {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.load-more-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 输入框 */
+.input-box {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #EEEEEE;
+	background-color: #FFFFFF;
+}
+
+.comment-input {
+	flex: 1;
+	height: 72rpx;
+	background-color: #F5F5F5;
+	border-radius: 36rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	font-size: 28rpx;
+}
+
+.send-btn {
+	margin-left: 20rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	background-color: #E5E5E5;
+	border-radius: 36rpx;
+}
+
+.send-btn-active {
+	background-color: #37B1F2;
+}
+
+.send-btn-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.send-btn-text-active {
+	color: #FFFFFF;
+}
+</style>

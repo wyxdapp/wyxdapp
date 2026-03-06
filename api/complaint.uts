@@ -1,0 +1,65 @@
+import { post } from '@/utils/request.uts'
+import { COMPLAINT_TYPE_DEFAULT } from '@/common/config/businessCodes.uts'
+import { SubmitComplaintParams } from './types/complaintTypes.uts'
+
+/**
+ * 投诉举报API
+ * 
+ * @author wyxdapp
+ * @date 2025-01-21
+ */
+
+/**
+ * 提交投诉举报
+ * @param params 投诉参数
+ * @returns Promise
+ */
+export function submitComplaint(params: SubmitComplaintParams): Promise<UTSJSONObject> {
+	const complaintType = (params.complaintType != 0) ? params.complaintType : COMPLAINT_TYPE_DEFAULT
+	const targetKid = params.targetKid
+	const reason = params.reason
+	const explain = params.explain
+	
+	// 根据投诉类型选择不同的API端点
+	let url = ''
+	let data = new UTSJSONObject()
+	
+	switch (complaintType) {
+		case 10: // 订单投诉
+			url = '/app/userComplain/add'
+			data = {
+				orderKid: targetKid,
+				complainReason: reason,
+				complainExplain: explain
+			} as UTSJSONObject
+			break
+		case 20: // 路线举报
+			url = '/app/lineReport/add'
+			data = {
+				lineKid: targetKid,
+				reportReason: reason,
+				reportExplain: explain
+			} as UTSJSONObject
+			break
+		case 30: // 聊天举报
+			url = '/app/chatReport/add'
+			data = {
+				beReportUserKid: targetKid,
+				reportReason: reason,
+				reportExplain: explain
+			} as UTSJSONObject
+			break
+		case 40: // 发现举报
+			url = '/app/userReport/add'
+			data = {
+				discoverKid: targetKid,
+				reportReason: reason,
+				reportExplain: explain
+			} as UTSJSONObject
+			break
+		default:
+			return Promise.reject('不支持的投诉类型') as Promise<UTSJSONObject>
+	}
+	
+	return post(url, data, false)
+}

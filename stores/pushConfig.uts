@@ -1,0 +1,357 @@
+/**
+ * 推送配置状态管理
+ * 管理用户的推送设置，支持本地持久化和后端同步
+ * 
+ * Requirements: 6.1, 6.2, 6.3
+ */
+
+import { ref, computed } from 'vue'
+import { getPushConfig, updatePushConfig, PushConfigData } from '@/api/push.uts'
+import { getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+import { getUserLoginStatus } from '@/stores/user.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 状态定义 ====================
+
+// 推送客户端 ID
+const clientIdRef = ref<string>('')
+
+// 推送总开关
+const pushEnabledRef = ref<boolean>(true)
+
+// 聊天通知开关
+const chatPushEnabledRef = ref<boolean>(true)
+
+// 最后同步时间
+const lastSyncTimeRef = ref<number>(0)
+
+// 是否正在同步
+const isSyncingRef = ref<boolean>(false)
+
+// 🔧 修复：添加初始化中标志，防止重复初始化
+let isPushConfigInitializing = false
+
+// 本地存储 key
+const STORAGE_KEY = 'push_config'
+
+// ==================== 计算属性 ====================
+
+/**
+ * 是否允许接收聊天推送
+ * 需要总开关和分类开关都开启
+ */
+const canReceiveChatPush = computed((): boolean => {
+	return pushEnabledRef.value == true && chatPushEnabledRef.value == true
+})
+
+// ==================== 本地持久化 ====================
+
+/**
+ * 保存配置到本地存储
+ */
+const saveToStorage = () => {
+	try {
+		const config = {
+			clientId: clientIdRef.value,
+			pushEnabled: pushEnabledRef.value,
+			chatPushEnabled: chatPushEnabledRef.value,
+			lastSyncTime: lastSyncTimeRef.value
+		}
+		const configStr = JSON.stringify(config)
+		uni.setStorageSync(STORAGE_KEY, configStr)
+	} catch (e: any) {
+		handleSilentError(e, '保存推送配置')
+	}
+}
+
+/**
+ * 从本地存储加载配置
+ */
+const loadFromStorage = () => {
+	try {
+		const configStr = uni.getStorageSync(STORAGE_KEY)
+		if (configStr != null && configStr != '') {
+			let jsonStr = ''
+			if (typeof configStr === 'string') {
+				jsonStr = configStr as string
+			} else {
+				jsonStr = JSON.stringify(configStr)
+			}
+			
+			if (jsonStr != '') {
+				const configObj = JSON.parse(jsonStr) as UTSJSONObject
+				
+				const clientIdVal = configObj.get('clientId')
+				if (clientIdVal != null && clientIdVal.toString() != '') {
+					clientIdRef.value = clientIdVal.toString()
+				}
+				
+				const pushEnabledVal = configObj.get('pushEnabled')
+				if (pushEnabledVal != null) {
+					pushEnabledRef.value = pushEnabledVal == true || pushEnabledVal.toString() == 'true'
+				}
+				
+				const chatPushEnabledVal = configObj.get('chatPushEnabled')
+				if (chatPushEnabledVal != null) {
+					chatPushEnabledRef.value = chatPushEnabledVal == true || chatPushEnabledVal.toString() == 'true'
+				}
+				
+				const lastSyncTimeVal = configObj.get('lastSyncTime')
+				if (lastSyncTimeVal != null) {
+					const syncTime = parseInt(lastSyncTimeVal.toString())
+					if (isNaN(syncTime) == false) {
+						lastSyncTimeRef.value = syncTime
+					}
+				}
+				}
+		}
+	} catch (e: any) {
+		handleSilentError(e, '加载推送配置')
+	}
+}
+
+// ==================== 后端同步 ====================
+
+/**
+ * 从后端同步配置
+ */
+const syncFromServer = (): Promise<boolean> => {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// 🔧 修复：检查登录状态，未登录时不调用 API
+		const isLogin = getUserLoginStatus()
+		if (isLogin == false) {
+			console.log('ℹ️ [PushConfig] 用户未登录，跳过服务器同步')
+			resolve(false)
+			return
+		}
+		
+		if (isSyncingRef.value == true) {
+			console.log('ℹ️ [PushConfig] 正在同步中，跳过')
+			resolve(false)
+			return
+		}
+		
+		isSyncingRef.value = true
+		console.log('🔄 [PushConfig] 开始从服务器同步配置')
+		
+		getPushConfig().then((res: any) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+				const data = getResponseData(res)
+				if (data != null) {
+					const pushEnabledVal = data.get('pushEnabled')
+					if (pushEnabledVal != null) {
+						pushEnabledRef.value = pushEnabledVal == true || pushEnabledVal.toString() == 'true'
+					}
+					
+					const chatPushEnabledVal = data.get('chatPushEnabled')
+					if (chatPushEnabledVal != null) {
+						chatPushEnabledRef.value = chatPushEnabledVal == true || chatPushEnabledVal.toString() == 'true'
+					}
+					
+					// 更新同步时间
+					lastSyncTimeRef.value = Date.now()
+					
+					// 保存到本地
+					saveToStorage()
+					
+					resolve(true)
+				} else {
+					console.warn('⚠️ [PushConfig] 服务器返回数据为空')
+					resolve(false)
+				}
+			} else {
+				console.warn('⚠️ [PushConfig] 同步配置失败, code:', code)
+				resolve(false)
+			}
+			isSyncingRef.value = false
+		}).catch((err: any | null): void => {
+			handleSilentError(err as any, '从服务器同步推送配置')
+			isSyncingRef.value = false
+			resolve(false)
+		})
+	})
+}
+
+/**
+ * 同步配置到后端
+ */
+const syncToServer = (): Promise<boolean> => {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// 🔧 修复：检查登录状态，未登录时不调用 API
+		const isLogin = getUserLoginStatus()
+		if (isLogin == false) {
+			console.log('ℹ️ [PushConfig] 用户未登录，跳过同步到服务器')
+			resolve(false)
+			return
+		}
+		
+		if (isSyncingRef.value == true) {
+			console.log('ℹ️ [PushConfig] 正在同步中，跳过')
+			resolve(false)
+			return
+		}
+		
+		isSyncingRef.value = true
+		console.log('🔄 [PushConfig] 开始同步配置到服务器')
+		
+		const config = new PushConfigData()
+		config.pushEnabled = pushEnabledRef.value
+		config.chatPushEnabled = chatPushEnabledRef.value
+		
+		updatePushConfig(config).then((res: any) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+				// 更新同步时间
+				lastSyncTimeRef.value = Date.now()
+				saveToStorage()
+				resolve(true)
+			} else {
+				console.warn('⚠️ [PushConfig] 同步配置失败, code:', code)
+				resolve(false)
+			}
+			isSyncingRef.value = false
+		}).catch((err: any | null): void => {
+			handleSilentError(err as any, '同步推送配置到服务器')
+			isSyncingRef.value = false
+			resolve(false)
+		})
+	})
+}
+
+// ==================== 公开接口 ====================
+
+/**
+ * 初始化推送配置
+ * 先从本地加载，再从服务器同步
+ */
+export const initPushConfig = () => {
+	// 🔧 修复：检查是否正在初始化中
+	if (isPushConfigInitializing == true) {
+		console.log('ℹ️ [PushConfig] 推送配置正在初始化中，跳过')
+		return
+	}
+	
+	isPushConfigInitializing = true
+	console.log('🚀 [PushConfig] 初始化推送配置')
+	
+	// 先从本地加载
+	loadFromStorage()
+	
+	// 再从服务器同步（异步）
+	syncFromServer().then((success: boolean) => {
+		isPushConfigInitializing = false
+		if (success == false) {
+			console.log('ℹ️ [PushConfig] 使用本地配置')
+		}
+	}).catch((err: any | null): void => {
+		isPushConfigInitializing = false
+		handleSilentError(err as any, '初始化推送配置同步')
+	})
+}
+
+/**
+ * 设置推送总开关
+ */
+export const setPushEnabled = (enabled: boolean) => {
+	pushEnabledRef.value = enabled
+	saveToStorage()
+	// 同步到服务器
+	syncToServer().then((success: boolean) => {
+		if (success == false) {
+			console.warn('⚠️ [PushConfig] 同步推送开关失败')
+		}
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '同步推送开关')
+	})
+}
+
+/**
+ * 设置聊天推送开关
+ */
+export const setChatPushEnabled = (enabled: boolean) => {
+	chatPushEnabledRef.value = enabled
+	saveToStorage()
+	syncToServer().then((success: boolean) => {
+		if (success == false) {
+			console.warn('⚠️ [PushConfig] 同步聊天推送开关失败')
+		}
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '同步聊天推送开关')
+	})
+}
+
+/**
+ * 设置 Client_ID
+ */
+export const setClientId = (clientId: string) => {
+	clientIdRef.value = clientId
+	saveToStorage()
+}
+
+/**
+ * 获取推送总开关状态
+ */
+export const getPushEnabledStatus = (): boolean => {
+	return pushEnabledRef.value
+}
+
+/**
+ * 获取聊天推送开关状态
+ */
+export const getChatPushEnabledStatus = (): boolean => {
+	return chatPushEnabledRef.value
+}
+
+/**
+ * 检查是否可以接收聊天推送
+ */
+export const canReceiveChatPushStatus = (): boolean => {
+	return canReceiveChatPush.value
+}
+
+/**
+ * 获取 Client_ID
+ */
+export const getStoredClientId = (): string => {
+	return clientIdRef.value
+}
+
+/**
+ * 获取最后同步时间
+ */
+export const getLastSyncTime = (): number => {
+	return lastSyncTimeRef.value
+}
+
+/**
+ * 强制从服务器同步配置
+ */
+export const forceSyncFromServer = (): Promise<boolean> => {
+	return syncFromServer()
+}
+
+/**
+ * 重置推送配置为默认值
+ */
+export const resetPushConfig = () => {
+	pushEnabledRef.value = true
+	chatPushEnabledRef.value = true
+	lastSyncTimeRef.value = 0
+	saveToStorage()
+}
+
+/**
+ * 清除推送配置（用户退出登录时调用）
+ */
+export const clearPushConfig = () => {
+	clientIdRef.value = ''
+	pushEnabledRef.value = true
+	chatPushEnabledRef.value = true
+	lastSyncTimeRef.value = 0
+	try {
+		uni.removeStorageSync(STORAGE_KEY)
+	} catch (e: any) {
+		handleSilentError(e, '清除推送配置')
+	}
+}

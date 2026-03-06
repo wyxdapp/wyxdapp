@@ -1,0 +1,29 @@
+/**
+ * 认证模块类型定义
+ * 对应 API 文件: api/auth.uts
+ */
+
+// 刷新 token 请求参数
+export class RefreshTokenParams {
+	refreshToken: string = ''
+}
+
+// 刷新 token 响应数据
+export class RefreshTokenData {
+	accessToken: string = ''
+	refreshToken: string = ''
+	token: string = ''
+	phoneWebToken: string = ''
+	smallAccessToken: string = ''
+}
+
+// 登出请求参数
+export class LogoutParams {
+	refreshToken: string = ''
+	device: string = ''
+}
+
+// 全部设备登出请求参数
+export class LogoutAllParams {
+	userKid: string = ''
+}

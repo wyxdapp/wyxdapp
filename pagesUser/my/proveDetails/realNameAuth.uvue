@@ -1,0 +1,1301 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">实名认证</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		<!-- 背景图片 -->
+		<image class="hear-bg" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill" />
+		<!-- #ifndef H5 -->
+		<view class="realname-page" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="realname-page">
+		<!-- #endif -->
+			<!-- 已通过认证 -->
+			<view v-if="authStatus === 30" class="success-page">
+				<view class="success-content">
+					<view class="success-icon-wrapper">
+						<uni-icons type="checkmarkempty" size="64" color="#ffffff"></uni-icons>
+					</view>
+					<text class="success-title">审核已通过！</text>
+					<view class="auth-result">
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">真实姓名</text>
+								<view class="form-value">
+									<text class="value-text value-text--filled">{{ maskedName }}</text>
+								</view>
+							</view>
+						</view>
+						<view class="form-divider"></view>
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">身份证号</text>
+								<view class="form-value">
+									<text class="value-text value-text--filled">{{ maskedIdCard }}</text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 审核中 -->
+			<view v-else-if="authStatus === 20" class="pending-page">
+				<view class="pending-content">
+					<view class="pending-title-row">
+						<uni-icons type="spinner-cycle" size="36" color="#666666"></uni-icons>
+						<text class="pending-title">实名认证审核中</text>
+					</view>
+					<text class="pending-desc">我们将在1-2个工作日内完成审核，请耐心等待。审核结果将通过消息通知您。</text>
+					
+					<view v-if="getAuthField('realName') != ''" class="auth-result">
+						<view class="result-item">
+							<text class="result-label">真实姓名</text>
+							<text class="result-value">{{ maskedName }}</text>
+						</view>
+						<view class="result-divider"></view>
+						<view class="result-item">
+							<text class="result-label">身份证号</text>
+							<text class="result-value">{{ maskedIdCard }}</text>
+						</view>
+					</view>
+					
+					<view v-if="getAuthField('idcardFrontImage') != ''" class="pending-images">
+						<view class="image-card">
+							<image class="id-image" :src="getAuthField('idcardFrontImage')" mode="aspectFill"></image>
+							<text class="image-label">人像面</text>
+						</view>
+						<view class="image-card">
+							<image class="id-image" :src="getAuthField('idcardBackImage')" mode="aspectFill"></image>
+							<text class="image-label">国徽面</text>
+						</view>
+					</view>
+					
+					<view class="pending-tips">
+						<uni-icons type="info" size="16" color="#FF6B35"></uni-icons>
+						<text class="tips-text">审核期间无法修改认证信息，如需重新提交，请等待审核结果。</text>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 未认证或审核未通过 -->
+			<view v-else class="form-page">
+				<view v-if="authStatus === 40" class="status-banner">
+					<uni-icons type="close" size="32" color="#FF5C5C"></uni-icons>
+					<text class="banner-text">审核未通过，请核对信息后重新提交认证资料。</text>
+				</view>
+				
+				<view class="page-header">
+					<text class="page-title">实名认证</text>
+					<text class="page-subtitle">请上传真实、完整、内容清晰可辨的图片</text>
+				</view>
+				
+				<!-- 基本信息 -->
+				<view class="form-section">
+					<view class="section-title">
+						<text class="section-title-text">基本信息</text>
+					</view>
+					
+					<view class="form-item" @click="openNameInput">
+						<view class="form-row">
+							<text class="form-label">本人姓名</text>
+							<view class="form-value">
+								<text
+									class="value-text"
+									:class="(getFormField('realName') != '') ? 'value-text--filled' : 'value-text--placeholder'"
+								>
+									{{ ((getFormField('realName') != null && getFormField('realName') != '') ? getFormField('realName') : '请输入姓名') + ' ›' }}
+								</text>
+							</view>
+						</view>
+					</view>
+					
+					<view class="form-divider"></view>
+					
+					<view class="form-item" @click="openIdCardInput">
+						<view class="form-row">
+							<text class="form-label">身份证号码</text>
+							<view class="form-value">
+								<text
+									class="value-text"
+								:class="(getFormField('idCard') != '') ? 'value-text--filled' : 'value-text--placeholder'"
+								>
+									{{ ((getFormField('idCard') != null && getFormField('idCard') != '') ? getFormField('idCard') : '请输入身份证号码') + ' ›' }}
+								</text>
+							</view>
+						</view>
+					</view>
+					
+				</view>
+				
+				<!-- 身份证照片 -->
+				<view class="form-section upload-form-section">
+					<text class="section-title">身份证照片</text>
+					<text class="section-desc">请确保图片清晰完整，信息可见</text>
+					<view class="upload-item" @click="uploadImage('front')">
+						<image
+							v-if="getFormField('idcardFrontImage') != ''"
+							class="upload-image"
+							:src="getFormField('idcardFrontImage')"
+							mode="aspectFill"
+						/>
+						<view v-else class="upload-placeholder">
+							<uni-icons type="camera" size="80" color="#333333"></uni-icons>
+							<text class="upload-text">上传身份证人像面</text>
+							<text class="upload-desc">请上传清晰完整的身份证人像面照片</text>
+						</view>
+					</view>
+					<view class="upload-spacing"></view>
+					<view class="upload-item" @click="uploadImage('back')">
+						<image
+							v-if="getFormField('idcardBackImage') != ''"
+							class="upload-image"
+							:src="getFormField('idcardBackImage')"
+							mode="aspectFill"
+						/>
+						<view v-else class="upload-placeholder">
+							<uni-icons type="camera" size="80" color="#333333"></uni-icons>
+							<text class="upload-text">上传身份证国徽面</text>
+							<text class="upload-desc">请上传清晰完整的身份证国徽面照片</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		<!-- 底部提交按钮：仅在可编辑时显示 -->
+		<view v-if="isEditable" class="footer-section">
+			<view class="submit-btn" :class="{ disabled: !canSubmit }" @click="handleSubmit">
+				<text class="btn-text">{{ submitting ? '提交中...' : (isRejected ? '重新提交' : '提交') }}</text>
+			</view>
+		</view>
+
+		<!-- 姓名输入弹层 -->
+		<view v-if="showNameInput" class="popup-mask" @click="closeNameInput">
+			<view class="input-popup" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title">输入姓名</text>
+					<text class="popup-close" @click="closeNameInput">✕</text>
+				</view>
+				<view class="popup-content">
+					<Input
+						v-model="tempName"
+						placeholder="请输入真实姓名"
+						:maxlength="20"
+					/>
+					<view class="popup-btn" @click="confirmName">
+						<text class="btn-text">确定</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 身份证号输入弹层 -->
+		<view v-if="showIdCardInput" class="popup-mask" @click="closeIdCardInput">
+			<view class="input-popup" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title">输入身份证号码</text>
+					<text class="popup-close" @click="closeIdCardInput">✕</text>
+				</view>
+				<view class="popup-content">
+					<Input
+						v-model="tempIdCard"
+						placeholder="请输入身份证号码"
+						:maxlength="18"
+					/>
+					<view class="popup-btn" @click="confirmIdCard">
+						<text class="btn-text">确定</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import Button from '@/components/base/Button.uvue'
+import Input from '@/components/base/Input.uvue'
+import { identityUser, queryAuthInfo, QueryAuthInfoParams, IdentityUserParams } from '@/api/travel.uts'
+import { getUserId, getUserLoginStatus, initUserInfoAction } from '@/stores/user.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData
+} from '@/common/utils/loginHelper.uts'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+// 🎯 导入统一的用户信息缓存刷新函数
+import { refreshCurrentUserProfile, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
+
+const authStatus = ref(10) // 10:未认证 20:审核中 30:已通过 40:未通过
+const submitting = ref(false)
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+class RealNameFormData {
+	realName: string = ''
+	idCard: string = ''
+	idcardFrontImage: string = ''
+	idcardBackImage: string = ''
+}
+
+const formData = ref<RealNameFormData>(new RealNameFormData())
+
+// 🔧 安全更新 formData 单个字段，避免 UTSJSONObject 类型替换导致响应式丢失
+const updateFormData = (key: string, value: string) => {
+	if (key == 'realName') {
+		formData.value.realName = value
+	} else if (key == 'idCard') {
+		formData.value.idCard = value
+	} else if (key == 'idcardFrontImage') {
+		formData.value.idcardFrontImage = value
+	} else if (key == 'idcardBackImage') {
+		formData.value.idcardBackImage = value
+	}
+}
+
+const authData = ref<RealNameFormData>(new RealNameFormData())
+
+const showNameInput = ref(false)
+const showIdCardInput = ref(false)
+
+const tempName = ref('')
+const tempIdCard = ref('')
+
+const getCurrentUserKid = (): string | null => {
+	try {
+		// 使用 loginHelper 的可靠版本获取用户ID
+		const reliableUserId = getCurrentUserIdReliable()
+		if (reliableUserId != null && reliableUserId != '') {
+			return reliableUserId
+		}
+		
+		// 降级使用统一的 store 函数获取用户ID
+		const kidStr = getUserId()
+		if (kidStr != null && kidStr != '') {
+			return kidStr
+		}
+		return null
+	} catch (e) {
+		handleSilentError(e, '获取用户ID')
+		return null
+	}
+}
+
+const isPending = computed(() => authStatus.value === 20)
+const isApproved = computed(() => authStatus.value === 30)
+const isRejected = computed(() => authStatus.value === 40)
+const isEditable = computed(() => authStatus.value === 10 || authStatus.value === 40)
+
+const canSubmit = computed((): boolean => {
+	try {
+		if (isEditable.value == null || isEditable.value == false) return false
+		const fd = formData.value
+		return (fd.idcardFrontImage != null && fd.idcardFrontImage != '' && fd.idcardBackImage != null && fd.idcardBackImage != '')
+	} catch (e) {}
+	return false
+})
+
+const loadAuthStatus = async () => {
+	try {
+		const userKid = getCurrentUserKid()
+		if (userKid == null) {
+			handleSilentError(new Error('用户未登录'), '加载实名认证信息')
+			return
+		}
+		// 构造参数并调用（避免匿名对象类型）
+		const paramsJson = JSON.stringify({ userKid: userKid })
+		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
+		const params = paramsParsed as QueryAuthInfoParams
+
+		const res = await queryAuthInfo(params)
+		// 安全解析返回值
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		if (!(code === 200 || code === '200')) {
+			handleSilentError(new Error('查询认证信息失败'), '加载实名认证信息')
+			return
+		}
+		let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+		if (dataGetVal == null || dataGetVal == '') {
+			return
+		}
+		// 把 data 解析为对象并安全读取字段
+		let dataObj: UTSJSONObject = {} as UTSJSONObject
+		try {
+			const dataJson2 = JSON.stringify(dataGetVal)
+			dataObj = (dataJson2 != null && dataJson2 != '') ? JSON.parse(dataJson2) as UTSJSONObject : {} as UTSJSONObject
+		} catch (e) { dataObj = {} as UTSJSONObject }
+
+		let idAuthGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { idAuthGetVal = (dataObj != null) ? dataObj.get('idAuth') : null } catch (e) {}
+		const statusValInt = (idAuthGetVal != null && idAuthGetVal != '') ? parseInt(idAuthGetVal.toString()) : 10
+		// 手动检查有效状态，避免 includes 的类型期望问题
+		let finalStatus = 10
+		const validStatuses = [10, 20, 30, 40]
+		for (let i = 0; i < validStatuses.length; i++) {
+			if (statusValInt === validStatuses[i]) {
+				finalStatus = statusValInt
+				break
+			}
+		}
+		authStatus.value = finalStatus
+
+		let realNameGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { realNameGetVal = (dataObj != null) ? (dataObj.get('realname') != null ? dataObj.get('realname') : dataObj.get('realName')) : null } catch (e) {}
+		const realName = (realNameGetVal != null && realNameGetVal != '') ? realNameGetVal.toString() : ''
+
+		let idCardGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { idCardGetVal = (dataObj != null) ? (dataObj.get('idNumber') != null ? dataObj.get('idNumber') : dataObj.get('idCard')) : null } catch (e) {}
+		const idCard = (idCardGetVal != null && idCardGetVal != '') ? idCardGetVal.toString() : ''
+
+		let frontGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { frontGetVal = (dataObj != null) ? dataObj.get('idcardFrontImage') : null } catch (e) {}
+		const frontImage = (frontGetVal != null && frontGetVal != '') ? frontGetVal.toString() : ''
+
+		let backGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { backGetVal = (dataObj != null) ? dataObj.get('idcardBackImage') : null } catch (e) {}
+		const backImage = (backGetVal != null && backGetVal != '') ? backGetVal.toString() : ''
+
+		if (isApproved.value || isPending.value) {
+			const ad = new RealNameFormData()
+			ad.realName = realName
+			ad.idCard = idCard
+			ad.idcardFrontImage = frontImage
+			ad.idcardBackImage = backImage
+			authData.value = ad
+			formData.value = new RealNameFormData()
+		} else {
+			const fd = new RealNameFormData()
+			fd.realName = realName
+			fd.idCard = idCard
+			fd.idcardFrontImage = frontImage
+			fd.idcardBackImage = backImage
+			formData.value = fd
+			authData.value = new RealNameFormData()
+		}
+	} catch (error) {
+		handlePageError(error, '加载认证信息', null)
+	}
+}
+
+onMounted(() => {
+	initPageLayout()
+	loadAuthStatus()
+})
+
+const getAuthRealName = (): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('realName') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormRealName = (): string => {
+	try {
+		return (formData.value.realName != null && formData.value.realName != '') ? formData.value.realName : ''
+	} catch (e) {}
+	return ''
+}
+
+const maskedName = computed((): string => {
+	try {
+		const authName = getAuthRealName()
+		const formName = getFormRealName()
+	const name = (authName != null && authName != '') ? authName : formName
+	if (name == null) return ''
+		if (name.length <= 2) return name.charAt(0) + '*'
+	return name.charAt(0) + '*'.repeat(name.length - 2) + name.charAt(name.length - 1)
+	} catch (e) {}
+	return ''
+})
+
+const getAuthIdCard = (): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('idCard') } catch (e) {}
+		if (v == null || v == '') {
+			try { v = parsed.get('idNumber') } catch (e) {}
+		}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormIdCard = (): string => {
+	try {
+		const v = formData.value.idCard
+		return (v != null && v != '') ? v : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormField = (key: string): string => {
+	try {
+		const fd = formData.value
+		if (key === 'realName') return (fd.realName != null && fd.realName != '') ? fd.realName : ''
+		if (key === 'idCard') return (fd.idCard != null && fd.idCard != '') ? fd.idCard : ''
+		if (key === 'idcardFrontImage') return (fd.idcardFrontImage != null && fd.idcardFrontImage != '') ? fd.idcardFrontImage : ''
+		if (key === 'idcardBackImage') return (fd.idcardBackImage != null && fd.idcardBackImage != '') ? fd.idcardBackImage : ''
+		return ''
+	} catch (e) {}
+	return ''
+}
+
+const getAuthField = (key: string): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get(key) } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const maskedIdCard = computed((): string => {
+	try {
+		const authIdCard = getAuthIdCard()
+		const formIdCard = getFormIdCard()
+	const idCard = (authIdCard != null && authIdCard != '') ? authIdCard : formIdCard
+		if (idCard == null || idCard == '') return ''
+	if (idCard.length <= 6) return idCard
+	return idCard.substring(0, 2) + '******' + idCard.substring(idCard.length - 4)
+	} catch (e) {}
+	return ''
+})
+
+ 
+
+const openNameInput = () => {
+	if (isEditable.value == null || isEditable.value == false) return
+	tempName.value = getFormField('realName')
+	showNameInput.value = true
+}
+
+const closeNameInput = () => {
+	showNameInput.value = false
+}
+
+const confirmName = () => {
+	const value = tempName.value.trim()
+	if (value == null || value == '') {
+		uni.showToast({ title: '请输入姓名', icon: 'none' })
+		return
+	}
+	updateFormData('realName', value)
+	showNameInput.value = false
+}
+
+const openIdCardInput = () => {
+	if (isEditable.value == null || isEditable.value == false) return
+	tempIdCard.value = getFormField('idCard')
+	showIdCardInput.value = true
+}
+
+const closeIdCardInput = () => {
+	showIdCardInput.value = false
+}
+
+const confirmIdCard = () => {
+	const value = tempIdCard.value.trim()
+	if (value == null || value == '') {
+		uni.showToast({ title: '请输入身份证号码', icon: 'none' })
+		return
+	}
+	const idCardReg = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/
+	if (!idCardReg.test(value)) {
+		uni.showToast({ title: '请输入正确的身份证号码', icon: 'none' })
+		return
+	}
+	updateFormData('idCard', value)
+	showIdCardInput.value = false
+}
+
+// 使用 cosUploader 上传身份证图片到 COS
+const uploadIdCardToCOS = async (filePath: string): Promise<string> => {
+	try {
+		const result = await cosUploader.uploadIdCard(filePath, (progress: number) => {
+			console.log('📈 身份证图片上传进度:', progress.toString() + '%')
+		})
+		
+		// 🔧 关键：使用 UTSJSONObject 的 get 方法访问属性
+		if (result != null) {
+			const successVal = result.get('success')
+			const success = (successVal != null && successVal.toString() == 'true')
+			if (success == true) {
+				const dataVal = result.get('data')
+				if (dataVal != null) {
+					const data = dataVal as UTSJSONObject
+					const compressedUrlVal = data.get('compressedUrl')
+					const originalUrlVal = data.get('originalUrl')
+					if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+						return compressedUrlVal.toString()
+					} else if (originalUrlVal != null && originalUrlVal.toString() != '') {
+						return originalUrlVal.toString()
+					}
+				}
+			}
+			
+			let errorMsg = '上传失败'
+			const errorVal = result.get('error')
+			if (errorVal != null && errorVal.toString() != '') {
+				errorMsg = errorVal.toString()
+			}
+			throw new Error(errorMsg)
+		}
+		
+		throw new Error('上传失败')
+	} catch (error) {
+		handleSilentError(error as any, '身份证图片上传')
+		throw error
+	}
+}
+
+const uploadImage = (type: string) => {
+	const userKid = getCurrentUserKid()
+	if (userKid == null) {
+		uni.showToast({ title: '用户未登录，请先登录', icon: 'none' })
+		return
+	}
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+	uni.chooseImage({
+		count: 1,
+		sizeType: ['compressed'],
+		sourceType: ['album', 'camera'],
+		success: (res) => {
+			if ((res.tempFilePaths == null) || (res.tempFilePaths.length === 0)) {
+				return
+			}
+			const filePath = res.tempFilePaths[0]
+			uni.showLoading({ title: '上传中...', mask: true })
+			
+			// 使用 cosUploader 直传到 COS
+			uploadIdCardToCOS(filePath).then((imageUrl: string) => {
+				uni.hideLoading()
+				if (imageUrl != null && imageUrl != '') {
+					if (type === 'front') {
+						updateFormData('idcardFrontImage', imageUrl)
+					} else {
+						updateFormData('idcardBackImage', imageUrl)
+					}
+					uni.showToast({ title: '上传成功', icon: 'none' })
+				} else {
+					uni.showToast({ title: '图片上传失败，请重试', icon: 'none' })
+				}
+			}).then((resultIgnore: any | null) => {
+				// 成功处理已在上面完成
+			}, (err: any | null) => {
+				uni.hideLoading()
+				handlePageError(err as any, '上传图片', null)
+			})
+		}
+	})
+	}) // requestPermissionTip
+}
+
+const handleSubmit = async () => {
+	if (submitting.value) {
+		return
+	}
+	if (authStatus.value === 20) {
+		uni.showToast({ title: '实名认证正在审核中，请耐心等待', icon: 'none' })
+		return
+	}
+	if (authStatus.value === 30) {
+		uni.showToast({ title: '实名认证已通过，无需再次提交', icon: 'none' })
+		return
+	}
+	// 使用安全读取 form 字段
+	const realNameVal = getFormField('realName')
+	if ((realNameVal == null) || (realNameVal == '')) {
+		uni.showToast({
+			title: '请输入真实姓名',
+			icon: 'none'
+		})
+		return
+	}
+	const idCardVal = getFormField('idCard')
+	if ((idCardVal == null) || (idCardVal == '')) {
+		uni.showToast({
+			title: '请输入身份证号',
+			icon: 'none'
+		})
+		return
+	}
+	const idCardReg = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/
+	if (!idCardReg.test(idCardVal)) {
+		uni.showToast({
+			title: '身份证号格式不正确',
+			icon: 'none'
+		})
+		return
+	}
+	if (canSubmit.value == null || canSubmit.value == false) {
+		uni.showToast({ title: '请上传身份证正反面照片', icon: 'none' })
+		return
+	}
+	const userKid = getCurrentUserKid()
+	if (userKid == null) {
+		uni.showToast({ title: '用户信息不存在，请重新登录', icon: 'none' })
+		return
+	}
+	submitting.value = true
+	try {
+		const fd = formData.value
+		console.log('📋 [realNameAuth] 提交参数:', JSON.stringify({
+			userKid: userKid,
+			realname: realNameVal,
+			idNumber: idCardVal,
+			idcardFrontImage: fd.idcardFrontImage,
+			idcardBackImage: fd.idcardBackImage
+		}))
+		// 构造 plain params object
+		const paramsJson2 = JSON.stringify({
+			userKid: userKid as string,
+			realname: (realNameVal != null ? realNameVal.trim() : ''),
+			idNumber: (idCardVal != null ? idCardVal.trim() : ''),
+			idcardFrontImage: (fd.idcardFrontImage != null ? fd.idcardFrontImage.trim() : ''),
+			idcardBackImage: (fd.idcardBackImage != null ? fd.idcardBackImage.trim() : '')
+		})
+		const paramsParsed2 = (paramsJson2 != null && paramsJson2 != '') ? JSON.parse(paramsJson2) as UTSJSONObject : {} as UTSJSONObject
+		const paramsFinal = paramsParsed2 as IdentityUserParams
+
+		console.log('🚀 [realNameAuth] 开始调用 identityUser API')
+		const res = await identityUser(paramsFinal)
+		// 安全解析返回
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		if (code === 200 || code === '200') {
+			uni.showToast({ title: '提交成功，请等待审核', icon: 'none' })
+			// 🎯 刷新用户信息缓存（更新认证状态）
+			refreshCurrentUserProfile().then((profile: any | null) => {
+			}).catch((err: any | null): void => {
+				handleSilentError(err as any, '[realNameAuth] 刷新缓存')
+			})
+			await loadAuthStatus()
+		} else {
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '提交失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '提交实名认证', null)
+	} finally {
+		submitting.value = false
+	}
+}
+
+// 🔧 优化：组件卸载时清理 useCurrentUserProfile 事件监听器，防止内存泄漏
+onUnmounted(() => {
+	destroyEventListeners()
+})
+</script>
+
+<style scoped>
+.page {
+	background-color: #FFFFFF;
+	position: relative;
+	padding-bottom: 150rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.hear-bg {
+	width: 100%;
+	height: 392rpx;
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 1;
+}
+
+.realname-page {
+	background-color: transparent;
+	position: relative;
+	z-index: 10;
+}
+
+.success-page,
+.pending-page {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 20rpx 28rpx;
+}
+
+.success-content {
+	margin-top: 20rpx;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+	padding-top: 48rpx;
+	padding-bottom: 40rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	text-align: center;
+	flex: 1;
+}
+
+.pending-content {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 32rpx 32rpx;
+	text-align: center;
+	width: 100%;
+}
+
+.pending-title-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.success-icon-wrapper {
+	width: 120rpx;
+	height: 120rpx;
+	border-radius: 60rpx;
+	background-color: #37B1F2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 32rpx;
+	box-shadow: 0 8rpx 24rpx rgba(45, 202, 194, 0.4);
+}
+
+.success-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 64rpx;
+	color: #ffffff;
+}
+
+.success-title {
+	font-size: 40rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 32rpx;
+	display: flex;
+	justify-content: center;
+	text-align: center;
+}
+
+.pending-icon {
+	margin-bottom: 32rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.pending-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-left: 12rpx;
+}
+
+.pending-desc {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+	margin-bottom: 28rpx;
+	display: flex;
+}
+
+.auth-result {
+	margin-top: 24rpx;
+}
+
+.result-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.result-value {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.result-divider {
+	height: 2rpx;
+	background-color: #e0e0e0;
+	margin: 8rpx 0;
+}
+
+.pending-images {
+	display: flex;
+	margin-bottom: 32rpx;
+}
+
+.image-card {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.id-image {
+	width: 100%;
+	height: 200rpx;
+	border-radius: 8rpx;
+	margin-bottom: 12rpx;
+}
+
+.image-label {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.pending-tips {
+	background-color: #FFF3E0;
+	padding: 16rpx 20rpx;
+	border-radius: 8rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.tips-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 12rpx;
+}
+
+.tips-text {
+	flex: 1;
+	font-size: 22rpx;
+	color: #FF6B35;
+	line-height: 1.4;
+	margin-left: 8rpx;
+}
+
+.form-page {
+	padding: 8rpx 0 16rpx;
+}
+
+.status-banner {
+	background-color: #FFEBEE;
+	padding: 20rpx 28rpx;
+	display: flex;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.banner-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 12rpx;
+}
+
+.banner-text {
+	flex: 1;
+	font-size: 26rpx;
+	color: #FF5C5C;
+}
+
+.page-header {
+	padding: 24rpx 28rpx 16rpx;
+	text-align: center;
+}
+
+.page-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	display: flex;
+}
+
+.page-subtitle {
+	font-size: 24rpx;
+	color: #999999;
+	display: flex;
+}
+
+.form-section {
+	margin-top: 20rpx;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+	overflow: hidden;
+}
+
+.section-title {
+	padding: 32rpx 28rpx 16rpx;
+	border-bottom: 2rpx solid #F5F5F5;
+}
+
+.section-title-text {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.section-subtitle {
+	margin-top: 8rpx;
+	display: flex;
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.form-item {
+	padding: 0 32rpx;
+}
+
+.form-label {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: 400;
+	text-align: left;
+	flex: none;
+}
+
+.form-divider {
+	height: 2rpx;
+	background-color: #F5F5F5;
+	margin-top: 0;
+	margin-bottom: 0;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+}
+
+
+.form-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	flex-direction: row;
+	padding: 32rpx 0;
+	min-height: 88rpx;
+}
+
+.form-value {
+	display: flex;
+	align-items: center;
+	flex: none;
+}
+
+.value-text {
+	font-size: 28rpx;
+	margin-right: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.value-text--placeholder {
+	color: #C8C8C8;
+}
+
+.value-text--filled {
+	color: #333333;
+}
+
+.arrow-icon {
+	margin-top: 0;
+	font-size: 24rpx;
+	color: #C8C8C8;
+}
+
+.upload-form-section {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-top: 0;
+	margin-right: 28rpx;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	border-radius: 16rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+
+.upload-form-section .section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	display: flex;
+	padding: 0;
+	border-bottom: none;
+}
+
+.section-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-bottom: 24rpx;
+	display: flex;
+}
+
+.upload-item {
+	width: 100%;
+	height: 300rpx;
+	border-radius: 8rpx;
+	overflow: hidden;
+}
+
+.upload-image {
+	width: 100%;
+	height: 100%;
+}
+
+.upload-placeholder {
+	width: 100%;
+	height: 100%;
+	background-color: #f8f9fa;
+	border: 4rpx dashed #e0e0e0;
+	border-radius: 8rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.upload-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.upload-text {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.upload-desc {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.upload-spacing {
+	height: 24rpx;
+}
+
+.footer-section {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding: 24rpx 32rpx;
+	background-color: #FFFFFF;
+	border-top: 2rpx solid #F0F0F0;
+	box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.1);
+	z-index: 20;
+}
+
+.submit-btn {
+	width: 100%;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn.disabled {
+	background: #F0F0F0;
+	box-shadow: none;
+}
+
+.submit-btn.disabled .btn-text {
+	color: #CCCCCC;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #FFFFFF;
+}
+
+.submit-section {
+	padding: 0 28rpx 40rpx;
+}
+
+.form-section .wy-input {
+	width: 100%;
+}
+
+.form-section .wy-input__wrapper {
+	background-color: transparent;
+	border-width: 0;
+	padding: 0;
+	height: auto;
+	justify-content: flex-end;
+}
+
+.form-section .wy-input__field {
+	text-align: right;
+}
+
+
+.popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.45);
+	z-index: 50;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.input-popup {
+	width: 100%;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding: 32rpx;
+}
+
+.popup-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-bottom: 24rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F5F5F5;
+	margin-bottom: 32rpx;
+}
+
+.popup-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.popup-close {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.popup-content {
+}
+
+.popup-btn {
+	width: 100%;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 32rpx;
+}
+
+.date-display {
+	margin-top: 8rpx;
+	padding: 24rpx;
+	border-radius: 12rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #F0F0F0;
+	align-items: center;
+	justify-content: center;
+}
+</style>

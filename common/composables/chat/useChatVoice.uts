@@ -1,0 +1,198 @@
+/**
+ * 聊天语音录制 Composable
+ * 管理语音录制状态和控制
+ */
+
+import { ref } from 'vue'
+import {
+	startRecording,
+	stopRecording,
+	cancelRecording,
+	requestRecordPermission,
+	RecordingResult,
+	onDurationChange as onDurationChangeFromService,
+	onVolumeChange as onVolumeChangeFromService
+} from '@/common/services/voiceRecorderService.uts'
+import { ChatVoiceResult } from '@/common/types/chatTypes.uts'
+
+// 重新导出类型供外部使用
+export { ChatVoiceResult } from '@/common/types/chatTypes.uts'
+
+/**
+ * 聊天语音录制 Composable
+ */
+export function useChatVoice(): ChatVoiceResult {
+	// 响应式状态
+	const showVoicePanel = ref<boolean>(false)
+	const voiceRecordDuration = ref<number>(0)
+	const voiceRecordVolume = ref<number>(0)
+	const isVoiceCancelArea = ref<boolean>(false)
+	
+	/**
+	 * 开始录音
+	 * @param onSuccess 录音成功回调（返回文件路径和时长）
+	 */
+	const handleVoiceStart = (onSuccess: ((filePath: string, duration: number) => void) | null) => {
+		console.log('🎤 [useChatVoice] 开始录音')
+		
+		// 请求录音权限
+		requestRecordPermission().then((granted: boolean): void => {
+			if (granted == true) {
+				// 显示录音面板
+				showVoicePanel.value = true
+				isVoiceCancelArea.value = false
+				voiceRecordDuration.value = 0
+				voiceRecordVolume.value = 0
+				
+				// 开始录音
+				startRecording()
+			} else {
+				uni.showToast({
+					title: '请授权麦克风权限',
+					icon: 'none'
+				})
+			}
+		}).catch((err: any | null): void => {
+			console.error('🎤 [useChatVoice] 请求录音权限失败:', err)
+			uni.showToast({
+				title: '无法获取录音权限',
+				icon: 'none'
+			})
+		})
+	}
+
+	/**
+	 * 结束录音
+	 * @returns Promise<any> 录音结果
+	 */
+	const handleVoiceEnd = (): Promise<any> => {
+		console.log('🎤 [useChatVoice] 结束录音')
+		
+		return stopRecording().then((result: RecordingResult): any => {
+			showVoicePanel.value = false
+
+			if (result.duration < 1) {
+				uni.showToast({
+					title: '录音时间太短',
+					icon: 'none'
+				})
+				throw new Error('录音时间太短')
+			}
+
+			// 直接返回包含解析后数据的对象，避免在外部再次解析
+			return {
+				tempFilePath: result.tempFilePath,
+				duration: result.duration,
+				fileSize: result.fileSize
+			} as any
+		}).catch((err: any | null): any => {
+			showVoicePanel.value = false
+
+			let errorMsg = '录音失败'
+			if (err != null) {
+				errorMsg = err.toString()
+			}
+
+			if (errorMsg == '录音时间太短') {
+				uni.showToast({
+					title: '录音时间太短',
+					icon: 'none'
+				})
+			} else if (errorMsg == '当前未在录音' || errorMsg == '当前状态不允许停止录音') {
+				// 状态同步问题，不显示错误提示，只记录日志
+				console.warn('🎤 [useChatVoice] 录音状态同步问题:', errorMsg)
+			} else {
+				console.error('🎤 [useChatVoice] 停止录音失败:', err)
+				uni.showToast({
+					title: errorMsg,
+					icon: 'none'
+				})
+			}
+
+			throw new Error(errorMsg)
+		})
+	}
+	
+	/**
+	 * 取消录音
+	 */
+	const handleVoiceCancel = () => {
+		console.log('🎤 [useChatVoice] 取消录音')
+		showVoicePanel.value = false
+		cancelRecording()
+	}
+	
+	/**
+	 * 语音模式切换
+	 * @param mode 是否为语音模式
+	 */
+	const handleVoiceModeChange = (mode: boolean) => {
+		console.log('🎤 [useChatVoice] 语音模式切换:', mode)
+	}
+	
+	/**
+	 * 更新录音时长（已废弃，直接通过回调更新）
+	 * @param duration 时长（秒）
+	 */
+	const updateDuration = (duration: number) => {
+		voiceRecordDuration.value = duration
+	}
+
+	/**
+	 * 更新录音音量（已废弃，直接通过回调更新）
+	 * @param volume 音量（0-100）
+	 */
+	const updateVolume = (volume: number) => {
+		voiceRecordVolume.value = volume
+	}
+	
+	/**
+	 * 设置是否在取消区域
+	 * @param isCancel 是否在取消区域
+	 */
+	const setVoiceCancelArea = (isCancel: boolean) => {
+		isVoiceCancelArea.value = isCancel
+	}
+
+	/**
+	 * 设置时长变化回调
+	 * @param callback 时长变化回调函数
+	 */
+	const onDurationChange = (callback: (duration: number) => void) => {
+		// 设置录音服务的时长变化回调
+		onDurationChangeFromService((duration: number) => {
+			console.log('🎤 [useChatVoice] 时长变化:', duration)
+			voiceRecordDuration.value = duration
+			callback(duration)
+		})
+	}
+
+	/**
+	 * 设置音量变化回调
+	 * @param callback 音量变化回调函数
+	 */
+	const onVolumeChange = (callback: (volume: number) => void) => {
+		// 设置录音服务的音量变化回调
+		onVolumeChangeFromService((volume: number) => {
+			console.log('🎤 [useChatVoice] 音量变化:', volume)
+			voiceRecordVolume.value = volume
+			callback(volume)
+		})
+	}
+	
+	return new ChatVoiceResult(
+		showVoicePanel,
+		voiceRecordDuration,
+		voiceRecordVolume,
+		isVoiceCancelArea,
+		handleVoiceStart,
+		handleVoiceEnd,
+		handleVoiceCancel,
+		handleVoiceModeChange,
+		updateDuration,
+		updateVolume,
+		setVoiceCancelArea,
+		onDurationChange,
+		onVolumeChange
+	)
+}

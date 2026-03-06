@@ -1,0 +1,180 @@
+/**
+ * 订单通知相关服务封装
+ *
+ * 统一包装 api/notification.uts，提供给页面一个简单的 Promise<number> / Promise<void> 接口：
+ * - getOrderNotificationsUnreadCountByType(userId, type)
+ * - markOrderNotificationsReadByType(userId, type)
+ * - getOrderNotificationsUnreadCount(userId)
+ * - getNotificationUnreadCount(userId) - 获取通知列表未读数（用于通知图标徽章）
+ * - markAllNotificationsAsRead(userId) - 标记所有通知已读
+ * - getPendingOrderCount(userKid) - 获取未完成订单数（用于订单Tab角标）
+ */
+import {
+  getOrderNotificationsUnreadCount as apiGetOrderUnread,
+  getOrderNotificationsUnreadCountByType as apiGetOrderUnreadByType,
+  markOrderNotificationsReadByType as apiMarkOrderReadByType,
+  getUnreadCount as apiGetUnreadCount,
+  markAllNotificationsRead as apiMarkAllRead,
+  getPendingOrderCount as apiGetPendingOrderCount
+} from '@/api/notification.uts'
+import { 
+  GetOrderNotificationsUnreadCountByTypeParams,
+  MarkOrderNotificationsReadByTypeParams 
+} from '@/api/types/notificationTypes.uts'
+import { getNumberProp } from '@/common/utils/utsSafe.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 按类型获取订单通知未读数（如：ORDER_EXPENDITURE / ORDER_INCOME）
+ */
+export function getOrderNotificationsUnreadCountByType(
+  userId: string,
+  type: string
+): Promise<number> {
+  // userId 是 string 类型，只需检查空字符串
+  if (userId == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    // 🔧 修复：使用类实例而不是对象字面量
+    const params = new GetOrderNotificationsUnreadCountByTypeParams()
+    params.userId = userId
+    params.type = type
+    
+    apiGetOrderUnreadByType(params).then((res: any) => {
+      // 使用 utsSafe 工具函数，兼容 H5 和原生环境
+      const value = getNumberProp(res, 'unreadCount')
+      resolve(value)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '获取订单通知未读数(按类型)')
+      resolve(0)
+    })
+  })
+}
+
+/**
+ * 按类型标记订单通知为已读
+ */
+export function markOrderNotificationsReadByType(
+  userId: string,
+  type: string
+): Promise<number> {
+  // userId 是 string 类型，只需检查空字符串
+  if (userId == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    // 🔧 修复：使用类实例而不是对象字面量
+    const params = new MarkOrderNotificationsReadByTypeParams()
+    params.userId = userId
+    params.type = type
+    
+    apiMarkOrderReadByType(params).then((res: any) => {
+      resolve(1)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '标记订单通知已读(按类型)')
+      resolve(0)
+    })
+  })
+}
+
+/**
+ * 获取订单通知未读总数
+ */
+export function getOrderNotificationsUnreadCount(
+  userId: string
+): Promise<number> {
+  // userId 是 string 类型，只需检查空字符串
+  if (userId == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    apiGetOrderUnread(userId).then((res: any) => {
+      // 使用 utsSafe 工具函数，兼容 H5 和原生环境
+      const value = getNumberProp(res, 'unreadCount')
+      resolve(value)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '获取订单通知未读总数')
+      resolve(0)
+    })
+  })
+}
+
+/**
+ * 获取通知列表未读数（用于通知图标徽章）
+ * 返回 all 类型的未读数
+ */
+export function getNotificationUnreadCount(
+  userId: string
+): Promise<number> {
+  if (userId == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    apiGetUnreadCount(userId).then((res: any) => {
+      // API 返回格式: { all: number, order: number, system: number, interact: number }
+      // 使用 utsSafe 工具函数获取 all 字段
+      const value = getNumberProp(res, 'all')
+      resolve(value)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '获取通知未读数')
+      resolve(0)
+    })
+  })
+}
+
+/**
+ * 标记所有通知已读
+ * 返回标记已读的数量
+ */
+export function markAllNotificationsAsRead(
+  userId: string
+): Promise<number> {
+  if (userId == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    apiMarkAllRead(userId).then((res: any) => {
+      // API 返回标记已读的数量
+      if (typeof res === 'number') {
+        resolve(res as number)
+        return
+      }
+      // 如果返回对象，尝试获取 data 字段
+      const value = getNumberProp(res, 'data')
+      resolve(value)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '标记所有通知已读')
+      resolve(0)
+    })
+  })
+}
+
+/**
+ * 获取未完成订单数（用于订单Tab角标）
+ * 未完成订单定义：状态不是已完成(60)、已评价(70)、退款单(80)、已取消(90)的订单
+ * 这是正确的订单未读数逻辑，替代原来的通知消息未读数
+ */
+export function getPendingOrderCount(
+  userKid: string
+): Promise<number> {
+  if (userKid == '') {
+    return Promise.resolve(0)
+  }
+  return new Promise<number>((resolve: (value: number) => void) => {
+    apiGetPendingOrderCount(userKid).then((res: any) => {
+      // API 返回格式: { count: number, userKid: string }
+      const value = getNumberProp(res, 'count')
+      resolve(value)
+    }).catch((e: any | null): void => {
+      const error = (e != null) ? e : new Error('未知错误')
+      handleSilentError(error, '获取未完成订单数')
+      resolve(0)
+    })
+  })
+}

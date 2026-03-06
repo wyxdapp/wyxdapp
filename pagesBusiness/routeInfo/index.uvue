@@ -1,0 +1,1890 @@
+
+<template>
+	<view class="route-page">
+		<!-- 顶部 APP 提示条：仅在 H5 且无 source 时显示 -->
+		<!-- #ifdef H5 -->
+		<H5TopBar v-if="source == ''" @open-app="handleApp" />
+		<!-- #endif -->
+		
+		<!-- 返回按钮（固定在顶部） -->
+		<!-- #ifdef H5 -->
+		<view class="page-back-fixed" :style="{ top: source == '' ? (pageStatusBarHeight + 45) + 'px' : pageStatusBarHeight + 'px' }" @click="handleBack">
+			<Icon name="back" :size="44" />
+		</view>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<view class="page-back-fixed" :style="{ top: pageStatusBarHeight + 'px' }" @click="handleBack">
+			<Icon name="back" :size="44" />
+		</view>
+		<!-- #endif -->
+		
+		<!-- 分享按钮（固定在顶部） -->
+		<!-- #ifdef H5 -->
+		<view class="share-btn-fixed" :style="{ top: source == '' ? (pageStatusBarHeight + 45) + 'px' : pageStatusBarHeight + 'px' }" @click="handleShare">
+			<Icon name="share" :size="44" />
+		</view>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<view class="share-btn-fixed" :style="{ top: pageStatusBarHeight + 'px' }" @click="handleShare">
+			<Icon name="share" :size="44" />
+		</view>
+		<!-- #endif -->
+		
+		<!-- 整页滚动容器 -->
+		<!-- #ifdef H5 -->
+		<scroll-view 
+			class="page-scroll-view" 
+			:scroll-y="true" 
+			:bounces="true"
+			:show-scrollbar="false"
+			:style="{ height: scrollViewHeight + 'px', marginTop: source == '' ? '45px' : '0' }"
+		>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<scroll-view 
+			class="page-scroll-view" 
+			:scroll-y="true" 
+			:bounces="true"
+			:show-scrollbar="false"
+			:style="{ height: scrollViewHeight + 'px' }"
+		>
+		<!-- #endif -->
+		
+		<!-- 轮播图 -->
+		<swiper class="image-swiper" :indicator-dots="true" :autoplay="true">
+			<swiper-item v-for="(img, index) in routeInfoImages" :key="index">
+				<image class="swiper-image" :src="img" mode="aspectFill"></image>
+			</swiper-item>
+		</swiper>
+		
+		<!-- 路线信息：价格 + 销量 + 标题 + 标签 + 出发时间 + 点赞 -->
+		<view class="route-info-card">
+			<!-- 第一行：价格和销量 -->
+			<view class="price-sale-row">
+				<view class="price-section-top">
+					<text class="price-value-top">¥{{ routeInfoPrice }}</text>
+					<text class="price-unit-top">/人起</text>
+			</view>
+				<text class="sale-text-top">销量: {{ routeInfoBookingCount }}</text>
+			</view>
+			<!-- 第二行：标题 -->
+			<text class="route-title">{{ routeInfoTitle }}</text>
+			<!-- 第三行：标签 -->
+			<view class="route-tags">
+				<view v-for="(tag, index) in routeInfoTags" :key="index" class="tag">
+					<text>{{ tag }}</text>
+				</view>
+			</view>
+			<!-- 第四行：出发时间 -->
+			<view class="departure-row" v-if="departureDate">
+				<image class="start-icon" src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png" mode="aspectFill" />
+				<text class="departure-text">出发时间: {{ departureDate }}</text>
+			</view>
+			<!-- 右下角点赞按钮 -->
+			<view class="like-btn-card" @click="handleLike">
+				<Icon 
+					:name="isLiked == true ? 'n_icon_upActive' : 'n_icon_up'" 
+					:size="40"
+				/>
+				<text class="like-count-card" v-if="likeCount > 0">{{ likeCount }}</text>
+			</view>
+		</view>
+		
+		<!-- 向导信息（guider-card 样式，与首页完全一致） -->
+		<view class="section-card guide-info-box" v-if="hasGuideInfo == true" @click="handleUserProfile">
+			<view class="guider-card-layout">
+				<!-- 左侧形象照 -->
+				<view class="guider-image-box">
+					<image 
+						:src="guideOptimizedAvatar" 
+						class="guider-avatar"
+						mode="aspectFill"
+					/>
+				</view>
+				
+				<!-- 右侧信息区 -->
+				<view class="guider-info-box">
+					<!-- 昵称 + VIP勋章 + 礼物等级 -->
+					<NicknameWithBadges
+						:nickname="displayGuideNickName"
+						:vipType="guideVipType"
+						:giftLevel="guideGiftLevel"
+						size="medium"
+					/>
+					
+					<!-- 性别年龄 + 认证图标行 -->
+					<view class="guider-info-row">
+						<!-- 性别年龄组件 -->
+						<view class="gender-age-box">
+							<GenderAge :sex="guideInfoSex" :age="displayGuideAge" />
+						</view>
+						
+						<!-- 官方认证 -->
+						<view v-if="guideIsOfficialCert == true" class="official-certification">
+							<image src="https://jiasu.wyxdapp.com/iconimages/n_index_officialAuthor.png" class="cert-icon" mode="aspectFill" />
+						</view>
+						
+						<!-- 实名认证 -->
+						<view v-if="guideIsRealNameAuth == true" class="name-authentication">
+							<image src="https://jiasu.wyxdapp.com/iconimages/n_index_realName.png" class="auth-icon" mode="aspectFill" />
+						</view>
+					</view>
+					
+					<!-- 简介 - 2行省略 -->
+					<text class="guider-description">{{ guideDescription }}</text>
+					
+					<!-- 技能标签 -->
+					<view v-if="guideForteListLength > 0" class="guider-tags">
+						<view v-for="(forte, index) in guideForteList" :key="index" class="card-tag-blue">
+							<text class="card-tag-blue-text">{{ getGuideForteName(forte) }}</text>
+						</view>
+					</view>
+					
+					<!-- 底部：位置信息 -->
+					<view class="guider-bottom-row">
+						<LocationInfo 
+							:city="guideCityName" 
+							:distance="guideDistanceValue"
+							textColor="default"
+						/>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- Tabs：详情 / 评价 -->
+		<view class="tabs-wrapper">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabItems" 
+					:key="index"
+					class="tab-item" 
+					@click="onTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': currentTab == index }">{{ tab.label }}</text>
+					<view v-if="currentTab == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 详情内容（合并定制特色、行程安排、费用须知） -->
+		<view class="section-card detail-content-box" v-if="currentTab == 0">
+			<!-- 路线详情（优先显示 routeDetail） -->
+			<view v-if="routeDetailHtml != ''">
+				<text class="section-title">路线详情</text>
+				<rich-text :nodes="routeDetailHtml"></rich-text>
+			</view>
+			
+			<!-- 定制特色 -->
+			<view v-else-if="featureHtml != ''">
+				<text class="section-title">定制特色</text>
+				<rich-text :nodes="featureHtml"></rich-text>
+			</view>
+			
+			<!-- 行程安排 -->
+			<view v-if="planHtml != '' && routeDetailHtml == ''">
+				<text class="section-title" v-if="featureHtml != ''">行程安排</text>
+				<text class="section-title" v-else>行程安排</text>
+				<rich-text :nodes="planHtml"></rich-text>
+			</view>
+			
+			<!-- 费用须知 -->
+			<view v-if="noticeHtml != '' && routeDetailHtml == ''">
+				<text class="section-title">费用须知</text>
+				<rich-text :nodes="noticeHtml"></rich-text>
+			</view>
+			
+			<!-- 无内容时显示行程列表 -->
+			<view v-if="routeDetailHtml == '' && featureHtml == '' && planHtml == '' && noticeHtml == ''">
+				<view v-if="itineraryLength > 0" class="itinerary-list">
+					<view v-for="(item, index) in routeInfoItinerary" :key="index" class="itinerary-item">
+						<view class="itinerary-day">
+							<text class="itinerary-day-text">Day {{ index + 1 }}</text>
+						</view>
+						<view class="itinerary-content">
+							<text class="itinerary-title">{{ item.title }}</text>
+							<text class="itinerary-desc">{{ item.description }}</text>
+						</view>
+					</view>
+				</view>
+				<text v-else class="placeholder-text">暂无详情内容</text>
+			</view>
+		</view>
+		
+		<!-- 评价内容 -->
+		<view class="section-card comment-content-box" v-if="currentTab == 1">
+			<text class="section-title">用户评价</text>
+			<text class="placeholder-text">暂无评价</text>
+		</view>
+		
+			<!-- 底部占位 -->
+			<view class="footer-placeholder"></view>
+		</scroll-view>
+		
+		<!-- 底部操作栏（双按钮样式，与个人主页一致） -->
+		<view class="footer-box" v-if="source == ''">
+			<!-- 咨询按钮 -->
+			<view class="btn btn-subscribe" @click="handleConsult">
+				<text class="btn-subscribe-text">咨询</text>
+			</view>
+			<!-- 预定按钮 -->
+			<view class="btn btn-chat" @click="handleBook">
+				<text class="btn-chat-text">预定</text>
+			</view>
+		</view>
+		
+		<!-- 预约弹层（定制下单） -->
+		<SubmitOrder 
+			v-model:show="showSubmitOrder"
+			:price="routeInfoPrice"
+			guiderKid=""
+			:lineKid="routeInfoId"
+			:lineTitle="routeInfoTitle"
+		/>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
+		
+		<Loading :show="loading" fullscreen />
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import Loading from '@/components/base/Loading.uvue'
+import Icon from '@/components/base/Icon.uvue'
+import GenderAge from '@/components/base/GenderAge.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import LocationInfo from '@/components/base/LocationInfo.uvue'
+import H5TopBar from '@/components/base/H5TopBar.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { getTravelDetail, GetTravelDetailParams } from '@/api/travel.uts'
+import { addVisitor } from '@/api/behavior.uts'
+import { AddVisitorParams } from '@/api/types/behaviorTypes.uts'
+import SubmitOrder from '@/components/common/SubmitOrder.uvue'
+import { isWechatBrowser, isPC, isAndroid, isIOS } from '@/common/utils/systemInfo'
+import { safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { getStringProp as safeGetStringProp, toJsonObj } from '@/common/utils/utsSafe.uts'
+import { 
+	pageStatusBarHeight,
+	pageWindowHeight,
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	getChatList as getChatListFn, 
+	getChatListRef,
+	handleShareToChat as handleShareToChatFn
+} from '@/common/composables/useChatAndShare.uts'
+import { LINE_TYPE_FREE } from '@/common/config/businessCodes.uts'
+import { 
+	handleShareWechat as handleShareWechatFn,
+	handleShareMoments as handleShareMomentsFn,
+	handleCopyLink as handleCopyLinkFn,
+	handleShowQrcode as handleShowQrcodeFn
+} from '@/common/composables/useShareUi.uts'
+import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 行程项数据类（必须在 ref 使用前定义）
+class ItineraryItemData {
+	title: string = ''
+	description: string = ''
+	constructor(title: string, description: string) {
+		this.title = title
+		this.description = description
+	}
+}
+
+// 辅助函数 - 获取用户ID（使用 loginHelper 可靠版本）
+const getCurrentUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 辅助函数 - 检查登录状态（使用 loginHelper 可靠版本）
+const checkUserLoginUtil = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+const loading = ref(false)
+const routeId = ref('')
+const source = ref('')
+const showSubmitOrder = ref(false)
+const scrollViewHeight = ref<number>(0)
+
+// 分享相关状态
+const showSharePopup = ref(false)
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	desc: '',
+	summary: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+})
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const userStore = useUserStore()
+
+// 路线信息拆分为独立 ref
+const routeInfoId = ref('')
+const routeInfoTitle = ref('')
+const routeInfoImages = ref<Array<string>>([])
+const routeInfoDays = ref(0)
+const routeInfoNights = ref(0)
+const routeInfoDestination = ref('')
+const routeInfoTags = ref<Array<string>>([])
+const routeInfoRating = ref(0)
+const routeInfoBookingCount = ref(0)
+const routeInfoPrice = ref(0)
+const routeInfoItinerary = ref<Array<ItineraryItemData>>([])
+const routeInfoIncludes = ref<Array<string>>([])
+
+// 点赞状态
+const isLiked = ref(false)
+const likeCount = ref(0)
+
+// 向导信息拆分为独立 ref
+const guideInfoUserKid = ref('')
+const guideInfoUserImage = ref('')
+const guideInfoNickName = ref('')
+const guideInfoStarLevel = ref(0)
+const guideInfoSex = ref('')
+const guideInfoAge = ref('')
+const guideInfoEducation = ref('')
+const hasGuideInfo = ref(false)
+
+// 向导信息扩展字段（与首页 guider-card 一致）
+const guideInfoVip = ref(0)
+const guideInfoVipType = ref(0)
+const guideInfoGiftLevel = ref(0)
+const guideInfoGuideIdentity = ref('')
+const guideInfoIdAuth = ref('')
+const guideInfoGuideDescribe = ref('')
+const guideInfoUserCity = ref('')
+const guideInfoUserFortes = ref<Array<UTSJSONObject>>([])
+const guideInfoUserLocation = ref('')
+const guideInfoDistanceMeters = ref('')
+
+const departureDateInner = ref('')
+const commentCountInner = ref(0)
+
+const departureDate = computed(() => departureDateInner.value)
+const commentCount = computed(() => commentCountInner.value)
+
+const displayGuideNickName = computed(() => {
+	if (hasGuideInfo.value == true && guideInfoNickName.value != '') {
+		return guideInfoNickName.value
+	}
+	return '\u5411\u5bfc'
+})
+
+const displayGuideAge = computed(() => {
+	if (hasGuideInfo.value == true && guideInfoAge.value != '') {
+		return guideInfoAge.value
+	}
+	return '--'
+})
+
+const displayGuideStarLevel = computed(() => {
+	if (hasGuideInfo.value == true && guideInfoStarLevel.value > 0) {
+		return guideInfoStarLevel.value
+	}
+	return 0
+})
+
+// VIP 类型（用于 NicknameWithBadges 组件）
+const guideVipType = computed((): string => {
+	const vip = guideInfoVip.value
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (vip != 20) return ''
+	// 后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+	// 映射规则：VIP_TYPE_YEARLY（年卡）→ 'year'，其他 → 'normal'
+	const vipTypeNum = guideInfoVipType.value
+	if (vipTypeNum == 20) return 'year'
+	return 'normal'
+})
+
+// 礼物等级（用于 NicknameWithBadges 组件）
+const guideGiftLevel = computed((): number => {
+	return guideInfoGiftLevel.value
+})
+
+// 官方认证
+const guideIsOfficialCert = computed((): boolean => {
+	const v = guideInfoGuideIdentity.value
+	return v != '' && v == '20'
+})
+
+// 实名认证
+const guideIsRealNameAuth = computed((): boolean => {
+	const v = guideInfoIdAuth.value
+	return v != '' && v == '20'
+})
+
+// 简介
+const guideDescription = computed((): string => {
+	const val = guideInfoGuideDescribe.value
+	return val != '' ? val : '这个导游很懒，什么也没留下'
+})
+
+// 技能标签列表
+const guideForteList = computed((): Array<UTSJSONObject> => {
+	const list = guideInfoUserFortes.value
+	if (list != null && Array.isArray(list) == true) {
+		const listArr = list as Array<UTSJSONObject>
+		const result: Array<UTSJSONObject> = []
+		const maxCount = listArr.length > 3 ? 3 : listArr.length
+		for (let i = 0; i < maxCount; i = i + 1) {
+			if (listArr[i] != null) {
+				result.push(listArr[i])
+			}
+		}
+		return result
+	}
+	return []
+})
+
+// 技能标签数量
+const guideForteListLength = computed((): number => {
+	return guideForteList.value.length
+})
+
+// 城市名称
+const guideCityName = computed((): string => {
+	return guideInfoUserCity.value
+})
+
+// 距离值
+const guideDistanceValue = computed((): string => {
+	// 优先使用已格式化的 userLocation 字段
+	const userLocation = guideInfoUserLocation.value
+	if (userLocation != '') {
+		return userLocation
+	}
+	
+	// 其次使用 distanceMeters 字段（原始米数）
+	const distanceMeters = guideInfoDistanceMeters.value
+	if (distanceMeters != '') {
+		return distanceMeters
+	}
+	
+	return ''
+})
+
+// 优化后的头像URL
+const guideOptimizedAvatar = computed((): string => {
+	let url = guideInfoUserImage.value
+	
+	if (url == '') {
+		return '/static/images/default-avatar.png'
+	}
+	
+	if (url.indexOf('cos.') >= 0 || url.indexOf('myqcloud.com') >= 0) {
+		return url + '?imageMogr2/thumbnail/196x274/quality/70'
+	}
+	
+	return url
+})
+
+const featureHtml = ref('')
+const planHtml = ref('')
+const noticeHtml = ref('')
+const routeDetailHtml = ref('')
+
+// 计算属性：向导评分四舍五入
+const displayGuideStarRound = computed((): number => {
+	const star = displayGuideStarLevel.value
+	if (star > 0) {
+		return Math.round(star)
+	}
+	return 0
+})
+
+// 计算属性：行程列表长度
+const itineraryLength = computed((): number => {
+	try {
+		const arr = routeInfoItinerary.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// Tab 项数据类
+class TabItemData {
+	label: string = ''
+	constructor(label: string) {
+		this.label = label
+	}
+}
+
+const currentTab = ref(0)
+const tabItems = ref<Array<TabItemData>>([
+	new TabItemData('详情'),
+	new TabItemData('评价')
+])
+
+const scrollTop = ref(0)
+
+const systemInfo = uni.getSystemInfoSync()
+const anchorOffset = (systemInfo.windowWidth / 750) * 110
+
+// 辅助函数：从 UTSJSONObject 获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 辅助函数：从 UTSJSONObject 获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseFloat(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// 辅助函数：从 UTSJSONObject 获取数组属性
+const getObjArray = (obj: UTSJSONObject | null, key: string): Array<UTSJSONObject> => {
+	if (obj == null) return []
+	const val = obj.get(key)
+	if (val != null && Array.isArray(val) == true) {
+		return val as Array<UTSJSONObject>
+	}
+	return []
+}
+
+// 辅助函数：获取技能名称
+const getGuideForteName = (forte: UTSJSONObject): string => {
+	return safeGetStringProp(forte, 'labelName')
+}
+
+// 辅助函数：将数据转为 UTSJSONObject（接受可空类型）
+const toJsonObjNullable = (data: any | null): UTSJSONObject | null => {
+	if (data == null) return null
+	try {
+		const str = JSON.stringify(data)
+		return JSON.parse(str) as UTSJSONObject
+	} catch (e) {
+		return null
+	}
+}
+
+// 辅助函数：将数据转为 UTSJSONObject
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+// 如需 nullable 版本仍可使用 toJsonObjNullable
+
+const transformRouteDetail = (data: UTSJSONObject | null) => {
+	const dataObj = data
+	
+	// 获取 line 对象
+	let lineObj: UTSJSONObject | null = null
+	if (dataObj != null) {
+		const lineVal = dataObj.get('line')
+		if (lineVal != null) {
+			lineObj = toJsonObj(lineVal)
+		}
+		if (lineObj == null) {
+			lineObj = dataObj
+		}
+	}
+	
+	// ID
+	let id = getObjString(lineObj, 'kid')
+	if (id == '') {
+		id = getObjString(dataObj, 'kid')
+	}
+	
+	// 标题
+	let title = getObjString(lineObj, 'lineTitle')
+	if (title == '') {
+		title = getObjString(dataObj, 'lineTitle')
+	}
+	
+	// 价格
+	let priceNum = getObjNumber(lineObj, 'tripPrice')
+	if (priceNum == 0) {
+		priceNum = getObjNumber(lineObj, 'linePrice')
+	}
+	if (priceNum == 0) {
+		priceNum = getObjNumber(dataObj, 'linePrice')
+	}
+	
+	// 天数
+	let daysNum = getObjNumber(lineObj, 'travelDays')
+	if (daysNum == 0) {
+		daysNum = getObjNumber(lineObj, 'lineDays')
+	}
+	if (daysNum == 0) {
+		daysNum = getObjNumber(dataObj, 'lineDays')
+	}
+	const nightsNum = daysNum > 0 ? daysNum - 1 : 0
+	
+	// 目的地
+	let destinationFinal = getObjString(lineObj, 'lineCity')
+	if (destinationFinal == '') {
+		destinationFinal = getObjString(lineObj, 'lineAddress')
+	}
+	if (destinationFinal == '') {
+		destinationFinal = getObjString(dataObj, 'lineCity')
+	}
+	
+	// 标签
+	const tags: Array<string> = []
+	const lineAddress = getObjString(lineObj, 'lineAddress')
+	if (lineAddress != '') {
+		tags.push(lineAddress + '出发')
+	}
+	
+	let lineType = getObjNumber(lineObj, 'lineType')
+	if (lineType == 0) {
+		lineType = getObjNumber(dataObj, 'lineType')
+	}
+	if (lineType == 10) {
+		tags.push('组团行')
+	} else if (lineType == LINE_TYPE_FREE) {
+		tags.push('自由行')
+	}
+	
+	if (daysNum > 0) {
+		tags.push('出游行程: ' + daysNum.toString() + '天')
+	}
+	
+	// 图片
+	const images: Array<string> = []
+	let homePicsArr = getObjArray(lineObj, 'homePics')
+	if (homePicsArr.length == 0) {
+		homePicsArr = getObjArray(dataObj, 'homePics')
+	}
+	
+	for (let i = 0; i < homePicsArr.length; i = i + 1) {
+		const picObj = toJsonObj(homePicsArr[i])
+		let picUrl = getObjString(picObj, 'picUrl')
+		if (picUrl == '') {
+			picUrl = getObjString(picObj, 'imageUrl')
+		}
+		if (picUrl == '') {
+			picUrl = getObjString(picObj, 'url')
+		}
+		if (picUrl != '') {
+			images.push(picUrl)
+		}
+	}
+	
+	if (images.length == 0) {
+		let cover = getObjString(lineObj, 'lineImage')
+		if (cover == '') {
+			cover = getObjString(dataObj, 'lineImage')
+		}
+		if (cover != '') {
+			images.push(cover)
+		}
+	}
+	
+	if (images.length == 0) {
+		images.push('https://jiasu.wyxdapp.com/iconimages/default_cover.jpg')
+	}
+	
+	// 评分
+	let ratingValFinal = getObjNumber(lineObj, 'starLevel')
+	if (ratingValFinal == 0) {
+		ratingValFinal = getObjNumber(lineObj, 'score')
+	}
+	if (ratingValFinal == 0) {
+		ratingValFinal = getObjNumber(dataObj, 'starLevel')
+	}
+	
+	// 预订数
+	let bookingCountValFinal = getObjNumber(lineObj, 'orderCount')
+	if (bookingCountValFinal == 0) {
+		bookingCountValFinal = getObjNumber(dataObj, 'orderCount')
+	}
+	
+	// 行程安排
+	const itinerary: Array<ItineraryItemData> = []
+	const schedulesArr = getObjArray(dataObj, 'schedules')
+	for (let i = 0; i < schedulesArr.length; i = i + 1) {
+		const sObj = toJsonObj(schedulesArr[i])
+		const sTitle = getObjString(sObj, 'title')
+		const sDay = getObjString(sObj, 'day')
+		const sContent = getObjString(sObj, 'content')
+		
+		const itemTitle = (sTitle != '') ? sTitle : ('第' + sDay + '天')
+		itinerary.push(new ItineraryItemData(itemTitle, sContent))
+	}
+	
+	const emptyIncludes: Array<string> = []
+	
+	// 更新独立 ref 变量
+	routeInfoId.value = id
+	routeInfoTitle.value = title
+	routeInfoImages.value = images
+	routeInfoDays.value = daysNum
+	routeInfoNights.value = nightsNum
+	routeInfoDestination.value = destinationFinal
+	routeInfoTags.value = tags
+	routeInfoRating.value = ratingValFinal
+	routeInfoBookingCount.value = bookingCountValFinal
+	routeInfoPrice.value = priceNum
+	routeInfoItinerary.value = itinerary
+	routeInfoIncludes.value = emptyIncludes
+}
+
+// 记录访客
+const recordVisitor = async () => {
+	try {
+		// 获取当前用户ID
+		let currentUserKid = getCurrentUserKid()
+		
+		// 获取被访问者ID（向导ID）
+		const targetUserKid = guideInfoUserKid.value
+		
+		// 获取定制ID
+		const customKid = routeId.value
+		
+		if (targetUserKid == '') {
+			console.log('向导ID为空，跳过访客记录')
+			return
+		}
+		
+		// 自己访问自己不记录
+		if (currentUserKid != '' && currentUserKid == targetUserKid) {
+			console.log('自己访问自己，跳过访客记录')
+			return
+		}
+		
+		// 未登录用户记录为匿名访客（后端会将空值转为 '0'）
+		if (currentUserKid == '') {
+			console.log('未登录用户，将记录为匿名访客')
+		}
+		
+		// 调用访客记录API
+		const params = new AddVisitorParams()
+		params.userKid = targetUserKid
+		params.visitUserKid = currentUserKid
+		params.visitType = 'custom'
+		params.targetKid = customKid
+		await addVisitor(params)
+		
+		console.log('定制页面访客记录成功')
+	} catch (error: Error) {
+		handleSilentError(error, '定制页面访客记录')
+	}
+}
+
+// 加载路线信息（必须在 onLoad 之前定义）
+const loadRouteInfo = async () => {
+	if (routeId.value == '') return
+	loading.value = true
+	try {
+		const currentUserKid = getCurrentUserKid()
+		// 构建符合 GetTravelDetailParams 类的参数
+		const apiParams = new GetTravelDetailParams()
+		apiParams.kid = routeId.value
+		apiParams.userKid = currentUserKid
+		const res = await getTravelDetail(apiParams)
+		const resObj = toJsonObj(res)
+		const codeVal = getObjNumber(resObj, 'code')
+		
+		if (codeVal == 200) {
+			const dataVal = resObj != null ? resObj.get('data') : null
+			const data = toJsonObjNullable(dataVal)
+			transformRouteDetail(data)
+			
+			// 获取 line 数据
+			let lineData = data
+			if (data != null) {
+				const lineVal = data.get('line')
+				if (lineVal != null) {
+					lineData = toJsonObj(lineVal)
+				}
+			}
+			
+			// 出发日期
+			const rawDeparture = getObjString(lineData, 'departureDate')
+			departureDateInner.value = rawDeparture
+			
+			// 评论数
+			const lineCommentVal = data != null ? data.get('lineComment') : null
+			const lineCommentObj = toJsonObjNullable(lineCommentVal)
+			const commentNum = getObjNumber(lineCommentObj, 'commentNum')
+			commentCountInner.value = commentNum
+			
+			// 向导信息
+			const touristVal = data != null ? data.get('touristInfo') : null
+			const tourist = toJsonObjNullable(touristVal)
+			if (tourist != null) {
+				let userKidVal = getObjString(tourist, 'userKid')
+				if (userKidVal == '') {
+					userKidVal = getObjString(tourist, 'kid')
+				}
+				
+				let userImageVal = getObjString(tourist, 'userImage')
+				if (userImageVal == '') {
+					userImageVal = getObjString(tourist, 'avatar')
+				}
+				if (userImageVal == '') {
+					userImageVal = getObjString(tourist, 'imagePhoto')
+				}
+				if (userImageVal == '') {
+					userImageVal = getObjString(tourist, 'guideImg')
+				}
+				
+				let nickNameVal = getObjString(tourist, 'nickName')
+				if (nickNameVal == '') {
+					nickNameVal = getObjString(tourist, 'nickname')
+				}
+				if (nickNameVal == '') {
+					nickNameVal = '向导'
+				}
+				
+				const starLevelVal = getObjNumber(tourist, 'starLevel')
+				const sexVal = getObjString(tourist, 'sex')
+				const ageVal = getObjString(tourist, 'age')
+				const educationVal = getObjString(tourist, 'education')
+				
+				// 扩展字段（与首页 guider-card 一致）
+				const vipVal = getObjNumber(tourist, 'vip')
+				const vipTypeVal = getObjNumber(tourist, 'vipType')
+				const giftLevelVal = getObjNumber(tourist, 'giftLevel')
+				const guideIdentityVal = getObjString(tourist, 'guideIdentity')
+				const idAuthVal = getObjString(tourist, 'idAuth')
+				const guideDescribeVal = getObjString(tourist, 'guideDescribe')
+				const userCityVal = getObjString(tourist, 'userCity')
+				const userFortesArr = getObjArray(tourist, 'userFortes')
+				
+				// 距离字段
+				let userLocationVal = getObjString(tourist, 'userLocation')
+				if (userLocationVal == '') {
+					userLocationVal = getObjString(tourist, 'distance')
+				}
+				const distanceMetersVal = getObjString(tourist, 'distanceMeters')
+				
+				// 更新独立 ref 变量
+				guideInfoUserKid.value = userKidVal
+				guideInfoUserImage.value = userImageVal
+				guideInfoNickName.value = nickNameVal
+				guideInfoStarLevel.value = starLevelVal
+				guideInfoSex.value = sexVal
+				guideInfoAge.value = ageVal
+				guideInfoEducation.value = educationVal
+				
+				// 更新扩展字段
+				guideInfoVip.value = vipVal
+				guideInfoVipType.value = vipTypeVal
+				guideInfoGiftLevel.value = giftLevelVal
+				guideInfoGuideIdentity.value = guideIdentityVal
+				guideInfoIdAuth.value = idAuthVal
+				guideInfoGuideDescribe.value = guideDescribeVal
+				guideInfoUserCity.value = userCityVal
+				guideInfoUserFortes.value = userFortesArr
+				guideInfoUserLocation.value = userLocationVal
+				guideInfoDistanceMeters.value = distanceMetersVal
+				
+				hasGuideInfo.value = true
+				// 记录访客
+				recordVisitor()
+			} else {
+				hasGuideInfo.value = false
+			}
+			
+			// 富文本内容
+			routeDetailHtml.value = getObjString(lineData, 'routeDetail')
+			featureHtml.value = getObjString(lineData, 'newFeature')
+			planHtml.value = getObjString(lineData, 'newPlan')
+			noticeHtml.value = getObjString(lineData, 'newNotice')
+		} else {
+			let msg = getObjString(resObj, 'msg')
+			if (msg == '') {
+				msg = getObjString(resObj, 'message')
+			}
+			if (msg == '') {
+				msg = '获取路线详情失败'
+			}
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		}
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取路线详情', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 初始化页面高度
+const initPageHeight = () => {
+	initPageLayout()
+	// scroll-view 铺满整个窗口高度，底部按钮是 fixed 定位覆盖在上面
+	scrollViewHeight.value = pageWindowHeight.value
+}
+
+// 初始化页面数据
+const initPageData = (options: OnLoadOptions) => {
+	let lineKid = ''
+	let idParam = ''
+	let src = ''
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		const lineKidVal = optionsObj.get('lineKid')
+		if (lineKidVal != null && lineKidVal.toString() != '') {
+			lineKid = lineKidVal.toString()
+		}
+		
+		const idVal = optionsObj.get('id')
+		if (idVal != null && idVal.toString() != '') {
+			idParam = idVal.toString()
+		}
+		
+		const sourceVal = optionsObj.get('source')
+		if (sourceVal != null && sourceVal.toString() != '') {
+			src = sourceVal.toString()
+		}
+	}
+	
+	routeId.value = (lineKid != '') ? lineKid : idParam
+	source.value = src
+	
+	if (routeId.value == '') {
+		console.warn('routeInfo 缺少路线ID')
+		return
+	}
+	loadRouteInfo()
+}
+
+onLoad((options: OnLoadOptions) => {
+	initPageHeight()
+	initPageData(options)
+})
+
+const scrollToSection = (index: number) => {
+	let selector = '.detail-content-box'
+	if (index == 1) {
+		selector = '.comment-content-box'
+	}
+
+	const query = uni.createSelectorQuery()
+	query.select(selector).boundingClientRect()
+	query.exec((res: Array<any> | null) => {
+		if (res == null) return
+		try {
+			if (res.length == 0) return
+			const firstItem = res[0]
+			if (firstItem == null) return
+			const rectStr = JSON.stringify(firstItem)
+			const rectObj = JSON.parse(rectStr) as UTSJSONObject
+			const topVal = rectObj.get('top')
+			if (topVal == null) return
+			const topNum = parseFloat(topVal.toString())
+			if (isNaN(topNum) == true) return
+			uni.pageScrollTo({
+				scrollTop: scrollTop.value + topNum - anchorOffset,
+				duration: 100
+			})
+		} catch (e) {
+			// 忽略错误
+		}
+	})
+}
+
+const onTabChange = (index: number) => {
+	currentTab.value = index
+	scrollToSection(index)
+}
+
+const handleUserProfile = () => {
+	if (hasGuideInfo.value == false || guideInfoUserKid.value == '') {
+		return
+	}
+	uni.navigateTo({
+		url: `/pagesUser/persionInfo/index?id=${guideInfoUserKid.value}`
+	})
+}
+
+const handleApp = () => {
+	// #ifdef H5
+	try {
+		// 使用缓存工具获取环境信息
+		if (isPC()) {
+			safeRedirect('https://jiasu.wyxdapp.com/down.html')
+			return
+		}
+		
+		if (isWechatBrowser()) {
+			uni.showToast({
+				title: '请点击右上角按钮, 点击使用浏览器打开',
+				icon: 'none'
+			})
+			return
+		}
+		
+		// 判断是否为Android或iOS
+		const isAndroidDevice = isAndroid()
+		const isIOSDevice = isIOS()
+		const lineKidCheckVal = routeInfoId.value
+		const lineKid = ((lineKidCheckVal != null) && (lineKidCheckVal != '')) ? lineKidCheckVal : routeId.value
+		const userKid = getCurrentUserKid()
+		if (isAndroidDevice) {
+			safeRedirect(`qy://app/route?password=${lineKid}&kid=${userKid}`)
+			safeSetTimeout(() => {
+				safeRedirect('https://cos.wyxdapp.com/down/wyxdapp.apk')
+			}, 1000)
+		} else if (isIOSDevice) {
+			safeRedirect(`qylv://routeid=${lineKid}&kid=${userKid}`)
+			safeSetTimeout(() => {
+				safeRedirect('itms-apps://itunes.apple.com/cn/app/id1470361392?mt=8')
+			}, 1000)
+		}
+	} catch (error) {
+		handleSilentError(error, 'handleApp')
+	}
+	// #endif
+}
+
+const handleBack = () => uni.navigateBack()
+
+// 分享按钮点击 - 构建分享数据并显示分享弹窗
+const handleShare = async () => {
+	console.log('[RouteInfo] handleShare called')
+	
+	try {
+		// 构建分享标题
+		const shareTitle = routeInfoTitle.value != '' ? routeInfoTitle.value : '网约向导趣游玩'
+		
+		// 构建分享描述
+		let shareDesc = '发现专业向导，定制专属行程'
+		if (routeInfoDestination.value != '') {
+			shareDesc = `${routeInfoDestination.value} ${routeInfoDays.value}天${routeInfoNights.value}晚 ¥${routeInfoPrice.value}/人起`
+		}
+		
+		// 获取分享图片
+		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		if (routeInfoImages.value.length > 0) {
+			imageStr = routeInfoImages.value[0]
+		}
+		
+		// 构建分享链接
+		let shareLink = 'https://m.wyxdapp.com/#/pagesBusiness/routeInfo/index?lineKid=' + routeId.value
+		
+		// 获取当前用户的推广短号
+		let referrerShortKid = ''
+		try {
+			// 🔧 修复：优先使用 getUserShortKid()，再 fallback 到 store 和缓存 profile
+			referrerShortKid = getUserShortKid()
+			if (referrerShortKid == '') {
+				const storeObj = toJsonObj(userStore)
+				if (storeObj != null) {
+					const userInfoVal = storeObj.get('userInfo')
+					if (userInfoVal != null) {
+						const userInfoJson = JSON.stringify(userInfoVal)
+						const userInfoParsed = JSON.parse(userInfoJson) as UTSJSONObject
+						if (userInfoParsed != null) {
+							const userInfoObj = userInfoParsed as UTSJSONObject
+							const shortKidVal = userInfoObj.get('shortKid')
+							if (shortKidVal != null && shortKidVal.toString() != '') {
+								referrerShortKid = shortKidVal.toString()
+							}
+						}
+					}
+				}
+			}
+			// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+			if (referrerShortKid == '') {
+				const currentUserKidForRef = getCurrentUserKid()
+				if (currentUserKidForRef != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidForRef, currentUserKidForRef)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+							}
+						}
+					} catch (e2) {}
+				}
+			}
+			if (referrerShortKid != '') {
+				// 添加推广参数到链接
+				if (shareLink.indexOf('?') >= 0) {
+					shareLink = shareLink + '&ref=' + referrerShortKid
+				} else {
+					shareLink = shareLink + '?ref=' + referrerShortKid
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 构建分享数据
+		const newPayload = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: imageStr,
+			userId: guideInfoUserKid.value,
+			referrerShortKid: referrerShortKid
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleShare] 分享数据构建完成:')
+		console.log('[handleShare] - title:', shareTitle)
+		console.log('[handleShare] - desc:', shareDesc)
+		console.log('[handleShare] - imageUrl:', imageStr)
+		console.log('[handleShare] - link:', shareLink)
+		console.log('[handleShare] - userId:', guideInfoUserKid.value)
+	} catch (e) {
+		handleSilentError(e, '构建分享数据')
+		// 使用默认值
+		sharePayload.value = {
+			title: '网约向导趣游玩',
+			summary: '发现专业向导，定制专属行程',
+			desc: '发现专业向导，定制专属行程',
+			link: 'https://m.wyxdapp.com/',
+			url: 'https://m.wyxdapp.com/',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+
+	// 获取会话列表（异步请求） - 允许失败但仍显示弹窗
+	try {
+		const result = await getChatListFn(userStore)
+		console.log('[RouteInfo] getChatListFn result:', JSON.stringify(result))
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+				console.log('[RouteInfo] assigned result to shareChatList, new length:', shareChatList.value.length)
+			} else {
+				// fallback: 安全解析模块级 chatList
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const chatList = getChatListRef()
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {}
+					
+					if (fallbackArr.length == 0) {
+						try {
+							const chatList = getChatListRef()
+							const chatListObj = toJsonObj(chatList)
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										try {
+											const parsedV = JSON.parse(JSON.stringify(v))
+											if (Array.isArray(parsedV) == true) {
+												fallbackArr = parsedV as Array<UTSJSONObject>
+											}
+										} catch (e) {}
+									}
+								} catch (e) {}
+							}
+						} catch (e) {}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+					console.log('[RouteInfo] used fallback chatList, length:', shareChatList.value.length)
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '解析会话列表')
+		}
+	} catch (e) {
+		handleSilentError(e, '获取会话列表')
+		shareChatList.value = []
+	}
+
+	showSharePopup.value = true
+}
+
+// 分享事件处理函数
+const handleShareToChat = (data: UTSJSONObject) => {
+	// 构建路线信息对象用于分享（使用定制卡片格式）
+	const routeInfo = {
+		kid: routeInfoId.value,
+		id: routeInfoId.value,
+		title: routeInfoTitle.value,
+		description: routeInfoDestination.value != '' 
+			? `${routeInfoDestination.value} ${routeInfoDays.value}天${routeInfoNights.value}晚 ¥${routeInfoPrice.value}/人起`
+			: `${routeInfoDays.value}天${routeInfoNights.value}晚 ¥${routeInfoPrice.value}/人起`,
+		image: routeInfoImages.value.length > 0 ? routeInfoImages.value[0] : '',
+		coverImage: routeInfoImages.value.length > 0 ? routeInfoImages.value[0] : ''
+	}
+	
+	console.log('[RouteInfo] handleShareToChat - routeInfo:', JSON.stringify(routeInfo))
+	handleShareToChatFn(data, routeInfo)
+}
+
+const handleShareWechat = () => {
+	handleShareWechatFn(sharePayload.value)
+}
+
+const handleShareMoments = () => {
+	handleShareMomentsFn(sharePayload.value)
+}
+
+const handleCopyLink = () => {
+	handleCopyLinkFn(sharePayload.value)
+}
+
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(sharePayload.value)
+}
+const handleConsult = () => {
+	// 检查是否有向导信息
+	if (hasGuideInfo.value == false || guideInfoUserKid.value == '') {
+		uni.showToast({
+			title: '向导信息不可用',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 检查登录状态
+	const isLoggedIn = checkUserLoginReliable()
+	if (isLoggedIn == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	// 跳转到聊天详情页
+	const targetUserId = guideInfoUserKid.value
+	const targetUserName = encodeURIComponent(displayGuideNickName.value)
+	const targetUserAvatar = encodeURIComponent(guideOptimizedAvatar.value)
+	
+	uni.navigateTo({
+		url: `/pagesTrade/news/detail?targetUserId=${targetUserId}&targetUserName=${targetUserName}&targetUserAvatar=${targetUserAvatar}`
+	})
+}
+
+const handleBook = () => {
+	// 检查登录状态
+	const isLoggedIn = checkUserLoginReliable()
+	if (isLoggedIn == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	// 跳转到路线预约页面
+	const lineKidVal = routeInfoId.value
+	const priceVal = routeInfoPrice.value
+	const guideKidVal = guideInfoUserKid.value
+	const lineTitleVal = routeInfoTitle.value
+	
+	if (lineKidVal == '') {
+		uni.showToast({
+			title: '路线信息不存在',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证向导信息
+	if (guideKidVal == '') {
+		uni.showToast({
+			title: '路线向导信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 构建跳转URL（包含向导ID和路线标题）
+	let url = '/pagesBusiness/routeInfo/submitOrder?lineKid=' + lineKidVal + '&guideKid=' + guideKidVal
+	if (priceVal > 0) {
+		url = url + '&price=' + priceVal.toString()
+	}
+	if (lineTitleVal != '') {
+		// URL编码路线标题,避免特殊字符问题
+		url = url + '&lineTitle=' + encodeURIComponent(lineTitleVal)
+	}
+	
+	uni.navigateTo({
+		url: url
+	})
+}
+
+// 辅助函数：检查用户是否登录
+const checkUserLogin = (): boolean => {
+	return checkUserLoginUtil()
+}
+
+// 点赞处理
+const handleLike = () => {
+	const isLoggedIn = checkUserLoginReliable()
+	if (isLoggedIn == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	isLiked.value = (isLiked.value == true) ? false : true
+	if (isLiked.value == true) {
+		likeCount.value = likeCount.value + 1
+		uni.showToast({
+			title: '已点赞',
+			icon: 'success',
+			duration: 1000
+		})
+	} else {
+		const newCount = likeCount.value - 1
+		likeCount.value = (newCount > 0) ? newCount : 0
+	}
+	
+	// TODO: 调用点赞API
+	// await likeRoute(routeId.value, isLiked.value)
+}
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+@import '@/common/styles/tabs.css';
+@import '@/common/styles/card.css';
+
+.route-page {
+	background-color: #f5f5f5;
+}
+
+.page-scroll-view {
+	width: 100%;
+}
+
+.image-swiper {
+	width: 100%;
+	height: 400rpx;
+}
+
+.swiper-image {
+	width: 100%;
+	height: 100%;
+}
+
+/* 返回按钮（与个人主页一致） */
+.page-back-fixed {
+	position: fixed;
+	left: 20rpx;
+	width: 68rpx;
+	height: 68rpx;
+	border-radius: 34rpx;
+	background-color: transparent;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+/* 分享按钮（与个人主页一致） */
+.share-btn-fixed {
+	position: fixed;
+	right: 20rpx;
+	width: 68rpx;
+	height: 68rpx;
+	border-radius: 34rpx;
+	background-color: transparent;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.route-info-card {
+	background-color: #ffffff;
+	margin-top: -40rpx;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	border-radius: 16rpx;
+	padding: 28rpx;
+	position: relative;
+	z-index: 1;
+}
+
+/* 路线卡片右下角点赞按钮 */
+.like-btn-card {
+	position: absolute;
+	right: 28rpx;
+	bottom: 28rpx;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+}
+
+.like-count-card {
+	font-size: 24rpx;
+	color: #666666;
+	margin-left: 6rpx;
+}
+
+/* 第一行：价格和销量 */
+.price-sale-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 16rpx;
+}
+
+.price-section-top {
+	flex-direction: row;
+	align-items: center;
+}
+
+.price-value-top {
+	font-size: 48rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+	line-height: 1;
+}
+
+.price-unit-top {
+	font-size: 24rpx;
+	color: #999999;
+	margin-left: 6rpx;
+	line-height: 1;
+}
+
+.sale-text-top {
+	font-size: 24rpx;
+	color: #999999;
+	line-height: 1;
+}
+
+.route-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.route-tags {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 16rpx;
+}
+
+.tag {
+	padding-top: 6rpx;
+	padding-bottom: 6rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	background-color: #E3F2FD;
+	border-radius: 20rpx;
+	margin-right: 12rpx;
+	margin-bottom: 8rpx;
+}
+
+.departure-row {
+	margin-top: 12rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.start-icon {
+	width: 40rpx;
+	height: 34rpx;
+	margin-right: 12rpx;
+}
+
+.departure-text {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.section-card {
+	background-color: #ffffff;
+	margin-top: 0;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	border-radius: 16rpx;
+	padding: 28rpx;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 20rpx;
+}
+
+.placeholder-text {
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.comment-title-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.comment-count {
+	margin-left: 8rpx;
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.comment-more {
+	flex-direction: row;
+	align-items: center;
+}
+
+.more-text {
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.more-arrow {
+	margin-left: 4rpx;
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.tabs-wrapper {
+	margin-top: 0;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 0;
+	padding-bottom: 0;
+	padding-left: 4rpx;
+	padding-right: 4rpx;
+}
+
+/* ===== 向导卡片样式（guider-card 风格） ===== */
+.guider-card-layout {
+	flex-direction: row;
+	width: 100%;
+}
+
+.guider-image-box {
+	position: relative;
+	width: 196rpx;
+	height: 274rpx;
+	border-radius: 24rpx;
+	flex-shrink: 0;
+}
+
+.guider-avatar {
+	width: 196rpx;
+	height: 274rpx;
+	background-color: #F0F0F0;
+	border-radius: 24rpx;
+}
+
+.guider-info-box {
+	flex: 1;
+	margin-left: 20rpx;
+	flex-direction: column;
+	justify-content: space-between;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+}
+
+.guider-nickname {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 12rpx;
+}
+
+/* 年龄性别 + 认证图标行 */
+.guider-info-row {
+	flex-direction: row;
+	align-items: flex-start;
+	flex-wrap: nowrap;
+}
+
+/* 性别年龄组件容器 */
+.gender-age-box {
+	margin-right: 8rpx;
+	flex-shrink: 0;
+}
+
+/* 认证图标 - 通过 margin-top 实现底部对齐 */
+/* GenderAge 高度约 44rpx，认证图标高度 34rpx，差值 10rpx */
+.official-certification {
+	position: relative;
+	width: 138rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+	margin-top: 10rpx;
+	flex-shrink: 0;
+}
+
+.official-certification .cert-icon {
+	width: 138rpx;
+	height: 34rpx;
+}
+
+.name-authentication {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-top: 10rpx;
+	flex-shrink: 0;
+}
+
+.name-authentication .auth-icon {
+	width: 140rpx;
+	height: 34rpx;
+}
+
+/* 简介 - 兼容 H5 和 APP 的多行省略 */
+.guider-description {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 36rpx;
+	lines: 2;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	margin-top: 16rpx;
+	margin-bottom: 16rpx;
+	/* H5 多行省略兼容 */
+	max-height: 72rpx;
+}
+
+.guider-tags {
+	flex-direction: row;
+	flex-wrap: nowrap;
+	height: 44rpx;
+	margin-bottom: 12rpx;
+	align-items: center;
+	overflow: hidden;
+}
+
+.guider-bottom-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 8rpx;
+}
+
+.guider-rating-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.guider-stars {
+	flex-direction: row;
+	margin-right: 12rpx;
+}
+
+.guider-star {
+	font-size: 26rpx;
+	color: #C0C4CC;
+	margin-right: 4rpx;
+}
+
+.guider-star-active {
+	color: #FFC434;
+}
+
+.guider-score {
+	font-size: 26rpx;
+	color: #333333;
+}
+
+.guider-edu {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+/* ===== 详情内容区域 ===== */
+.detail-content-box {
+	flex-direction: column;
+}
+
+.comment-content-box {
+	flex-direction: column;
+}
+
+.itinerary-list {
+	flex-direction: column;
+}
+
+.itinerary-item {
+	flex-direction: row;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.itinerary-day {
+	width: 100rpx;
+	height: 100rpx;
+	background-color: #667eea;
+	border-radius: 30rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.itinerary-day-text {
+	font-size: 24rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.itinerary-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.itinerary-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.itinerary-desc {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 1.6;
+}
+
+/* ===== 底部操作栏（与个人主页一致） ===== */
+.footer-box {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 120rpx;
+	background-color: transparent;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	z-index: 999;
+}
+
+.btn {
+	flex: 1;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-subscribe {
+	background-color: #E6F4FF;
+	margin-right: 16rpx;
+}
+
+.btn-subscribe-text {
+	font-size: 32rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.btn-chat {
+	background-color: #37B1F2;
+	margin-left: 16rpx;
+}
+
+.btn-chat-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.footer-placeholder {
+	height: 140rpx;
+}
+</style>

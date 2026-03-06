@@ -1,0 +1,1229 @@
+<template>
+	<view class="message-bubble-wrapper" :class="{ 'is-self': isSelf == true }">
+		<!-- 头像 -->
+		<Avatar 
+			:url="getAvatarUrl()"
+			:userId="getSenderId()"
+			:customSize="80"
+			clickMode="none"
+			@click="handleAvatarClick"
+		/>
+		
+		<view class="bubble-content">
+			<!-- 时间戳（可选显示） -->
+			<view v-if="showTime == true" class="message-time">
+				<text class="time-text">{{ getFormattedTime() }}</text>
+			</view>
+			
+			<!-- 消息状态（仅自己的消息） -->
+			<view v-if="isSelf == true && hasStatus() == true" class="message-status">
+				<text v-if="isStatusSending() == true" class="status-sending">发送中...</text>
+				<text v-else-if="isStatusFailed() == true" class="status-failed" @click="handleRetry">发送失败，点击重试</text>
+			</view>
+			
+			<!-- 消息气泡 -->
+			<view class="bubble" :class="bubbleClass">
+				<!-- 文本消息 -->
+				<view v-if="isTextMessage() == true" class="text-content" @longpress="handleTextLongPress">
+					<RichTextContent 
+						:content="getMessageContent()"
+						:isSelf="isSelf"
+						@linkClick="handleLinkClick"
+						@phoneClick="handlePhoneClick"
+					/>
+				</view>
+				
+				<!-- 图片消息 -->
+				<view v-else-if="isImageMessage() == true" class="image-content">
+					<image 
+						:src="getImageUrl()" 
+						mode="aspectFit"
+						@click="handlePreviewImage"
+						@longpress="handleImageLongPress"
+						@load="handleImageLoad"
+						class="message-image"
+						:class="getImageClass()"
+					></image>
+				</view>
+				
+				<!-- 语音消息 -->
+				<view v-else-if="isVoiceMessage() == true" class="voice-content" @click="handlePlayVoice" @longpress="handleVoiceLongPress">
+					<uni-icons 
+						:type="isCurrentPlaying() == true ? 'sound-filled' : 'sound'" 
+						size="24"
+						:color="isSelf == true ? '#FFFFFF' : '#333333'"
+					></uni-icons>
+					<text class="voice-duration">{{ getVoiceDuration() }}''</text>
+					<!-- 未读红点 -->
+					<view v-if="isVoiceUnread() == true" class="voice-unread-dot"></view>
+				</view>
+				
+				<!-- 视频消息 -->
+				<view v-else-if="isVideoMessage() == true" class="video-content" @click="handlePlayVideo" @longpress="handleVideoLongPress">
+					<image 
+						class="video-thumb"
+						:src="getVideoThumb()" 
+						mode="aspectFill"
+					></image>
+					<view class="video-play-icon">
+						<text class="video-icon">▶</text>
+					</view>
+				</view>
+				
+				<!-- 分享卡片消息（类型6） -->
+				<view v-else-if="isShareMessage() == true" class="share-card-content" @click="handleShareCardClick">
+					<view class="share-card-header">
+						<text class="share-card-title u-line-1">{{ getShareCardTitle() }}</text>
+					</view>
+					<view class="share-card-body">
+						<text class="share-card-summary u-line-2">{{ getShareCardSummary() }}</text>
+						<image class="share-card-image" :src="getShareCardImage()" mode="aspectFill"></image>
+					</view>
+					<view class="share-card-footer">
+						<text class="share-card-link">{{ getShareCardActionText() }}</text>
+					</view>
+				</view>
+				
+				<!-- 订单卡片（保留兼容，但 messageType=6 优先作为分享卡片） -->
+				<view v-else-if="isOrderMessage() == true" class="order-content" @click="handleOrderClick">
+					<text class="order-tag">订单消息</text>
+					<text class="order-title">{{ getOrderTitle() }}</text>
+					<text class="order-price">¥{{ getOrderPrice() }}</text>
+				</view>
+				
+				<!-- 礼物消息 -->
+				<view v-else-if="isGiftMessage() == true" class="gift-content">
+					<view class="gift-header">
+						<text class="gift-label"><UniIcons type="gift-filled" :size="28" color="#FF6B6B" /> 礼物</text>
+					</view>
+					<view class="gift-body">
+						<image 
+							class="gift-image" 
+							:src="getGiftImage()" 
+							mode="aspectFit"
+						></image>
+						<view class="gift-info">
+							<text class="gift-name">{{ getGiftName() }}</text>
+							<text class="gift-value">价值 ¥{{ getGiftValue() }}</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 🆕 系统通知消息（messageType=10） -->
+				<view v-else-if="isSystemNotificationMessage() == true" class="system-notification-content" @click="handleSystemNotificationClick">
+					<view class="system-notification-header">
+						<text class="system-notification-tag">📢 系统通知</text>
+					</view>
+					<view class="system-notification-body">
+						<text class="system-notification-title">{{ getSystemMessageTitle() }}</text>
+						<text class="system-notification-text">{{ getSystemMessageText() }}</text>
+					</view>
+					<view class="system-notification-footer">
+						<text class="system-notification-link">查看详情 ></text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import Avatar from '@/components/base/Avatar.uvue'
+import RichTextContent from '@/components/chat/RichTextContent.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { parseGiftMessageContent, getDefaultGiftName, getDefaultGiftImage, getDefaultGiftValue } from '@/common/utils/giftMessageHelper.uts'
+import { parseShareCardContent, getCardActionText, getCardDefaultImage, handleShareCardNavigation, ShareCardData, CARD_TYPE_PROFILE } from '@/common/utils/shareCardHelper.uts'
+import { handleLinkClick as handleLinkClickUtil, handlePhoneClick as handlePhoneClickUtil, ParsedSegment } from '@/common/utils/linkParser.uts'
+
+interface MessageBubbleMessage {
+	id?: string
+	type?: string
+	messageType?: number
+	content: string
+	mediaUrl?: string
+	thumbUrl?: string
+	duration?: number
+	sendTime?: string
+	status?: string
+	orderTitle?: string
+	orderPrice?: number
+	orderId?: string
+	senderId?: string
+	fromUserKid?: string
+	fromUserId?: string
+}
+
+// 使用运行时 prop 声明避免编译器问题
+const props = defineProps({
+	message: { type: Object, required: true },
+	isSelf: { type: Boolean, required: true },
+	avatar: { type: String, default: '' },
+	defaultAvatar: { type: String, required: true },
+	showTime: { type: Boolean, default: false },
+	isPlaying: { type: Boolean, default: false },
+	playingMessageId: { type: String, default: '' },
+	// 🎯 新增：勋章相关 props
+	medalLevel: { type: Number, default: 0 },
+	vipType: { type: String, default: '' }
+})
+
+const emit = defineEmits<{
+	avatarClick: [userId: string]
+	previewImage: [url: string]
+	playVoice: [message: MessageBubbleMessage]
+	playVideo: [message: MessageBubbleMessage]
+	retry: [message: MessageBubbleMessage]
+	orderClick: [orderId: string]
+	shareCardClick: [userKid: string]
+	addToEmoji: [imageUrl: string]
+	saveToAlbum: [imageUrl: string]
+	systemNotificationClick: [linkUrl: string, orderKid: string]
+	longpress: [message: any, messageType: number]
+	delete: [messageId: string]
+	linkClick: [url: string]
+	phoneClick: [phone: string]
+}>()
+
+// 辅助方法：安全访问 message 属性（使用 JSON 序列化方式兼容 APP 端）
+const getMessageProp = (key: string): any => {
+	const msgAny = props.message as any
+	try {
+		// UTS 规范：使用 JSON 序列化方式访问属性，兼容 APP 端
+		const msgStr = JSON.stringify(msgAny)
+		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+		const val = msgObj.get(key)
+		if (val != null) {
+			return val
+		}
+		return ''
+	} catch (e) {
+		return ''
+	}
+}
+
+const formatTime = (time: any): string => {
+	try {
+		const timeStr = time.toString()
+		if (timeStr == '') return ''
+		const date = new Date(timeStr)
+		const hours = date.getHours().toString().padStart(2, '0')
+		const minutes = date.getMinutes().toString().padStart(2, '0')
+		return hours + ':' + minutes
+	} catch (e) {
+		return ''
+	}
+}
+
+const getAvatarUrl = (): string => {
+	if (props.avatar != '') {
+		return props.avatar
+	}
+	return props.defaultAvatar
+}
+
+// 🎯 新增：获取勋章等级（仅对方消息显示勋章）
+const getMedalLevel = (): number => {
+	// 自己的消息不显示勋章
+	if (props.isSelf == true) return 0
+	return props.medalLevel
+}
+
+// 🎯 新增：获取 VIP 类型（仅对方消息显示勋章）
+const getVipType = (): string => {
+	// 自己的消息不显示勋章
+	if (props.isSelf == true) return ''
+	return props.vipType
+}
+
+const getSenderId = (): string => {
+	let senderId = getMessageProp('senderId')
+	if (senderId == '') {
+		senderId = getMessageProp('fromUserKid')
+	}
+	if (senderId == '') {
+		senderId = getMessageProp('fromUserId')
+	}
+	if (senderId != '') {
+		return senderId.toString()
+	}
+	return ''
+}
+
+const getFormattedTime = (): string => {
+	const time = getMessageProp('sendTime')
+	return formatTime(time)
+}
+
+const hasStatus = (): boolean => {
+	const status = getMessageProp('status')
+	return (status != '' && status != {}) == true
+}
+
+const isStatusSending = (): boolean => {
+	const status = getMessageProp('status')
+	return (status.toString() == 'sending') == true
+}
+
+const isStatusFailed = (): boolean => {
+	const status = getMessageProp('status')
+	return (status.toString() == 'failed') == true
+}
+
+const isTextMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	// 🔧 修复：排除分享消息（messageType=6），避免分享消息被误判为文本消息
+	if (msgTypeNum == 6 || typeStr == 'share') {
+		return false
+	}
+	// 🔧 修复：排除系统通知消息（messageType=10），避免内部链接 JSON 被当作文本渲染
+	if (msgTypeNum == 10 || typeStr == 'system_notification') {
+		return false
+	}
+	return typeStr == 'text' || msgTypeNum == 1
+}
+
+const isImageMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'image' || msgTypeNum == 2
+}
+
+const isVoiceMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'voice' || msgTypeNum == 4
+}
+
+const isVideoMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'video' || msgTypeNum == 3
+}
+
+const isShareMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'share' || msgTypeNum == 6
+}
+
+const isOrderMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const typeStr = type.toString()
+	return typeStr == 'order'
+}
+
+const isGiftMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'gift' || msgTypeNum == 7
+}
+
+// 🆕 系统通知消息（messageType=10）
+const isSystemNotificationMessage = (): boolean => {
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	const typeStr = type.toString()
+	const msgTypeNum = parseInt(messageType.toString())
+	return typeStr == 'system_notification' || msgTypeNum == 10
+}
+
+const getMessageContent = (): string => {
+	const content = getMessageProp('content')
+	if (content != {} && content != '') {
+		const contentStr = content.toString()
+		// 🔧 调试：打印消息内容（仅在开发模式）
+		// #ifdef DEBUG
+		if (contentStr.length > 0) {
+			const preview = (contentStr.length > 30) ? contentStr.substring(0, 30) + '...' : contentStr
+			console.log('📝 [MessageBubble] 消息内容:', preview)
+		}
+		// #endif
+		return contentStr
+	}
+	// 🔧 调试：如果内容为空，打印警告
+	// #ifdef DEBUG
+	console.warn('⚠️ [MessageBubble] 消息内容为空')
+	// #endif
+	return ''
+}
+
+// 🆕 解析系统消息内容（JSON格式）
+const parseSystemMessageContent = (): UTSJSONObject | null => {
+	try {
+		const content = getMessageContent()
+		if (content == '') return null
+		const contentStr = content as string
+		const parsed = JSON.parse(contentStr) as UTSJSONObject
+		return parsed
+	} catch (e) {
+		return null
+	}
+}
+
+// 🆕 获取系统消息标题
+const getSystemMessageTitle = (): string => {
+	const data = parseSystemMessageContent()
+	if (data == null) return '系统通知'
+	const title = data.get('title')
+	if (title != null && title.toString() != '') {
+		return title.toString()
+	}
+	return '系统通知'
+}
+
+// 🆕 获取系统消息内容
+const getSystemMessageText = (): string => {
+	const data = parseSystemMessageContent()
+	if (data == null) return ''
+	const contentVal = data.get('content')
+	if (contentVal != null && contentVal.toString() != '') {
+		return contentVal.toString()
+	}
+	return ''
+}
+
+// 🆕 获取系统消息跳转链接
+const getSystemMessageLinkUrl = (): string => {
+	const data = parseSystemMessageContent()
+	if (data == null) return ''
+	const linkUrl = data.get('linkUrl')
+	if (linkUrl != null && linkUrl.toString() != '') {
+		return linkUrl.toString()
+	}
+	return ''
+}
+
+// 🆕 获取系统消息订单ID
+const getSystemMessageOrderKid = (): string => {
+	const data = parseSystemMessageContent()
+	if (data == null) return ''
+	const orderKid = data.get('orderKid')
+	if (orderKid != null && orderKid.toString() != '') {
+		return orderKid.toString()
+	}
+	return ''
+}
+
+const getImageUrl = (): string => {
+	const content = getMessageProp('content')
+	if (content != '') {
+		return content.toString()
+	}
+	const mediaUrl = getMessageProp('mediaUrl')
+	if (mediaUrl != '') {
+		return mediaUrl.toString()
+	}
+	return ''
+}
+
+const getVoiceDuration = (): string => {
+	const duration = getMessageProp('duration')
+	if (duration != '') {
+		const durationStr = duration.toString()
+		if (durationStr != '') {
+			// 尝试解析为数字，确保是有效的时长
+			const durationNum = parseInt(durationStr)
+			if (isNaN(durationNum) == false && durationNum >= 0) {
+				return durationNum.toString()
+			}
+		}
+	}
+	return '0'
+}
+
+// 判断当前语音消息是否正在播放
+const isCurrentPlaying = (): boolean => {
+	if (props.isPlaying == false) return false
+	const messageId = getMessageProp('id')
+	if (messageId == '') return false
+	return messageId.toString() == props.playingMessageId
+}
+
+// 判断语音消息是否未读
+const isVoiceUnread = (): boolean => {
+	const isRead = getMessageProp('isRead')
+	// 只有对方发送的语音消息才显示未读标记
+	if (props.isSelf == true) return false
+	// isRead 为 false 或 0 时表示未读
+	const isReadStr = isRead.toString()
+	return isReadStr == 'false' || isReadStr == '0'
+}
+
+const getVideoThumb = (): string => {
+	const thumbUrl = getMessageProp('thumbUrl')
+	if (thumbUrl != '') {
+		return thumbUrl.toString()
+	}
+	const content = getMessageProp('content')
+	if (content != '') {
+		return content.toString()
+	}
+	return ''
+}
+
+const getOrderTitle = (): string => {
+	const title = getMessageProp('orderTitle')
+	const titleStr = title.toString()
+	if (titleStr != '') {
+		return titleStr
+	}
+	return '订单详情'
+}
+
+const getOrderPrice = (): string => {
+	const price = getMessageProp('orderPrice')
+	const priceStr = price.toString()
+	if (priceStr != '') {
+		return priceStr
+	}
+	return '0'
+}
+
+// 礼物消息：使用 giftMessageHelper 解析
+const getGiftName = (): string => {
+	const content = getMessageContent()
+	if (content == '') {
+		return getDefaultGiftName()
+	}
+	const giftData = parseGiftMessageContent(content)
+	const name = giftData.giftName
+	return (name != '') ? name : getDefaultGiftName()
+}
+
+const getGiftImage = (): string => {
+	const content = getMessageContent()
+	if (content == '') {
+		return getDefaultGiftImage()
+	}
+	const giftData = parseGiftMessageContent(content)
+	const image = giftData.giftImage
+	return (image != '') ? image : getDefaultGiftImage()
+}
+
+const getGiftValue = (): string => {
+	const content = getMessageContent()
+	if (content == '') {
+		return getDefaultGiftValue()
+	}
+	const giftData = parseGiftMessageContent(content)
+	const value = giftData.giftValue
+	return (value != '') ? value : getDefaultGiftValue()
+}
+
+const getTypeFromMessageType = (messageType: any): string => {
+	let typeNum = 0
+	if (typeof messageType == 'number') {
+		typeNum = messageType as number
+	} else {
+		try {
+			const num = parseInt(messageType.toString())
+			if (isNaN(num) == false) {
+				typeNum = num as number
+			}
+		} catch (e) {}
+	}
+	if (typeNum == 1) return 'text'
+	if (typeNum == 2) return 'image'
+	if (typeNum == 3) return 'video'
+	if (typeNum == 4) return 'voice'
+	if (typeNum == 6) return 'share' // 分享卡片消息
+	if (typeNum == 7) return 'gift' // 礼物消息
+	return 'text'
+}
+
+const bubbleClass = computed((): string => {
+	const classes: Array<string> = []
+	
+	if (props.isSelf == true) {
+		classes.push('bubble-self')
+	} else {
+		classes.push('bubble-other')
+	}
+	
+	const type = getMessageProp('type')
+	const messageType = getMessageProp('messageType')
+	let msgType = 'text'
+	if (type != '') {
+		msgType = type.toString()
+	} else {
+		msgType = getTypeFromMessageType(messageType)
+	}
+	classes.push('bubble-' + msgType)
+	
+	const result = classes.join(' ')
+	
+	return result
+})
+
+// 分享卡片：使用 shareCardHelper 解析（支持 JSON 和旧版格式）
+const getShareCardData = (): ShareCardData => {
+	const content = getMessageContent()
+	return parseShareCardContent(content)
+}
+
+const getShareCardTitle = (): string => {
+	const cardData = getShareCardData()
+	const title = cardData.title
+	if (title != '') {
+		return title
+	}
+	return '分享内容'
+}
+
+const getShareCardSummary = (): string => {
+	const cardData = getShareCardData()
+	const summary = cardData.summary
+	if (summary != '') {
+		return summary
+	}
+	return '点击查看分享内容'
+}
+
+const getShareCardImage = (): string => {
+	const cardData = getShareCardData()
+	const imageUrl = cardData.imageUrl
+	if (imageUrl != '') {
+		return imageUrl
+	}
+	// 使用卡片类型对应的默认图片
+	const cardType = cardData.cardType
+	const defaultImg = getCardDefaultImage(cardType)
+	if (defaultImg != '') {
+		return defaultImg
+	}
+	return props.defaultAvatar
+}
+
+const getShareCardActionText = (): string => {
+	const cardData = getShareCardData()
+	const cardType = cardData.cardType
+	return getCardActionText(cardType)
+}
+
+const handleShareCardClick = () => {
+	const cardData = getShareCardData()
+	const targetId = cardData.targetId
+	
+	// 执行跳转
+	handleShareCardNavigation(cardData)
+	
+	// 同时 emit 事件，供父组件处理
+	if (targetId != '') {
+		emit('shareCardClick', targetId)
+	}
+}
+
+
+const handleAvatarClick = () => {
+	// 获取发送者ID（可能是 senderId 或 fromUserKid）
+	let senderId = getMessageProp('senderId')
+	if (senderId == '') {
+		senderId = getMessageProp('fromUserKid')
+	}
+	if (senderId == '') {
+		senderId = getMessageProp('fromUserId')
+	}
+	if (senderId != '') {
+		emit('avatarClick', senderId.toString())
+	}
+}
+
+const handlePreviewImage = () => {
+	emit('previewImage', getImageUrl())
+}
+
+// ⭐ 图片长按处理 - 显示操作菜单
+const handleImageLongPress = () => {
+	const imageUrl = getImageUrl()
+	if (imageUrl == '') return
+	
+	// 触觉反馈 - uni.vibrateShort 在 uni-app x 部分平台不支持，已移除
+	
+	uni.showActionSheet({
+		itemList: ['添加到表情', '保存到相册', '删除'],
+		success: (res: any) => {
+			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+			const tapIndexVal = resObj.get('tapIndex')
+			if (tapIndexVal == null) return
+			
+			const tapIndex = parseInt(tapIndexVal.toString())
+			if (isNaN(tapIndex) == true) return
+			
+			if (tapIndex == 0) {
+				// 添加到表情
+				emit('addToEmoji', imageUrl)
+			} else if (tapIndex == 1) {
+				// 保存到相册
+				emit('saveToAlbum', imageUrl)
+			} else if (tapIndex == 2) {
+				// 删除消息
+				const messageId = getMessageProp('id')
+				if (messageId != '') {
+					emit('delete', messageId.toString())
+				}
+			}
+		}
+	})
+}
+
+// ⭐ 文本消息长按处理
+const handleTextLongPress = () => {
+	// 触觉反馈 - uni.vibrateShort 在 uni-app x 部分平台不支持，已移除
+	
+	// 发送长按事件，由父组件处理菜单显示
+	emit('longpress', props.message, 1) // 1 = 文本消息
+}
+
+// ⭐ 语音消息长按处理
+const handleVoiceLongPress = () => {
+	// 触觉反馈 - uni.vibrateShort 在 uni-app x 部分平台不支持，已移除
+	
+	uni.showActionSheet({
+		itemList: ['删除'],
+		success: (res: any) => {
+			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+			const tapIndexVal = resObj.get('tapIndex')
+			if (tapIndexVal == null) return
+			
+			const tapIndex = parseInt(tapIndexVal.toString())
+			if (isNaN(tapIndex) == true) return
+			
+			if (tapIndex == 0) {
+				// 删除消息
+				const messageId = getMessageProp('id')
+				if (messageId != '') {
+					emit('delete', messageId.toString())
+				}
+			}
+		}
+	})
+}
+
+// ⭐ 视频消息长按处理
+const handleVideoLongPress = () => {
+	// 触觉反馈 - uni.vibrateShort 在 uni-app x 部分平台不支持，已移除
+	
+	uni.showActionSheet({
+		itemList: ['删除'],
+		success: (res: any) => {
+			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+			const tapIndexVal = resObj.get('tapIndex')
+			if (tapIndexVal == null) return
+			
+			const tapIndex = parseInt(tapIndexVal.toString())
+			if (isNaN(tapIndex) == true) return
+			
+			if (tapIndex == 0) {
+				// 删除消息
+				const messageId = getMessageProp('id')
+				if (messageId != '') {
+					emit('delete', messageId.toString())
+				}
+			}
+		}
+	})
+}
+
+// ⭐ 链接点击处理
+const handleLinkClick = (url: string) => {
+	if (url == '') return
+	// 发送事件给父组件
+	emit('linkClick', url)
+	// 同时执行跳转
+	const segment = new ParsedSegment()
+	segment.type = 'url'
+	segment.url = url
+	segment.content = url
+	handleLinkClickUtil(segment)
+}
+
+// ⭐ 电话点击处理
+const handlePhoneClick = (phone: string) => {
+	if (phone == '') return
+	// 发送事件给父组件
+	emit('phoneClick', phone)
+	// 同时执行拨号
+	handlePhoneClickUtil(phone)
+}
+
+const handlePlayVoice = () => {
+	emit('playVoice', props.message)
+}
+
+const handlePlayVideo = () => {
+	emit('playVideo', props.message)
+}
+
+const handleRetry = () => {
+	emit('retry', props.message)
+}
+
+const handleOrderClick = () => {
+	const orderId = getMessageProp('orderId')
+	if (orderId != '') {
+		emit('orderClick', orderId.toString())
+	}
+}
+
+// 🆕 系统通知点击处理
+const handleSystemNotificationClick = () => {
+	const linkUrl = getSystemMessageLinkUrl()
+	const orderKid = getSystemMessageOrderKid()
+	emit('systemNotificationClick', linkUrl, orderKid)
+}
+
+// ⭐ 图片加载处理（用于计算实际尺寸）
+const handleImageLoad = (e: any) => {
+	// 图片加载完成，暂不处理
+}
+
+// ⭐ 获取图片样式类
+const getImageClass = (): string => {
+	// 如果是自定义表情（messageType=2 且 content 包含 emoji 路径）
+	const content = getMessageProp('content')
+	const contentStr = content.toString()
+	if (contentStr != '' && contentStr.indexOf('/emoji/') >= 0) {
+		return 'message-image-emoji'
+	}
+	return 'message-image-normal'
+}
+</script>
+
+<style>
+.message-bubble-wrapper {
+	flex-direction: row;
+	align-items: flex-start;
+	margin-bottom: 24rpx;
+}
+
+.message-bubble-wrapper.is-self {
+	flex-direction: row-reverse;
+}
+
+.bubble-content {
+	max-width: 520rpx;
+	flex-direction: column;
+	margin-left: 20rpx;
+}
+
+.message-bubble-wrapper.is-self .bubble-content {
+	align-items: flex-end;
+	margin-left: 0;
+	margin-right: 20rpx;
+}
+
+.message-time {
+	margin-bottom: 12rpx;
+	/* text-align: center; */
+	align-self: center;
+}
+
+.time-text {
+	font-size: 22rpx;
+	color: #b2b2b2;
+}
+
+.message-status {
+	margin-bottom: 4rpx;
+	flex-direction: row;
+	justify-content: flex-end;
+}
+
+.status-sending {
+	font-size: 20rpx;
+	color: #999999;
+}
+
+.status-failed {
+	font-size: 20rpx;
+	color: #ff4444;
+}
+
+.bubble {
+	padding: 20rpx 24rpx;
+	border-radius: 12rpx; /* 小圆角，更商务简洁 */
+	/* box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03); */
+	position: relative;
+}
+
+.bubble-other {
+	background-color: #ffffff;
+	/* border-top-left-radius: 4rpx; */
+	/* 🔧 修复：UTS/uvue 边框必须分开写 */
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #f0f0f0;
+}
+
+.bubble-self {
+	background-color: #37B1F2; /* iOS 纯蓝 */
+	/* border-top-right-radius: 4rpx; */
+	/* box-shadow: 0 4rpx 12rpx rgba(0, 114, 255, 0.15); */
+}
+
+.text-inner {
+	font-size: 32rpx; /* 加大字号 */
+	line-height: 48rpx; /* 1.5 倍行高 */
+}
+
+.bubble-other .text-inner {
+	color: #333333;
+}
+
+.bubble-self .text-inner {
+	color: #ffffff;
+}
+
+/* 图片消息 */
+.image-content {
+	flex-direction: row;
+	padding: 0;
+	border-radius: 16rpx;
+	overflow: visible;
+}
+
+/* ⭐ 普通图片：最大300rpx，超过时等比缩放 */
+.message-image-normal {
+	max-width: 300rpx;
+	max-height: 600rpx;
+	min-width: 100rpx;
+	min-height: 100rpx;
+	width: auto;
+	height: auto;
+}
+
+/* ⭐ 自定义表情：最大150rpx，保持原始比例 */
+.message-image-emoji {
+	max-width: 150rpx;
+	max-height: 150rpx;
+	min-width: 60rpx;
+	min-height: 60rpx;
+	width: auto;
+	height: auto;
+}
+
+/* 兼容旧样式 */
+.image-content .message-image {
+	max-width: 300rpx;
+	max-height: 600rpx;
+	min-width: 100rpx;
+	min-height: 100rpx;
+	width: auto;
+	height: auto;
+}
+
+/* 语音消息 */
+.voice-content {
+	flex-direction: row;
+	align-items: center;
+	min-width: 120rpx;
+	position: relative;
+}
+
+.voice-icon {
+	margin-right: 12rpx;
+}
+
+.voice-icon {
+	font-size: 32rpx;
+}
+
+.voice-duration {
+	font-size: 26rpx;
+	margin-left: 12rpx;
+}
+
+/* 语音未读红点 */
+.voice-unread-dot {
+	position: absolute;
+	top: -4rpx;
+	right: -8rpx;
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 8rpx;
+	background-color: #FF4444;
+}
+
+.bubble-self .voice-content {
+	color: #ffffff;
+}
+
+.bubble-other .voice-content {
+	color: #333333;
+}
+
+/* 视频消息 */
+.video-content {
+	flex-direction: column;
+	padding: 0;
+	position: relative;
+	border-radius: 16rpx;
+	overflow: hidden;
+}
+
+.video-thumb {
+	width: 300rpx;
+	height: 300rpx;
+}
+
+.video-play-icon {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	background-color: rgba(0, 0, 0, 0.4);
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.video-icon {
+	font-size: 36rpx;
+	color: #ffffff;
+	margin-left: 4rpx;
+}
+
+/* 分享卡片消息 */
+.share-card-content {
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	overflow: hidden;
+	/* 🔧 修复：UTS/uvue 边框必须分开写 */
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #EEEEEE;
+	width: 480rpx;
+	/* box-sizing 在 uvue 中可能不支持，移除 */
+}
+
+.share-card-header {
+	padding: 16rpx;
+	/* 🔧 修复：UTS/uvue 边框必须分开写 */
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F2F2F2;
+}
+
+.share-card-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.share-card-body {
+	padding: 16rpx;
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.share-card-summary {
+	flex: 1;
+	font-size: 24rpx;
+	color: #666666;
+	margin-right: 12rpx;
+	line-height: 36rpx; /* 1.5 倍行高 */
+}
+
+.share-card-image {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 8rpx;
+	flex-shrink: 0;
+}
+
+.share-card-footer {
+	padding: 16rpx;
+	/* 🔧 修复：UTS/uvue 边框必须分开写 */
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #F2F2F2;
+}
+
+.share-card-link {
+	font-size: 24rpx;
+	color: #2EAEF2;
+}
+
+/* 工具类样式（如果全局没有定义） */
+.u-line-1 {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	lines: 1;
+}
+
+.u-line-2 {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	/* 双行截断降级为两行高 */
+	flex-direction: column;
+	max-height: 64rpx;
+	lines: 2;
+}
+
+/* 订单卡片 */
+.order-content {
+	flex-direction: column;
+	background-color: #ffffff;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #f0f0f0;
+	border-radius: 16rpx;
+	padding: 20rpx;
+	width: 480rpx;
+}
+
+.order-content .order-title,
+.order-content .order-price {
+	margin-top: 12rpx;
+}
+
+.order-tag {
+	font-size: 22rpx;
+	color: #999999;
+	background-color: #f7f8fa;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+	align-self: flex-start;
+}
+
+.order-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: 700;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.order-price {
+	font-size: 34rpx;
+	color: #ff4d4f;
+	font-weight: bold;
+}
+
+/* 礼物消息 */
+.gift-content {
+	flex-direction: column;
+	padding: 24rpx;
+	background-color: #FFE5E5;
+	border-radius: 16rpx;
+	max-width: 400rpx;
+}
+
+.gift-header {
+	margin-bottom: 16rpx;
+}
+
+.gift-label {
+	font-size: 24rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.gift-body {
+	flex-direction: row;
+	align-items: center;
+}
+
+.gift-image {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 16rpx;
+	flex-shrink: 0;
+}
+
+.gift-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.gift-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.gift-value {
+	font-size: 24rpx;
+	color: #FF6B35;
+}
+
+/* 🆕 系统通知消息样式 */
+.system-notification-content {
+	flex-direction: column;
+	background-color: #ffffff;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #E8F4FD;
+	border-radius: 16rpx;
+	width: 480rpx;
+	overflow: hidden;
+}
+
+.system-notification-header {
+	padding: 16rpx 20rpx;
+	background-color: #F0F9FF;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #E8F4FD;
+}
+
+.system-notification-tag {
+	font-size: 24rpx;
+	color: #1890FF;
+	font-weight: bold;
+}
+
+.system-notification-body {
+	flex-direction: column;
+	padding: 20rpx;
+}
+
+.system-notification-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.system-notification-text {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 40rpx;
+	lines: 3;
+	text-overflow: ellipsis;
+}
+
+.system-notification-footer {
+	padding: 16rpx 20rpx;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #F0F0F0;
+	flex-direction: row;
+	justify-content: flex-end;
+}
+
+.system-notification-link {
+	font-size: 24rpx;
+	color: #1890FF;
+}
+</style>

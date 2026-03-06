@@ -1,0 +1,1674 @@
+﻿<template>
+	<view class="page" v-if="initDataFlag == true">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">订单支付</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (statusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 订单信息卡片 -->
+		<view class="order-info-card">
+			<view class="order-info-row">
+				<text class="order-info-label">订单号</text>
+				<text class="order-info-value">{{ displayOrderNo }}</text>
+			</view>
+			<view class="order-info-divider"></view>
+			<view class="order-info-row">
+				<text class="order-info-label">应付金额</text>
+				<text class="order-info-price">￥{{ displayTotalMoney }}</text>
+			</view>
+		</view>
+		
+		<!-- 支付方式选择 -->
+		<view class="payment-methods-card">
+			<template v-for="(item, index) in payMethodList" :key="index">
+				<view class="payment-method-item" @click="selectPayMethod(index)">
+					<view class="payment-method-left">
+						<view class="payment-icon">
+							<image class="payment-icon-image" :src="getPayMethodIcon(item)" mode="aspectFit"></image>
+						</view>
+						<text class="payment-method-label">{{ getPayMethodLabel(item) }}</text>
+					</view>
+					<view class="payment-method-right">
+						<uniIcons v-if="payMethod == index" type="checkbox-filled" size="24" color="#37B1F2"></uniIcons>
+						<uniIcons v-else type="circle" size="24" color="#CCCCCC"></uniIcons>
+					</view>
+				</view>
+				<view v-if="index < payMethodList.length - 1" class="payment-method-divider"></view>
+			</template>
+		</view>
+		</view>
+		
+		<!-- 底部固定区域 -->
+		<view class="footer-box">
+			<view class="footer-price">
+				<text class="footer-price-label">总价: </text>
+				<text class="footer-price-value">￥{{ displayTotalMoney }}</text>
+			</view>
+			<view class="submit-btn" @click="handleSubmitOrder">
+				<text class="submit-btn-text">确认支付</text>
+			</view>
+		</view>
+
+		<!-- 支付密码弹窗 -->
+		<keyboardPay 
+			:show="passwordInputVisity" 
+			:money="totalMoneyNum"
+			:payType="'balance'"
+			@confirm="handleInputSubmit"
+			@cancel="closePasswordInput"
+			@update:show="updatePasswordVisity"
+		/>
+		
+		<Loading :show="loading" fullscreen />
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onUnmounted } from 'vue'
+import { onLoad, onUnload, onShow } from '@dcloudio/uni-app'
+import { getGuiderOrderInfo } from '@/common/services/orderService.uts'
+import { balancePay } from '@/common/services/paymentService'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable,
+	getCurrentUserTokenReliable 
+} from '@/common/utils/loginHelper.uts'
+// 导入微信支付公共模块（类型、工具函数）
+import { 
+	wechatPayH5WithCode,
+	PaymentParams, 
+	PaymentResult,
+	getPaymentState,
+	clearPaymentState,
+	isH5Platform,
+	isAppPlatform,
+	isMpWeixinPlatform,
+	getStoredWxCodeSafe,
+	clearWxCodeSafe,
+	wechatPayApp as wechatPayAppService,
+	initWeChatPaySDK,
+	cleanupWeChatPaySDK,
+	checkPaymentOnAppShow,
+	getCurrentPayingOrderId,
+	triggerPaymentSuccess,
+	triggerPaymentFail,
+	getWechatPayAuthCode,
+	checkIsWechatBrowser
+} from '@/pagesTrade/services/wechatPay/index'
+import request from '@/utils/request'
+
+// 导入支付宝支付公共模块
+import { 
+	alipayPay,
+	buildAlipayPayParams,
+	AlipayPayResult,
+	classifyAlipayError,
+	getAlipayErrorMessage,
+	ALIPAY_ERROR_USER_CANCEL
+} from '@/pagesTrade/services/alipayPay/index'
+
+import keyboardPay from '@/components/keyboardPay/index.uvue'
+import Loading from '@/components/base/Loading.uvue'
+import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { ORDER_STATUS_PENDING, ORDER_STATUS_PAID, ORDER_STATUS_CONFIRMED, ORDER_STATUS_CLOSED, ORDER_TYPE_CUSTOM, ORDER_TYPE_GUIDE, ORDER_TYPE_LINE } from '@/common/config/businessCodes.uts'
+import { getUrlParams, safeDecodeURIComponent } from '@/common/utils/security/urlValidator.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+// 内联金额格式化（替代 money.uts）
+const formatMoney = (value: number): string => {
+	if (isNaN(value)) return '0.00'
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+// 从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseFloat(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+
+// 延迟函数
+const delay = (ms: number) => {
+	let timer: number = 0
+	return new Promise<number>((resolve: (value: number) => void) => {
+		timer = safeSetTimeout(() => {
+			resolve(timer)
+		}, ms)
+	})
+}
+
+// ==================== URL 参数解析函数（H5 端专用）====================
+
+/**
+ * URL 参数解析结果类
+ */
+class UrlParams {
+	orderKid: string = ''
+	code: string = ''
+	state: string = ''
+	
+	constructor(orderKid: string, code: string, state: string) {
+		this.orderKid = orderKid
+		this.code = code
+		this.state = state
+	}
+}
+
+/**
+ * 解析 URL 查询参数
+ * @param search URL 查询字符串（如 ?orderKid=xxx&code=yyy）
+ * @returns 参数对象
+ */
+const parseQueryParams = (search: string): UTSJSONObject => {
+	const result = {} as UTSJSONObject
+	if (search == '' || search == null) return result
+	
+	// 移除开头的 ?
+	let queryStr = search
+	if (queryStr.charAt(0) == '?') {
+		queryStr = queryStr.substring(1)
+	}
+	
+	const pairs = queryStr.split('&')
+	for (let i = 0; i < pairs.length; i = i + 1) {
+		const pair = pairs[i].split('=')
+		if (pair.length >= 2) {
+			const key = pair[0]
+			const value = safeDecodeURIComponent(pair[1])
+			result.set(key, value)
+		}
+	}
+	
+	return result
+}
+
+/**
+ * 解析 Hash 路由参数
+ * @param hash URL hash 部分（如 #/page?orderKid=xxx）
+ * @returns 参数对象
+ */
+const parseHashParams = (hash: string): UTSJSONObject => {
+	const result = {} as UTSJSONObject
+	if (hash == '' || hash == null) return result
+	
+	// 查找 ? 的位置
+	const queryIndex = hash.indexOf('?')
+	if (queryIndex == -1) return result
+	
+	const queryStr = hash.substring(queryIndex + 1)
+	return parseQueryParams(queryStr)
+}
+
+/**
+ * 解析完整 URL 获取所有参数
+ * 优先使用 Hash 路由中的参数，其次使用查询参数
+ * 
+ * @returns UrlParams 解析结果
+ */
+const parseUrlParams = (): UrlParams => {
+	let orderKidVal = ''
+	let codeVal = ''
+	let stateVal = ''
+	
+	// #ifdef H5
+	try {
+		if (typeof window != 'undefined') {
+			// 使用安全的 URL 参数解析（自动处理 search 和 hash 参数）
+			const safeParams = getUrlParams()
+			
+			// 获取 orderKid
+			const orderKidParam = safeParams.get('orderKid')
+			if (orderKidParam != null && orderKidParam != '') {
+				orderKidVal = orderKidParam
+			}
+			
+			// 获取 code（微信授权回跳参数）
+			const codeParam = safeParams.get('code')
+			if (codeParam != null && codeParam != '') {
+				codeVal = codeParam
+			}
+			
+			// 获取 state
+			const stateParam = safeParams.get('state')
+			if (stateParam != null && stateParam != '') {
+				stateVal = stateParam
+			}
+			
+			console.log('🔍 [URL-PARSE] 解析结果: orderKid=' + orderKidVal + ', code=' + (codeVal != '' ? '存在' : '不存在') + ', state=' + stateVal)
+		}
+	} catch (e) {
+		handleSilentError(e, '解析URL参数')
+	}
+	// #endif
+	
+	return new UrlParams(orderKidVal, codeVal, stateVal)
+}
+
+/**
+ * 清理 URL 中的授权码参数
+ * @param orderKid 订单 ID（保留在 URL 中）
+ */
+const cleanUrlAuthCode = (orderKid: string): void => {
+	// #ifdef H5
+	try {
+		if (typeof window != 'undefined' && window.location != null && window.history != null) {
+			const cleanUrl = window.location.origin + window.location.pathname + '?orderKid=' + orderKid
+			window.history.replaceState({}, document.title, cleanUrl)
+		}
+	} catch (e) {
+		handleSilentError(e, '清理URL参数')
+	}
+	// #endif
+}
+
+/**
+ * 检查授权码是否已使用
+ */
+const isWxCodeUsed = (): boolean => {
+	try {
+		const usedVal = uni.getStorageSync('wxCode_used')
+		if (usedVal != null && usedVal.toString() == 'true') {
+			return true
+		}
+	} catch (e) {}
+	return false
+}
+
+/**
+ * 标记授权码为已使用
+ */
+const markWxCodeUsed = (): void => {
+	try {
+		uni.setStorageSync('wxCode_used', 'true')
+	} catch (e) {}
+}
+
+/**
+ * 清理授权码相关存储
+ */
+const clearWxCodeStorage = (): void => {
+	try {
+		uni.removeStorageSync('wxCode')
+		uni.removeStorageSync('wxCode_used')
+	} catch (e) {}
+}
+
+// ==================== 错误处理函数 ====================
+
+/**
+ * 错误类型枚举
+ */
+const ERROR_TYPE_USER_CANCEL = 'USER_CANCEL'
+const ERROR_TYPE_NETWORK = 'NETWORK_ERROR'
+const ERROR_TYPE_PARAM = 'PARAM_ERROR'
+const ERROR_TYPE_AUTH = 'AUTH_ERROR'
+const ERROR_TYPE_BACKEND = 'BACKEND_ERROR'
+const ERROR_TYPE_UNKNOWN = 'UNKNOWN_ERROR'
+
+/**
+ * 分类错误类型
+ * @param error 错误信息
+ * @returns 错误类型
+ */
+const classifyPaymentError = (error: string): string => {
+	const errorLower = error.toLowerCase()
+	
+	// 用户取消
+	if (error.indexOf('取消') != -1 || errorLower.indexOf('cancel') != -1) {
+		return ERROR_TYPE_USER_CANCEL
+	}
+	
+	// 网络错误
+	if (error.indexOf('网络') != -1 || errorLower.indexOf('network') != -1 || 
+		errorLower.indexOf('timeout') != -1 || error.indexOf('请求失败') != -1) {
+		return ERROR_TYPE_NETWORK
+	}
+	
+	// 参数错误
+	if (error.indexOf('参数') != -1 || errorLower.indexOf('param') != -1 || 
+		error.indexOf('缺少') != -1 || error.indexOf('无效') != -1) {
+		return ERROR_TYPE_PARAM
+	}
+	
+	// 授权错误
+	if (error.indexOf('授权') != -1 || errorLower.indexOf('code') != -1 ||
+		error.indexOf('openid') != -1) {
+		return ERROR_TYPE_AUTH
+	}
+	
+	// 后端错误
+	if (error.indexOf('服务') != -1 || error.indexOf('系统') != -1) {
+		return ERROR_TYPE_BACKEND
+	}
+	
+	return ERROR_TYPE_UNKNOWN
+}
+
+/**
+ * 获取用户友好的错误提示
+ * @param error 原始错误信息
+ * @param errorType 错误类型
+ * @returns 用户友好的错误提示
+ */
+const getUserFriendlyErrorMessage = (error: string, errorType: string): string => {
+	if (errorType == ERROR_TYPE_USER_CANCEL) {
+		return '已取消支付'
+	}
+	if (errorType == ERROR_TYPE_NETWORK) {
+		return '网络连接失败，请检查网络后重试'
+	}
+	if (errorType == ERROR_TYPE_PARAM) {
+		return '支付参数错误，请重试'
+	}
+	if (errorType == ERROR_TYPE_AUTH) {
+		return '微信授权失败，请重新授权'
+	}
+	if (errorType == ERROR_TYPE_BACKEND) {
+		return '服务暂时不可用，请稍后重试'
+	}
+	
+	// 如果有具体错误信息，显示具体信息
+	if (error != '' && error.length < 30) {
+		return error
+	}
+	
+	return '支付失败，请重试'
+}
+
+// ==================== Store 访问函数（使用 loginHelper 可靠版本）====================
+
+// 获取用户 Token
+const getUserToken = (): string => {
+	return getCurrentUserTokenReliable()
+}
+
+// 获取用户 Kid
+const getUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 检查是否登录
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+
+// ==================== 响应式数据 ====================
+const loading = ref<boolean>(false)
+const initDataFlag = ref<boolean>(false)
+const orderData = ref<UTSJSONObject | null>(null)
+const payMethod = ref<number>(0) // 0余额 1微信 2支付宝
+const passwordInputVisity = ref<boolean>(false)
+const orderKid = ref<string>('')
+const isPaymentProcessing = ref<boolean>(false)
+const payPassword = ref<string>('')
+const balancePayEnabled = ref<boolean>(false) // 零钱支付资格状态
+
+// 🔧 H5 端自动支付状态（授权回跳后使用）
+const pendingAutoPayment = ref<boolean>(false)
+const authCodeFromRedirect = ref<string>('')
+
+// 状态栏高度相关
+const statusBarHeight = ref<number>(0)
+
+// 初始化状态栏高度
+const initStatusBarHeight = () => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+		const statusBarVal = systemInfoObj.get('statusBarHeight')
+		if (statusBarVal != null) {
+			const sbHeight = parseInt(statusBarVal.toString())
+			if (isNaN(sbHeight) == false) {
+				statusBarHeight.value = sbHeight
+			}
+		}
+	} catch (e) {
+		statusBarHeight.value = 44
+	}
+}
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/order/index' })
+		}
+	})
+}
+
+// 订单数据字段（拆分为独立 ref）
+const displayOrderNo = ref<string>('')
+const displayTotalMoney = ref<string>('0.00')
+const totalMoneyNum = ref<number>(0)
+const orderTitle = ref<string>('')
+const orderType = ref<number>(0)
+const guideName = ref<string>('')
+const createTime = ref<string>('')
+const shortKid = ref<string>('')
+
+// 支付方式数据类
+class PayMethodItem {
+	label: string = ''
+	iconClass: string = ''
+	iconUrl: string = ''
+	constructor(label: string, iconClass: string, iconUrl: string) {
+		this.label = label
+		this.iconClass = iconClass
+		this.iconUrl = iconUrl
+	}
+}
+
+// 支付方式列表
+const payMethodList = ref<Array<PayMethodItem>>([])
+
+// 初始化支付方式列表（根据平台和零钱支付资格过滤）
+const initPayMethodList = () => {
+	const list: Array<PayMethodItem> = []
+	// 零钱支付资格通过时展示零钱支付选项
+	if (balancePayEnabled.value == true) {
+		list.push(new PayMethodItem('零钱支付', 'wallet', 'https://jiasu.wyxdapp.com/iconimages/pay_order_wallet.png'))
+	}
+	list.push(new PayMethodItem('微信', 'wechat', 'https://jiasu.wyxdapp.com/iconimages/pay_order_wechat.png'))
+	// 微信小程序端不显示支付宝选项
+	const isMp = isMpWeixinPlatform()
+	if (isMp == false) {
+		list.push(new PayMethodItem('支付宝', 'zfb', 'https://jiasu.wyxdapp.com/iconimages/pay_order_zfb.png'))
+	}
+	payMethodList.value = list
+}
+
+// 获取支付方式图标
+const getPayMethodIcon = (item: PayMethodItem): string => {
+	return item.iconUrl
+}
+
+// 获取支付方式标签
+const getPayMethodLabel = (item: PayMethodItem): string => {
+	return item.label
+}
+
+// 选择支付方式
+const selectPayMethod = (index: number) => {
+	payMethod.value = index
+}
+
+// 关闭密码输入框
+const closePasswordInput = () => {
+	passwordInputVisity.value = false
+}
+
+// 更新密码输入框显示状态
+const updatePasswordVisity = (val: boolean) => {
+	passwordInputVisity.value = val
+}
+
+
+// 倒计时定时器（已移除）
+
+// 从订单数据更新所有字段
+const updateOrderFields = (data: UTSJSONObject | null) => {
+	if (data == null) return
+	
+	// 订单号显示
+	const shortKidVal = getObjString(data, 'shortKid')
+	const kidVal = getObjString(data, 'kid')
+	shortKid.value = shortKidVal
+	if (shortKidVal != '') {
+		displayOrderNo.value = shortKidVal
+	} else if (kidVal != '') {
+		displayOrderNo.value = kidVal
+	} else {
+		displayOrderNo.value = orderKid.value
+	}
+	
+	// 金额 - 支付关键数据空值检查（需求 7.5）
+	const totalMoneyVal = data.get('totalMoney')
+	if (totalMoneyVal == null) {
+		console.warn('⚠️ [PAY-ORDER] 订单金额数据为空，支付将被阻止')
+		totalMoneyNum.value = 0
+		displayTotalMoney.value = '0.00'
+	} else {
+		const totalMoney = parseFloat(totalMoneyVal.toString())
+		if (isNaN(totalMoney) == true) {
+			console.warn('⚠️ [PAY-ORDER] 订单金额格式异常:', totalMoneyVal.toString())
+			totalMoneyNum.value = 0
+			displayTotalMoney.value = '0.00'
+		} else {
+			totalMoneyNum.value = totalMoney
+			if (totalMoney > 0) {
+				displayTotalMoney.value = formatMoney(totalMoney)
+			} else {
+				displayTotalMoney.value = '0.00'
+			}
+		}
+	}
+	
+	// 其他字段
+	orderTitle.value = getObjString(data, 'orderTitle')
+	orderType.value = getObjNumber(data, 'orderType') as number
+	guideName.value = getObjString(data, 'guideName')
+	createTime.value = getObjString(data, 'createTime')
+	
+	// 保存 orderKid
+	const orderKidVal = getObjString(data, 'orderKid')
+	if (orderKidVal != '') {
+		orderKid.value = orderKidVal
+	} else if (kidVal != '') {
+		orderKid.value = kidVal
+	}
+}
+
+// 🔧 前向声明：触发自动支付的函数引用（解决 UTS 函数定义顺序问题）
+let triggerAutoPaymentFn: (() => void) | null = null
+
+// 获取订单信息
+const getOrderInfo = async (id: string) => {
+	loading.value = true
+	try {
+		// 等待用户 store 初始化
+		let retryCount = 0
+		const maxRetries = 5
+		
+		while (retryCount < maxRetries) {
+			const tokenVal = getUserToken()
+			const isLogin = checkIsLogin()
+			if (isLogin == true && tokenVal != '') {
+				break
+			}
+			await delay(500)
+			retryCount = retryCount + 1
+		}
+		
+		const params = { orderKid: id } as UTSJSONObject
+		const res = await getGuiderOrderInfo(params)
+		const resObj = toJsonObj(res)
+		
+		if (resObj == null) {
+			uni.showToast({ title: '获取订单信息失败', icon: 'none' })
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code == 200) {
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataObj = toJsonObj(dataVal)
+				orderData.value = dataObj
+				updateOrderFields(dataObj)
+				
+				// 🔧 新增：检查订单状态，如果已支付则直接跳转成功页面
+				// orderStatu: 
+				//   ORDER_STATUS_PENDING=待支付
+				//   ORDER_STATUS_PAID=已支付/待服务（向导订单）
+				//   ORDER_STATUS_CONFIRMED=已拒绝/支付超时（向导订单）或待付款（特殊订单）
+				//   ORDER_STATUS_IN_PROGRESS=待接单（向导订单）
+				//   ORDER_STATUS_COMPLETED=进行中（向导订单）
+				//   ORDER_STATUS_CANCELLED=已完成（会员订单、抽奖订单支付成功后的最终状态）
+				//   70=已评价
+				//   80=已取消/退款中
+				//   ORDER_STATUS_CLOSED=已取消
+				if (dataObj != null) {
+					// 🔧 修复：后端字段名是 orderStatu（不是 orderStatus）
+					let orderStatus = getObjNumber(dataObj, 'orderStatu')
+					if (orderStatus == 0) {
+						orderStatus = getObjNumber(dataObj, 'orderStatus')
+					}
+					
+					// 获取订单类型
+					const ot = getObjNumber(dataObj, 'orderType')
+					// 判断是否为特殊订单（会员/礼物/抽奖）
+					const isSpecialOrder = (ot == ORDER_TYPE_CUSTOM || ot == ORDER_TYPE_GUIDE || ot == ORDER_TYPE_LINE)
+					
+					// 🔧 修复：会员订单（ORDER_TYPE_CUSTOM）和抽奖订单（ORDER_TYPE_LINE）支付成功后状态为 ORDER_STATUS_CANCELLED
+					// 向导订单支付成功后状态为 ORDER_STATUS_PAID 或更高
+					// 判断已支付：orderStatus >= ORDER_STATUS_PAID 且不是已取消（ORDER_STATUS_CLOSED）且不是状态 ORDER_STATUS_CONFIRMED 的特殊订单
+					// 状态30的特殊订单应该允许支付，不应该跳转到成功页面
+					if (orderStatus >= ORDER_STATUS_PAID && orderStatus != ORDER_STATUS_CLOSED && (orderStatus != ORDER_STATUS_CONFIRMED || isSpecialOrder == false)) {
+						// 订单已支付，直接跳转成功页面
+						uni.showToast({ title: '订单已支付', icon: 'none' })
+						
+						// 标记订单列表为脏
+						try {
+							uni.setStorageSync('order:dirty', JSON.stringify({ ts: Date.now() }))
+						} catch (e) {}
+						
+						// 直接跳转到成功页面（不调用 handlePaySuccess，因为函数定义在后面）
+						safeSetTimeout(() => {
+							const successUrl = '/pagesTrade/payment/payOrderSuccess/index?payMethod=1&payMoney=' + displayTotalMoney.value + '&orderKid=' + orderKid.value + '&creatTime=' + createTime.value + '&shortKid=' + shortKid.value
+							uni.redirectTo({ url: successUrl })
+						}, 500)
+						return
+					}
+					
+					if (orderStatus == ORDER_STATUS_CLOSED) {
+						// 订单已取消
+						uni.showToast({ title: '订单已取消', icon: 'none' })
+						safeSetTimeout(() => {
+							uni.switchTab({ url: '/pages/order/index' })
+						}, 1500)
+						return
+					}
+				}
+				
+				initDataFlag.value = true
+				
+				// 缓存订单号
+				try {
+					uni.setStorageSync('pendingOrderKid', orderKid.value)
+				} catch (e) {}
+				
+				// 倒计时由 CountDown 组件内部管理，无需手动启动
+				
+				// 🔧 修复：订单加载完成后，检查是否需要自动支付（H5 授权回跳场景）
+				// 使用 safeSetTimeout 确保 UI 渲染完成后再触发支付
+				// 使用函数引用变量，解决 UTS 函数定义顺序问题
+				safeSetTimeout(() => {
+					const fn = triggerAutoPaymentFn
+					if (fn != null) {
+						fn()
+					}
+				}, 100)
+			}
+		} else {
+			const msg = getObjString(resObj, 'msg')
+			uni.showToast({ title: (msg != '') ? msg : '获取订单信息失败', icon: 'none' })
+		}
+	} catch (error: any) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取订单信息', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// ==================== 支付函数（必须在 handleSubmitOrder 之前定义）====================
+
+// 支付成功处理（必须在 handleBalancePay 之前定义）
+const handlePaySuccess = () => {
+	// 标记订单列表为脏
+	try {
+		uni.setStorageSync('order:dirty', JSON.stringify({ ts: Date.now() }))
+	} catch (e) {}
+	
+	// 清除缓存的订单号
+	try {
+		uni.removeStorageSync('pendingOrderKid')
+	} catch (e) {}
+	
+	// 🔧 新增：处理抽奖订单
+	if (orderType.value == 50) {
+		// 抽奖订单：跳转到抽奖页面并自动展示结果
+		const url = '/pagesUser/my/proveDetails/lottery?autoShowResult=true&orderKid=' + orderKid.value
+		uni.redirectTo({ url: url })
+		return
+	}
+	
+	// 处理礼物订单
+	if (orderType.value == 40) {
+		try {
+			let pendingGiftOrderStr = ''
+			try {
+				const val = uni.getStorageSync('pendingGiftOrder')
+				if (val != null && val.toString() != '') {
+					pendingGiftOrderStr = val.toString()
+				}
+			} catch (e) {}
+			
+			if (pendingGiftOrderStr != '') {
+				const pendingGiftOrder = JSON.parse(pendingGiftOrderStr) as UTSJSONObject
+				const receiveUserKid = getObjString(pendingGiftOrder, 'receiveUserKid')
+				
+				uni.removeStorageSync('pendingGiftOrder')
+				
+				if (receiveUserKid != '') {
+					const giftName = getObjString(pendingGiftOrder, 'giftName')
+					const giftImage = getObjString(pendingGiftOrder, 'giftImage')
+					const giftValue = getObjString(pendingGiftOrder, 'giftValue')
+					
+					const giftMsg = {
+						giftName: giftName,
+						giftImage: giftImage,
+						giftValue: giftValue
+					}
+					uni.setStorageSync('pendingGiftMessage', JSON.stringify(giftMsg))
+					
+					uni.redirectTo({
+						url: '/pagesTrade/news/detail?targetUserId=' + receiveUserKid + '&autoSendGift=true'
+					})
+					return
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '处理礼物订单')
+		}
+	}
+	
+	// 普通订单跳转到支付成功页面
+	const url = '/pagesTrade/payment/payOrderSuccess/index?payMethod=' + payMethod.value.toString() + '&payMoney=' + displayTotalMoney.value + '&orderKid=' + orderKid.value + '&creatTime=' + createTime.value + '&shortKid=' + shortKid.value + '&orderType=' + orderType.value.toString()
+	uni.redirectTo({ url: url })
+}
+
+// 支付失败处理（必须在 callWeixinJSBridge 之前定义）
+const handlePayFail = (err: string) => {
+	uni.showToast({ title: err, icon: 'none' })
+	safeSetTimeout(() => {
+		uni.switchTab({ url: '/pages/order/index' })
+	}, 1500)
+}
+
+// 余额支付
+const handleBalancePay = async () => {
+	if (orderKid.value == '') {
+		uni.showToast({ title: '订单ID获取失败', icon: 'none' })
+		return
+	}
+	
+	loading.value = true
+	try {
+		uni.showLoading({ title: '支付中...' })
+		
+		// 🔧 修复：参数名 payPassword 改为 payPwd，与后端 BalancePayRequest 保持一致
+		const params = {
+			orderKid: orderKid.value,
+			orderPrice: totalMoneyNum.value,
+			payPwd: payPassword.value
+		} as UTSJSONObject
+		
+		const res = await balancePay(params)
+		const resObj = toJsonObj(res)
+		
+		if (resObj != null) {
+			const code = getObjNumber(resObj, 'code')
+			if (code == 200) {
+				// 标记订单列表为脏
+				try {
+					uni.setStorageSync('order:dirty', JSON.stringify({ ts: Date.now() }))
+				} catch (e) {}
+				handlePaySuccess()
+			} else {
+				const msg = getObjString(resObj, 'msg')
+				uni.showToast({ title: (msg != '') ? msg : '支付失败', icon: 'none' })
+			}
+		} else {
+			uni.showToast({ title: '支付失败', icon: 'none' })
+		}
+	} catch (error: any) {
+		// 先隐藏 loading，避免与 toast 冲突
+		uni.hideLoading()
+		if (!isAuthError(error)) {
+			handlePageError(error, '余额支付', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 微信支付成功回调（必须在 handleWechatPay 之前定义）
+const handleWechatPaySuccess = (message: string) => {
+	uni.hideLoading()
+	isPaymentProcessing.value = false
+	clearWxCodeSafe()
+	handlePaySuccess()
+}
+
+// H5 端微信支付成功回调（使用 PaymentResult 类型）
+const handleWechatPaySuccessH5 = (result: PaymentResult) => {
+	uni.hideLoading()
+	isPaymentProcessing.value = false
+	clearWxCodeSafe()
+	handlePaySuccess()
+}
+
+// 重试微信支付的函数引用（先声明，后赋值，解决函数定义顺序问题）
+let retryWechatPayFn: (() => void) | null = null
+
+// 微信支付失败回调（必须在 handleWechatPay 之前定义）
+const handleWechatPayError = (error: string) => {
+	console.error('========================================')
+	console.error('❌ [PAY-ORDER] 微信支付失败')
+	console.error('❌ [PAY-ORDER] 原始错误:', error)
+	
+	// 分类错误类型
+	const errorType = classifyPaymentError(error)
+	console.error('❌ [PAY-ORDER] 错误类型:', errorType)
+	
+	// 获取用户友好的错误提示
+	const userMessage = getUserFriendlyErrorMessage(error, errorType)
+	console.error('❌ [PAY-ORDER] 用户提示:', userMessage)
+	console.error('========================================')
+	
+	uni.hideLoading()
+	isPaymentProcessing.value = false
+	
+	// 清理授权码
+	clearWxCodeSafe()
+	clearWxCodeStorage()
+	
+	// 根据错误类型决定后续操作
+	if (errorType == ERROR_TYPE_USER_CANCEL) {
+		// 用户取消，只显示提示，不跳转
+		uni.showToast({ title: userMessage, icon: 'none' })
+	} else if (errorType == ERROR_TYPE_AUTH) {
+		// 授权错误，提示用户重新授权
+		uni.showModal({
+			title: '授权失败',
+			content: '微信授权已过期，是否重新授权？',
+			confirmText: '重新授权',
+			cancelText: '取消',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					// 重新发起微信支付（会触发授权流程）
+					// 使用函数引用变量，避免 UTS 函数定义顺序问题
+					const fn = retryWechatPayFn
+					if (fn != null) {
+						fn()
+					}
+				}
+			}
+		})
+	} else {
+		// 其他错误，显示提示并跳转
+		handlePayFail(userMessage)
+	}
+}
+
+// 微信支付（根据平台调用不同实现）
+const handleWechatPay = () => {
+	if (orderKid.value == '') {
+		uni.showToast({ title: '订单ID获取失败', icon: 'none' })
+		return
+	}
+	
+	if (isPaymentProcessing.value == true) {
+		uni.showToast({ title: '支付正在处理中', icon: 'none' })
+		return
+	}
+	
+	isPaymentProcessing.value = true
+	uni.showLoading({ title: '正在调起支付...' })
+	
+	// 获取商品名称
+	const goodsNameVal = (orderTitle.value != '') ? orderTitle.value : '订单支付'
+	
+	// 使用运行时平台检测（避免条件编译问题）
+	const isApp = isAppPlatform()
+	const isH5 = isH5Platform()
+	const isMp = isMpWeixinPlatform()
+	
+	if (isApp == true) {
+		// APP 端调用微信支付
+		wechatPayAppService(
+			orderKid.value,
+			totalMoneyNum.value.toString(),
+			goodsNameVal,
+			handleWechatPaySuccess,
+			handleWechatPayError
+		)
+	} else if (isH5 == true) {
+		// H5 端检查是否有授权码
+		
+		// 🔧 修复：先检查是否在微信浏览器中
+		const isInWechat = checkIsWechatBrowser()
+		
+		if (isInWechat == false) {
+			// 不在微信浏览器中，提示用户
+			uni.hideLoading()
+			isPaymentProcessing.value = false
+			uni.showToast({ title: '请在微信浏览器中打开', icon: 'none' })
+			return
+		}
+		
+		const wxCode = getStoredWxCodeSafe()
+		
+		if (wxCode != '') {
+			// 有授权码，使用授权码支付
+			const payParams = new PaymentParams(orderKid.value, totalMoneyNum.value.toString(), goodsNameVal, wxCode)
+			wechatPayH5WithCode(payParams, wxCode, handleWechatPaySuccessH5, handleWechatPayError)
+		} else {
+			// 🔧 修复：没有授权码，跳转到微信授权页面获取
+			uni.hideLoading()
+			isPaymentProcessing.value = false
+			
+			// 保存支付参数，授权回跳后使用
+			try {
+				const pendingPayment = {
+					orderId: orderKid.value,
+					amount: totalMoneyNum.value.toString(),
+					goodsName: goodsNameVal,
+					timestamp: Date.now()
+				}
+				uni.setStorageSync('pendingPayment', JSON.stringify(pendingPayment))
+			} catch (e) {
+				handleSilentError(e, '保存支付参数')
+			}
+			
+			// 跳转到微信授权页面
+			getWechatPayAuthCode(orderKid.value)
+		}
+	} else if (isMp == true) {
+		// 小程序端
+		uni.hideLoading()
+		isPaymentProcessing.value = false
+		uni.showToast({ title: '小程序支付功能开发中', icon: 'none' })
+	} else {
+		// 未知平台
+		uni.hideLoading()
+		isPaymentProcessing.value = false
+		uni.showToast({ title: '当前平台不支持微信支付', icon: 'none' })
+	}
+}
+
+// 赋值重试函数引用（在 handleWechatPay 定义后赋值）
+retryWechatPayFn = () => {
+	handleWechatPay()
+}
+
+// 使用授权码支付（H5 端授权回调后使用）
+const handlePaymentWithCode = (payCode: string) => {
+	if (isPaymentProcessing.value == true) {
+		return
+	}
+	
+	if (orderKid.value == '') {
+		uni.showToast({ title: '订单ID获取失败', icon: 'none' })
+		return
+	}
+	
+	isPaymentProcessing.value = true
+	uni.showLoading({ title: '正在调起支付...' })
+	
+	// 构造支付参数
+	const goodsNameVal2 = (orderTitle.value != '') ? orderTitle.value : '订单支付'
+	const payParams = new PaymentParams(orderKid.value, totalMoneyNum.value.toString(), goodsNameVal2, payCode)
+	
+	// 使用 H5 支付服务
+	wechatPayH5WithCode(payParams, payCode, handleWechatPaySuccessH5, handleWechatPayError)
+}
+
+// 🔧 新增：触发自动支付（授权回跳后，订单加载完成时调用）
+const triggerAutoPayment = () => {
+	// #ifdef H5
+	console.log('🔐 [PAY-ORDER] triggerAutoPayment 被调用')
+	console.log('🔐 [PAY-ORDER] pendingAutoPayment:', pendingAutoPayment.value)
+	console.log('🔐 [PAY-ORDER] authCodeFromRedirect:', authCodeFromRedirect.value != '' ? '存在' : '不存在')
+	
+	// 检查是否需要自动支付
+	if (pendingAutoPayment.value == false) {
+		console.log('🔐 [PAY-ORDER] 不需要自动支付，跳过')
+		return
+	}
+	
+	// 检查是否有授权码
+	if (authCodeFromRedirect.value == '') {
+		pendingAutoPayment.value = false
+		return
+	}
+	
+	// 检查订单信息是否已加载
+	if (orderData.value == null) {
+		return
+	}
+	
+	// 重置状态
+	pendingAutoPayment.value = false
+	const code = authCodeFromRedirect.value
+	authCodeFromRedirect.value = ''
+	
+	// 发起支付
+	handlePaymentWithCode(code)
+	// #endif
+}
+
+// 赋值触发自动支付函数引用（在 triggerAutoPayment 定义后赋值）
+triggerAutoPaymentFn = () => {
+	triggerAutoPayment()
+}
+
+// 支付宝支付成功回调（必须在 handleAlipayPay 之前定义）
+const handleAlipayPaySuccess = (result: AlipayPayResult) => {
+	uni.hideLoading()
+	isPaymentProcessing.value = false
+	handlePaySuccess()
+}
+
+// 支付宝支付失败回调（必须在 handleAlipayPay 之前定义）
+const handleAlipayPayError = (error: string) => {
+	console.error('========================================')
+	console.error('❌ [PAY-ORDER] 支付宝支付失败')
+	console.error('❌ [PAY-ORDER] 原始错误:', error)
+	
+	// 分类错误类型
+	const errorType = classifyAlipayError(error)
+	console.error('❌ [PAY-ORDER] 错误类型:', errorType)
+	
+	// 获取用户友好的错误提示
+	const userMessage = getAlipayErrorMessage(error, errorType)
+	console.error('❌ [PAY-ORDER] 用户提示:', userMessage)
+	console.error('========================================')
+	
+	uni.hideLoading()
+	isPaymentProcessing.value = false
+	
+	// 根据错误类型决定后续操作
+	if (errorType == ALIPAY_ERROR_USER_CANCEL) {
+		// 用户取消，只显示提示，不跳转
+		uni.showToast({ title: userMessage, icon: 'none' })
+	} else {
+		// 其他错误，显示提示
+		uni.showToast({ title: userMessage, icon: 'none' })
+	}
+}
+
+// 支付宝支付
+const handleAlipayPay = () => {
+	if (orderKid.value == '') {
+		uni.showToast({ title: '订单ID获取失败', icon: 'none' })
+		return
+	}
+	
+	if (isPaymentProcessing.value == true) {
+		uni.showToast({ title: '支付正在处理中', icon: 'none' })
+		return
+	}
+	
+	isPaymentProcessing.value = true
+	uni.showLoading({ title: '正在调起支付...' })
+	
+	// 获取商品名称
+	const goodsNameVal = (orderTitle.value != '') ? orderTitle.value : '订单支付'
+	
+	// 构造同步回调地址（H5/PC 端使用）
+	let returnUrl = ''
+	// #ifdef H5
+	try {
+		if (typeof window != 'undefined' && window.location != null) {
+			// 支付完成后跳转到支付结果页面
+			// 重要：returnUrl 中不能包含裸的 & 字符！
+			// 支付宝网关在验签时会按 & 分割所有参数，returnUrl 中的 & 会被当作顶层参数分隔符，
+			// 导致签名字符串被拆散，验签失败。
+			// 解决方案：将路由信息编码到 URL path 中，不使用任何查询参数
+			// 格式：https://m.wyxdapp.com/alipay-return/{orderKid}
+			// index.html 中的脚本会解析这个路径并跳转到对应的 hash 路由
+			const baseUrl = window.location.origin + '/alipay-return/' + orderKid.value
+			returnUrl = baseUrl
+		}
+	} catch (e) {
+		handleSilentError(e, '获取returnUrl')
+	}
+	// #endif
+	
+	// 构造支付参数
+	const alipayParams = buildAlipayPayParams(
+		orderKid.value,
+		displayTotalMoney.value,
+		goodsNameVal,
+		orderType.value,
+		returnUrl
+	)
+	
+	console.log('💰 [PAY-ORDER] 发起支付宝支付:', JSON.stringify(alipayParams))
+	
+	// 调用支付宝支付
+	alipayPay(alipayParams, handleAlipayPaySuccess, handleAlipayPayError)
+}
+
+// ==================== 支付入口函数（在支付函数之后定义）====================
+
+// 确认支付
+const handleSubmitOrder = () => {
+	// 支付关键数据空值检查（需求 7.5）：订单金额为空或为0时阻止支付
+	if (totalMoneyNum.value <= 0) {
+		uni.showToast({ title: '订单金额异常，无法支付', icon: 'none' })
+		return
+	}
+	if (orderKid.value == '') {
+		uni.showToast({ title: '订单信息异常，无法支付', icon: 'none' })
+		return
+	}
+	
+	const selectedMethod = payMethodList.value[payMethod.value]
+	const methodType = selectedMethod.iconClass
+	if (methodType == 'wallet') {
+		// 零钱支付（余额支付）
+		passwordInputVisity.value = true
+	} else if (methodType == 'wechat') {
+		// 微信支付
+		handleWechatPay()
+	} else if (methodType == 'zfb') {
+		// 支付宝支付
+		handleAlipayPay()
+	}
+}
+
+// 密码输入确认
+const handleInputSubmit = (password: string) => {
+	passwordInputVisity.value = false
+	payPassword.value = password
+	handleBalancePay()
+}
+
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 初始化状态栏高度
+	initStatusBarHeight()
+	
+	// 使用运行时平台检测初始化微信支付 SDK（避免条件编译问题）
+	const isApp = isAppPlatform()
+	if (isApp == true) {
+		initWeChatPaySDK()
+	}
+	
+	let ok = ''
+	
+	// 1. 首先从 onLoad options 获取 orderKid
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const orderKidVal = optionsObj.get('orderKid')
+		if (orderKidVal != null && orderKidVal.toString() != '') {
+			ok = orderKidVal.toString()
+		}
+		
+		// 解析零钱支付资格参数
+		const balancePayVal = optionsObj.get('balancePayEnabled')
+		if (balancePayVal != null && balancePayVal.toString() == '1') {
+			balancePayEnabled.value = true
+		}
+	}
+	
+	// 初始化支付方式列表（在解析 balancePayEnabled 参数后调用）
+	initPayMethodList()
+	
+	// #ifdef H5
+	// 2. H5 端：使用增强的 URL 参数解析
+	const urlParams = parseUrlParams()
+	
+	// 如果 onLoad options 中没有 orderKid，使用 URL 解析结果
+	if (ok == '' && urlParams.orderKid != '') {
+		ok = urlParams.orderKid
+	}
+	
+	// 获取授权码
+	let wxCodeFromUrl = urlParams.code
+	// #endif
+	
+	// 3. 从存储兜底读取 orderKid
+	if (ok == '') {
+		try {
+			const storedVal = uni.getStorageSync('pendingOrderKid')
+			if (storedVal != null && storedVal.toString() != '') {
+				ok = storedVal.toString()
+			}
+		} catch (e) {}
+	}
+	
+	if (ok == '') {
+		console.error('❌ [PAY-ORDER] 无法获取订单 ID')
+		uni.showToast({ title: '订单id出错', icon: 'none' })
+		return
+	}
+	
+	orderKid.value = ok
+	getOrderInfo(ok)
+	
+	// #ifdef H5
+	// 4. 处理微信授权码
+	if (wxCodeFromUrl != '') {
+		// 检查授权码是否已使用
+		const codeUsed = isWxCodeUsed()
+		
+		if (codeUsed == true) {
+			clearWxCodeStorage()
+			cleanUrlAuthCode(ok)
+		} else {
+			// 🔧 修复：保存授权码到状态变量，等待订单加载完成后自动支付
+			authCodeFromRedirect.value = wxCodeFromUrl
+			pendingAutoPayment.value = true
+			
+			// 同时保存到存储（备份）
+			try {
+				uni.setStorageSync('wxCode', wxCodeFromUrl)
+			} catch (e) {
+				handleSilentError(e, '保存授权码')
+			}
+			
+			// 清理 URL 中的 code 参数，避免重复使用
+			cleanUrlAuthCode(ok)
+		}
+	}
+	
+	// 🔧 修复：移除 setTimeout 延迟执行支付的逻辑
+	// 自动支付将在 getOrderInfo 成功后通过 triggerAutoPayment 触发
+	// #endif
+})
+
+// 查询订单支付状态（必须在 onShow 之前定义，UTS 无函数提升）
+const queryOrderPaymentStatus = async () => {
+	if (orderKid.value == '') {
+		isPaymentProcessing.value = false
+		return
+	}
+	
+	try {
+		uni.showLoading({ title: '查询支付结果...' })
+		
+		const params = { orderKid: orderKid.value } as UTSJSONObject
+		const res = await getGuiderOrderInfo(params)
+		const resObj = toJsonObj(res)
+		
+		uni.hideLoading()
+		
+		if (resObj == null) {
+			console.error('❌ [PAY-ORDER] 查询订单失败')
+			isPaymentProcessing.value = false
+			uni.showToast({ title: '查询支付结果失败，请稍后重试', icon: 'none' })
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		if (code == 200) {
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataObj = toJsonObj(dataVal)
+				if (dataObj != null) {
+					// 检查订单状态
+					// orderStatu: 
+					//   ORDER_STATUS_PENDING=待支付
+					//   ORDER_STATUS_PAID=已支付/待服务（向导订单）
+					//   ORDER_STATUS_CONFIRMED=已拒绝/支付超时
+					//   ORDER_STATUS_IN_PROGRESS=待接单（向导订单）
+					//   ORDER_STATUS_COMPLETED=进行中（向导订单）
+					//   ORDER_STATUS_CANCELLED=已完成（会员订单、抽奖订单支付成功后的最终状态）
+					//   70=已评价
+					//   80=已取消/退款中
+					//   ORDER_STATUS_CLOSED=已取消
+					// 🔧 修复：后端字段名是 orderStatu（不是 orderStatus），需要兼容两个字段名
+					let orderStatus = getObjNumber(dataObj, 'orderStatu')
+					if (orderStatus == 0) {
+						orderStatus = getObjNumber(dataObj, 'orderStatus')
+					}
+					console.log('📋 [PAY-ORDER] 订单状态:', orderStatus)
+					
+					// 🔧 修复：判断已支付的条件
+					// 会员订单（ORDER_TYPE_CUSTOM）和抽奖订单（ORDER_TYPE_LINE）支付成功后状态为 ORDER_STATUS_CANCELLED
+					// 向导订单支付成功后状态为 ORDER_STATUS_PAID 或更高
+					// 判断已支付：orderStatus >= ORDER_STATUS_PAID 且不是已取消（ORDER_STATUS_CLOSED）
+					if (orderStatus >= ORDER_STATUS_PAID && orderStatus != ORDER_STATUS_CLOSED) {
+						// 订单已支付
+						isPaymentProcessing.value = false
+						
+						// 先尝试触发全局回调（清理状态）
+						triggerPaymentSuccess()
+						
+						// 直接调用成功处理（不依赖回调）
+						handlePaySuccess()
+					} else if (orderStatus == ORDER_STATUS_PENDING) {
+						// 订单未支付
+						console.log('⚠️ [PAY-ORDER] 订单未支付')
+						isPaymentProcessing.value = false
+						// 清理支付状态
+						triggerPaymentFail('支付未完成')
+						uni.showToast({ title: '支付未完成，请重试', icon: 'none' })
+					} else {
+						// 订单已取消或其他状态
+						console.log('⚠️ [PAY-ORDER] 订单状态异常:', orderStatus)
+						isPaymentProcessing.value = false
+						triggerPaymentFail('订单状态异常')
+						uni.showToast({ title: '订单状态异常', icon: 'none' })
+					}
+				}
+			}
+		} else {
+			const msg = getObjString(resObj, 'msg')
+			console.error('❌ [PAY-ORDER] 查询订单失败:', msg)
+			isPaymentProcessing.value = false
+			uni.showToast({ title: (msg != '') ? msg : '查询支付结果失败', icon: 'none' })
+		}
+	} catch (error: any) {
+		uni.hideLoading()
+		isPaymentProcessing.value = false
+		if (!isAuthError(error)) {
+			handlePageError(error, '查询支付结果', null)
+		}
+	}
+}
+
+// onShow: 从微信返回时检查支付状态
+onShow(() => {
+	console.log('📱 [PAY-ORDER] onShow 触发')
+	console.log('📱 [PAY-ORDER] 当前订单ID:', orderKid.value)
+	console.log('📱 [PAY-ORDER] 支付处理中状态:', isPaymentProcessing.value)
+	
+	// 只在 APP 端检查
+	const isApp = isAppPlatform()
+	console.log('📱 [PAY-ORDER] 是否APP端:', isApp)
+	if (isApp == false) {
+		return
+	}
+	
+	// 检查是否有待处理的支付
+	const hasPendingPayment = checkPaymentOnAppShow()
+	console.log('📱 [PAY-ORDER] 是否有待处理支付:', hasPendingPayment)
+	
+	// 如果 isPaymentProcessing 为 true，说明之前发起了支付
+	// 即使 hasPendingPayment 为 false（可能是状态被清理了），也应该检查订单状态
+	if (hasPendingPayment == true || isPaymentProcessing.value == true) {
+		// 获取当前支付的订单ID
+		const payingOrderId = getCurrentPayingOrderId()
+		console.log('📱 [PAY-ORDER] 当前支付订单ID:', payingOrderId)
+		
+		// 如果订单ID匹配，或者 isPaymentProcessing 为 true，说明是从微信返回
+		const shouldCheckPayment = (payingOrderId == orderKid.value) || (isPaymentProcessing.value == true && orderKid.value != '')
+		console.log('📱 [PAY-ORDER] 是否需要检查支付:', shouldCheckPayment)
+		
+		if (shouldCheckPayment == true) {
+			console.log('📱 [PAY-ORDER] 从微信返回，等待回调或查询订单状态...')
+			
+			// 显示加载提示
+			uni.showLoading({ title: '正在确认支付结果...' })
+			
+			// 等待一段时间，看回调是否触发
+			// 如果回调触发了，会自动跳转；如果没有，则查询订单状态
+			safeSetTimeout(() => {
+				// 再次检查是否还有待处理的支付（回调可能已经触发）
+				const stillPending = checkPaymentOnAppShow()
+				console.log('📱 [PAY-ORDER] 延迟后检查，是否仍有待处理支付:', stillPending)
+				console.log('📱 [PAY-ORDER] 延迟后检查，isPaymentProcessing:', isPaymentProcessing.value)
+				
+				// 如果回调已触发，isPaymentProcessing 会被设为 false
+				if (stillPending == true || isPaymentProcessing.value == true) {
+					// 回调仍未触发，需要主动查询订单状态
+					console.log('⚠️ [PAY-ORDER] 回调超时，主动查询订单状态')
+					uni.hideLoading()
+					
+					// 查询订单状态
+					queryOrderPaymentStatus()
+				} else {
+					uni.hideLoading()
+				}
+			}, 2000) // 等待 2 秒（缩短等待时间）
+		}
+	}
+})
+
+onUnload(() => {
+	// 注意：不要在这里清理 SDK，因为支付回调可能还没触发
+	// SDK 清理应该在支付完成（成功或失败）后进行
+	// 或者在 App 级别管理 SDK 生命周期
+	
+	// 只有在没有待处理支付时才清理
+	const isApp = isAppPlatform()
+	if (isApp == true) {
+		const payingOrderId = getCurrentPayingOrderId()
+		if (payingOrderId == '') {
+			// 没有待处理的支付，可以安全清理
+			cleanupWeChatPaySDK()
+		} else {
+			console.log('⚠️ [PAY-ORDER] 有待处理的支付，不清理SDK')
+		}
+	}
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+
+<style scoped>
+.page {
+	width: 750rpx;
+	flex: 1;
+	background-color: #F5F5F5;
+	padding-bottom: 140rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.order-info-card {
+	margin-top: 24rpx;
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 32rpx;
+}
+
+.order-info-row {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.order-info-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.order-info-value {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.order-info-price {
+	font-size: 40rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.order-info-divider {
+	width: 100%;
+	height: 2rpx;
+	background-color: #f0f0f0;
+}
+
+
+.payment-methods-card {
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+}
+
+.payment-method-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.payment-method-left {
+	flex-direction: row;
+	align-items: center;
+}
+
+.payment-icon {
+	width: 48rpx;
+	height: 48rpx;
+	margin-right: 16rpx;
+}
+
+.payment-icon-image {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+.payment-method-label {
+	font-size: 32rpx;
+	color: #333333;
+}
+
+.payment-method-right {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.payment-method-divider {
+	width: 100%;
+	height: 2rpx;
+	background-color: #f0f0f0;
+}
+
+.footer-box {
+	width: 750rpx;
+	height: 120rpx;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	background-color: #ffffff;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.footer-price {
+	flex-direction: row;
+	align-items: center;
+}
+
+.footer-price-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.footer-price-value {
+	font-size: 40rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.submit-btn {
+	width: 280rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn-text {
+	color: #ffffff;
+	font-size: 32rpx;
+	font-weight: bold;
+}
+</style>

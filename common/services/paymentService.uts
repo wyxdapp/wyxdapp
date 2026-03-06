@@ -1,0 +1,68 @@
+/**
+ * 支付模块服务 API
+ */
+import request from '@/utils/request'
+
+/**
+ * 校验支付密码
+ * @param data { userKid: string, payPassword: string }
+ */
+export const checkPayPassword = (data: UTSJSONObject) => {
+  return request.post('/user/userBankCard/validatePayPassword', data, false)
+}
+
+/**
+ * 余额支付
+ * @param data { orderKid: string, orderPrice: number, payPassword: string }
+ */
+export const balancePay = (data: UTSJSONObject) => {
+  return request.post('/order/tourist/balancePay', data, false)
+}
+
+/**
+ * 微信支付（小程序）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const mpWechatPay = (data: UTSJSONObject) => {
+  return request.post('/pay/wxpay/applyXcxPay', data, false)
+}
+
+/**
+ * 微信支付（H5）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const h5WechatPay = (data: UTSJSONObject) => {
+  return request.post('/pay/wxpay/jsApiPay', data, false)
+}
+
+/**
+ * 微信H5支付（非微信浏览器）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const h5WxpayH5 = (data: UTSJSONObject) => {
+  return request.post('/pay/wxpay/h5Pay', data, false)
+}
+
+/**
+ * 支付宝支付（APP）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const appAlipayPay = (data: UTSJSONObject) => {
+  return request.post('/pay/alipay/applyAppPay', data, false)
+}
+
+/**
+ * 支付宝支付（网页）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const pageAlipayPay = (data: UTSJSONObject) => {
+  return request.post('/pay/alipay/applyPagePay', data, false)
+}
+
+/**
+ * 支付宝支付（手机网页）
+ * @param data { orderKid: string, userKid: string }
+ */
+export const wapAlipayPay = (data: UTSJSONObject) => {
+  return request.post('/pay/alipay/applyWapPay', data, false)
+}

@@ -1,0 +1,704 @@
+/**
+ * 聊天消息管理 Composable
+ * 管理消息列表、加载、发送、重试等核心功能
+ */
+
+import { ref, nextTick } from 'vue'
+import { getHistoryMessages, GetHistoryParams, clearChatHistory, ClearChatHistoryParams } from '@/api/chat'
+import { chatService, MessageType } from '@/stores/chatService'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import {
+	getObjString,
+	getAnyString,
+	getMessageType,
+	createLocalMessage,
+	updateMessageStatus,
+	generateTempMessageId,
+	convertApiMessageToLocal,
+	mergeMessagesWithoutDuplicates,
+	mergeAndDeduplicateMessages,
+	reverseMessages,
+	setMessageProperty
+} from '@/common/utils/messageHelper.uts'
+import { ChatMessagesOptions, ChatMessagesResult } from '@/common/types/chatTypes.uts'
+import { chatLocalStorageManager, conversationMetaStore, ConversationMeta } from '@/common/services/chatLocalStorage.uts'
+import { chatSyncManager } from '@/common/services/chatSyncManager.uts'
+
+// 重新导出 ChatMessagesOptions 供外部使用
+export { ChatMessagesOptions, ChatMessagesResult } from '@/common/types/chatTypes.uts'
+
+/**
+ * 将字符串消息类型映射为 MessageType 枚举
+ */
+function mapStringToMessageType(typeStr: string): MessageType {
+	if (typeStr == 'text') return MessageType.TEXT
+	if (typeStr == 'image') return MessageType.IMAGE
+	if (typeStr == 'video') return MessageType.VIDEO
+	if (typeStr == 'voice') return MessageType.VOICE
+	if (typeStr == 'share') return MessageType.SHARE
+	if (typeStr == 'gift') return MessageType.GIFT
+	return MessageType.TEXT
+}
+
+/**
+ * 将数字映射为 MessageType 枚举
+ */
+function mapNumberToMessageType(type: number): MessageType {
+	if (type == 1) return MessageType.TEXT
+	if (type == 2) return MessageType.IMAGE
+	if (type == 3) return MessageType.VIDEO
+	if (type == 4) return MessageType.VOICE
+	if (type == 6) return MessageType.SHARE
+	if (type == 7) return MessageType.GIFT
+	if (type == 10) return MessageType.SYSTEM_NOTIFICATION
+	return MessageType.TEXT
+}
+
+/**
+ * 聊天消息管理 Composable
+ */
+export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResult {
+	// ========== 响应式状态 ==========
+	const messageList = ref<Array<any>>([])
+	const loading = ref<boolean>(false)
+	const loadingHistory = ref<boolean>(false)
+	const page = ref<number>(1)
+	const pageSize = ref<number>(20)
+	const hasMoreHistory = ref<boolean>(true)
+	
+	// ========== 辅助函数 ==========
+	
+	/**
+	 * 滚动到底部
+	 */
+	const scrollToBottom = () => {
+		nextTick(() => {
+			const lastIndex = messageList.value.length - 1
+			if (lastIndex >= 0) {
+				const lastMsg = messageList.value[lastIndex]
+				const lastId = getAnyString(lastMsg, 'id')
+				const viewId = (lastId != '') ? ('msg-' + lastId) : ('msg-' + lastIndex.toString())
+				
+				// ⭐ 先清空再设置，确保触发滚动
+				// 使用临时变量避免 smart cast 问题
+				const scrollViewRef = options.scrollIntoView
+				const scrollViewIdRef = options.scrollIntoViewId
+				
+				if (scrollViewRef != null) {
+					scrollViewRef.value = ''
+				}
+				if (scrollViewIdRef != null) {
+					scrollViewIdRef.value = ''
+				}
+				
+				// 延迟设置，确保 DOM 更新完成
+				setTimeout(() => {
+					const scrollViewRef2 = options.scrollIntoView
+					const scrollViewIdRef2 = options.scrollIntoViewId
+					
+					if (scrollViewRef2 != null) {
+						scrollViewRef2.value = viewId
+					}
+					if (scrollViewIdRef2 != null) {
+						scrollViewIdRef2.value = viewId
+					}
+				}, 100)
+			}
+		})
+	}
+	
+	/**
+	 * 解析 API 返回的消息列表
+	 * @param listVal 可空的消息列表数据
+	 */
+	const parseApiMessages = (listVal: any | null): Array<any> => {
+		const messagesAny: Array<any> = []
+		if (listVal != null && Array.isArray(listVal) == true) {
+			const dataArr = listVal as Array<any>
+			for (let i = 0; i < dataArr.length; i = i + 1) {
+				const msgItem = dataArr[i]
+				if (msgItem != null) {
+					const msgObj: UTSJSONObject | null = toJsonObj(msgItem)
+					if (msgObj != null) {
+						const messageTypeNum = parseInt(getObjString(msgObj, 'messageType'))
+						const msgType = isNaN(messageTypeNum) == false ? getMessageType(messageTypeNum) : 'text'
+						
+						// 兼容多种字段名
+						let senderIdVal = getObjString(msgObj, 'fromUserKid')
+						if (senderIdVal == '') {
+							senderIdVal = getObjString(msgObj, 'fromUserId')
+						}
+						let receiverIdVal = getObjString(msgObj, 'toUserKid')
+						if (receiverIdVal == '') {
+							receiverIdVal = getObjString(msgObj, 'toUserId')
+						}
+						// 消息ID：优先使用 kid，其次使用 id
+						let msgIdVal = getObjString(msgObj, 'kid')
+						if (msgIdVal == '') {
+							msgIdVal = getObjString(msgObj, 'id')
+						}
+						// 时间字段：优先使用 sendTime，其次使用 createTime
+						let timeVal = getObjString(msgObj, 'sendTime')
+						if (timeVal == '') {
+							timeVal = getObjString(msgObj, 'createTime')
+						}
+						
+						// 🔧 修复：解析 duration 字段（语音消息时长）
+						let durationVal = 0
+						const durationStr = getObjString(msgObj, 'duration')
+						if (durationStr != '') {
+							const parsed = parseInt(durationStr)
+							if (isNaN(parsed) == false) {
+								durationVal = parsed
+							}
+						}
+						
+						const convertedMsg = {
+							id: msgIdVal,
+							senderId: senderIdVal,
+							receiverId: receiverIdVal,
+							fromUserKid: senderIdVal,
+							toUserKid: receiverIdVal,
+							type: msgType,
+							messageType: messageTypeNum,
+							content: getObjString(msgObj, 'content'),
+							createTime: timeVal,
+							status: 'sent',
+							duration: durationVal
+						} as any
+						
+						messagesAny.push(convertedMsg)
+					}
+				}
+			}
+		}
+		return messagesAny
+	}
+
+	// ========== 消息加载 ==========
+	
+	/**
+	 * 加载历史消息（缓存优先策略）
+	 * 1. 先从本地存储加载缓存消息并立即展示
+	 * 2. 后台增量同步最新消息
+	 * 3. 同步完成后合并新消息到列表
+	 */
+	const loadMessages = () => {
+		if (loading.value == true || loadingHistory.value == true) return
+		
+		// 1. 先从本地缓存加载
+		const cachedMessages = chatLocalStorageManager.loadConversationMessages(
+			options.currentUserId,
+			options.targetUserId
+		)
+		
+		if (cachedMessages.length > 0) {
+			// 有缓存：立即展示
+			messageList.value = cachedMessages
+			scrollToBottom()
+			
+			// 2. 后台增量同步
+			chatSyncManager.syncIncremental(
+				options.currentUserId,
+				options.targetUserId
+			).then((newMessages: Array<any>) => {
+				if (newMessages.length > 0) {
+					// clearAt 过滤已在 chatSyncManager 中完成，此处直接合并
+					const merged = mergeMessagesWithoutDuplicates(newMessages, messageList.value)
+					messageList.value = merged
+					// 更新本地存储
+					chatLocalStorageManager.saveMessages(
+						options.currentUserId,
+						options.targetUserId,
+						merged
+					)
+					scrollToBottom()
+				}
+			}).catch((error: any | null): void => {
+				console.error('❌ [useChatMessages] 增量同步失败:', error)
+				// 同步失败不影响已展示的缓存消息
+			})
+		} else {
+			// 无缓存：走原有 API 加载流程
+			loading.value = true
+			
+			const params = new GetHistoryParams()
+			params.fromUserId = options.currentUserId
+			params.toUserId = options.targetUserId
+			params.page = page.value
+			params.size = pageSize.value
+			
+			getHistoryMessages(params).then((res: any) => {
+				const resObj = toJsonObj(res)
+				const codeVal = (resObj != null) ? getObjString(resObj, 'code') : ''
+				
+				if (codeVal == '200') {
+					const dataVal = (resObj != null) ? resObj.get('data') : null
+					const dataObj = toJsonObj(dataVal)
+					const listVal = (dataObj != null) ? dataObj.get('list') : null
+					
+					const messagesAny = parseApiMessages(listVal)
+					let reversedMessages = reverseMessages(messagesAny)
+					
+					// 读取 clearAt，过滤掉清空时间点之前的消息
+					const convKey = chatLocalStorageManager.getConversationKey(options.currentUserId, options.targetUserId)
+					if (convKey != '') {
+						const meta = conversationMetaStore.getMeta(convKey)
+						if (meta != null && meta.clearAt > 0) {
+							const clearAt = meta.clearAt
+							reversedMessages = reversedMessages.filter((msg: any): boolean => {
+								const createTimeStr = getAnyString(msg, 'createTime')
+								if (createTimeStr != '') {
+									const createTimeMs = Date.parse(createTimeStr)
+									if (isNaN(createTimeMs) == false && createTimeMs <= clearAt) {
+										return false
+									}
+								}
+								return true
+							})
+						}
+					}
+					
+					if (page.value == 1) {
+						messageList.value = reversedMessages
+						scrollToBottom()
+					} else {
+						messageList.value = mergeAndDeduplicateMessages(reversedMessages, messageList.value)
+					}
+					
+					// 保存到本地存储
+					if (reversedMessages.length > 0) {
+						chatLocalStorageManager.saveMessages(
+							options.currentUserId,
+							options.targetUserId,
+							messageList.value
+						)
+					}
+					
+					const hasNextVal = (dataObj != null) ? dataObj.get('hasNext') : null
+					if (hasNextVal != null) {
+						hasMoreHistory.value = hasNextVal == true
+					} else {
+						hasMoreHistory.value = messagesAny.length == pageSize.value
+					}
+					page.value = page.value + 1
+				} else {
+					console.error('❌ [useChatMessages] 获取历史消息失败: code=' + codeVal)
+				}
+			}).catch((error: any | null): void => {
+				console.error('❌ [useChatMessages] 加载历史消息失败:', error)
+				uni.showToast({
+					title: '加载失败，请重试',
+					icon: 'none'
+				})
+			}).finally(() => {
+				loading.value = false
+			})
+		}
+	}
+
+	/**
+	 * 加载更多历史消息
+	 */
+	const loadMoreHistory = () => {
+		if (loadingHistory.value == true || hasMoreHistory.value == false) return
+		
+		loadingHistory.value = true
+		
+		const params = new GetHistoryParams()
+		params.fromUserId = options.currentUserId
+		params.toUserId = options.targetUserId
+		params.page = page.value
+		params.size = pageSize.value
+		
+		getHistoryMessages(params).then((res: any) => {
+			// 解析响应
+			const resObj = toJsonObj(res)
+			const codeVal = (resObj != null) ? getObjString(resObj, 'code') : ''
+			
+			if (codeVal == '200') {
+				const dataVal = (resObj != null) ? resObj.get('data') : null
+				const dataObj = toJsonObj(dataVal)
+				
+				// 后端返回 PageResponse 格式
+				const listVal = (dataObj != null) ? dataObj.get('list') : null
+				
+				// 解析消息列表
+				const messagesAny = parseApiMessages(listVal)
+				
+				// 后端返回降序，反转后追加到列表前面
+				const reversedMessages = reverseMessages(messagesAny)
+				messageList.value = mergeAndDeduplicateMessages(reversedMessages, messageList.value)
+				
+				// 更新分页状态
+				const hasNextVal = (dataObj != null) ? dataObj.get('hasNext') : null
+				if (hasNextVal != null) {
+					hasMoreHistory.value = hasNextVal == true
+				} else {
+					hasMoreHistory.value = messagesAny.length == pageSize.value
+				}
+				page.value = page.value + 1
+				
+			} else {
+				console.error('❌ [useChatMessages] 获取更多历史消息失败: code=' + codeVal)
+			}
+		}).catch((error: any | null): void => {
+			console.error('❌ [useChatMessages] 加载更多历史消息失败:', error)
+			// 静默失败，不打扰用户（下拉加载更多失败不需要强提示）
+		}).finally(() => {
+			loadingHistory.value = false
+		})
+	}
+
+	// ========== 消息发送 ==========
+	
+	/**
+	 * 发送文本消息
+	 * 采用与自定义表情相同的策略：先添加到本地列表，再发送
+	 */
+	const sendTextMessage = (content: string, messageType: number) => {
+		if (content == null || content.trim() == '') return
+
+		// 默认消息类型为 1（文本）
+		const msgType = (messageType != null) ? messageType : 1
+		
+		// 🔧 修复：根据 messageType 确定正确的 type 字符串
+		// messageType=6 是分享卡片消息，type 应该是 'share'
+		let typeStr = 'text'
+		if (msgType == 6) {
+			typeStr = 'share'
+		} else if (msgType == 2) {
+			typeStr = 'image'
+		} else if (msgType == 3) {
+			typeStr = 'video'
+		} else if (msgType == 4) {
+			typeStr = 'voice'
+		} else if (msgType == 7) {
+			typeStr = 'gift'
+		}
+
+		// 生成临时ID
+		const tempId = generateTempMessageId('temp_text_')
+
+		// 1. 立即添加到列表（乐观更新）
+		// 获取当前用户的头像
+		const currentAvatar = (options.currentUserAvatar != null && options.currentUserAvatar != '') ? options.currentUserAvatar : ''
+		// 🔧 修复：使用正确的 type 字符串创建消息
+		const message = createLocalMessage(tempId, options.currentUserId, typeStr, content, 'sending', currentAvatar)
+		// UTS 规范：使用安全的属性设置方法
+		const messageWithType = setMessageProperty(message, 'messageType', msgType)
+		messageList.value.push(messageWithType)
+		scrollToBottom()
+
+		// 2. 发送消息
+		const type = mapNumberToMessageType(msgType)
+		chatService.sendMessage(content, options.targetUserId, type).then((messageId: string): void => {
+			// 更新状态为已发送
+			updateMessageStatus(messageList.value, tempId, 'sent', '')
+		}).catch((error: any | null): void => {
+			console.error('❌ [useChatMessages] 发送消息失败:', error)
+			// 更新状态为发送失败
+			updateMessageStatus(messageList.value, tempId, 'failed', '')
+			uni.showToast({
+				title: '发送失败，请重试',
+				icon: 'none'
+			})
+		})
+	}
+
+	/**
+	 * 重试发送失败的消息
+	 */
+	const retryMessage = (msg: any) => {
+		// 使用辅助函数获取属性
+		const msgStatus = getAnyString(msg, 'status')
+		if (msg == null || msgStatus != 'failed') return
+		
+		// 获取消息属性
+		const msgId = getAnyString(msg, 'id')
+		const msgSenderId = getAnyString(msg, 'senderId')
+		const msgType = getAnyString(msg, 'type')
+		const msgContent = getAnyString(msg, 'content')
+		const msgCreateTime = getAnyString(msg, 'createTime')
+		
+		// 更新状态为发送中
+		for (let i = 0; i < messageList.value.length; i = i + 1) {
+			const m = messageList.value[i]
+			const mId = getAnyString(m, 'id')
+			if (mId == msgId) {
+				const updatedMsg = {
+					id: msgId,
+					senderId: msgSenderId,
+					type: msgType,
+					content: msgContent,
+					createTime: msgCreateTime,
+					status: 'sending'
+				} as any
+				messageList.value[i] = updatedMsg
+				break
+			}
+		}
+		
+		// 确定消息类型
+		let messageType = MessageType.TEXT
+		if (msgType == 'text') messageType = MessageType.TEXT
+		else if (msgType == 'image') messageType = MessageType.IMAGE
+		else if (msgType == 'voice') messageType = MessageType.VOICE
+		else if (msgType == 'video') messageType = MessageType.VIDEO
+		else if (msgType == 'share') messageType = MessageType.SHARE
+		
+		// 重试发送
+		chatService.sendMessage(msgContent, options.targetUserId, messageType).then((): void => {
+			
+			// 更新状态为已发送
+			for (let i = 0; i < messageList.value.length; i = i + 1) {
+				const m = messageList.value[i]
+				const mId = getAnyString(m, 'id')
+				if (mId == msgId) {
+					const updatedMsg = {
+						id: msgId,
+						senderId: msgSenderId,
+						type: msgType,
+						content: msgContent,
+						createTime: msgCreateTime,
+						status: 'sent'
+					} as any
+					messageList.value[i] = updatedMsg
+					break
+				}
+			}
+		}).catch((error: any | null): void => {
+			console.error('❌ [useChatMessages] 消息重试失败:', error)
+			
+			// 更新状态为失败
+			for (let i = 0; i < messageList.value.length; i = i + 1) {
+				const m = messageList.value[i]
+				const mId = getAnyString(m, 'id')
+				if (mId == msgId) {
+					const updatedMsg = {
+						id: msgId,
+						senderId: msgSenderId,
+						type: msgType,
+						content: msgContent,
+						createTime: msgCreateTime,
+						status: 'failed'
+					} as any
+					messageList.value[i] = updatedMsg
+					break
+				}
+			}
+			
+			uni.showToast({
+				title: '重试失败',
+				icon: 'none'
+			})
+		})
+	}
+
+	/**
+	 * 添加本地消息（用于媒体消息的乐观更新）
+	 */
+	const addLocalMessage = (message: any) => {
+		messageList.value.push(message)
+		nextTick(() => {
+			scrollToBottom()
+		})
+	}
+	
+	/**
+	 * 更新消息状态
+	 */
+	const updateLocalMessageStatus = (messageId: string, status: string, newContent: string) => {
+		for (let i = 0; i < messageList.value.length; i = i + 1) {
+			const m = messageList.value[i]
+			const mId = getAnyString(m, 'id')
+			if (mId == messageId) {
+				const msgSenderId = getAnyString(m, 'senderId')
+				const msgType = getAnyString(m, 'type')
+				const msgCreateTime = getAnyString(m, 'createTime')
+				const content = (newContent != '') ? newContent : getAnyString(m, 'content')
+				
+				const updatedMsg = {
+					id: messageId,
+					senderId: msgSenderId,
+					type: msgType,
+					content: content,
+					createTime: msgCreateTime,
+					status: status
+				} as any
+				messageList.value[i] = updatedMsg
+				break
+			}
+		}
+	}
+	
+	/**
+	 * 合并新消息到列表（用于消息变化监听）
+	 */
+	const mergeNewMessages = (newMessages: Array<any>) => {
+		const mergedMessages = mergeMessagesWithoutDuplicates(newMessages, messageList.value)
+		messageList.value = mergedMessages
+		nextTick(() => {
+			scrollToBottom()
+		})
+	}
+	
+	/**
+	 * 重置分页状态
+	 */
+	const resetPagination = () => {
+		page.value = 1
+		hasMoreHistory.value = true
+		messageList.value = []
+	}
+	
+	/**
+	 * 删除本地消息
+	 * @param messageId 消息ID
+	 * @returns 是否删除成功
+	 */
+	const deleteLocalMessage = (messageId: string): boolean => {
+		if (messageId == null || messageId == '') {
+			return false
+		}
+		
+		// 查找并删除消息
+		let deleteIndex = -1
+		for (let i = 0; i < messageList.value.length; i = i + 1) {
+			const m = messageList.value[i]
+			const mId = getAnyString(m, 'id')
+			if (mId == messageId) {
+				deleteIndex = i
+				break
+			}
+		}
+		
+		if (deleteIndex >= 0) {
+			// 使用 splice 删除指定索引的消息
+			messageList.value.splice(deleteIndex, 1)
+			return true
+		}
+		
+		return false
+	}
+	
+	/**
+	 * 复制消息内容到剪贴板
+	 * @param content 要复制的内容
+	 */
+	const copyMessageContent = (content: string) => {
+		if (content == null || content == '') {
+			uni.showToast({
+				title: '内容为空',
+				icon: 'none'
+			})
+			return
+		}
+		
+		uni.setClipboardData({
+			data: content,
+			success: () => {
+				uni.showToast({
+					title: '已复制',
+					icon: 'success'
+				})
+			},
+			fail: () => {
+				uni.showToast({
+					title: '复制失败',
+					icon: 'none'
+				})
+			}
+		})
+	}
+	
+	/**
+	 * 清空所有聊天记录（本地 + 服务端软删除）
+	 * @returns Promise<boolean> 本地清空始终成功，服务端失败仅记录日志
+	 */
+	const clearAllMessages = (): Promise<boolean> => {
+		return new Promise<boolean>((resolve: (value: boolean) => void, reject: (reason: any | null) => void) => {
+			// 1. 立即清空本地状态
+			messageList.value = []
+			page.value = 1
+			hasMoreHistory.value = false
+			
+			// 2. 清除本地存储（注意：clearConversation 会调用 removeMeta 删除元数据）
+			chatLocalStorageManager.clearConversation(options.currentUserId, options.targetUserId)
+			
+			// 3. 记录清空时间戳到 ConversationMeta（必须在 clearConversation 之后，因为它会 removeMeta）
+			const convKey = chatLocalStorageManager.getConversationKey(options.currentUserId, options.targetUserId)
+			if (convKey != '') {
+				const meta = new ConversationMeta()
+				meta.conversationKey = convKey
+				// 排序 userId 与 getConversationKey 保持一致
+				let first = options.currentUserId
+				let second = options.targetUserId
+				if (options.currentUserId > options.targetUserId) {
+					first = options.targetUserId
+					second = options.currentUserId
+				}
+				meta.userId1 = first
+				meta.userId2 = second
+				meta.clearAt = Date.now()
+				conversationMetaStore.updateMeta(meta)
+			}
+			
+			// 4. 调用服务端软删除
+			const params = new ClearChatHistoryParams()
+			params.userId = options.currentUserId
+			params.targetUserId = options.targetUserId
+			
+			clearChatHistory(params).then((res: any): void => {
+				// 尝试从服务端响应中获取 clearAt 时间戳（后端优化后可返回精确时间）
+				if (convKey != '') {
+					const resObj = toJsonObj(res)
+					if (resObj != null) {
+						const dataVal = resObj.get('data')
+						const dataObj = toJsonObj(dataVal)
+						if (dataObj != null) {
+							const serverClearAtVal = dataObj.get('clearAt')
+							if (serverClearAtVal != null) {
+								const serverClearAt = parseInt(serverClearAtVal.toString())
+								if (isNaN(serverClearAt) == false && serverClearAt > 0) {
+									const existingMeta = conversationMetaStore.getMeta(convKey)
+									if (existingMeta != null) {
+										existingMeta.clearAt = serverClearAt
+										conversationMetaStore.updateMeta(existingMeta)
+									}
+								}
+							}
+						}
+					}
+				}
+				resolve(true)
+			}).catch((error: any | null): void => {
+				// 服务端失败不影响本地清空结果
+				console.error('❌ [useChatMessages] 服务端清空聊天记录失败:', error)
+				resolve(true)
+			})
+		})
+	}
+	
+	// ========== 返回 ==========
+	return new ChatMessagesResult(
+		messageList,
+		loading,
+		loadingHistory,
+		page,
+		pageSize,
+		hasMoreHistory,
+		loadMessages,
+		loadMoreHistory,
+		sendTextMessage,
+		retryMessage,
+		scrollToBottom,
+		addLocalMessage,
+		updateLocalMessageStatus,
+		mergeNewMessages,
+		resetPagination,
+		deleteLocalMessage,
+		copyMessageContent,
+		clearAllMessages
+	)
+}

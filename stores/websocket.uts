@@ -1,0 +1,287 @@
+/**
+ * WebSocket 状态管理 Store - 使用 Vue 响应式 API
+ * UTS 版本
+ */
+import { ref } from 'vue'
+import { useNotificationStore } from './notification.uts'
+import { WS_BASE_URL } from '@/utils/config.uts'
+import { WS_HEARTBEAT_INTERVAL_ALT, WS_RECONNECT_MAX_DELAY } from '@/common/config/timeoutConfig.uts'
+import { TOAST_DURATION_DEFAULT } from '@/common/config/uiConfig.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 使用 ref 创建响应式状态
+const socket = ref<SocketTask | null>(null)
+const connected = ref<boolean>(false)
+const reconnectTimerRef = ref<number>(0)
+const reconnectCountRef = ref<number>(0)
+const maxReconnectCount = 5
+
+// 心跳定时器
+let heartbeatTimer: number = 0
+
+// WebSocket URL
+const getWebSocketUrl = (userId: string): string => {
+	// #ifdef H5
+	let wsProtocol = 'ws:'
+	try {
+		if (location.protocol == 'https:') {
+			wsProtocol = 'wss:'
+		}
+	} catch (e) {}
+	let wsHost = ''
+	try {
+		wsHost = location.host
+	} catch (e) {}
+	return wsProtocol + '//' + wsHost + '/ws/notifications?userId=' + userId
+	// #endif
+	// #ifndef H5
+	return WS_BASE_URL + '/ws/notifications?userId=' + userId
+	// #endif
+}
+
+// 停止心跳
+const stopHeartbeat = () => {
+	if (heartbeatTimer != 0) {
+		clearInterval(heartbeatTimer)
+		heartbeatTimer = 0
+	}
+}
+
+// 发送消息
+const sendMessage = (message: UTSJSONObject): boolean => {
+	if (connected.value == false) {
+		console.error('WebSocket 未连接')
+		return false
+	}
+	
+	try {
+		uni.sendSocketMessage({
+			data: JSON.stringify(message),
+			success: () => {
+				console.log('消息发送成功')
+			},
+			fail: (error: any) => {
+				console.error('消息发送失败:', error)
+			}
+		})
+		return true
+	} catch (error) {
+		handleSilentError(error, '发送消息')
+		return false
+	}
+}
+
+// 启动心跳
+const startHeartbeat = () => {
+	stopHeartbeat()
+	heartbeatTimer = setInterval(() => {
+		if (connected.value == true) {
+			const pingMsg = { type: 'ping' } as UTSJSONObject
+			sendMessage(pingMsg)
+		}
+	}, WS_HEARTBEAT_INTERVAL_ALT)
+}
+
+// 显示系统通知
+const showNotification = (notification: UTSJSONObject | null) => {
+	let title = '新消息'
+	if (notification != null) {
+		const titleStr = getString(notification, 'title')
+		if (titleStr != '') {
+			title = titleStr
+		}
+	}
+	
+	uni.showToast({
+		title: title,
+		icon: 'none',
+		duration: TOAST_DURATION_DEFAULT
+	})
+	
+	uni.vibrateShort({
+		type: 'light'
+	})
+}
+
+// 处理消息
+const handleMessage = (data: UTSJSONObject | null) => {
+	try {
+		if (data == null) return
+		
+		const message = data
+		
+		const typeVal = message.get('type')
+		const msgType = (typeVal != null) ? typeVal.toString() : ''
+		
+		if (msgType == 'pong') {
+			return
+		}
+		
+		if (msgType == 'notification') {
+			const notificationVal = message.get('data')
+			
+			if (notificationVal == null) {
+				console.warn('⚠️ [WebSocket] 通知消息缺少 data 字段，跳过处理')
+				return
+			}
+			
+			const notificationStore = useNotificationStore()
+			const notifObj = toUTSJSON(notificationVal)
+			notificationStore.addNotification(notifObj)
+			
+			showNotification(notifObj)
+		}
+	} catch (error) {
+		handleSilentError(error, '处理WebSocket消息')
+	}
+}
+
+// 处理重连
+const handleReconnect = (userId: string) => {
+	if (reconnectCountRef.value >= maxReconnectCount) {
+		console.log('达到最大重连次数，停止重连')
+		return
+	}
+	
+	if (reconnectTimerRef.value != 0) {
+		clearTimeout(reconnectTimerRef.value)
+	}
+	
+	reconnectCountRef.value = reconnectCountRef.value + 1
+	const baseDelay = 1000 * Math.pow(2, reconnectCountRef.value)
+	const delay = Math.min(baseDelay, WS_RECONNECT_MAX_DELAY)
+	
+	console.log(delay.toString() + 'ms 后尝试第 ' + reconnectCountRef.value.toString() + ' 次重连')
+	
+	reconnectTimerRef.value = setTimeout(() => {
+		connect(userId)
+	}, delay)
+}
+
+// 连接 WebSocket
+const connect = (userId: string) => {
+	if (userId == '') {
+		console.error('WebSocket 连接失败: userId 为空')
+		return
+	}
+	
+	// UTS 规范：可变属性不能 smart cast，需赋值给局部变量
+	const existingSocket = socket.value
+	if (existingSocket != null && connected.value == true) {
+		console.log('WebSocket 已连接')
+		return
+	}
+	
+	try {
+		const wsUrl = getWebSocketUrl(userId)
+		console.log('正在连接 WebSocket:', wsUrl)
+		
+		const newSocketTask = uni.connectSocket({
+			url: wsUrl,
+			success: () => {
+				console.log('WebSocket 连接请求已发送')
+			},
+			fail: (error: any) => {
+				console.error('WebSocket 连接失败:', error)
+				handleReconnect(userId)
+			}
+		})
+		socket.value = newSocketTask
+		
+		uni.onSocketOpen(() => {
+			console.log('WebSocket 连接成功')
+			connected.value = true
+			reconnectCountRef.value = 0
+			startHeartbeat()
+		})
+		
+		uni.onSocketMessage((res: any) => {
+			// NOTE: uni-app callback parameter kept as any (framework callback)
+			if (res != null) {
+				const resObj = toUTSJSON(res)
+				if (resObj != null) {
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						const dataObj = toUTSJSON(dataVal)
+						handleMessage(dataObj)
+					}
+				}
+			}
+		})
+		
+		uni.onSocketError((error: any) => {
+			// NOTE: uni-app callback parameter kept as any (framework callback)
+			handleSilentError(error, 'WebSocket错误')
+			connected.value = false
+			stopHeartbeat()
+		})
+		
+		uni.onSocketClose(() => {
+			console.log('WebSocket 连接关闭')
+			connected.value = false
+			stopHeartbeat()
+			handleReconnect(userId)
+		})
+	} catch (error) {
+		handleSilentError(error, 'WebSocket连接')
+		handleReconnect(userId)
+	}
+}
+
+// 断开连接
+const disconnect = () => {
+	stopHeartbeat()
+	
+	if (reconnectTimerRef.value != 0) {
+		clearTimeout(reconnectTimerRef.value)
+		reconnectTimerRef.value = 0
+	}
+	
+	// UTS 规范：可变属性不能 smart cast
+	const currentSocket = socket.value
+	if (currentSocket != null) {
+		uni.closeSocket({
+			success: () => {
+				console.log('WebSocket 已断开')
+			}
+		})
+		socket.value = null
+	}
+	
+	connected.value = false
+	reconnectCountRef.value = 0
+}
+
+// 获取连接状态
+export const getWebSocketConnected = (): boolean => {
+	return connected.value
+}
+
+// 获取重连次数
+export const getWebSocketReconnectCount = (): number => {
+	return reconnectCountRef.value
+}
+
+// 导出 useWebSocketStore 函数
+export const useWebSocketStore = () => {
+	return {
+		// Actions
+		connect: connect,
+		disconnect: disconnect,
+		sendMessage: (message: UTSJSONObject): boolean => sendMessage(message)
+	}
+}
+
+// 导出独立函数供外部调用
+export const connectWebSocket = (userId: string) => {
+	connect(userId)
+}
+
+export const disconnectWebSocket = () => {
+	disconnect()
+}
+
+export const sendWebSocketMessage = (message: UTSJSONObject): boolean => {
+	return sendMessage(message)
+}

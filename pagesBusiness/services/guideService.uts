@@ -1,0 +1,39 @@
+/**
+ * 向导服务 API
+ */
+import request from '@/utils/request'
+
+/**
+ * 获取向导详情
+ */
+export const getGuideDetail = (params: UTSJSONObject) => {
+	return request.post('/support/member/queryGuideInfoDetails', params, false)
+}
+
+/**
+ * 获取导游评价列表
+ */
+export const getGuideEvaluateList = (params: UTSJSONObject) => {
+	return request.post('/behavior/evaluate/queryPrivateGuideEvaluateList', params, false)
+}
+
+/**
+ * 导游上下线
+ */
+export const toggleGuideStatus = (params: UTSJSONObject) => {
+	return request.post('/support/member/upOrDownGuide', params, false)
+}
+
+/**
+ * 发布/编辑向导信息
+ */
+export const publishGuide = (params: UTSJSONObject) => {
+	return request.post('/guide/publish', params, false)
+}
+
+/**
+ * 删除向导信息
+ */
+export const deleteGuide = (params: UTSJSONObject) => {
+	return request.post('/guide/delete', params, false)
+}

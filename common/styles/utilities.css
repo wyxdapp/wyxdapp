@@ -1,0 +1,264 @@
+/* ==================== Vue3 Uni-app X 工具类样式 ==================== */
+/* 创建时间：2025-12-31 */
+/* 说明：通用工具类，遵循 uni-app x 原生渲染规范 */
+
+/* ==================== 圆角工具类 ==================== */
+/* 注意：uni-app x 不支持 border-radius: 50%，必须使用具体 rpx 值 */
+
+.rounded-none { border-radius: 0; }
+.rounded-xs { border-radius: 4rpx; }
+.rounded-sm { border-radius: 8rpx; }
+.rounded-md { border-radius: 16rpx; }
+.rounded-lg { border-radius: 24rpx; }
+.rounded-xl { border-radius: 32rpx; }
+.rounded-2xl { border-radius: 48rpx; }
+.rounded-full { border-radius: 9999rpx; }
+
+/* 单边圆角 */
+.rounded-t-md {
+  border-top-left-radius: 16rpx;
+  border-top-right-radius: 16rpx;
+}
+
+.rounded-b-md {
+  border-bottom-left-radius: 16rpx;
+  border-bottom-right-radius: 16rpx;
+}
+
+.rounded-l-md {
+  border-top-left-radius: 16rpx;
+  border-bottom-left-radius: 16rpx;
+}
+
+.rounded-r-md {
+  border-top-right-radius: 16rpx;
+  border-bottom-right-radius: 16rpx;
+}
+
+/* 常用圆角数值 */
+.rounded-4 { border-radius: 4rpx; }
+.rounded-6 { border-radius: 6rpx; }
+.rounded-8 { border-radius: 8rpx; }
+.rounded-10 { border-radius: 10rpx; }
+.rounded-12 { border-radius: 12rpx; }
+.rounded-16 { border-radius: 16rpx; }
+.rounded-20 { border-radius: 20rpx; }
+.rounded-24 { border-radius: 24rpx; }
+.rounded-28 { border-radius: 28rpx; }
+.rounded-32 { border-radius: 32rpx; }
+.rounded-40 { border-radius: 40rpx; }
+.rounded-44 { border-radius: 44rpx; }
+.rounded-48 { border-radius: 48rpx; }
+.rounded-52 { border-radius: 52rpx; }
+
+/* ==================== 宽度工具类 ==================== */
+.w-full { width: 100%; }
+.w-auto { width: auto; }
+.w-screen { width: 750rpx; }
+
+/* 常用宽度 */
+.w-40 { width: 40rpx; }
+.w-48 { width: 48rpx; }
+.w-60 { width: 60rpx; }
+.w-80 { width: 80rpx; }
+.w-100 { width: 100rpx; }
+.w-120 { width: 120rpx; }
+.w-140 { width: 140rpx; }
+.w-160 { width: 160rpx; }
+.w-180 { width: 180rpx; }
+.w-200 { width: 200rpx; }
+.w-240 { width: 240rpx; }
+.w-280 { width: 280rpx; }
+.w-320 { width: 320rpx; }
+.w-360 { width: 360rpx; }
+.w-400 { width: 400rpx; }
+
+/* ==================== 高度工具类 ==================== */
+.h-full { height: 100%; }
+.h-auto { height: auto; }
+
+/* 常用高度 */
+.h-40 { height: 40rpx; }
+.h-48 { height: 48rpx; }
+.h-56 { height: 56rpx; }
+.h-60 { height: 60rpx; }
+.h-64 { height: 64rpx; }
+.h-72 { height: 72rpx; }
+.h-80 { height: 80rpx; }
+.h-88 { height: 88rpx; }
+.h-96 { height: 96rpx; }
+.h-100 { height: 100rpx; }
+.h-120 { height: 120rpx; }
+.h-140 { height: 140rpx; }
+.h-160 { height: 160rpx; }
+.h-180 { height: 180rpx; }
+.h-200 { height: 200rpx; }
+
+/* ==================== 定位工具类 ==================== */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.fixed { position: fixed; }
+
+/* 定位位置 */
+.top-0 { top: 0; }
+.right-0 { right: 0; }
+.bottom-0 { bottom: 0; }
+.left-0 { left: 0; }
+
+.inset-0 {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* ==================== 层级工具类 ==================== */
+.z-0 { z-index: 0; }
+.z-1 { z-index: 1; }
+.z-10 { z-index: 10; }
+.z-50 { z-index: 50; }
+.z-100 { z-index: 100; }
+.z-999 { z-index: 999; }
+.z-1000 { z-index: 1000; }
+
+/* ==================== 溢出工具类 ==================== */
+.overflow-hidden { overflow: hidden; }
+.overflow-visible { overflow: visible; }
+
+/* ==================== 透明度工具类 ==================== */
+.opacity-0 { opacity: 0; }
+.opacity-25 { opacity: 0.25; }
+.opacity-50 { opacity: 0.5; }
+.opacity-75 { opacity: 0.75; }
+.opacity-100 { opacity: 1; }
+
+/* ==================== Flex 工具类 ==================== */
+/* 注意：uni-app x 不支持 display: flex，使用 flex-direction 代替 */
+
+.flex-row { flex-direction: row; }
+.flex-col { flex-direction: column; }
+.flex-row-reverse { flex-direction: row-reverse; }
+.flex-col-reverse { flex-direction: column-reverse; }
+
+.flex-wrap { flex-wrap: wrap; }
+.flex-nowrap { flex-wrap: nowrap; }
+
+.flex-1 { flex: 1; }
+.flex-auto { flex: auto; }
+.flex-none { flex: none; }
+
+/* 对齐方式 */
+.items-start { align-items: flex-start; }
+.items-center { align-items: center; }
+.items-end { align-items: flex-end; }
+.items-stretch { align-items: stretch; }
+
+.justify-start { justify-content: flex-start; }
+.justify-center { justify-content: center; }
+.justify-end { justify-content: flex-end; }
+.justify-between { justify-content: space-between; }
+.justify-around { justify-content: space-around; }
+
+/* 自身对齐 */
+.self-start { align-self: flex-start; }
+.self-center { align-self: center; }
+.self-end { align-self: flex-end; }
+.self-stretch { align-self: stretch; }
+
+/* ==================== 边框工具类 ==================== */
+/* 注意：uni-app x 不支持 border 简写，必须分开写 */
+
+.border-none {
+  border-width: 0;
+}
+
+.border {
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: #EEEEEE;
+}
+
+.border-2 {
+  border-width: 2rpx;
+  border-style: solid;
+  border-color: #EEEEEE;
+}
+
+.border-t {
+  border-top-width: 1rpx;
+  border-top-style: solid;
+  border-top-color: #EEEEEE;
+}
+
+.border-b {
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: #EEEEEE;
+}
+
+.border-l {
+  border-left-width: 1rpx;
+  border-left-style: solid;
+  border-left-color: #EEEEEE;
+}
+
+.border-r {
+  border-right-width: 1rpx;
+  border-right-style: solid;
+  border-right-color: #EEEEEE;
+}
+
+/* 边框颜色 */
+.border-primary {
+  border-color: #37B1F2;
+}
+
+.border-success {
+  border-color: #22AA76;
+}
+
+.border-warning {
+  border-color: #FFC300;
+}
+
+.border-error {
+  border-color: #F83535;
+}
+
+.border-gray {
+  border-color: #CCCCCC;
+}
+
+.border-light {
+  border-color: #F5F5F5;
+}
+
+/* ==================== 阴影工具类 ==================== */
+/* 注意：uni-app x 对 box-shadow 支持有限 */
+
+.shadow-sm {
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+}
+
+.shadow {
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+}
+
+.shadow-md {
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.1);
+}
+
+.shadow-lg {
+  box-shadow: 0 12rpx 32rpx rgba(0, 0, 0, 0.12);
+}
+
+.shadow-none {
+  box-shadow: none;
+}
+
+/* ==================== 显示/隐藏工具类 ==================== */
+/* 注意：uni-app x 只支持 display: flex 和 display: none */
+
+.hidden { display: none; }
+.visible { display: flex; }
+

@@ -1,0 +1,295 @@
+<template>
+	<view 
+		class="notification-card"
+		:class="{ unread: props.read == false }"
+		@click="handleClick"
+	>
+		<view class="card-icon-wrapper">
+			<UniIcons type="wallet" :size="48" color="#FFB800" />
+			<view v-if="props.read == false" class="unread-dot"></view>
+		</view>
+		
+		<view class="card-content">
+			<view class="card-header">
+				<view class="title-row">
+					<text class="card-title">{{ props.title }}</text>
+					<view class="status-badge" :class="statusClass">
+						<text class="badge-text">{{ statusText }}</text>
+					</view>
+				</view>
+				<text class="card-time">{{ props.time }}</text>
+			</view>
+			
+			<text class="card-text">{{ props.content }}</text>
+			
+			<view class="card-info">
+				<view class="info-row">
+					<text class="info-label">提现金额：</text>
+					<text class="info-value amount">{{ formattedAmount }}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">提现方式：</text>
+					<text class="info-value">{{ cashoutTypeName }}</text>
+				</view>
+				<view v-if="showReason == true" class="info-row reason-row">
+					<text class="info-label">失败原因：</text>
+					<text class="info-value reason">{{ props.reason }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<text class="delete-btn" @click.stop="handleDelete">✕</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+const props = defineProps({
+	title: { type: String, required: true },
+	content: { type: String, required: true },
+	time: { type: String, required: true },
+	amount: { type: Number, default: 0 },
+	cashoutType: { type: Number, default: 10 },
+	status: { type: String, default: 'success' },
+	reason: { type: String, default: '' },
+	read: { type: Boolean, default: false }
+})
+
+const emit = defineEmits<{
+	click: []
+	delete: []
+}>()
+
+// 格式化金额（直接内联，不依赖 money.uts）
+const formattedAmount = computed((): string => {
+	const amt = props.amount
+	if (amt == 0) {
+		return '¥0.00'
+	}
+	const cents = Math.round(amt * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	const formatted = (cents < 0) ? ('-' + result) : result
+	return '¥' + formatted
+})
+
+// 提现方式名称
+const cashoutTypeName = computed((): string => {
+	const cType = props.cashoutType
+	if (cType == 10) {
+		return '微信'
+	} else if (cType == 20) {
+		return '支付宝'
+	}
+	return '未知'
+})
+
+// 状态文本
+const statusText = computed((): string => {
+	const st = props.status
+	if (st == 'success') {
+		return '成功'
+	} else if (st == 'rejected') {
+		return '已拒绝'
+	} else if (st == 'failed') {
+		return '失败'
+	}
+	return '未知'
+})
+
+// 状态样式类
+const statusClass = computed((): string => {
+	const st = props.status
+	if (st == 'success') {
+		return 'status-success'
+	} else if (st == 'rejected') {
+		return 'status-rejected'
+	} else if (st == 'failed') {
+		return 'status-failed'
+	}
+	return ''
+})
+
+// 是否显示失败原因
+const showReason = computed((): boolean => {
+	const st = props.status
+	const r = props.reason
+	if ((st == 'rejected' || st == 'failed') && r != '') {
+		return true
+	}
+	return false
+})
+
+// 点击事件
+const handleClick = () => {
+	emit('click')
+}
+
+// 删除事件
+const handleDelete = () => {
+	emit('delete')
+}
+</script>
+
+<style scoped>
+.notification-card {
+	flex-direction: row;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	position: relative;
+}
+
+.notification-card.unread {
+	background-color: #FFF8E6;
+}
+
+.card-icon-wrapper {
+	position: relative;
+	width: 80rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.card-icon {
+	font-size: 48rpx;
+}
+
+.unread-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #FF5252;
+	border-radius: 8rpx;
+}
+
+.card-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.card-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: flex-start;
+	margin-bottom: 12rpx;
+}
+
+.title-row {
+	flex-direction: row;
+	align-items: center;
+	flex: 1;
+}
+
+.card-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-right: 12rpx;
+}
+
+.status-badge {
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+}
+
+.status-success {
+	background-color: #E8F5E9;
+}
+
+.status-rejected {
+	background-color: #FFEBEE;
+}
+
+.status-failed {
+	background-color: #FFEBEE;
+}
+
+.badge-text {
+	font-size: 20rpx;
+	color: #333333;
+}
+
+.status-success .badge-text {
+	color: #4CAF50;
+}
+
+.status-rejected .badge-text {
+	color: #F44336;
+}
+
+.status-failed .badge-text {
+	color: #F44336;
+}
+
+.card-time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.card-text {
+	font-size: 26rpx;
+	color: #666666;
+	margin-bottom: 16rpx;
+}
+
+.card-info {
+	flex-direction: column;
+	background-color: #F5F5F5;
+	border-radius: 8rpx;
+	padding: 16rpx;
+}
+
+.info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 8rpx;
+}
+
+.info-row:last-child {
+	margin-bottom: 0;
+}
+
+.reason-row {
+	margin-top: 8rpx;
+}
+
+.info-label {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.info-value {
+	font-size: 24rpx;
+	color: #333333;
+}
+
+.info-value.amount {
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.info-value.reason {
+	color: #F44336;
+	flex: 1;
+}
+
+.delete-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	font-size: 30rpx;
+	color: #cccccc;
+	padding: 4rpx 8rpx;
+}
+</style>

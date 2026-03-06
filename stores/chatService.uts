@@ -1,0 +1,509 @@
+/**
+ * 🌟 聊天服务统一入口
+ * 整合所有聊天功能组件，提供简洁的API接口
+ */
+
+import { 
+  messageStateManager, 
+  MessageStatus, 
+  MessageType, 
+  ChatMessage,
+  AddTempMessageParams
+} from './messageStateManager'
+import { 
+  webSocketEventHandler, 
+  WebSocketEventType 
+} from './webSocketEventHandler'
+import { 
+  messageQueueManager, 
+  QueueStatus 
+} from './messageQueueManager'
+import { chatLocalStorageManager, conversationMetaStore, storageCleaner } from '@/common/services/chatLocalStorage.uts'
+import { WS_CLOSE_NORMAL } from '@/common/config/httpCodes.uts'
+
+// 重新导出类型和枚举
+export { MessageStatus, MessageType, ChatMessage } from './messageStateManager'
+export { WebSocketEventType } from './webSocketEventHandler'
+export { QueueStatus } from './messageQueueManager'
+
+// 服务状态
+export enum ChatServiceStatus {
+  INITIALIZING = 'initializing',
+  READY = 'ready',
+  CONNECTING = 'connecting',
+  CONNECTED = 'connected',
+  DISCONNECTED = 'disconnected',
+  ERROR = 'error'
+}
+
+// 发送消息选项（UTS 规范：接口不能用对象字面量初始化，改为类）
+export class SendMessageOptions {
+  priority: number = 0
+  autoRetry: boolean = true
+  timeout: number = 30000
+}
+
+// 服务配置（UTS 规范：接口不能用对象字面量初始化，改为类）
+export class ChatServiceConfig {
+  autoReconnect: boolean = true
+  maxRetries: number = 3
+  persistMessages: boolean = true
+  enableDebug: boolean = true
+}
+
+// 服务信息
+export class ChatServiceInfo {
+  status: ChatServiceStatus = ChatServiceStatus.INITIALIZING
+  userId: string = ''
+}
+
+// 服务统计
+export class ChatServiceStats {
+  service: ChatServiceInfo = new ChatServiceInfo()
+  // UTS 规范：any 类型不能初始化为 null，需使用 any | null
+  messages: UTSJSONObject | null = null
+  queue: UTSJSONObject | null = null
+}
+
+/**
+ * 聊天服务
+ */
+export class ChatService {
+  // 服务状态
+  private status: ChatServiceStatus = ChatServiceStatus.INITIALIZING
+  // 当前用户ID
+  private currentUserId: string = ''
+  // WebSocket实例
+  private webSocketTask: SocketTask | null = null
+  // 配置（使用类实例）
+  private config: ChatServiceConfig = new ChatServiceConfig()
+  // 状态监听器
+  private statusListeners: Set<(status: ChatServiceStatus) => void> = new Set()
+  // 消息监听器
+  private messageListeners: Set<(messages: ChatMessage[]) => void> = new Set()
+  // 错误监听器
+  private errorListeners: Set<(error: Error) => void> = new Set()
+  // 是否已初始化
+  private initialized: boolean = false
+
+  // 构造函数：延迟初始化，在首次使用时通过 ensureInitialized() 触发
+  constructor() {
+    setTimeout(() => {
+      this.ensureInitialized()
+    }, 0)
+  }
+
+  /**
+   * 确保服务已初始化（公开方法，可被外部调用）
+   */
+  ensureInitialized(): void {
+    if (this.initialized == true) return
+    this.initialized = true
+    this.initialize()
+  }
+
+  /**
+   * 初始化服务
+   */
+  private async initialize(): Promise<void> {
+    try {
+      console.log('🚀 [ChatService] 开始初始化聊天服务')
+      
+      // 1. 恢复持久化状态（UTS 规范：访问类属性）
+      const shouldPersist = this.config.persistMessages
+      if (shouldPersist == true) {
+        messageStateManager.restoreFromStorage('', '')
+      }
+
+      // 1.5 本地存储初始化：迁移旧数据 → 恢复元数据 → 全局清理
+      try {
+        chatLocalStorageManager.migrateFromOldFormat()
+        conversationMetaStore.restore()
+        storageCleaner.cleanAll()
+      } catch (e) {
+        console.error('❌ [ChatService] 本地存储初始化失败:', e)
+      }
+
+      // 2. 设置组件间依赖
+      this.setupComponentDependencies()
+
+      // 3. 设置事件监听
+      this.setupEventListeners()
+
+      // 4. 设置状态监听
+      this.setupStateListeners()
+
+      this.setStatus(ChatServiceStatus.READY)
+    } catch (error) {
+      console.error('❌ [ChatService] 初始化失败:', error)
+      this.setStatus(ChatServiceStatus.ERROR)
+      this.notifyError(error as Error)
+    }
+  }
+
+  /**
+   * 设置组件间依赖
+   */
+  private setupComponentDependencies(): void {
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const socketTask = this.webSocketTask
+    if (socketTask != null) {
+      messageQueueManager.setWebSocketTask(socketTask)
+    }
+  }
+
+  /**
+   * 设置事件监听
+   */
+  private setupEventListeners(): void {
+    console.log('📡 [ChatService] 事件监听器已设置（WebSocket状态由chat.uts直接管理）')
+  }
+
+  /**
+   * 设置状态监听
+   */
+  private setupStateListeners(): void {
+    // 监听消息状态变化
+    const self = this
+    messageStateManager.subscribe((messages: ChatMessage[]) => {
+      self.notifyMessageUpdate(messages)
+      
+      // 持久化状态（UTS 规范：显式比较布尔值）
+      const shouldPersist = self.config.persistMessages
+      if (shouldPersist == true) {
+        messageStateManager.persistToStorage()
+      }
+    })
+
+    // 监听队列状态变化
+    messageQueueManager.addStatusListener((status: QueueStatus) => {
+      const enableDebug = self.config.enableDebug
+      if (enableDebug == true) {
+        console.log('📊 [ChatService] 队列状态变化:', status)
+      }
+    })
+  }
+
+  /**
+   * 连接聊天服务
+   */
+  async connect(userId: string, webSocketTask: SocketTask): Promise<void> {
+    // 确保服务已初始化
+    this.ensureInitialized()
+    try {
+      this.setStatus(ChatServiceStatus.CONNECTING)
+      this.currentUserId = userId
+      this.webSocketTask = webSocketTask
+
+      // 更新WebSocket实例到各个组件
+      this.updateWebSocketInstances()
+
+      console.log('🔗 [ChatService] 连接成功, 用户ID:', userId)
+      this.setStatus(ChatServiceStatus.CONNECTED)
+
+    } catch (error) {
+      console.error('❌ [ChatService] 连接失败:', error)
+      this.setStatus(ChatServiceStatus.ERROR)
+      this.notifyError(error as Error)
+      throw error
+    }
+  }
+
+  /**
+   * 设置当前用户ID（用于离线模式）
+   */
+  setCurrentUserId(userId: string): void {
+    this.currentUserId = userId
+    console.log('👤 [ChatService] 设置当前用户ID:', userId)
+  }
+
+  /**
+   * 发送消息
+   */
+  async sendMessage(
+    content: string,
+    receiverId: string,
+    type: MessageType = MessageType.TEXT,
+    options: SendMessageOptions = new SendMessageOptions()
+  ): Promise<string> {
+    // 确保服务已初始化
+    this.ensureInitialized()
+    try {
+      if (this.status != ChatServiceStatus.CONNECTED) {
+        throw new Error('聊天服务未连接')
+      }
+
+      const trimmedContent = content.trim()
+      // trimmedContent 是 string 类型，只需检查空字符串
+      if (trimmedContent == '') {
+        throw new Error('消息内容不能为空')
+      }
+
+      // 构造消息对象（UTS 规范：不支持 Omit，使用具体类）
+      const message = new AddTempMessageParams()
+      message.content = trimmedContent
+      message.type = type
+      message.senderId = this.currentUserId
+      message.receiverId = receiverId
+      message.conversationId = this.generateConversationId(this.currentUserId, receiverId)
+
+      // 添加到发送队列（UTS 规范：直接访问类属性）
+      const priority = options.priority
+      const messageId = messageQueueManager.enqueue(message, priority)
+
+      console.log('📤 [ChatService] 消息已发送:', messageId)
+      return messageId
+
+    } catch (error) {
+      console.error('❌ [ChatService] 发送消息失败:', error)
+      this.notifyError(error as Error)
+      throw error
+    }
+  }
+
+  /**
+   * 发送图片消息
+   */
+  async sendImageMessage(
+    imageUrl: string,
+    receiverId: string,
+    options: SendMessageOptions = new SendMessageOptions()
+  ): Promise<string> {
+    return this.sendMessage(imageUrl, receiverId, MessageType.IMAGE, options)
+  }
+
+  /**
+   * 发送语音消息
+   */
+  async sendVoiceMessage(
+    voiceUrl: string,
+    duration: number,
+    receiverId: string,
+    options: SendMessageOptions = new SendMessageOptions()
+  ): Promise<string> {
+    const messageId = await this.sendMessage(voiceUrl, receiverId, MessageType.VOICE, options)
+    // 更新语音时长（UTS 规范：使用 for 循环替代 find）
+    const allMessages = messageStateManager.getAllMessages()
+    for (let i = 0; i < allMessages.length; i++) {
+      const msg = allMessages[i]
+      if (msg.id === messageId) {
+        msg.duration = duration
+        break
+      }
+    }
+    return messageId
+  }
+
+  /**
+   * 获取会话消息
+   */
+  getConversationMessages(conversationId: string): ChatMessage[] {
+    return messageStateManager.getConversationMessages(conversationId)
+  }
+
+  /**
+   * 获取消息（别名方法，兼容detail.uvue调用）
+   */
+  getMessages(conversationId: string): ChatMessage[] {
+    return this.getConversationMessages(conversationId)
+  }
+
+  /**
+   * 获取所有消息
+   */
+  getAllMessages(): ChatMessage[] {
+    return messageStateManager.getAllMessages()
+  }
+
+  /**
+   * 清空会话消息
+   */
+  clearConversation(conversationId: string): void {
+    messageStateManager.clearConversation(conversationId)
+    console.log('🗑️ [ChatService] 会话已清空:', conversationId)
+  }
+
+  /**
+   * 清空指定用户之间的会话消息
+   */
+  clearConversationByUsers(userId1: string, userId2: string): void {
+    messageStateManager.clearConversationByUsers(userId1, userId2)
+  }
+
+  /**
+   * 重试失败的消息
+   */
+  retryFailedMessages(): void {
+    messageQueueManager.retryFailedMessages()
+  }
+
+  /**
+   * 获取服务统计
+   */
+  getStats(): ChatServiceStats {
+    // UTS 规范：不能使用对象字面量，需使用类实例
+    const stats = new ChatServiceStats()
+    const serviceInfo = new ChatServiceInfo()
+    serviceInfo.status = this.status
+    serviceInfo.userId = this.currentUserId
+    stats.service = serviceInfo
+    // 将 MessageStats 和 QueueStats 转换为 UTSJSONObject
+    try {
+      const messagesJson = JSON.stringify(messageStateManager.getStats())
+      stats.messages = JSON.parse(messagesJson) as UTSJSONObject
+    } catch (e) {
+      stats.messages = null
+    }
+    try {
+      const queueJson = JSON.stringify(messageQueueManager.getQueueStats())
+      stats.queue = JSON.parse(queueJson) as UTSJSONObject
+    } catch (e) {
+      stats.queue = null
+    }
+    return stats
+  }
+
+  /**
+   * 订阅状态变化
+   */
+  onStatusChange(listener: (status: ChatServiceStatus) => void): () => void {
+    this.statusListeners.add(listener)
+    // UTS 规范：箭头函数返回类型不能是 Boolean，需明确返回 void
+    const self = this
+    return function(): void {
+      self.statusListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 订阅消息变化
+   */
+  onMessageChange(listener: (messages: ChatMessage[]) => void): () => void {
+    this.messageListeners.add(listener)
+    const self = this
+    return function(): void {
+      self.messageListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 订阅错误事件
+   */
+  onError(listener: (error: Error) => void): () => void {
+    this.errorListeners.add(listener)
+    const self = this
+    return function(): void {
+      self.errorListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 处理WebSocket消息（外部调用）
+   */
+  handleWebSocketMessage(message: any): void {
+    webSocketEventHandler.handleWebSocketMessage(message)
+  }
+
+  /**
+   * 更新WebSocket实例
+   */
+  private updateWebSocketInstances(): void {
+    // 更新各个组件的WebSocket实例
+    // 这里需要根据实际实现进行调整
+  }
+
+  /**
+   * 生成会话ID
+   */
+  private generateConversationId(userId1: string, userId2: string): string {
+    return [userId1, userId2].sort().join('_')
+  }
+
+  /**
+   * 设置服务状态（公开方法，供外部调用）
+   */
+  setStatus(status: ChatServiceStatus): void {
+    if (this.status != status) {
+      this.status = status
+      this.notifyStatusChange(status)
+    }
+  }
+
+  /**
+   * 通知状态变化
+   */
+  private notifyStatusChange(status: ChatServiceStatus): void {
+    this.statusListeners.forEach(listener => {
+      try {
+        listener(status)
+      } catch (error) {
+        console.error('❌ [ChatService] 状态监听器错误:', error)
+      }
+    })
+  }
+
+  /**
+   * 通知消息更新
+   */
+  private notifyMessageUpdate(messages: ChatMessage[]): void {
+    this.messageListeners.forEach(listener => {
+      try {
+        listener(messages)
+      } catch (error) {
+        console.error('❌ [ChatService] 消息监听器错误:', error)
+      }
+    })
+  }
+
+  /**
+   * 通知错误
+   */
+  private notifyError(error: Error): void {
+    this.errorListeners.forEach(listener => {
+      try {
+        listener(error)
+      } catch (e) {
+        console.error('❌ [ChatService] 错误监听器错误:', e)
+      }
+    })
+  }
+
+  /**
+   * 断开连接
+   */
+  disconnect(): void {
+    // UTS 规范：Any? 不能直接用于条件判断
+    const hasWebSocketTask = this.webSocketTask != null
+    if (hasWebSocketTask == true) {
+      // UTS 规范：uni.closeSocket 需要传入 options 参数
+      uni.closeSocket({
+        code: WS_CLOSE_NORMAL,
+        reason: 'Normal closure'
+      })
+      this.webSocketTask = null
+    }
+    this.setStatus(ChatServiceStatus.DISCONNECTED)
+    console.log('🔌 [ChatService] 已断开连接')
+  }
+
+  /**
+   * 清理资源
+   */
+  cleanup(): void {
+    this.disconnect()
+    
+    // 清理各个组件
+    webSocketEventHandler.cleanup()
+    messageQueueManager.cleanup()
+    
+    // 清理监听器
+    this.statusListeners.clear()
+    this.messageListeners.clear()
+    this.errorListeners.clear()
+    
+    console.log('🧹 [ChatService] 资源已清理')
+  }
+}
+
+// 创建全局服务实例
+export const chatService = new ChatService()

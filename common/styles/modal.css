@@ -1,0 +1,245 @@
+/* ==================== Vue3 Uni-app X 弹窗样式 ==================== */
+/* 创建时间：2025-12-31 */
+/* 说明：统一的弹窗样式类，遵循 uni-app x 原生渲染规范 */
+
+/* ==================== 遮罩层 ==================== */
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.modal-mask-light {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.modal-mask-dark {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* ==================== 弹窗内容容器 ==================== */
+.modal-content {
+  width: 600rpx;
+  background-color: #FFFFFF;
+  border-radius: 24rpx;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-content-sm {
+  width: 500rpx;
+}
+
+.modal-content-lg {
+  width: 680rpx;
+}
+
+.modal-content-full {
+  width: 710rpx;
+}
+
+/* ==================== 弹窗头部 ==================== */
+.modal-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 40rpx;
+  padding-bottom: 24rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  position: relative;
+}
+
+.modal-header-left {
+  justify-content: flex-start;
+}
+
+.modal-header-between {
+  justify-content: space-between;
+}
+
+/* ==================== 弹窗标题 ==================== */
+.modal-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333333;
+  text-align: center;
+}
+
+.modal-title-sm {
+  font-size: 28rpx;
+}
+
+.modal-title-lg {
+  font-size: 36rpx;
+}
+
+/* ==================== 关闭按钮 ==================== */
+.modal-close {
+  position: absolute;
+  top: 24rpx;
+  right: 24rpx;
+  width: 48rpx;
+  height: 48rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close-icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+/* ==================== 弹窗主体 ==================== */
+.modal-body {
+  flex-direction: column;
+  padding-top: 24rpx;
+  padding-bottom: 32rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+
+.modal-body-center {
+  align-items: center;
+}
+
+.modal-body-scroll {
+  max-height: 600rpx;
+  overflow: hidden;
+}
+
+/* ==================== 弹窗文本 ==================== */
+.modal-text {
+  font-size: 28rpx;
+  color: #666666;
+  line-height: 44rpx;
+  text-align: center;
+}
+
+.modal-text-left {
+  text-align: left;
+}
+
+.modal-text-sm {
+  font-size: 24rpx;
+  line-height: 40rpx;
+}
+
+/* ==================== 弹窗底部 ==================== */
+.modal-footer {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 24rpx;
+  padding-bottom: 32rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  border-top-width: 1rpx;
+  border-top-style: solid;
+  border-top-color: #EEEEEE;
+}
+
+.modal-footer-no-border {
+  border-top-width: 0;
+}
+
+.modal-footer-column {
+  flex-direction: column;
+}
+
+/* ==================== 弹窗按钮 ==================== */
+.modal-btn {
+  flex: 1;
+  height: 88rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  border-radius: 44rpx;
+}
+
+.modal-btn-text {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+/* 取消按钮 */
+.modal-btn-cancel {
+  background-color: #F5F5F5;
+  margin-right: 24rpx;
+}
+
+.modal-btn-cancel-text {
+  color: #666666;
+}
+
+/* 确认按钮 */
+.modal-btn-confirm {
+  background-color: #37B1F2;
+}
+
+.modal-btn-confirm-text {
+  color: #FFFFFF;
+}
+
+/* 危险按钮 */
+.modal-btn-danger {
+  background-color: #F83535;
+}
+
+.modal-btn-danger-text {
+  color: #FFFFFF;
+}
+
+/* 单按钮样式 */
+.modal-btn-single {
+  margin-left: 32rpx;
+  margin-right: 32rpx;
+}
+
+/* ==================== 底部弹窗（ActionSheet）==================== */
+.modal-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #FFFFFF;
+  border-top-left-radius: 32rpx;
+  border-top-right-radius: 32rpx;
+  flex-direction: column;
+  z-index: 1000;
+}
+
+.modal-bottom-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 32rpx;
+  padding-bottom: 24rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: #EEEEEE;
+}
+
+.modal-bottom-body {
+  flex-direction: column;
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+  padding-left: 0;
+  padding-right: 0;
+  max-height: 800rpx;
+}
+
+/* ==================== 弹窗动画占位 ==================== */
+/* 注意：uni-app x 动画需要在 JS 中实现 */
+/* 这里只提供静态样式，动画效果请使用 uni.createAnimation */
+

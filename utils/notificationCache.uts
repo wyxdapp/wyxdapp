@@ -1,0 +1,219 @@
+/**
+ * 通知本地缓存工具
+ * UTS 版本
+ */
+
+import { toUTSJSON, getString, getArray } from '@/common/utils/typeConverter'
+
+const CACHE_KEY = 'notification_cache'
+const MAX_CACHE_SIZE = 100
+const CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000 // 24小时
+
+/**
+ * 保存通知到缓存
+ */
+export const saveNotificationsToCache = (notifications: Array<UTSJSONObject>) => {
+	try {
+		// 限制缓存数量
+		const dataToSave: Array<UTSJSONObject> = []
+		const maxLen = Math.min(notifications.length, MAX_CACHE_SIZE)
+		for (let i = 0; i < maxLen; i = i + 1) {
+			dataToSave.push(notifications[i])
+		}
+		
+		const cache = {
+			data: dataToSave,
+			timestamp: Date.now()
+		} as UTSJSONObject
+		
+		uni.setStorageSync(CACHE_KEY, JSON.stringify(cache))
+		console.log('通知缓存保存成功')
+	} catch (error: any) {
+		console.error('保存通知缓存失败:', error)
+	}
+}
+
+/**
+ * 从缓存读取通知
+ */
+export const loadNotificationsFromCache = (): Array<UTSJSONObject> => {
+	try {
+		const cacheStr = uni.getStorageSync(CACHE_KEY)
+		if (cacheStr == null || cacheStr.toString() == '') {
+			return []
+		}
+		
+		const cache = JSON.parse(cacheStr.toString()) as UTSJSONObject
+		const now = Date.now()
+		
+		// 获取时间戳
+		let timestamp = 0
+		const timestampVal = cache.get('timestamp')
+		if (timestampVal != null) {
+			timestamp = parseInt(timestampVal.toString())
+			if (isNaN(timestamp) == true) {
+				timestamp = 0
+			}
+		}
+		
+		// 检查缓存是否过期
+		if (now - timestamp > CACHE_EXPIRE_TIME) {
+			console.log('通知缓存已过期')
+			clearNotificationCache()
+			return []
+		}
+		
+		// 获取数据
+		const dataVal = cache.get('data')
+		if (dataVal == null) {
+			return []
+		}
+		
+		// 优化：使用 getArray 替代 JSON.stringify + JSON.parse
+		const dataArr = getArray(cache, 'data')
+		
+		console.log('从缓存加载通知:', dataArr.length.toString())
+		return dataArr as Array<UTSJSONObject>
+	} catch (error: any) {
+		console.error('读取通知缓存失败:', error)
+		return []
+	}
+}
+
+
+/**
+ * 清除通知缓存
+ */
+export const clearNotificationCache = () => {
+	try {
+		uni.removeStorageSync(CACHE_KEY)
+		console.log('通知缓存已清除')
+	} catch (error: any) {
+		console.error('清除通知缓存失败:', error)
+	}
+}
+
+/**
+ * 获取缓存信息
+ */
+export const getCacheInfo = (): UTSJSONObject | null => {
+	try {
+		const cacheStr = uni.getStorageSync(CACHE_KEY)
+		if (cacheStr == null || cacheStr.toString() == '') {
+			return null
+		}
+		
+		const cache = JSON.parse(cacheStr.toString()) as UTSJSONObject
+		const now = Date.now()
+		
+		// 获取时间戳
+		let timestamp = 0
+		const timestampVal = cache.get('timestamp')
+		if (timestampVal != null) {
+			timestamp = parseInt(timestampVal.toString())
+			if (isNaN(timestamp) == true) {
+				timestamp = 0
+			}
+		}
+		
+		// 获取数据数量
+		let count = 0
+		const dataVal = cache.get('data')
+		if (dataVal != null && Array.isArray(dataVal) == true) {
+			count = (dataVal as Array<UTSJSONObject>).length
+		}
+		
+		const age = now - timestamp
+		const isExpired = age > CACHE_EXPIRE_TIME
+		
+		const result = {
+			count: count,
+			timestamp: timestamp,
+			age: age,
+			isExpired: isExpired
+		} as UTSJSONObject
+		
+		// 优化：使用 toUTSJSON 替代 JSON.parse(JSON.stringify(...))
+		return toUTSJSON(result)
+	} catch (error: any) {
+		console.error('获取缓存信息失败:', error)
+		return null
+	}
+}
+
+/**
+ * 更新单个通知的缓存
+ */
+export const updateNotificationInCache = (notification: UTSJSONObject) => {
+	try {
+		const notifications = loadNotificationsFromCache()
+		
+		// 获取通知 ID — 使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+		let notifId = ''
+		if (notification != null) {
+			try {
+				const nObj = toUTSJSON(notification)
+				notifId = getString(nObj, 'id')
+			} catch (e) {}
+		}
+		
+		// 查找是否存在
+		let foundIndex = -1
+		for (let i = 0; i < notifications.length; i = i + 1) {
+			const n = notifications[i]
+			if (n == null) continue
+			
+			// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+			let nId = ''
+			try {
+				const nObj = toUTSJSON(n)
+				nId = getString(nObj, 'id')
+			} catch (e) {}
+			
+			if (nId == notifId) {
+				foundIndex = i
+				break
+			}
+		}
+		
+		if (foundIndex > -1) {
+			notifications[foundIndex] = notification
+		} else {
+			notifications.unshift(notification)
+		}
+		
+		saveNotificationsToCache(notifications)
+	} catch (error: any) {
+		console.error('更新通知缓存失败:', error)
+	}
+}
+
+/**
+ * 从缓存中删除通知
+ */
+export const deleteNotificationFromCache = (id: string) => {
+	try {
+		const notifications = loadNotificationsFromCache()
+		const filtered: Array<UTSJSONObject> = []
+		
+		for (let i = 0; i < notifications.length; i = i + 1) {
+			const n = notifications[i]
+			if (n == null) continue
+			
+			// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+			let nId = ''
+			try {
+				const nObj = toUTSJSON(n)
+				nId = getString(nObj, 'id')
+			} catch (e) {}
+			
+			if (nId != id) {
+				filtered.push(n)
+			}
+		}
+		
+		saveNotificationsToCache(filtered)
+	} catch (error: any) {
+		console.error('删除通知缓存失败:', error)
+	}
+}

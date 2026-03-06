@@ -1,0 +1,196 @@
+﻿<template>
+	<view v-if="visible == true" class="privacy-popup-mask">
+		<view class="privacy-popup-container">
+			<view class="privacy-popup-title">
+				<text class="title-text">用户协议和隐私政策</text>
+			</view>
+			<view class="privacy-popup-content">
+				<text class="content-text">欢迎使用网约向导！在使用我们的服务前，请您仔细阅读并同意</text>
+				<text class="link-text" @click="openUserAgreement">《用户协议》</text>
+				<text class="content-text">和</text>
+				<text class="link-text" @click="openPrivacyPolicy">《隐私政策》</text>
+				<text class="content-text">。</text>
+			</view>
+			<view class="privacy-info-section">
+				<text class="info-title">我们将收集以下信息：</text>
+				<text class="info-item">• 设备信息（设备型号、操作系统、设备标识符）</text>
+				<text class="info-item">• 网络信息（网络类型、WiFi名称（SSID）、WiFi标识（BSSID）、IP地址），用于辅助定位和网络优化</text>
+				<text class="info-item">• 位置信息（通过GPS/基站定位获取，用于推荐附近服务）</text>
+				<text class="info-hint">以上信息用于保障账号安全、优化服务体验</text>
+			</view>
+			<view class="privacy-popup-buttons">
+				<view class="btn-disagree" @click="handleDisagree">
+					<text class="btn-text-disagree">不继续</text>
+				</view>
+				<view class="btn-agree" @click="handleAgree">
+					<text class="btn-text-agree">继续</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { setPrivacyAgreed } from '@/common/utils/privacyManager.uts'
+
+// Props 定义
+const props = defineProps({
+	visible: { type: Boolean, default: false }
+})
+
+// Emits 定义
+const emit = defineEmits(['agree', 'disagree'])
+
+/**
+ * 打开用户协议页面
+ */
+const openUserAgreement = () => {
+	uni.navigateTo({
+		url: '/pagesTrade/webview/webview/index?url=' + encodeURIComponent('https://www.wyxdapp.com/doc/treaty.html') + '&title=' + encodeURIComponent('用户协议')
+	})
+}
+
+/**
+ * 打开隐私政策页面
+ */
+const openPrivacyPolicy = () => {
+	uni.navigateTo({
+		url: '/pagesTrade/webview/webview/index?url=' + encodeURIComponent('https://www.wyxdapp.com/doc/secret.html') + '&title=' + encodeURIComponent('隐私政策')
+	})
+}
+
+/**
+ * 处理同意按钮点击
+ */
+const handleAgree = () => {
+	// 设置隐私协议已同意
+	setPrivacyAgreed()
+	// 发出同意事件
+	emit('agree')
+}
+
+/**
+ * 处理不同意按钮点击
+ */
+const handleDisagree = () => {
+	// 发出不同意事件
+	emit('disagree')
+}
+</script>
+
+<style>
+.privacy-popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
+}
+
+.privacy-popup-container {
+	width: 620rpx;
+	background-color: #FFFFFF;
+	border-radius: 24rpx;
+	flex-direction: column;
+	padding: 40rpx;
+}
+
+.privacy-popup-title {
+	flex-direction: row;
+	justify-content: center;
+	margin-bottom: 24rpx;
+}
+
+.title-text {
+	font-size: 36rpx;
+	font-weight: 700;
+	color: #333333;
+}
+
+.privacy-popup-content {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 20rpx;
+}
+
+.content-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 44rpx;
+}
+
+.link-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+	line-height: 44rpx;
+}
+
+.privacy-info-section {
+	flex-direction: column;
+	background-color: #F8F8F8;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 30rpx;
+}
+
+.info-title {
+	font-size: 26rpx;
+	color: #333333;
+	font-weight: 700;
+	margin-bottom: 12rpx;
+}
+
+.info-item {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 38rpx;
+}
+
+.info-hint {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 12rpx;
+}
+
+.privacy-popup-buttons {
+	flex-direction: row;
+	justify-content: space-between;
+}
+
+.btn-disagree {
+	flex: 1;
+	height: 88rpx;
+	background-color: #F5F5F5;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.btn-text-disagree {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.btn-agree {
+	flex: 1;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 20rpx;
+}
+
+.btn-text-agree {
+	font-size: 32rpx;
+	color: #FFFFFF;
+}
+</style>

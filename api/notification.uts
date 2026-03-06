@@ -1,0 +1,138 @@
+/**
+ * 通知相关 API
+ * 对应Vue2: http.api.js 中的订单通知模块
+ */
+
+import request from '@/utils/request'
+import {
+	GetNotificationListParams,
+	GetNotificationHistoryParams,
+	GetOrderNotificationsUnreadCountByTypeParams,
+	MarkOrderNotificationsReadByTypeParams,
+	NotificationConfigParams
+} from './types/notificationTypes.uts'
+
+// 重新导出类型，保持向后兼容
+export {
+	GetNotificationListParams,
+	GetNotificationHistoryParams,
+	GetOrderNotificationsUnreadCountByTypeParams,
+	MarkOrderNotificationsReadByTypeParams,
+	NotificationConfigParams
+} from './types/notificationTypes.uts'
+
+/**
+ * 获取通知列表（新接口）
+ * GET /chat/notifications/list
+ */
+export const getNotificationList = (params: GetNotificationListParams): Promise<UTSJSONObject> => {
+	const userId = params.userId
+	const type = params.type
+	const page = params.page
+	const size = params.size
+	return request.get(
+		'/chat/notifications/list?userId=' + userId + '&type=' + type + '&page=' + page.toString() + '&size=' + size.toString(),
+		null,
+		false
+	)
+}
+
+/**
+ * 获取订单通知历史（旧接口，保持兼容）
+ * GET /chat/notifications/history
+ */
+export const getNotificationHistory = (params: GetNotificationHistoryParams): Promise<UTSJSONObject> => {
+	const userId = params.userId
+	const page = params.page
+	const size = params.size
+	return request.get('/chat/notifications/history?userId=' + userId + '&page=' + page.toString() + '&size=' + size.toString(), null, false)
+}
+
+/**
+ * 标记通知为已读
+ * PUT /chat/notifications/{notificationId}/read
+ */
+export const markNotificationRead = (notificationId: string): Promise<UTSJSONObject> => {
+	return request.put('/chat/notifications/' + notificationId + '/read', null, false)
+}
+
+/**
+ * 删除通知
+ * DELETE /chat/notifications/{notificationId}
+ */
+export const deleteNotification = (notificationId: string): Promise<UTSJSONObject> => {
+	return request.delete('/chat/notifications/' + notificationId, null, false)
+}
+
+/**
+ * 标记所有订单通知为已读
+ * PUT /chat/notifications/read-all
+ */
+export const markAllNotificationsRead = (userId: string): Promise<UTSJSONObject> => {
+	return request.put('/chat/notifications/read-all?userId=' + userId, null, false)
+}
+
+/**
+ * 获取未读通知数统计（增强版）
+ * GET /chat/notifications/unread/count
+ */
+export const getUnreadCount = (userId: string): Promise<UTSJSONObject> => {
+	return request.get(
+		'/chat/notifications/unread/count?userId=' + userId,
+		null,
+		false
+	)
+}
+
+/**
+ * 获取订单通知未读数（旧接口，保持兼容）
+ * GET /chat/notifications/unread/count
+ */
+export const getOrderNotificationsUnreadCount = (userId: string): Promise<UTSJSONObject> => {
+	return request.get('/chat/notifications/unread/count?userId=' + userId, null, false)
+}
+
+/**
+ * 按类型获取订单通知未读数（如：ORDER_EXPENDITURE / ORDER_INCOME）
+ * GET /chat/notifications/unread/count-by-type
+ */
+export const getOrderNotificationsUnreadCountByType = (params: GetOrderNotificationsUnreadCountByTypeParams): Promise<UTSJSONObject> => {
+	const userId = params.userId
+	const type = params.type
+	return request.get('/chat/notifications/unread/count-by-type?userId=' + userId + '&type=' + encodeURIComponent(type), null, false)
+}
+
+/**
+ * 按类型标记订单通知为已读
+ * PUT /chat/notifications/read-by-type
+ */
+export const markOrderNotificationsReadByType = (params: MarkOrderNotificationsReadByTypeParams): Promise<UTSJSONObject> => {
+	const userId = params.userId
+	const type = params.type
+	return request.put('/chat/notifications/read-by-type?userId=' + userId + '&type=' + encodeURIComponent(type), null, false)
+}
+
+/**
+ * 获取订单通知配置
+ * GET /chat/notifications/config
+ */
+export const getNotificationConfig = (userId: string): Promise<UTSJSONObject> => {
+	return request.get('/chat/notifications/config?userId=' + userId, null, false)
+}
+
+/**
+ * 获取未完成订单数（用于订单Tab角标）
+ * 未完成订单定义：状态不是已完成(60)、已评价(70)、退款单(80)、已取消(90)的订单
+ * GET /api/order/pending-count
+ */
+export const getPendingOrderCount = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get('/api/order/pending-count?userKid=' + userKid, null, false)
+}
+
+/**
+ * 更新订单通知配置
+ * PUT /chat/notifications/config
+ */
+export const updateNotificationConfig = (params: NotificationConfigParams): Promise<UTSJSONObject> => {
+	return request.put('/chat/notifications/config', params, false)
+}

@@ -1,0 +1,39 @@
+/**
+ * 首页服务 API (UTS 版本)
+ */
+import { request } from '@/utils/request'
+
+/**
+ * 获取向导列表（与Vue2接口一致）
+ */
+export const getGuiderList = (params: UTSJSONObject) => {
+	return request.post('/support/member/queryGuideInfoList', params, false)
+}
+
+/**
+ * 获取定制列表（与Vue2接口一致）
+ */
+export const getRouteList = (params: UTSJSONObject) => {
+	return request.post('/line/newLine/homeLinePage', params, false)
+}
+
+/**
+ * 获取技能标签列表（与Vue2接口一致）
+ */
+export const getForteList = () => {
+	return request.post('/user/userForte/queryAllForte', {} as UTSJSONObject, false)
+}
+
+/**
+ * 获取城市列表
+ */
+export const getCityList = () => {
+	return request.get('/city/list', null, false)
+}
+
+export default {
+	getGuiderList,
+	getRouteList,
+	getForteList,
+	getCityList
+}

@@ -1,0 +1,298 @@
+<template>
+	<view class="guider-list">
+		<view v-if="loading && list.length === 0" class="loading-state">
+			<text>加载中...</text>
+		</view>
+		
+		<view v-else-if="list.length === 0" class="empty-state">
+			<text>{{ nullText }}</text>
+		</view>
+		
+		<view v-else class="list">
+			<view 
+				v-for="(item, index) in list" 
+				:key="item.kid || index"
+				class="guider-item"
+				:class="bgClass"
+				@click="handleItemClick(item)"
+			>
+				<!-- 用户头像 -->
+				<view class="guider-avatar-wrapper">
+					<Avatar
+						:url="item.avatar"
+						:userId="item.kid"
+						:isOnline="item.isOnline"
+						size="large"
+						clickMode="none"
+					/>
+				</view>
+				
+				<!-- 用户信息 -->
+				<view class="guider-info">
+					<view class="info-top">
+						<view class="name-row">
+							<NicknameWithBadges
+								:nickname="item.nickname"
+								:vipType="getVipType(item)"
+								:giftLevel="item.giftLevel || 0"
+								size="medium"
+							/>
+							<view v-if="item.gender == 1" class="gender-badge male">
+								<text>♂</text>
+							</view>
+							<view v-if="item.gender == 2" class="gender-badge female">
+								<text>♀</text>
+							</view>
+						</view>
+						<view class="rating">
+							<UniIcons type="star-filled" :size="24" color="#FFB800" />
+							<text class="score">{{ item.score || '5.0' }}</text>
+						</view>
+					</view>
+					
+					<view class="info-middle">
+						<view class="location-row">
+							<UniIcons type="location" :size="24" color="#999999" />
+							<text class="location"> {{ item.city || '未知' }}</text>
+						</view>
+						<text class="age">{{ item.age }}岁</text>
+					</view>
+					
+					<view class="info-tags">
+						<view v-for="(tag, idx) in (item.tags != null && Array.isArray(item.tags) ? item.tags.slice(0, 3) : [])" :key="idx" class="tag">
+							<text>{{ tag }}</text>
+						</view>
+					</view>
+					
+					<view class="info-bottom">
+						<text class="signature">{{ item.signature || '这个人很懒，什么都没留下' }}</text>
+					</view>
+				</view>
+				
+				<!-- 价格信息 -->
+				<view class="guider-price">
+					<text class="price-label">参考价</text>
+					<text class="price-value">¥{{ item.price || '面议' }}</text>
+					<text class="price-unit">/天</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// Props
+interface GuiderItem {
+	kid: string
+	nickname: string
+	avatar: string
+	gender: number
+	age: number
+	city: string
+	score: number
+	vip: number
+	giftLevel: number
+	isOnline: boolean
+	signature: string
+	tags: string[]
+	price: number | string
+}
+
+// 使用运行时 prop 声明避免编译器问题
+const props = defineProps({
+	list: { type: Array, default: () => [] },
+	loading: { type: Boolean, default: false },
+	nullText: { type: String, default: '暂无向导' },
+	bgClass: { type: String, default: 'bg-white' }
+})
+
+// Emits
+const emit = defineEmits<{
+	itemClick: [item: GuiderItem]
+}>()
+
+// Helper Functions
+const getVipType = (item: GuiderItem): string => {
+	// 这里可以根据业务逻辑判断VIP类型
+	// 暂时保持原有逻辑，未来可以扩展为更复杂的VIP判断
+	return item.vip == 1 ? 'normal' : ''
+}
+
+// Methods
+const handleItemClick = (item: GuiderItem) => {
+	emit('itemClick', item)
+}
+</script>
+
+<style scoped>
+.guider-list {
+	flex-direction: column;
+}
+
+.loading-state,
+.empty-state {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding: 80rpx 0;
+}
+
+.loading-state text,
+.empty-state text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.list {
+	flex-direction: column;
+}
+
+.guider-item {
+	flex-direction: row;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+	border-radius: 12rpx;
+	background-color: #ffffff;
+}
+
+.bg-white {
+	background-color: #ffffff;
+}
+
+.guider-avatar-wrapper {
+	margin-right: 20rpx;
+}
+
+.guider-info {
+	flex: 1;
+	flex-direction: column;
+	margin-right: 20rpx;
+}
+
+.info-top {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.name-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.nickname {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-right: 8rpx;
+}
+
+.gender-badge {
+	width: 32rpx;
+	height: 32rpx;
+	border-radius: 16rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.gender-badge.male {
+	background-color: #2196F3;
+}
+
+.gender-badge.female {
+	background-color: #E91E63;
+}
+
+.gender-badge text {
+	font-size: 20rpx;
+	color: #ffffff;
+}
+
+.rating {
+	flex-direction: row;
+	align-items: center;
+}
+
+.star {
+	font-size: 24rpx;
+	margin-right: 4rpx;
+}
+
+.score {
+	font-size: 24rpx;
+	color: #FF9800;
+	font-weight: bold;
+}
+
+.info-middle {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.location {
+	font-size: 24rpx;
+	color: #666666;
+	margin-right: 20rpx;
+}
+
+.age {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.info-tags {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 12rpx;
+}
+
+.tag {
+	padding: 4rpx 12rpx;
+	background-color: #E3F2FD;
+	border-radius: 8rpx;
+	margin-right: 8rpx;
+	margin-bottom: 8rpx;
+}
+
+.info-bottom {
+	flex-direction: row;
+}
+
+.signature {
+	font-size: 24rpx;
+	color: #999999;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	lines: 1;
+}
+
+.guider-price {
+	flex-direction: column;
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.price-label {
+	font-size: 22rpx;
+	color: #999999;
+	margin-bottom: 8rpx;
+}
+
+.price-value {
+	font-size: 32rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.price-unit {
+	font-size: 22rpx;
+	color: #999999;
+}
+</style>

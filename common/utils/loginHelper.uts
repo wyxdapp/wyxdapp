@@ -1,0 +1,474 @@
+﻿/**
+ * loginHelper.uts - 统一登录状态管理工具
+ * 
+ * 解决问题：用户已登录后，在某些页面仍然提示"请先登录"
+ * 根本原因：Store 初始化时序与页面加载时序不同步
+ * 
+ * UTS 规范要点：
+ * 1. 函数必须在调用前定义（无函数提升）
+ * 2. Promise 使用 Promise<number>，不使用 Promise<boolean> 或 Promise<void>
+ * 3. 回调参数使用 any 类型
+ * 4. 使用 setInterval 替代递归 setTimeout
+ * 5. 布尔值显式比较（== true, == false）
+ * 6. 不使用 ?.、??、!、=== 等语法
+ */
+
+import { 
+  isStoreReady, 
+  getUserLoginStatus, 
+  getUserId,
+  LOGIN_STATUS_CHANGE_EVENT 
+} from '@/stores/user'
+import { SK_TOKEN, SK_USER_INFO, SK_LOGIN_REDIRECT_URL } from '@/common/config/storageKeys.uts'
+import { getToken } from '@/common/utils/security/tokenManager.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+
+// ==================== 辅助函数（最先定义）====================
+
+/**
+ * 从 Storage 直接检查登录状态
+ * 不依赖 Store 初始化，直接读取 localStorage
+ * @returns 是否已登录
+ */
+const checkLoginFromStorage = (): boolean => {
+  try {
+    let userInfoStr = safeGetStorageSync(SK_USER_INFO)
+    
+    // #ifdef H5
+    // H5 环境下，如果 safeGetStorageSync 获取不到，尝试原生 localStorage
+    if ((userInfoStr == null || userInfoStr == '') && typeof window != 'undefined' && window.localStorage) {
+      try {
+        const nativeUserInfo = window.localStorage.getItem(SK_USER_INFO)
+        if (nativeUserInfo != null && nativeUserInfo != '') {
+          userInfoStr = nativeUserInfo
+          // 同步到 uni 存储
+          try {
+            safeSetStorageSync(SK_USER_INFO, nativeUserInfo)
+          } catch (syncError) {
+            console.warn('⚠️ [loginHelper] 同步到 uni 存储失败:', syncError)
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [loginHelper] H5 原生 localStorage 读取失败:', e)
+      }
+    }
+    // #endif
+    
+    if (userInfoStr == null || userInfoStr == '') return false
+    
+    let jsonStr = ''
+    if (typeof userInfoStr === 'string') {
+      jsonStr = userInfoStr as string
+    } else {
+      jsonStr = JSON.stringify(userInfoStr)
+    }
+    
+    if (jsonStr == '' || jsonStr == 'null' || jsonStr == 'undefined') return false
+    
+    const userInfoObj = JSON.parse(jsonStr) as UTSJSONObject
+    const kidVal = userInfoObj.get('kid')
+    const tokenVal = userInfoObj.get('token')
+    const phoneWebTokenVal = userInfoObj.get('phoneWebToken')
+    
+    const hasKid = (kidVal != null && kidVal.toString() != '')
+    const hasToken = (tokenVal != null && tokenVal.toString() != '') || 
+                     (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '')
+    
+    return (hasKid == true && hasToken == true)
+  } catch (e) {
+    console.error('❌ [loginHelper] checkLoginFromStorage 失败:', e)
+    return false
+  }
+}
+
+/**
+ * 从 Storage 获取用户 ID
+ * @returns 用户 ID，未登录返回空字符串
+ */
+const getUserIdFromStorage = (): string => {
+  try {
+    let userInfoStr = safeGetStorageSync(SK_USER_INFO)
+    
+    // #ifdef H5
+    // H5 环境下，如果 safeGetStorageSync 获取不到，尝试原生 localStorage
+    if ((userInfoStr == null || userInfoStr == '') && typeof window != 'undefined' && window.localStorage) {
+      try {
+        const nativeUserInfo = window.localStorage.getItem(SK_USER_INFO)
+        if (nativeUserInfo != null && nativeUserInfo != '') {
+          userInfoStr = nativeUserInfo
+        }
+      } catch (e) {}
+    }
+    // #endif
+    
+    if (userInfoStr == null || userInfoStr == '') return ''
+    
+    let jsonStr = ''
+    if (typeof userInfoStr === 'string') {
+      jsonStr = userInfoStr as string
+    } else {
+      jsonStr = JSON.stringify(userInfoStr)
+    }
+    
+    if (jsonStr == '' || jsonStr == 'null') return ''
+    
+    const userInfoObj = JSON.parse(jsonStr) as UTSJSONObject
+    const kidVal = userInfoObj.get('kid')
+    return (kidVal != null && kidVal.toString() != '') ? kidVal.toString() : ''
+  } catch (e) {
+    console.error('❌ [loginHelper] getUserIdFromStorage 失败:', e)
+    return ''
+  }
+}
+
+/**
+ * 从 Storage 获取用户 Token
+ * @returns 用户 Token，未登录返回空字符串
+ */
+const getUserTokenFromStorage = (): string => {
+  try {
+    // 先尝试通过 Token_Manager 获取 token（加密存储）
+    let tokenDirect = getToken()
+    
+    // #ifdef H5
+    if ((tokenDirect == null || tokenDirect == '') && typeof window != 'undefined' && window.localStorage) {
+      try {
+        const nativeToken = window.localStorage.getItem(SK_TOKEN)
+        if (nativeToken != null && nativeToken != '') {
+          tokenDirect = nativeToken
+        }
+      } catch (e) {}
+    }
+    // #endif
+    
+    if (tokenDirect != null && tokenDirect != '') {
+      return tokenDirect.toString()
+    }
+    
+    // 从 userInfo 中获取
+    let userInfoStr = safeGetStorageSync(SK_USER_INFO)
+    
+    // #ifdef H5
+    if ((userInfoStr == null || userInfoStr == '') && typeof window != 'undefined' && window.localStorage) {
+      try {
+        const nativeUserInfo = window.localStorage.getItem(SK_USER_INFO)
+        if (nativeUserInfo != null && nativeUserInfo != '') {
+          userInfoStr = nativeUserInfo
+        }
+      } catch (e) {}
+    }
+    // #endif
+    
+    if (userInfoStr == null || userInfoStr == '') return ''
+    
+    let jsonStr = ''
+    if (typeof userInfoStr === 'string') {
+      jsonStr = userInfoStr as string
+    } else {
+      jsonStr = JSON.stringify(userInfoStr)
+    }
+    
+    if (jsonStr == '' || jsonStr == 'null') return ''
+    
+    const userInfoObj = JSON.parse(jsonStr) as UTSJSONObject
+    const tokenVal = userInfoObj.get('token')
+    const phoneWebTokenVal = userInfoObj.get('phoneWebToken')
+    
+    if (tokenVal != null && tokenVal.toString() != '') {
+      return tokenVal.toString()
+    }
+    if (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '') {
+      return phoneWebTokenVal.toString()
+    }
+    
+    return ''
+  } catch (e) {
+    console.error('❌ [loginHelper] getUserTokenFromStorage 失败:', e)
+    return ''
+  }
+}
+
+// ==================== 导出函数 ====================
+
+/**
+ * 可靠的登录状态检查
+ * 优先使用 Store（如果已初始化），降级使用 Storage
+ * 
+ * @returns 是否已登录
+ */
+export const checkUserLoginReliable = (): boolean => {
+  try {
+    // 优先检查 Store（如果已初始化）
+    const storeReady = isStoreReady()
+    if (storeReady == true) {
+      const storeLogin = getUserLoginStatus()
+      // 如果 Store 说已登录，直接返回
+      if (storeLogin == true) {
+        return true
+      }
+      // 如果 Store 说未登录，再用 Storage 双重验证
+      // 防止 Store 初始化过程中状态不一致
+    }
+    
+    // 使用 Storage 检查（作为可靠的降级方案）
+    return checkLoginFromStorage()
+  } catch (e) {
+    console.error('❌ [loginHelper] checkUserLoginReliable 失败:', e)
+    // 异常时尝试 Storage
+    return checkLoginFromStorage()
+  }
+}
+
+/**
+ * 等待 Store 初始化完成后检查登录状态
+ * 
+ * UTS 规范：
+ * - Promise 构造函数参数类型必须显式声明
+ * - 使用 setInterval 替代递归 setTimeout
+ * - 返回 number 类型（1=已登录，0=未登录）
+ * - 匿名函数不能有默认参数，使用函数重载模式
+ * 
+ * @param timeout 超时时间（毫秒），默认 2000
+ * @returns Promise<number> 1=已登录，0=未登录
+ */
+export function waitForLoginStatus(timeout: number): Promise<number> {
+  // 存储 intervalId 用于在回调中清除
+  let timerId: number = 0
+  
+  return new Promise<number>((resolve: (value: number) => void) => {
+    try {
+      // 如果 Store 已初始化，直接返回
+      const storeReady = isStoreReady()
+      if (storeReady == true) {
+        const isLogin = getUserLoginStatus()
+        resolve(isLogin == true ? 1 : 0)
+        return
+      }
+      
+      // 先检查 Storage，如果有有效数据，可以提前返回
+      const storageLogin = checkLoginFromStorage()
+      if (storageLogin == true) {
+        resolve(1)
+        return
+      }
+      
+      // 使用 setInterval 轮询检查（UTS 不支持递归 setTimeout）
+      let elapsed = 0
+      const checkInterval = 50 // 每 50ms 检查一次
+      
+      timerId = setInterval(() => {
+        elapsed = elapsed + checkInterval
+        
+        // 检查 Store 是否已初始化
+        const ready = isStoreReady()
+        if (ready == true) {
+          if (timerId != 0) {
+            clearInterval(timerId)
+            timerId = 0
+          }
+          const isLogin = getUserLoginStatus()
+          resolve(isLogin == true ? 1 : 0)
+          return
+        }
+        
+        // 超时处理
+        if (elapsed >= timeout) {
+          if (timerId != 0) {
+            clearInterval(timerId)
+            timerId = 0
+          }
+          console.warn('⚠️ [loginHelper] waitForLoginStatus 超时 (', timeout, 'ms)，降级使用 Storage')
+          const fallbackLogin = checkLoginFromStorage()
+          resolve(fallbackLogin == true ? 1 : 0)
+        }
+      }, checkInterval)
+    } catch (e) {
+      console.error('❌ [loginHelper] waitForLoginStatus 异常:', e)
+      // 异常时降级使用 Storage
+      const fallbackLogin = checkLoginFromStorage()
+      resolve(fallbackLogin == true ? 1 : 0)
+    }
+  })
+}
+
+/**
+ * 等待 Store 初始化完成后检查登录状态（使用默认超时）
+ * @returns Promise<number> 1=已登录，0=未登录
+ */
+export function waitForLoginStatusDefault(): Promise<number> {
+  return waitForLoginStatus(2000)
+}
+
+/**
+ * 可靠的登录守卫
+ * 在跳转登录页前进行双重验证（Store + Storage）
+ * 
+ * UTS 规范：匿名函数不能有默认参数，使用 function 声明
+ * 
+ * @param showToast 是否显示提示
+ * @param redirectUrl 登录后跳转的页面
+ * @returns 是否已登录
+ */
+export function requireLoginReliable(showToast: boolean, redirectUrl: string): boolean {
+  // 双重验证
+  const isLogin = checkUserLoginReliable()
+  
+  if (isLogin == true) {
+    return true
+  }
+  
+  console.log('⚠️ [loginHelper] requireLoginReliable: 用户未登录，准备跳转登录页')
+  
+  // 显示提示
+  if (showToast == true) {
+    uni.showToast({
+      title: '请先登录',
+      icon: 'none'
+    })
+  }
+  
+  // 保存登录后跳转地址
+  if (redirectUrl != '') {
+    safeSetStorageSync(SK_LOGIN_REDIRECT_URL, redirectUrl)
+  }
+  
+  // 延迟跳转，让 Toast 显示
+  setTimeout(() => {
+    uni.navigateTo({
+      url: '/pagesUser/login/index'
+    })
+  }, 1500)
+  
+  return false
+}
+
+/**
+ * 可靠的登录守卫（使用默认参数）
+ * @returns 是否已登录
+ */
+export function requireLoginReliableDefault(): boolean {
+  return requireLoginReliable(true, '')
+}
+
+/**
+ * 可靠的登录守卫（仅指定是否显示提示）
+ * @param showToast 是否显示提示
+ * @returns 是否已登录
+ */
+export function requireLoginReliableWithToast(showToast: boolean): boolean {
+  return requireLoginReliable(showToast, '')
+}
+
+/**
+ * 监听登录状态变化
+ * 
+ * UTS 规范：回调参数使用 any 类型
+ * 
+ * @param callback 回调函数，参数为 any 类型
+ *                 数据结构：{ isLogin: boolean, userId: string }
+ */
+export const onLoginStatusChange = (callback: (data: UTSJSONObject) => void): void => {
+  try {
+    uni.$on(LOGIN_STATUS_CHANGE_EVENT, callback)
+  } catch (e) {
+    console.error('❌ [loginHelper] 注册登录状态监听失败:', e)
+  }
+}
+
+/**
+ * 取消监听登录状态变化
+ * 
+ * @param callback 回调函数
+ */
+export const offLoginStatusChange = (callback: (data: UTSJSONObject) => void): void => {
+  try {
+    uni.$off(LOGIN_STATUS_CHANGE_EVENT, callback)
+  } catch (e) {
+    console.error('❌ [loginHelper] 取消登录状态监听失败:', e)
+  }
+}
+
+/**
+ * 获取当前用户 ID（可靠版本）
+ * 优先使用 Store，降级使用 Storage
+ * 
+ * @returns 用户 ID，未登录返回空字符串
+ */
+export const getCurrentUserIdReliable = (): string => {
+  try {
+    // 优先检查 Store
+    const storeReady = isStoreReady()
+    if (storeReady == true) {
+      const storeUserId = getUserId()
+      console.log('🔍 [loginHelper] getCurrentUserIdReliable - Store ready, userId:', storeUserId)
+      if (storeUserId != null && storeUserId != '') {
+        return storeUserId
+      }
+    }
+    
+    // 降级使用 Storage
+    const storageUserId = getUserIdFromStorage()
+    console.log('🔍 [loginHelper] getCurrentUserIdReliable - 降级使用 Storage, userId:', storageUserId)
+    return storageUserId
+  } catch (e) {
+    console.error('❌ [loginHelper] getCurrentUserIdReliable 失败:', e)
+    return getUserIdFromStorage()
+  }
+}
+
+/**
+ * 获取当前用户 Token（可靠版本）
+ * 
+ * @returns 用户 Token，未登录返回空字符串
+ */
+export const getCurrentUserTokenReliable = (): string => {
+  return getUserTokenFromStorage()
+}
+
+/**
+ * 解析登录状态变化事件数据
+ * 
+ * UTS 规范：使用 JSON 序列化 + UTSJSONObject 访问
+ * 
+ * @param data 事件数据（any 类型）
+ * @returns { isLogin: boolean, userId: string }
+ */
+export const parseLoginStatusData = (data: UTSJSONObject | null): UTSJSONObject | null => {
+  if (data == null) return null
+  
+  try {
+    const dataStr = JSON.stringify(data)
+    if (dataStr == '' || dataStr == 'null') return null
+    
+    return JSON.parse(dataStr) as UTSJSONObject
+  } catch (e) {
+    console.error('❌ [loginHelper] parseLoginStatusData 失败:', e)
+    return null
+  }
+}
+
+/**
+ * 从登录状态数据中获取 isLogin 值
+ * 
+ * @param dataObj UTSJSONObject 数据对象
+ * @returns 是否已登录
+ */
+export const getIsLoginFromData = (dataObj: UTSJSONObject | null): boolean => {
+  if (dataObj == null) return false
+  
+  const isLoginVal = dataObj.get('isLogin')
+  return (isLoginVal == true)
+}
+
+/**
+ * 从登录状态数据中获取 userId 值
+ * 
+ * @param dataObj UTSJSONObject 数据对象
+ * @returns 用户 ID
+ */
+export const getUserIdFromData = (dataObj: UTSJSONObject | null): string => {
+  if (dataObj == null) return ''
+  
+  const userIdVal = dataObj.get('userId')
+  return (userIdVal != null) ? userIdVal.toString() : ''
+}

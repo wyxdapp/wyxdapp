@@ -1,0 +1,199 @@
+<template>
+	<view v-if="show" class="wy-loading" :class="{ 'wy-loading--fullscreen': fullscreen }">
+		<view class="wy-loading__mask" v-if="mask" @click="handleMaskClick"></view>
+		<view class="wy-loading__content">
+			<view class="wy-loading__spinner" :class="`wy-loading__spinner--${type}`">
+				<view v-if="type === 'circular'" class="circular">
+					<view class="circular-path"></view>
+				</view>
+				<view v-else-if="type === 'spinner'" class="spinner">
+					<view class="spinner-item spinner-item-1"></view>
+					<view class="spinner-item spinner-item-2"></view>
+					<view class="spinner-item spinner-item-3"></view>
+					<view class="spinner-item spinner-item-4"></view>
+					<view class="spinner-item spinner-item-5"></view>
+					<view class="spinner-item spinner-item-6"></view>
+					<view class="spinner-item spinner-item-7"></view>
+					<view class="spinner-item spinner-item-8"></view>
+					<view class="spinner-item spinner-item-9"></view>
+					<view class="spinner-item spinner-item-10"></view>
+					<view class="spinner-item spinner-item-11"></view>
+					<view class="spinner-item spinner-item-12"></view>
+				</view>
+				<text v-else class="loading-text">{{ icon }}</text>
+			</view>
+			<text v-if="text" class="wy-loading__text">{{ text }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+// 根据规范，defineProps 和 defineEmits 是编译宏，不需要导入
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	type: { type: String, default: 'circular' },
+	text: { type: String, default: '' },
+	icon: { type: String, default: '⏳' },
+	mask: { type: Boolean, default: true },
+	fullscreen: { type: Boolean, default: false },
+	maskClosable: { type: Boolean, default: false }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+}>()
+
+// Methods
+const handleMaskClick = () => {
+	if (props.maskClosable) {
+		emit('close')
+	}
+}
+</script>
+
+<style scoped>
+.wy-loading {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.wy-loading--fullscreen {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+}
+
+.wy-loading__mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.wy-loading__content {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40rpx;
+	background-color: rgba(0, 0, 0, 0.7);
+	border-radius: 16rpx;
+}
+
+.wy-loading__spinner {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 60rpx;
+	height: 60rpx;
+}
+
+/* Circular 类型 */
+.circular {
+	width: 60rpx;
+	height: 60rpx;
+	/* animation: rotate 2s linear infinite; 不支持 */
+}
+
+.circular-path {
+	width: 100%;
+	height: 100%;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: transparent;
+	border-top-color: #ffffff;
+	border-radius: 30rpx;
+}
+
+/* Spinner 类型 */
+.spinner {
+	position: relative;
+	width: 60rpx;
+	height: 60rpx;
+}
+
+.spinner-item {
+	position: absolute;
+	width: 6rpx;
+	height: 18rpx;
+	background-color: #ffffff;
+	border-radius: 3rpx;
+	opacity: 0.3;
+	left: 50%;
+	top: 0;
+	margin-left: -3rpx;
+	transform-origin: center 30rpx;
+}
+
+.spinner-item-1 {
+	transform: rotate(0deg);
+}
+
+.spinner-item-2 {
+	transform: rotate(30deg);
+}
+
+.spinner-item-3 {
+	transform: rotate(60deg);
+}
+
+.spinner-item-4 {
+	transform: rotate(90deg);
+}
+
+.spinner-item-5 {
+	transform: rotate(120deg);
+}
+
+.spinner-item-6 {
+	transform: rotate(150deg);
+}
+
+.spinner-item-7 {
+	transform: rotate(180deg);
+}
+
+.spinner-item-8 {
+	transform: rotate(210deg);
+}
+
+.spinner-item-9 {
+	transform: rotate(240deg);
+}
+
+.spinner-item-10 {
+	transform: rotate(270deg);
+}
+
+.spinner-item-11 {
+	transform: rotate(300deg);
+}
+
+.spinner-item-12 {
+	transform: rotate(330deg);
+}
+
+/* Dots 类型 */
+.loading-text {
+	font-size: 48rpx;
+}
+
+.wy-loading__text {
+	margin-top: 20rpx;
+	font-size: 28rpx;
+	color: #ffffff;
+	text-align: center;
+}
+</style>

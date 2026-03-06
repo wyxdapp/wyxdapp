@@ -1,0 +1,587 @@
+<template>
+	<view class="settings-page">
+		<!-- 自定义导航栏 -->
+		<view class="custom-navbar">
+			<view class="navbar-content">
+				<view class="navbar-left" @click="goBack">
+					<UniIcons type="back" :size="44" class="back-icon-img" />
+				</view>
+				<text class="navbar-title">通知设置</text>
+				<view class="navbar-right"></view>
+			</view>
+		</view>
+		
+		<scroll-view class="scroll-view" scroll-y :show-scrollbar="false">
+			<!-- 通知总开关 -->
+			<view class="setting-section">
+				<view class="section-header">
+					<text class="section-title">通知开关</text>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<UniIcons type="notification-filled" :size="36" color="#FF9800" />
+						<text class="item-label">接收通知</text>
+					</view>
+					<switch :checked="settingsEnabled" @change="handleEnabledChange" color="#37B1F2" />
+				</view>
+			</view>
+			
+			<!-- 通知类型设置 -->
+			<view class="setting-section">
+				<view class="section-header">
+					<text class="section-title">通知类型</text>
+					<text class="section-desc">选择您想接收的通知类型</text>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<UniIcons type="shop" :size="36" color="#37B1F2" />
+						<text class="item-label">订单通知</text>
+					</view>
+					<switch 
+						:checked="settingsOrderNotify" 
+						:disabled="settingsEnabled == false"
+						@change="handleOrderNotifyChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<UniIcons type="notification-filled" :size="36" color="#FF9800" />
+						<text class="item-label">系统通知</text>
+					</view>
+					<switch 
+						:checked="settingsSystemNotify" 
+						:disabled="settingsEnabled == false"
+						@change="handleSystemNotifyChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<UniIcons type="chatbubble-filled" :size="36" color="#37B1F2" />
+						<text class="item-label">互动通知</text>
+					</view>
+					<switch 
+						:checked="settingsInteractNotify" 
+						:disabled="settingsEnabled == false"
+						@change="handleInteractNotifyChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+			</view>
+			
+			<!-- 免打扰设置 -->
+			<view class="setting-section">
+				<view class="section-header">
+					<text class="section-title">免打扰时段</text>
+					<text class="section-desc">在此时段内不会收到通知提醒</text>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<text class="item-icon">🌙</text>
+						<text class="item-label">开启免打扰</text>
+					</view>
+					<switch 
+						:checked="settingsDndEnabled" 
+						:disabled="settingsEnabled == false"
+						@change="handleDndEnabledChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+				<view v-if="settingsDndEnabled == true" class="time-picker-group">
+					<view class="setting-item">
+						<text class="item-label">开始时间</text>
+						<picker 
+							mode="time" 
+							:value="settingsDndStart" 
+							:disabled="settingsEnabled == false"
+							@change="handleDndStartChange"
+						>
+							<view class="picker-value">
+								<text class="picker-text">{{ settingsDndStart }}</text>
+								<text class="arrow">›</text>
+							</view>
+						</picker>
+					</view>
+					<view class="setting-item">
+						<text class="item-label">结束时间</text>
+						<picker 
+							mode="time" 
+							:value="settingsDndEnd" 
+							:disabled="settingsEnabled == false"
+							@change="handleDndEndChange"
+						>
+							<view class="picker-value">
+								<text class="picker-text">{{ settingsDndEnd }}</text>
+								<text class="arrow">›</text>
+							</view>
+						</picker>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 声音和震动 -->
+			<view class="setting-section">
+				<view class="section-header">
+					<text class="section-title">提醒方式</text>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<text class="item-icon">🔊</text>
+						<text class="item-label">声音提醒</text>
+					</view>
+					<switch 
+						:checked="settingsSoundEnabled" 
+						:disabled="settingsEnabled == false"
+						@change="handleSoundEnabledChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+				<view class="setting-item">
+					<view class="item-left">
+						<text class="item-icon">📳</text>
+						<text class="item-label">震动提醒</text>
+					</view>
+					<switch 
+						:checked="settingsVibrateEnabled" 
+						:disabled="settingsEnabled == false"
+						@change="handleVibrateEnabledChange" 
+						color="#37B1F2" 
+					/>
+				</view>
+			</view>
+			
+			<!-- 保存按钮 -->
+			<view class="save-btn-wrapper">
+				<button class="save-btn" @click="handleSave">保存设置</button>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// ==================== 辅助函数 ====================
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjBoolean = (obj: UTSJSONObject | null, key: string): boolean => {
+	if (obj == null) return false
+	const val = obj.get(key)
+	if (val != null) {
+		const str = val.toString()
+		return str == 'true' || str == '1'
+	}
+	return false
+}
+
+// ==================== 设置数据（拆分为独立 ref）====================
+const settingsEnabled = ref<boolean>(true)
+const settingsOrderNotify = ref<boolean>(true)
+const settingsSystemNotify = ref<boolean>(true)
+const settingsInteractNotify = ref<boolean>(true)
+const settingsDndEnabled = ref<boolean>(false)
+const settingsDndStart = ref<string>('22:00')
+const settingsDndEnd = ref<string>('08:00')
+const settingsSoundEnabled = ref<boolean>(true)
+const settingsVibrateEnabled = ref<boolean>(true)
+
+// ==================== 方法定义（必须在生命周期之前）====================
+
+// 返回
+const goBack = () => {
+	uni.navigateBack()
+}
+
+// 加载设置
+const loadSettings = () => {
+	try {
+		const savedSettings = uni.getStorageSync('notification_settings')
+		if (savedSettings != null && savedSettings != '') {
+			const settingsStr = savedSettings.toString()
+			if (settingsStr != '') {
+				const settingsObj = JSON.parse(settingsStr) as UTSJSONObject
+				if (settingsObj != null) {
+					const enabledVal = settingsObj.get('enabled')
+					if (enabledVal != null) {
+						settingsEnabled.value = getObjBoolean(settingsObj, 'enabled')
+					}
+					const orderNotifyVal = settingsObj.get('orderNotify')
+					if (orderNotifyVal != null) {
+						settingsOrderNotify.value = getObjBoolean(settingsObj, 'orderNotify')
+					}
+					const systemNotifyVal = settingsObj.get('systemNotify')
+					if (systemNotifyVal != null) {
+						settingsSystemNotify.value = getObjBoolean(settingsObj, 'systemNotify')
+					}
+					const interactNotifyVal = settingsObj.get('interactNotify')
+					if (interactNotifyVal != null) {
+						settingsInteractNotify.value = getObjBoolean(settingsObj, 'interactNotify')
+					}
+					const dndEnabledVal = settingsObj.get('dndEnabled')
+					if (dndEnabledVal != null) {
+						settingsDndEnabled.value = getObjBoolean(settingsObj, 'dndEnabled')
+					}
+					const dndStartVal = settingsObj.get('dndStart')
+					if (dndStartVal != null && dndStartVal.toString() != '') {
+						settingsDndStart.value = dndStartVal.toString()
+					}
+					const dndEndVal = settingsObj.get('dndEnd')
+					if (dndEndVal != null && dndEndVal.toString() != '') {
+						settingsDndEnd.value = dndEndVal.toString()
+					}
+					const soundEnabledVal = settingsObj.get('soundEnabled')
+					if (soundEnabledVal != null) {
+						settingsSoundEnabled.value = getObjBoolean(settingsObj, 'soundEnabled')
+					}
+					const vibrateEnabledVal = settingsObj.get('vibrateEnabled')
+					if (vibrateEnabledVal != null) {
+						settingsVibrateEnabled.value = getObjBoolean(settingsObj, 'vibrateEnabled')
+					}
+				}
+			}
+		}
+	} catch (error) {
+		console.error('加载设置失败:', error)
+	}
+}
+
+// 开关变更处理
+const handleEnabledChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsEnabled.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleOrderNotifyChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsOrderNotify.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleSystemNotifyChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsSystemNotify.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleInteractNotifyChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsInteractNotify.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleDndEnabledChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsDndEnabled.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleSoundEnabledChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsSoundEnabled.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+const handleVibrateEnabledChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null) {
+					settingsVibrateEnabled.value = valueVal.toString() == 'true'
+				}
+			}
+		}
+	}
+}
+
+// 时间选择器变更
+const handleDndStartChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null && valueVal.toString() != '') {
+					settingsDndStart.value = valueVal.toString()
+				}
+			}
+		}
+	}
+}
+
+const handleDndEndChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const valueVal = detailObj.get('value')
+				if (valueVal != null && valueVal.toString() != '') {
+					settingsDndEnd.value = valueVal.toString()
+				}
+			}
+		}
+	}
+}
+
+// 保存设置
+const handleSave = () => {
+	try {
+		const settingsData = {
+			enabled: settingsEnabled.value,
+			orderNotify: settingsOrderNotify.value,
+			systemNotify: settingsSystemNotify.value,
+			interactNotify: settingsInteractNotify.value,
+			dndEnabled: settingsDndEnabled.value,
+			dndStart: settingsDndStart.value,
+			dndEnd: settingsDndEnd.value,
+			soundEnabled: settingsSoundEnabled.value,
+			vibrateEnabled: settingsVibrateEnabled.value
+		} as UTSJSONObject
+		uni.setStorageSync('notification_settings', JSON.stringify(settingsData))
+		uni.showToast({
+			title: '设置已保存',
+			icon: 'success'
+		})
+	} catch (error) {
+		console.error('保存设置失败:', error)
+		uni.showToast({
+			title: '保存失败',
+			icon: 'none'
+		})
+	}
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	loadSettings()
+})
+</script>
+
+<style scoped>
+.settings-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+}
+
+.custom-navbar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+	z-index: 100;
+}
+
+.navbar-content {
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.navbar-left,
+.navbar-right {
+	width: 80rpx;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.back-icon-img {
+	width: 44rpx;
+	height: 44rpx;
+}
+
+.navbar-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.scroll-view {
+	height: 1334rpx;
+	padding-top: 88rpx;
+}
+
+.setting-section {
+	margin-bottom: 20rpx;
+	background-color: #ffffff;
+}
+
+.section-header {
+	padding-top: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 16rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.section-desc {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.setting-item {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.item-left {
+	flex-direction: row;
+	align-items: center;
+	flex: 1;
+}
+
+.item-icon {
+	font-size: 40rpx;
+	margin-right: 20rpx;
+}
+
+.item-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.time-picker-group {
+	background-color: #f8f9fa;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+.picker-value {
+	flex-direction: row;
+	align-items: center;
+}
+
+.picker-text {
+	color: #37B1F2;
+	font-size: 28rpx;
+}
+
+.arrow {
+	font-size: 40rpx;
+	margin-left: 8rpx;
+	color: #999999;
+}
+
+.save-btn-wrapper {
+	padding-top: 40rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 80rpx;
+}
+
+.save-btn {
+	width: 694rpx;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	color: #ffffff;
+	font-size: 32rpx;
+	font-weight: bold;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+</style>

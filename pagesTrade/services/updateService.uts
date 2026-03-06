@@ -1,0 +1,446 @@
+/**
+ * APP 版本更新服务
+ * 
+ * 提供版本检查、更新下载、安装等功能
+ * 
+ * @author WYXD Team
+ * @date 2025-01-15
+ */
+
+import {
+	getCurrentVersionName,
+	getCurrentVersionCode,
+	ANDROID_DOWNLOAD_URL,
+	IOS_APPSTORE_URL,
+	compareVersion,
+	hasNewVersion,
+	formatVersionDisplay,
+	getCurrentPlatform,
+	isAndroidPlatform,
+	isIOSPlatform,
+	isH5Platform
+} from '@/common/config/versionConfig.uts'
+import { checkAppVersionApi } from '@/api/app.uts'
+import { getStringProp, getNumberProp, getBoolProp, getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+import { safeRedirect } from '@/common/utils/security/urlValidator.uts'
+
+// ==================== 数据类型定义 ====================
+
+/**
+ * 服务器返回的版本信息
+ */
+export class AppVersionInfo {
+	versionName: string = ''
+	versionCode: number = 0
+	updateDesc: string = ''
+	downloadUrl: string = ''
+	forceUpdate: boolean = false
+	minSupportVersion: string = ''
+	
+	constructor() {}
+}
+
+/**
+ * 版本检查结果
+ */
+export class CheckUpdateResult {
+	hasUpdate: boolean = false
+	versionInfo: AppVersionInfo | null = null
+	errorMsg: string = ''
+	
+	constructor() {}
+}
+
+// ==================== 版本检查服务 ====================
+
+/**
+ * 检查 APP 更新（回调模式，兼容 Android）
+ * 
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function checkAppUpdate(
+	onSuccess: (result: CheckUpdateResult) => void,
+	onFail: (error: string) => void
+): void {
+	// 构建请求参数
+	const params = {
+		platform: getCurrentPlatform(),
+		versionName: getCurrentVersionName(),
+		versionCode: getCurrentVersionCode()
+	} as UTSJSONObject
+	
+	// 调用 API 检查更新
+	checkAppVersionApi(params).then((res: UTSJSONObject | null) => {
+		const result = new CheckUpdateResult()
+		
+		const code = getResponseCode(res)
+		if (code == 200) {
+			const dataObj = getResponseData(res)
+			if (dataObj != null) {
+				// 解析版本信息
+				const versionInfo = new AppVersionInfo()
+				versionInfo.versionName = getStringProp(dataObj, 'versionName')
+				versionInfo.versionCode = getNumberProp(dataObj, 'versionCode')
+				versionInfo.updateDesc = getStringProp(dataObj, 'updateDesc')
+				versionInfo.downloadUrl = getStringProp(dataObj, 'downloadUrl')
+				versionInfo.forceUpdate = getBoolProp(dataObj, 'forceUpdate')
+				versionInfo.minSupportVersion = getStringProp(dataObj, 'minSupportVersion')
+				
+				// 如果服务器没有返回下载地址，使用默认配置
+				if (versionInfo.downloadUrl == '') {
+					if (isAndroidPlatform() == true) {
+						versionInfo.downloadUrl = ANDROID_DOWNLOAD_URL
+					} else if (isIOSPlatform() == true) {
+						versionInfo.downloadUrl = IOS_APPSTORE_URL
+					}
+				}
+				
+				// 判断是否有新版本
+				result.hasUpdate = hasNewVersion(getCurrentVersionName(), versionInfo.versionName)
+				result.versionInfo = versionInfo
+			} else {
+				result.hasUpdate = false
+				result.versionInfo = null
+			}
+			
+			onSuccess(result)
+		} else {
+			// API 返回错误
+			const msg = getStringProp(res, 'msg')
+			result.errorMsg = (msg != '') ? msg : '检查更新失败'
+			onFail(result.errorMsg)
+		}
+	}).catch((error: Error | null): void => {
+		let errorMsg = '网络请求失败，请检查网络后重试'
+		if (error != null) {
+			const errStr = error.toString()
+			if (errStr != null && errStr != '') {
+				errorMsg = errStr
+			}
+		}
+		onFail(errorMsg)
+	})
+}
+
+/**
+ * 模拟检查更新（用于测试，当服务器 API 未就绪时使用）
+ * 
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function checkAppUpdateMock(
+	onSuccess: (result: CheckUpdateResult) => void,
+	onFail: (error: string) => void
+): void {
+	// 模拟网络延迟
+	setTimeout(() => {
+		const result = new CheckUpdateResult()
+		
+		// 模拟服务器返回的版本信息
+		const versionInfo = new AppVersionInfo()
+		versionInfo.versionName = '2.1.1'
+		versionInfo.versionCode = 211
+		versionInfo.updateDesc = '1. 新增版本更新功能\n2. 优化用户体验\n3. 修复已知问题'
+		versionInfo.forceUpdate = false
+		
+		if (isAndroidPlatform() == true) {
+			versionInfo.downloadUrl = ANDROID_DOWNLOAD_URL
+		} else if (isIOSPlatform() == true) {
+			versionInfo.downloadUrl = IOS_APPSTORE_URL
+		}
+		
+		// 判断是否有新版本
+		result.hasUpdate = hasNewVersion(getCurrentVersionName(), versionInfo.versionName)
+		result.versionInfo = versionInfo
+		
+		onSuccess(result)
+	}, 1000)
+}
+
+// ==================== 统一入口函数 ====================
+
+// 是否使用 Mock 数据（开发阶段设为 true，上线后设为 false）
+const USE_MOCK_API: boolean = false
+
+/**
+ * 检查更新（统一入口，自动选择真实 API 或 Mock）
+ * 
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function checkUpdate(
+	onSuccess: (result: CheckUpdateResult) => void,
+	onFail: (error: string) => void
+): void {
+	if (USE_MOCK_API == true) {
+		checkAppUpdateMock(onSuccess, onFail)
+	} else {
+		checkAppUpdate(onSuccess, onFail)
+	}
+}
+
+// ==================== 平台更新操作 ====================
+
+/**
+ * 执行更新操作（根据平台自动选择）
+ * 
+ * @param versionInfo 版本信息
+ * @param onProgress 下载进度回调（仅 Android）
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function performUpdate(
+	versionInfo: AppVersionInfo,
+	onProgress: (progress: number) => void,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-ANDROID
+	// Android：下载并安装 APK
+	downloadAndInstallApk(versionInfo.downloadUrl, onProgress, onSuccess, onFail)
+	// #endif
+	
+	// #ifdef APP-IOS
+	// iOS：跳转 App Store
+	openAppStore(versionInfo.downloadUrl, onSuccess, onFail)
+	// #endif
+	
+	// #ifdef H5
+	// H5：跳转下载页面
+	openDownloadPage(versionInfo.downloadUrl, onSuccess, onFail)
+	// #endif
+}
+
+/**
+ * 打开 App Store（iOS）
+ * 
+ * @param url App Store 链接
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function openAppStore(
+	url: string,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-IOS
+	const storeUrl = (url != '') ? url : IOS_APPSTORE_URL
+	
+	// 使用 plus.runtime.openURL 打开 App Store
+	try {
+		plus.runtime.openURL(storeUrl, (err: Error | null) => {
+			if (err != null) {
+				onFail('无法打开应用商店，请手动搜索"网约向导"进行更新')
+			} else {
+				onSuccess()
+			}
+		})
+	} catch (e: Error) {
+		onFail('打开应用商店失败')
+	}
+	// #endif
+	
+	// #ifndef APP-IOS
+	onFail('当前平台不支持此操作')
+	// #endif
+}
+
+/**
+ * 打开下载页面（H5）
+ * 
+ * @param url 下载页面链接
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function openDownloadPage(
+	url: string,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef H5
+	try {
+		if (typeof window !== 'undefined' && window.location != null) {
+			safeRedirect(url)
+			onSuccess()
+		} else {
+			onFail('无法打开下载页面')
+		}
+	} catch (e: Error) {
+		onFail('打开下载页面失败')
+	}
+	// #endif
+	
+	// #ifndef H5
+	onFail('当前平台不支持此操作')
+	// #endif
+}
+
+// ==================== Android APK 下载与安装 ====================
+
+// 下载任务 ID（用于取消下载）
+let currentDownloadTask: UniDownloadTask | null = null
+
+/**
+ * 下载并安装 APK（Android）
+ * 
+ * @param url APK 下载地址
+ * @param onProgress 进度回调
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function downloadAndInstallApk(
+	url: string,
+	onProgress: (progress: number) => void,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-ANDROID
+	const downloadUrl = (url != '') ? url : ANDROID_DOWNLOAD_URL
+	
+	console.log('[UpdateService] 开始下载 APK:', downloadUrl)
+	
+	// 创建下载任务
+	currentDownloadTask = uni.downloadFile({
+		url: downloadUrl,
+		success: (res: UTSJSONObject | null) => {
+			console.log('[UpdateService] 下载完成:', res)
+			
+			if (res != null) {
+				const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+				const statusCodeVal = resObj.get('statusCode')
+				const tempFilePathVal = resObj.get('tempFilePath')
+				
+				let statusCode = 0
+				if (statusCodeVal != null) {
+					const parsed = parseInt(statusCodeVal.toString())
+					if (isNaN(parsed) == false) {
+						statusCode = parsed
+					}
+				}
+				
+				const tempFilePath = (tempFilePathVal != null) ? tempFilePathVal.toString() : ''
+				
+				if (statusCode == 200 && tempFilePath != '') {
+					// 下载成功，安装 APK
+					installApk(tempFilePath, onSuccess, onFail)
+				} else {
+					onFail('下载失败，请重试')
+				}
+			} else {
+				onFail('下载失败，请重试')
+			}
+		},
+		fail: (err: UniError | null) => {
+			console.error('[UpdateService] 下载失败:', err)
+			let errorMsg = '下载失败'
+			if (err != null) {
+				const errObj = JSON.parse(JSON.stringify(err)) as UTSJSONObject
+				const errMsgVal = errObj.get('errMsg')
+				if (errMsgVal != null && errMsgVal.toString() != '') {
+					errorMsg = errMsgVal.toString()
+				}
+			}
+			onFail(errorMsg)
+		}
+	})
+	
+	// 监听下载进度
+	if (currentDownloadTask != null) {
+		currentDownloadTask!.onProgressUpdate((progressRes: OnProgressDownloadResult) => {
+			if (progressRes != null) {
+				const progressObj = JSON.parse(JSON.stringify(progressRes)) as UTSJSONObject
+				const progressVal = progressObj.get('progress')
+				if (progressVal != null) {
+					const progress = parseInt(progressVal.toString())
+					if (isNaN(progress) == false) {
+						onProgress(progress)
+					}
+				}
+			}
+		})
+	}
+	// #endif
+	
+	// #ifndef APP-ANDROID
+	onFail('当前平台不支持 APK 下载')
+	// #endif
+}
+
+/**
+ * 安装 APK（Android）
+ * 
+ * @param filePath APK 文件路径
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function installApk(
+	filePath: string,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-ANDROID
+	console.log('[UpdateService] 开始安装 APK:', filePath)
+	
+	try {
+		// 使用 plus.runtime.install 安装 APK
+		plus.runtime.install(filePath, {
+			force: true
+		}, () => {
+			console.log('[UpdateService] 安装成功')
+			onSuccess()
+		}, (err: Error | null) => {
+			console.error('[UpdateService] 安装失败:', err)
+			let errorMsg = '安装失败'
+			if (err != null && err.message != null) {
+				errorMsg = err.message.toString()
+			}
+			onFail(errorMsg)
+		})
+	} catch (e: Error) {
+		console.error('[UpdateService] 安装异常:', e)
+		onFail('安装失败，请手动安装')
+	}
+	// #endif
+	
+	// #ifndef APP-ANDROID
+	onFail('当前平台不支持 APK 安装')
+	// #endif
+}
+
+/**
+ * 取消下载
+ */
+export function cancelDownload(): void {
+	if (currentDownloadTask != null) {
+		try {
+			currentDownloadTask.abort()
+			console.log('[UpdateService] 下载已取消')
+		} catch (e: Error) {
+			console.error('[UpdateService] 取消下载失败:', e)
+		}
+		currentDownloadTask = null
+	}
+}
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 获取当前版本显示文本
+ * @returns 版本显示文本，如 "v2.1.0"
+ */
+export function getCurrentVersionText(): string {
+	return formatVersionDisplay(getCurrentVersionName())
+}
+
+/**
+ * 获取更新说明格式化文本
+ * @param desc 更新说明原文
+ * @returns 格式化后的更新说明
+ */
+export function formatUpdateDesc(desc: string): string {
+	if (desc == null || desc == '') {
+		return '本次更新优化了用户体验，修复了已知问题。'
+	}
+	return desc
+}

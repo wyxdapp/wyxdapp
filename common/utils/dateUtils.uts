@@ -1,0 +1,507 @@
+/**
+ * 日期工具函数
+ * 统一处理日期生成、格式化等逻辑
+ */
+
+import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY, MS_PER_WEEK } from '@/common/config/dateConstants.uts'
+import { CHAR_CODE_0, CHAR_CODE_9 } from '@/common/config/charCodes.uts'
+
+// 日期项类（UTS 规范：使用 class 而非 interface）
+export class DateItem {
+	value: string = ''  // 完整日期：YYYY-MM-DD
+	date: string = ''   // 显示日期：MM-DD
+	label: string = ''  // 标签：今天、明天等
+	y: string = ''      // 年份
+	
+	constructor(value: string, date: string, label: string, y: string) {
+		this.value = value
+		this.date = date
+		this.label = label
+		this.y = y
+	}
+}
+
+// 日期范围类（UTS 规范：使用 class 而非对象字面量类型）
+export class DateRange {
+	minDate: string = ''
+	maxDate: string = ''
+	
+	constructor(minDate: string, maxDate: string) {
+		this.minDate = minDate
+		this.maxDate = maxDate
+	}
+}
+
+// ==================== 时间格式化工具函数 ====================
+
+/**
+ * 解析时间字符串为 Date 对象
+ * 支持多种格式：ISO 8601、yyyy-MM-dd HH:mm:ss、yyyy/MM/dd HH:mm:ss、时间戳
+ * @param timeStr 时间字符串或时间戳
+ * @returns Date 对象或 null
+ */
+export function parseTimeString(timeStr: string): Date | null {
+	if (timeStr == null || timeStr == '') return null
+	
+	try {
+		// 检查是否是纯数字（时间戳）
+		const trimmedStr = timeStr.trim()
+		
+		// 判断是否为时间戳（纯数字）
+		let isTimestamp = true
+		for (let i = 0; i < trimmedStr.length; i = i + 1) {
+			const charCodeVal = trimmedStr.charCodeAt(i)
+			// charCodeAt 返回 Number?，需要处理可空类型
+			if (charCodeVal == null) {
+				isTimestamp = false
+				break
+			}
+			const charCode = charCodeVal as number
+			// 0-9 的 ASCII 码是 CHAR_CODE_0-CHAR_CODE_9
+			if (charCode < CHAR_CODE_0 || charCode > CHAR_CODE_9) {
+				isTimestamp = false
+				break
+			}
+		}
+		
+		if (isTimestamp == true && trimmedStr.length > 0) {
+			const timestamp = parseInt(trimmedStr)
+			if (isNaN(timestamp) == false) {
+				// 判断是秒级还是毫秒级时间戳
+				// 秒级时间戳通常是 10 位，毫秒级是 13 位
+				if (trimmedStr.length <= 10) {
+					// 秒级时间戳，转换为毫秒
+					return new Date(timestamp * 1000)
+				} else {
+					// 毫秒级时间戳
+					return new Date(timestamp)
+				}
+			}
+		}
+		
+		// 处理 ISO 8601 格式（带 T 和 Z）
+		if (timeStr.indexOf('T') >= 0) {
+			const date = new Date(timeStr)
+			// 检查日期是否有效
+			if (isNaN(date.getTime()) == false) {
+				return date
+			}
+			return null
+		}
+		
+		// 处理 yyyy-MM-dd HH:mm:ss 格式（将 - 替换为 / 以兼容 iOS）
+		const normalizedStr = timeStr.replace(/-/g, '/')
+		const date = new Date(normalizedStr)
+		
+		// 检查日期是否有效
+		if (isNaN(date.getTime()) == false) {
+			return date
+		}
+		
+		return null
+	} catch (e) {
+		return null
+	}
+}
+
+/**
+ * 格式化时间为相对时间（用于消息列表、通知等）
+ * 规则：
+ * - 1分钟内：刚刚
+ * - 1小时内：X分钟前
+ * - 今天：今天 HH:mm
+ * - 昨天：昨天 HH:mm
+ * - 7天内：X天前
+ * - 超过7天：MM-DD 或 YYYY-MM-DD（跨年）
+ * @param timeStr 时间字符串
+ * @returns 格式化后的时间字符串
+ */
+export function formatRelativeTime(timeStr: string): string {
+	if (timeStr == null || timeStr == '') return ''
+	
+	// 如果已经是格式化的字符串，直接返回
+	if (timeStr.indexOf('前') >= 0 || timeStr.indexOf('刚刚') >= 0) {
+		return timeStr
+	}
+	
+	const date = parseTimeString(timeStr)
+	if (date == null) return ''
+	
+	// 检查日期是否有效
+	if (isNaN(date.getTime()) == true) return ''
+	
+	const now = new Date()
+	const diff = now.getTime() - date.getTime()
+	
+	// 处理未来时间（可能是时区问题）
+	if (diff < 0) {
+		return '刚刚'
+	}
+	
+	// 小于1分钟
+	if (diff < MS_PER_MINUTE) {
+		return '刚刚'
+	}
+	
+	// 小于1小时
+	if (diff < MS_PER_HOUR) {
+		const minutes = Math.floor(diff / MS_PER_MINUTE)
+		return minutes.toString() + '分钟前'
+	}
+	
+	// 今天
+	if (date.toDateString() == now.toDateString()) {
+		const hours = date.getHours()
+		let minutes = date.getMinutes().toString()
+		if (minutes.length < 2) {
+			minutes = '0' + minutes
+		}
+		return '今天 ' + hours.toString() + ':' + minutes
+	}
+	
+	// 昨天
+	const yesterday = new Date(now)
+	yesterday.setDate(yesterday.getDate() - 1)
+	if (date.toDateString() == yesterday.toDateString()) {
+		const hours = date.getHours()
+		let minutes = date.getMinutes().toString()
+		if (minutes.length < 2) {
+			minutes = '0' + minutes
+		}
+		return '昨天 ' + hours.toString() + ':' + minutes
+	}
+	
+	// 7天内
+	if (diff < MS_PER_WEEK) {
+		const days = Math.floor(diff / MS_PER_DAY)
+		return days.toString() + '天前'
+	}
+	
+	// 超过7天
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	
+	// 检查年月日是否有效
+	if (isNaN(year) == true || isNaN(month) == true || isNaN(day) == true) {
+		return ''
+	}
+	
+	let monthStr = month.toString()
+	if (monthStr.length < 2) {
+		monthStr = '0' + monthStr
+	}
+	let dayStr = day.toString()
+	if (dayStr.length < 2) {
+		dayStr = '0' + dayStr
+	}
+	
+	// 跨年显示年份
+	if (year != now.getFullYear()) {
+		return year.toString() + '-' + monthStr + '-' + dayStr
+	}
+	
+	return monthStr + '-' + dayStr
+}
+
+/**
+ * 格式化时间为聊天消息时间（用于聊天详情页）
+ * 规则：
+ * - 今天：HH:mm
+ * - 昨天：昨天 HH:mm
+ * - 本周：周X HH:mm
+ * - 本年：MM-DD HH:mm
+ * - 跨年：YYYY-MM-DD HH:mm
+ * @param timeStr 时间字符串
+ * @returns 格式化后的时间字符串
+ */
+export function formatChatTime(timeStr: string): string {
+	if (timeStr == null || timeStr == '') return ''
+	
+	const date = parseTimeString(timeStr)
+	if (date == null) return ''
+	
+	// 检查日期是否有效
+	if (isNaN(date.getTime()) == true) return ''
+	
+	const now = new Date()
+	
+	// 格式化时分
+	const hours = date.getHours()
+	const minutesNum = date.getMinutes()
+	
+	// 检查是否有效
+	if (isNaN(hours) == true || isNaN(minutesNum) == true) return ''
+	
+	let minutes = minutesNum.toString()
+	if (minutes.length < 2) {
+		minutes = '0' + minutes
+	}
+	const timePartStr = hours.toString() + ':' + minutes
+	
+	// 今天
+	if (date.toDateString() == now.toDateString()) {
+		return timePartStr
+	}
+	
+	// 昨天
+	const yesterday = new Date(now)
+	yesterday.setDate(yesterday.getDate() - 1)
+	if (date.toDateString() == yesterday.toDateString()) {
+		return '昨天 ' + timePartStr
+	}
+	
+	// 本周（7天内）
+	const diff = now.getTime() - date.getTime()
+	if (diff >= 0 && diff < MS_PER_WEEK) {
+		const weekDays: Array<string> = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+		const dayOfWeek = date.getDay()
+		if (dayOfWeek >= 0 && dayOfWeek < 7) {
+			return weekDays[dayOfWeek] + ' ' + timePartStr
+		}
+	}
+	
+	// 格式化日期部分
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	
+	// 检查是否有效
+	if (isNaN(year) == true || isNaN(month) == true || isNaN(day) == true) return ''
+	
+	let monthStr = month.toString()
+	if (monthStr.length < 2) {
+		monthStr = '0' + monthStr
+	}
+	let dayStr = day.toString()
+	if (dayStr.length < 2) {
+		dayStr = '0' + dayStr
+	}
+	
+	// 跨年显示年份
+	if (year != now.getFullYear()) {
+		return year.toString() + '-' + monthStr + '-' + dayStr + ' ' + timePartStr
+	}
+	
+	return monthStr + '-' + dayStr + ' ' + timePartStr
+}
+
+/**
+ * 格式化时间为完整日期时间（用于详情页、订单等）
+ * 格式：YYYY-MM-DD HH:mm:ss
+ * @param timeStr 时间字符串
+ * @returns 格式化后的时间字符串
+ */
+export function formatFullDateTime(timeStr: string): string {
+	if (timeStr == null || timeStr == '') return ''
+	
+	const date = parseTimeString(timeStr)
+	if (date == null) return ''
+	
+	// 检查日期是否有效
+	if (isNaN(date.getTime()) == true) return ''
+	
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	const hours = date.getHours()
+	const minutes = date.getMinutes()
+	const seconds = date.getSeconds()
+	
+	// 检查是否有效
+	if (isNaN(year) == true || isNaN(month) == true || isNaN(day) == true ||
+		isNaN(hours) == true || isNaN(minutes) == true || isNaN(seconds) == true) {
+		return ''
+	}
+	
+	let monthStr = month.toString()
+	if (monthStr.length < 2) {
+		monthStr = '0' + monthStr
+	}
+	let dayStr = day.toString()
+	if (dayStr.length < 2) {
+		dayStr = '0' + dayStr
+	}
+	let hoursStr = hours.toString()
+	if (hoursStr.length < 2) {
+		hoursStr = '0' + hoursStr
+	}
+	let minutesStr = minutes.toString()
+	if (minutesStr.length < 2) {
+		minutesStr = '0' + minutesStr
+	}
+	let secondsStr = seconds.toString()
+	if (secondsStr.length < 2) {
+		secondsStr = '0' + secondsStr
+	}
+	
+	return year.toString() + '-' + monthStr + '-' + dayStr + ' ' + hoursStr + ':' + minutesStr + ':' + secondsStr
+}
+
+/**
+ * 格式化时间为简短日期时间（用于列表等）
+ * 格式：YYYY-MM-DD HH:mm
+ * @param timeStr 时间字符串
+ * @returns 格式化后的时间字符串
+ */
+export function formatShortDateTime(timeStr: string): string {
+	if (timeStr == null || timeStr == '') return ''
+	
+	const date = parseTimeString(timeStr)
+	if (date == null) return ''
+	
+	// 检查日期是否有效
+	if (isNaN(date.getTime()) == true) return ''
+	
+	const year = date.getFullYear()
+	const month = date.getMonth() + 1
+	const day = date.getDate()
+	const hours = date.getHours()
+	const minutes = date.getMinutes()
+	
+	// 检查是否有效
+	if (isNaN(year) == true || isNaN(month) == true || isNaN(day) == true ||
+		isNaN(hours) == true || isNaN(minutes) == true) {
+		return ''
+	}
+	
+	let monthStr = month.toString()
+	if (monthStr.length < 2) {
+		monthStr = '0' + monthStr
+	}
+	let dayStr = day.toString()
+	if (dayStr.length < 2) {
+		dayStr = '0' + dayStr
+	}
+	let hoursStr = hours.toString()
+	if (hoursStr.length < 2) {
+		hoursStr = '0' + hoursStr
+	}
+	let minutesStr = minutes.toString()
+	if (minutesStr.length < 2) {
+		minutesStr = '0' + minutesStr
+	}
+	
+	return year.toString() + '-' + monthStr + '-' + dayStr + ' ' + hoursStr + ':' + minutesStr
+}
+
+/**
+ * 获取当前时间的格式化字符串
+ * 格式：YYYY-MM-DD HH:mm:ss
+ * @returns 当前时间字符串
+ */
+export function getCurrentTimeString(): string {
+	const now = new Date()
+	const year = now.getFullYear()
+	const month = now.getMonth() + 1
+	const day = now.getDate()
+	const hours = now.getHours()
+	const minutes = now.getMinutes()
+	const seconds = now.getSeconds()
+	
+	let monthStr = month.toString()
+	if (monthStr.length < 2) {
+		monthStr = '0' + monthStr
+	}
+	let dayStr = day.toString()
+	if (dayStr.length < 2) {
+		dayStr = '0' + dayStr
+	}
+	let hoursStr = hours.toString()
+	if (hoursStr.length < 2) {
+		hoursStr = '0' + hoursStr
+	}
+	let minutesStr = minutes.toString()
+	if (minutesStr.length < 2) {
+		minutesStr = '0' + minutesStr
+	}
+	let secondsStr = seconds.toString()
+	if (secondsStr.length < 2) {
+		secondsStr = '0' + secondsStr
+	}
+	
+	return year.toString() + '-' + monthStr + '-' + dayStr + ' ' + hoursStr + ':' + minutesStr + ':' + secondsStr
+}
+
+/**
+ * 生成日期列表
+ * @param days 生成未来多少天的日期，默认 7 天
+ * @param startDate 起始日期，默认为今天
+ * @returns 日期列表
+ */
+export function generateDateList(days: number = 7, startDate?: Date): Array<DateItem> {
+	const dates: Array<DateItem> = []
+	const today = startDate != null ? startDate : new Date()
+	const labels: string[] = ['今天', '明天', '后天']
+	const labelsArr = labels as Array<string>
+	
+	for (let i = 0; i < days; i = i + 1) {
+		const date = new Date(today)
+		date.setDate(date.getDate() + i)
+		
+		const year = date.getFullYear()
+		const monthNum = date.getMonth() + 1
+		const monthStr = monthNum < 10 ? ('0' + monthNum.toString()) : monthNum.toString()
+		const dayNum = date.getDate()
+		const dayStr = dayNum < 10 ? ('0' + dayNum.toString()) : dayNum.toString()
+		
+		const labelVal = (i < labelsArr.length) ? labelsArr[i] : ''
+		
+		// UTS 规范：使用 class 构造函数创建对象
+		const dateItem = new DateItem(
+			year.toString() + '-' + monthStr + '-' + dayStr,
+			monthStr + '-' + dayStr,
+			labelVal,
+			year.toString()
+		)
+		dates.push(dateItem)
+	}
+	
+	return dates
+}
+
+/**
+ * 格式化日期标签
+ * @param date 日期对象
+ * @param index 索引（0=今天，1=明天，2=后天）
+ * @returns 日期标签
+ */
+export function formatDateLabel(date: Date, index: number): string {
+	const labels: string[] = ['今天', '明天', '后天']
+	const labelsArr = labels as Array<string>
+	if (index >= 0 && index < labelsArr.length) {
+		return labelsArr[index]
+	}
+	return ''
+}
+
+/**
+ * 格式化日期为 YYYY-MM-DD
+ * @param date 日期对象
+ * @returns 格式化后的日期字符串
+ */
+export function formatDate(date: Date): string {
+	const year = date.getFullYear()
+	const monthNum = date.getMonth() + 1
+	const monthStr = monthNum < 10 ? ('0' + monthNum.toString()) : monthNum.toString()
+	const dayNum = date.getDate()
+	const dayStr = dayNum < 10 ? ('0' + dayNum.toString()) : dayNum.toString()
+	return year.toString() + '-' + monthStr + '-' + dayStr
+}
+
+/**
+ * 获取日期范围
+ * @param days 未来多少天
+ * @returns 最小日期和最大日期
+ */
+export function getDateRange(days: number = 30): DateRange {
+	const today = new Date()
+	const minDate = formatDate(today)
+	
+	const maxDateObj = new Date(today)
+	maxDateObj.setDate(maxDateObj.getDate() + days)
+	const maxDate = formatDate(maxDateObj)
+	
+	return new DateRange(minDate, maxDate)
+}
+

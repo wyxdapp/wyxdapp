@@ -1,0 +1,91 @@
+import { request } from '@/utils/request'
+
+/**
+ * 获取会话列表
+ */
+export const getConversations = (params: {
+  userId: string
+  page: number
+  size: number
+}) => {
+  return request.get(`/chat/conversations?userId=${params.userId}&page=${params.page}&size=${params.size}`, null, false)
+}
+
+/**
+ * 删除会话
+ */
+export const deleteConversation = (params: {
+  userId: string
+  conversationId: string
+}) => {
+  return request.post(`/chat/conversation/delete?userId=${params.userId}&conversationId=${params.conversationId}`, {}, false)
+}
+
+/**
+ * 置顶/取消置顶会话
+ */
+export const pinConversation = (params: {
+  userId: string
+  targetUserId: string
+  pin: boolean
+}) => {
+  return request.post(`/chat/conversation/pin?userId=${params.userId}&targetUserId=${params.targetUserId}&pin=${params.pin}`, {}, false)
+}
+
+/**
+ * 标记会话已读
+ */
+export const markConversationRead = (params: {
+  fromUserId: string
+  toUserId: string
+}) => {
+  return request.post(`/chat/read/conversation?fromUserId=${encodeURIComponent(params.fromUserId)}&toUserId=${encodeURIComponent(params.toUserId)}`, {}, false)
+}
+
+/**
+ * 获取消息提醒数量
+ */
+export const getMessageReminderCount = (params: {
+  userKid: string
+}) => {
+  return request.post('/support/messageReminder/v1/queryReminderCount', params, false)
+}
+
+/**
+ * 重置消息提醒数量
+ */
+export const resetMessageReminderCount = (params: {
+  userKid: string
+  reminderType: number  // 10:关注 20:点赞 30:评论 40:访客
+}) => {
+  return request.post('/support/messageReminder/resetReminderCount', params, false)
+}
+
+/**
+ * 获取订单通知未读数
+ */
+export const getUnreadOrderNotifications = (params: {
+  userId: string
+}) => {
+  return request.get(`/order/notifications/unread/count?userId=${params.userId}`, null, false)
+}
+
+/**
+ * 标记所有订单通知已读
+ */
+export const markAllNotificationsRead = (params: {
+  userId: string
+}) => {
+  return request.post('/order/notifications/mark-all-read', params, false)
+}
+
+export default {
+  getConversations,
+  deleteConversation,
+  pinConversation,
+  markConversationRead,
+  getMessageReminderCount,
+  resetMessageReminderCount,
+  getUnreadOrderNotifications,
+  markAllNotificationsRead
+}

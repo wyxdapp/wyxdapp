@@ -1,0 +1,353 @@
+/**
+ * 聊天消息增量同步管理器
+ * 负责本地消息与服务端消息的增量同步、间隙检测和全量回退
+ */
+
+import { getHistoryMessages, GetHistoryParams } from '@/api/chat'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import {
+	getObjString,
+	getAnyString,
+	convertApiMessageToLocal,
+	reverseMessages
+} from '@/common/utils/messageHelper.uts'
+import { chatLocalStorageManager,
+	conversationMetaStore,
+	ConversationMeta
+} from '@/common/services/chatLocalStorage.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ============================================================
+// ChatSyncManager - 增量同步管理器
+// ============================================================
+
+export class ChatSyncManager {
+
+	/**
+	 * 执行增量同步
+	 */
+	async syncIncremental(
+		fromUserId: string,
+		toUserId: string
+	): Promise<Array<any>> {
+		// 获取本地消息
+		const localMessages = chatLocalStorageManager.loadConversationMessages(fromUserId, toUserId)
+
+		// 如果本地无消息，直接全量拉取第一页
+		if (localMessages.length == 0) {
+			try {
+				const result = await this.syncFullPage(fromUserId, toUserId, 1, 20)
+				const resultJson = JSON.stringify(result)
+				const resultObj = JSON.parse(resultJson) as UTSJSONObject
+				const messagesVal = resultObj.get('messages')
+				let newMessages: Array<any> = []
+				if (messagesVal != null && Array.isArray(messagesVal) == true) {
+					newMessages = messagesVal as Array<any>
+				}
+				// 应用 clearAt 过滤
+				newMessages = this.filterMessagesByClearAt(newMessages, fromUserId, toUserId)
+				return newMessages
+			} catch (err) {
+				handleSilentError(err, '增量同步(首次全量拉取)')
+				return [] as Array<any>
+			}
+		}
+
+		// 拉取第一页最新消息
+		const params = new GetHistoryParams()
+		params.fromUserId = fromUserId
+		params.toUserId = toUserId
+		params.page = 1
+		params.size = 20
+		// 传递 clearAt 给服务端（后端支持后可在服务端过滤）
+		const syncKey = chatLocalStorageManager.getConversationKey(fromUserId, toUserId)
+		if (syncKey != '') {
+			const syncMeta = conversationMetaStore.getMeta(syncKey)
+			if (syncMeta != null && syncMeta.clearAt > 0) {
+				params.sinceTime = syncMeta.clearAt
+			}
+		}
+
+		try {
+			const res = await getHistoryMessages(params)
+			const resObj = toJsonObj(res)
+			const codeVal = (resObj != null) ? getObjString(resObj, 'code') : ''
+
+			if (codeVal != '200') {
+				console.error('❌ [ChatSyncManager] 增量同步失败: code=' + codeVal)
+				return [] as Array<any>
+			}
+
+			const dataVal = (resObj != null) ? resObj.get('data') : null
+			const dataObj = toJsonObj(dataVal)
+			const listVal = (dataObj != null) ? dataObj.get('list') : null
+
+			// 解析服务端消息
+			const serverMessages = this.parseServerMessages(listVal)
+
+			if (serverMessages.length == 0) {
+				return [] as Array<any>
+			}
+
+			// 后端返回降序（最新在前），反转为升序
+			const sortedServerMessages = reverseMessages(serverMessages)
+
+			// 检测间隙
+			const hasGap = this.detectGap(localMessages, sortedServerMessages)
+
+			if (hasGap == true) {
+				// 有间隙：用服务端第一页数据替换本地
+				console.log('⚠️ [ChatSyncManager] 检测到消息间隙，使用服务端数据替换')
+				// 应用 clearAt 过滤
+				const filteredServerMessages = this.filterMessagesByClearAt(sortedServerMessages, fromUserId, toUserId)
+				chatLocalStorageManager.saveMessages(fromUserId, toUserId, filteredServerMessages)
+				return filteredServerMessages
+			} else {
+				// 无间隙：合并去重
+				const rawNewMessages = this.mergeAndDeduplicate(localMessages, sortedServerMessages)
+				// 应用 clearAt 过滤
+				const newMessages = this.filterMessagesByClearAt(rawNewMessages, fromUserId, toUserId)
+				if (newMessages.length > 0) {
+					// 合并后的完整列表
+					const merged: Array<any> = []
+					for (let i = 0; i < localMessages.length; i = i + 1) {
+						merged.push(localMessages[i])
+					}
+					for (let i = 0; i < newMessages.length; i = i + 1) {
+						merged.push(newMessages[i])
+					}
+					chatLocalStorageManager.saveMessages(fromUserId, toUserId, merged)
+				}
+				// 更新同步时间
+				const key = chatLocalStorageManager.getConversationKey(fromUserId, toUserId)
+				const meta = conversationMetaStore.getMeta(key)
+				if (meta != null) {
+					meta.lastSyncTime = Date.now()
+					conversationMetaStore.updateMeta(meta)
+				}
+				return newMessages
+			}
+		} catch (err) {
+			handleSilentError(err, '增量同步请求')
+			return [] as Array<any>
+		}
+	}
+
+	/**
+	 * 全量拉取指定页消息
+	 */
+	async syncFullPage(
+		fromUserId: string,
+		toUserId: string,
+		page: number,
+		size: number
+	): Promise<any> {
+		const params = new GetHistoryParams()
+		params.fromUserId = fromUserId
+		params.toUserId = toUserId
+		params.page = page
+		params.size = size
+		// 传递 clearAt 给服务端（后端支持后可在服务端过滤）
+		const fullPageKey = chatLocalStorageManager.getConversationKey(fromUserId, toUserId)
+		if (fullPageKey != '') {
+			const fullPageMeta = conversationMetaStore.getMeta(fullPageKey)
+			if (fullPageMeta != null && fullPageMeta.clearAt > 0) {
+				params.sinceTime = fullPageMeta.clearAt
+			}
+		}
+
+		try {
+			const res = await getHistoryMessages(params)
+			const resObj = toJsonObj(res)
+			const codeVal = (resObj != null) ? getObjString(resObj, 'code') : ''
+
+			if (codeVal != '200') {
+				return { messages: [] as Array<any>, hasMore: false } as any
+			}
+
+			const dataVal = (resObj != null) ? resObj.get('data') : null
+			const dataObj = toJsonObj(dataVal)
+			const listVal = (dataObj != null) ? dataObj.get('list') : null
+
+			const serverMessages = this.parseServerMessages(listVal)
+			const sortedMessages = reverseMessages(serverMessages)
+
+			// 应用 clearAt 过滤
+			const filteredMessages = this.filterMessagesByClearAt(sortedMessages, fromUserId, toUserId)
+
+			// 保存到本地
+			if (page == 1 && filteredMessages.length > 0) {
+				chatLocalStorageManager.saveMessages(fromUserId, toUserId, filteredMessages)
+			}
+
+			// 判断是否还有更多
+			let hasMore = false
+			const hasNextVal = (dataObj != null) ? dataObj.get('hasNext') : null
+			if (hasNextVal != null) {
+				hasMore = hasNextVal == true
+			} else {
+				hasMore = serverMessages.length == size
+			}
+
+			return { messages: filteredMessages, hasMore: hasMore } as any
+		} catch (err) {
+			handleSilentError(err, '全量拉取消息')
+			return { messages: [] as Array<any>, hasMore: false } as any
+		}
+	}
+
+
+	/**
+	 * 检测消息间隙
+	 * 如果服务端最早消息的时间 > 本地最新消息的时间，且没有重叠的消息ID，则存在间隙
+	 */
+	detectGap(
+		localMessages: Array<any>,
+		serverMessages: Array<any>
+	): boolean {
+		if (localMessages.length == 0 || serverMessages.length == 0) {
+			return false
+		}
+
+		// 找到本地最新消息时间
+		let localLatestTime = ''
+		for (let i = 0; i < localMessages.length; i = i + 1) {
+			const t = getAnyString(localMessages[i], 'createTime')
+			if (t > localLatestTime) {
+				localLatestTime = t
+			}
+		}
+
+		// 找到服务端最早消息时间
+		let serverEarliestTime = ''
+		for (let i = 0; i < serverMessages.length; i = i + 1) {
+			const t = getAnyString(serverMessages[i], 'createTime')
+			if (serverEarliestTime == '' || t < serverEarliestTime) {
+				serverEarliestTime = t
+			}
+		}
+
+		// 如果服务端最早时间不晚于本地最新时间，说明有重叠，无间隙
+		if (serverEarliestTime <= localLatestTime) {
+			return false
+		}
+
+		// 服务端最早时间 > 本地最新时间，检查是否有重叠的消息ID
+		const localIds: Array<string> = []
+		for (let i = 0; i < localMessages.length; i = i + 1) {
+			const id = getAnyString(localMessages[i], 'id')
+			if (id != '') {
+				localIds.push(id)
+			}
+		}
+
+		for (let i = 0; i < serverMessages.length; i = i + 1) {
+			const serverId = getAnyString(serverMessages[i], 'id')
+			if (serverId != '') {
+				for (let j = 0; j < localIds.length; j = j + 1) {
+					if (localIds[j] == serverId) {
+						// 有重叠ID，无间隙
+						return false
+					}
+				}
+			}
+		}
+
+		// 时间不连续且无重叠ID，存在间隙
+		return true
+	}
+
+	// ============================================================
+	// 私有方法
+	// ============================================================
+
+	/**
+	 * 根据 clearAt 过滤消息，丢弃 createTime <= clearAt 的消息
+	 * clearAt == 0 时不过滤，返回原列表
+	 */
+	private filterMessagesByClearAt(
+		messages: Array<any>,
+		fromUserId: string,
+		toUserId: string
+	): Array<any> {
+		const convKey = chatLocalStorageManager.getConversationKey(fromUserId, toUserId)
+		if (convKey == '') return messages
+		const meta = conversationMetaStore.getMeta(convKey)
+		if (meta == null || meta.clearAt <= 0) return messages
+
+		const clearAt = meta.clearAt
+		const filtered: Array<any> = []
+		for (let i = 0; i < messages.length; i = i + 1) {
+			const msg = messages[i]
+			const createTimeStr = getAnyString(msg, 'createTime')
+			if (createTimeStr != '') {
+				const createTimeMs = Date.parse(createTimeStr)
+				if (isNaN(createTimeMs) == false && createTimeMs <= clearAt) {
+					continue
+				}
+			}
+			filtered.push(msg)
+		}
+		return filtered
+	}
+
+	/**
+	 * 解析服务端返回的消息列表
+	 */
+	private parseServerMessages(listVal: any | null): Array<any> {
+		const result: Array<any> = []
+		if (listVal == null || Array.isArray(listVal) == false) {
+			return result
+		}
+		const dataArr = listVal as Array<any>
+		for (let i = 0; i < dataArr.length; i = i + 1) {
+			const msgItem = dataArr[i]
+			if (msgItem == null) continue
+			const msgObj = toJsonObj(msgItem)
+			if (msgObj != null) {
+				const localMsg = convertApiMessageToLocal(msgObj)
+				result.push(localMsg)
+			}
+		}
+		return result
+	}
+
+	/**
+	 * 合并去重：返回 serverMessages 中不在 localMessages 里的新消息
+	 */
+	private mergeAndDeduplicate(
+		localMessages: Array<any>,
+		serverMessages: Array<any>
+	): Array<any> {
+		// 收集本地消息ID
+		const localIds: Array<string> = []
+		for (let i = 0; i < localMessages.length; i = i + 1) {
+			const id = getAnyString(localMessages[i], 'id')
+			if (id != '') {
+				localIds.push(id)
+			}
+		}
+
+		// 过滤出新消息
+		const newMessages: Array<any> = []
+		for (let i = 0; i < serverMessages.length; i = i + 1) {
+			const serverId = getAnyString(serverMessages[i], 'id')
+			if (serverId == '') continue
+			let found = false
+			for (let j = 0; j < localIds.length; j = j + 1) {
+				if (localIds[j] == serverId) {
+					found = true
+					break
+				}
+			}
+			if (found == false) {
+				newMessages.push(serverMessages[i])
+				localIds.push(serverId)
+			}
+		}
+		return newMessages
+	}
+}
+
+// 创建全局单例
+export const chatSyncManager = new ChatSyncManager()

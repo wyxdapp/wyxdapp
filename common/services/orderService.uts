@@ -1,0 +1,225 @@
+﻿/**
+ * 订单模块服务 API
+ * 
+ * ⚠️ 重要：此文件已从 pagesTrade/services/ 移动到 common/services/
+ * 原因：解决微信小程序跨分包引用限制
+ * - pagesUser 不能直接引用 pagesTrade
+ * - 将共享服务移到主包，所有分包都可以引用
+ */
+import { request } from '@/utils/request'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+
+// 辅助函数：将任意值转换为 UTSJSONObject (使用通用工具)
+
+// 辅助函数：从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 辅助函数：从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+/**
+ * 获取支出订单列表（游客端）
+ */
+export const getExpenditureList = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/queryOrderList', data, false)
+}
+
+/**
+ * 获取收入订单列表（向导端）
+ */
+export const getIncomeList = (data: UTSJSONObject) => {
+	return request.post('/order/guide/queryGuideAcceptOrder', data, false)
+}
+
+/**
+ * 创建向导订单
+ */
+export const setGuiderOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/createFreeTravelOrder', data, false)
+}
+
+/**
+ * 创建定制订单
+ */
+export const setRouteOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/createOrder', data, false)
+}
+
+/**
+ * 获取订单详情
+ */
+export const getGuiderOrderInfo = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/queryOrderDetails', data, false)
+}
+
+/**
+ * 取消订单
+ */
+export const setOrderCancel = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const orderKidVal = getObjString(dataObj, 'orderKid')
+	return request.post('/order/tourist/cancelOrder?orderKid=' + orderKidVal, data, false)
+}
+
+/**
+ * 申请退款
+ */
+export const applyOrderRefound = (data: UTSJSONObject, userKid: string) => {
+	return request.post('/order/refund/applyRefund?userKid=' + userKid, data, false)
+}
+
+/**
+ * 撤销退款申请
+ */
+export const cancelRefund = (data: UTSJSONObject) => {
+	return request.post('/order/refund/cancelRefund', data, false)
+}
+
+/**
+ * 查询退款详情（根据订单ID）
+ */
+export const queryRefundDetail = (data: UTSJSONObject) => {
+	return request.post('/order/refund/queryRefundDetail', data, false)
+}
+
+/**
+ * 删除订单
+ */
+export const delOrderInfo = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/deleteOrder', data, false)
+}
+
+/**
+ * 完成订单
+ */
+export const setOrderComplete = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const orderKidVal = getObjString(dataObj, 'orderKid')
+	return request.post('/order/tourist/completeOrder?orderKid=' + orderKidVal, data, false)
+}
+
+/**
+ * 接受订单（向导端）
+ */
+export const guiderAcceptOrder = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const orderKidVal = getObjString(dataObj, 'orderKid')
+	return request.post('/order/guide/acceptTouristOrder?orderKid=' + orderKidVal, data, false)
+}
+
+/**
+ * 拒绝订单（向导端）
+ */
+export const guiderRejectOrder = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const orderKidVal = getObjString(dataObj, 'orderKid')
+	return request.post('/order/guide/refuseTouristOrder?orderKid=' + orderKidVal, data, false)
+}
+
+/**
+ * 评价订单
+ */
+export const setTravelAppraise = (data: UTSJSONObject) => {
+	return request.post('/behavior/evaluate/addEvaluate', data, false)
+}
+
+/**
+ * 同意退款（向导端）
+ */
+export const guiderAcceptRefound = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const refundKidVal = getObjString(dataObj, 'refundKid')
+	return request.post('/order/refund/agreeTouristRefund?refundKid=' + refundKidVal, data, false)
+}
+
+/**
+ * 拒绝退款（向导端）
+ */
+export const guiderRejectRefound = (data: UTSJSONObject) => {
+	const dataObj = toJsonObj(data)
+	const refundKidVal = getObjString(dataObj, 'refundKid')
+	return request.post('/order/refund/guideRefuseApplyRefund?refundKid=' + refundKidVal, data, false)
+}
+
+/**
+ * 修改订单价格（向导端）
+ */
+export const updateGuiderOrderPrice = (data: UTSJSONObject) => {
+	return request.post('/order/guide/updateOrderPrice', data, false)
+}
+
+/**
+ * 发布抢单
+ */
+export const setGrabOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/createGrabOrder', data, false)
+}
+
+/**
+ * 修改抢单
+ */
+export const updateGrabOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/updateGrabOrder', data, false)
+}
+
+/**
+ * 抢单列表
+ */
+export const grabOrderList = (data: UTSJSONObject) => {
+	return request.post('/order/guide/queryGrabOrder', data, false)
+}
+
+/**
+ * 抢单（向导端）
+ */
+export const guiderGrabOrder = (data: UTSJSONObject) => {
+	return request.post('/order/guide/grabOrder', data, false)
+}
+
+/**
+ * 创建VIP会员订单
+ */
+export const createVipOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/createVipOrder', data, false)
+}
+
+/**
+ * 创建礼物订单
+ */
+export const createGiftOrder = (data: UTSJSONObject) => {
+	return request.post('/order/tourist/createGiftOrder', data, false)
+}
+
+
+/**
+ * 创建抽奖订单参数接口（用于类型转换）
+ */
+export interface CreateLotteryOrderParams {
+	userKid: string
+	drawCount: number
+	totalMoney: number
+}
+
+/**
+ * 创建抽奖订单
+ */
+export const createLotteryOrder = (data: UTSJSONObject, idempotencyKey: string) => {
+	return request.post('/order/tourist/createLotteryOrder', data, false)
+}

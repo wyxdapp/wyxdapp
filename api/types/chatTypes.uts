@@ -1,0 +1,107 @@
+/**
+ * 聊天模块 API 类型定义
+ * 对应 API 文件: api/chat.uts
+ */
+
+// ========== 请求参数类型 ==========
+
+// 获取历史消息参数
+export class GetHistoryParams {
+	fromUserId: string = ''
+	toUserId: string = ''
+	page: number = 1
+	size: number = 20
+	sinceTime: number = 0
+}
+
+// 获取会话列表参数
+export class GetConversationsParams {
+	userId: string = ''
+	page: number = 1
+	size: number = 20
+}
+
+// 标记已读参数
+export class MarkReadParams {
+	fromUserId: string = ''
+	toUserId: string = ''
+}
+
+// 获取聊天 Token 参数
+export class GetChatTokenParams {
+	userId: string = ''
+}
+
+// 删除会话参数
+export class DeleteConversationParams {
+	userId: string = ''
+	conversationId: string = ''
+}
+
+// 置顶会话参数
+export class PinConversationParams {
+	userId: string = ''
+	targetUserId: string = ''
+	pin: boolean = false
+}
+
+// 清空聊天记录参数
+export class ClearChatHistoryParams {
+	userId: string = ''
+	targetUserId: string = ''
+}
+
+// 获取消息提醒未读数参数
+export class GetMessageReminderCountParams {
+	userKid: string = ''
+}
+
+// 重置消息提醒参数
+export class ResetMessageReminderParams {
+	userKid: string = ''
+	reminderType: number = 0
+}
+
+// ========== 响应数据类型 ==========
+
+// 聊天消息
+export class ChatMessageData {
+	id: string = ''
+	fromUserId: string = ''
+	toUserId: string = ''
+	messageType: number = 1
+	content: string = ''
+	mediaUrl: string = ''
+	thumbUrl: string = ''
+	duration: number = 0
+	createTime: string = ''
+	isRead: number = 0
+}
+
+// 会话信息
+export class ConversationData {
+	conversationId: string = ''
+	targetUserId: string = ''
+	targetUserName: string = ''
+	targetUserAvatar: string = ''
+	lastMessage: string = ''
+	lastMessageTime: string = ''
+	unreadCount: number = 0
+	messageType: number = 0
+	isTop: boolean = false
+	topTime: string = ''
+}
+
+// 获取聊天 Token 响应
+export class GetChatTokenResponseData {
+	token: string = ''
+	tokenType: string = ''
+}
+
+// 消息提醒未读数响应
+export class MessageReminderCountData {
+	likeReminderCount: number = 0
+	commentReminderCount: number = 0
+	follwerReminderCount: number = 0
+	visitorReminderCount: number = 0
+}

@@ -1,0 +1,126 @@
+/**
+ * 聊天模块服务 API (UTS 版本)
+ */
+import { request } from '@/utils/request'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+
+/**
+ * 获取聊天Token
+ */
+export const getChatToken = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	return request.get(`/chat/token?userId=${userId}`, null, false)
+}
+
+/**
+ * 获取历史消息
+ */
+export const getChatHistory = (data: UTSJSONObject) => {
+	const fromUserId = getString(data, 'fromUserId')
+	const toUserId = getString(data, 'toUserId')
+	const page = getNumber(data, 'page')
+	const size = getNumber(data, 'size')
+	return request.get(`/chat/history?fromUserId=${fromUserId}&toUserId=${toUserId}&page=${page}&size=${size}`, null, false)
+}
+
+/**
+ * 获取按会话分组的未读消息数
+ */
+export const getUnreadCountConversation = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	return request.get(`/chat/unread/count/conversation?userId=${userId}`, null, false)
+}
+
+/**
+ * 标记消息已读
+ */
+export const setMessageRead = (data: UTSJSONObject) => {
+	return request.post('/chat/read', data, false)
+}
+
+/**
+ * 标记会话消息已读
+ */
+export const setConversationRead = (data: UTSJSONObject) => {
+	const fromUserId = getString(data, 'fromUserId')
+	const toUserId = getString(data, 'toUserId')
+	// 参数验证
+	if (fromUserId == '' || toUserId == '') {
+		console.error('setConversationRead参数验证失败:', data)
+		return new Promise((resolve, reject) => {
+			reject(new Error('fromUserId和toUserId不能为空'))
+		})
+	}
+	
+	// 通过URL查询参数传递，body为null
+	return request.post(`/chat/read/conversation?fromUserId=${encodeURIComponent(fromUserId)}&toUserId=${encodeURIComponent(toUserId)}`, null, false)
+}
+
+/**
+ * 获取会话列表
+ */
+export const getConversations = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	const page = getNumber(data, 'page')
+	const size = getNumber(data, 'size')
+	return request.get(`/chat/conversations?userId=${userId}&page=${page}&size=${size}`, null, false)
+}
+
+/**
+ * 获取消息摘要
+ */
+export const getMessageDigest = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	const limit = getNumber(data, 'limit')
+	return request.get(`/chat/digest?userId=${userId}&limit=${limit}`, null, false)
+}
+
+/**
+ * 清除用户缓存
+ */
+export const clearChatCache = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	return request.post(`/chat/cache/clear?userId=${userId}`, null, false)
+}
+
+/**
+ * 删除会话
+ */
+export const deleteConversation = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	const conversationId = getString(data, 'conversationId')
+	return request.post(`/chat/conversation/delete?userId=${userId}&conversationId=${conversationId}`, null, false)
+}
+
+/**
+ * 置顶/取消置顶会话
+ */
+export const pinConversation = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	const targetUserId = getString(data, 'targetUserId')
+	const pinVal = data.get('pin')
+	const pinValue = (pinVal == false) ? false : true
+	return request.post(`/chat/conversation/pin?userId=${userId}&targetUserId=${targetUserId}&pin=${pinValue}`, null, false)
+}
+
+/**
+ * 获取未读汇总（消息与订单通知）
+ */
+export const getUnreadSummary = (data: UTSJSONObject) => {
+	const userId = getString(data, 'userId')
+	return request.get(`/chat/unread/summary?userId=${userId}`, null, false)
+}
+
+export default {
+	getChatToken,
+	getChatHistory,
+	getUnreadCountConversation,
+	setMessageRead,
+	setConversationRead,
+	getConversations,
+	getMessageDigest,
+	clearChatCache,
+	deleteConversation,
+	pinConversation,
+	getUnreadSummary
+}

@@ -1,0 +1,432 @@
+<template>
+	<view class="complaint-popup-container" v-if="visible == true">
+		<view class="modal-overlay" @click="handleClose"></view>
+		<view class="complaint-popup-modal">
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+
+			<view class="modal-header">
+				<text class="modal-title">举报</text>
+			</view>
+
+			<view class="modal-content">
+				<!-- 举报原因 -->
+				<view class="complaint-section">
+					<text class="section-title">举报原因</text>
+					<view class="reason-list">
+						<view
+							v-for="(reason, index) in complaintReasons"
+							:key="'reason_' + index"
+							:class="['reason-item', selectedReason == getReasonCode(reason) ? 'selected' : '']"
+							@click="handleSelectReason(getReasonCode(reason))">
+							<view class="reason-radio">
+								<view v-if="selectedReason == getReasonCode(reason)" class="reason-radio-checked">
+									<text class="check-icon">✓</text>
+								</view>
+							</view>
+							<text class="reason-text">{{ getReasonName(reason) }}</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 详细说明 -->
+				<view class="complaint-section">
+					<text class="section-title">详细说明（可选，最多200字）</text>
+					<textarea
+						class="complaint-textarea"
+						v-model="explainText"
+						placeholder="请详细描述举报原因"
+						maxlength="200"
+						:auto-height="true"
+					/>
+				</view>
+			</view>
+
+			<view class="modal-footer">
+				<view class="action-btn action-cancel" @click="handleClose">
+					<text class="action-text">取消</text>
+				</view>
+				<view 
+					class="action-btn action-submit" 
+					@click="handleSubmit" 
+					:class="{ 'action-disabled': submitting == true }"
+				>
+					<text class="action-text">{{ submitting == true ? '提交中...' : '提交' }}</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { submitComplaint } from '@/api/complaint.uts'
+import { SubmitComplaintParams } from '@/api/types/complaintTypes.uts'
+import { getNumberProp, getStringProp } from '@/common/utils/utsSafe.uts'
+import { COMPLAINT_TYPE_DEFAULT } from '@/common/config/businessCodes.uts'
+
+// 定义举报原因类型
+class ComplaintReason {
+	code: number = 0
+	name: string = ''
+	constructor(code: number, name: string) {
+		this.code = code
+		this.name = name
+	}
+}
+
+// Props定义
+const props = defineProps({
+	visible: { type: Boolean, default: false },
+	complaintType: { type: Number, default: COMPLAINT_TYPE_DEFAULT }, // 10=订单, 20=路线, 30=聊天, 40=发现
+	targetKid: { type: String, default: '' }
+})
+
+// Emits定义
+const emit = defineEmits(['update:visible', 'success', 'close'])
+
+// 响应式数据
+const selectedReason = ref<number>(0)
+const explainText = ref<string>('')
+const submitting = ref<boolean>(false)
+
+// 举报原因列表
+const complaintReasons = ref<Array<ComplaintReason>>([
+	new ComplaintReason(10, '色情低俗'),
+	new ComplaintReason(20, '暴力血腥'),
+	new ComplaintReason(30, '诈骗信息'),
+	new ComplaintReason(40, '侵权内容'),
+	new ComplaintReason(50, '广告骚扰'),
+	new ComplaintReason(60, '其他')
+])
+
+// 获取原因代码
+const getReasonCode = (reason: ComplaintReason): number => {
+	return reason.code
+}
+
+// 获取原因名称
+const getReasonName = (reason: ComplaintReason): string => {
+	return reason.name
+}
+
+// 选择举报原因
+const handleSelectReason = (code: number) => {
+	selectedReason.value = code
+}
+
+// 关闭弹窗
+const handleClose = () => {
+	emit('update:visible', false)
+	emit('close')
+	// 重置表单
+	selectedReason.value = 0
+	explainText.value = ''
+}
+
+// 提交举报
+const handleSubmit = () => {
+	// 验证举报原因
+	if (selectedReason.value == 0) {
+		uni.showToast({
+			title: '请选择举报原因',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证详细说明（如果选择了"其他"）
+	if (selectedReason.value == 60 && explainText.value == '') {
+		uni.showToast({
+			title: '请填写详细说明',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证targetKid
+	if (props.targetKid == '') {
+		uni.showToast({
+			title: '举报对象不能为空',
+			icon: 'none'
+		})
+		return
+	}
+	
+	submitting.value = true
+	
+	// 调用举报API
+	const params = new SubmitComplaintParams()
+	params.complaintType = props.complaintType
+	params.targetKid = props.targetKid
+	params.reason = selectedReason.value
+	params.explain = explainText.value
+	
+	submitComplaint(params).then((res: any) => {
+		uni.showToast({
+			title: '举报成功',
+			icon: 'success'
+		})
+		emit('success')
+		handleClose()
+	}).catch((error: any | null): void => {
+		let errorMsg = '举报失败'
+		if (error != null) {
+			const errorObj = JSON.parse(JSON.stringify(error)) as UTSJSONObject
+			const msgVal = errorObj.get('message')
+			if (msgVal != null && msgVal.toString() != '') {
+				errorMsg = msgVal.toString()
+			}
+		}
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	}).finally(() => {
+		submitting.value = false
+	})
+}
+</script>
+
+<style scoped>
+.complaint-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+	flex-direction: column;
+}
+
+.modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.complaint-popup-modal {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #FFFFFF;
+	border-top-left-radius: 32rpx;
+	border-top-right-radius: 32rpx;
+	flex-direction: column;
+	max-height: 1200rpx;
+	padding-top: 0;
+	padding-bottom: 0;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+}
+
+.close-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.close-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.modal-header {
+	padding-top: 48rpx;
+	padding-bottom: 32rpx;
+	padding-left: 0;
+	padding-right: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.modal-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.modal-content {
+	flex: 1;
+	flex-direction: column;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.complaint-section {
+	flex-direction: column;
+	margin-bottom: 40rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 24rpx;
+}
+
+.reason-list {
+	flex-direction: column;
+}
+
+.reason-item {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	background-color: #FFFFFF;
+	border-radius: 12rpx;
+	margin-bottom: 16rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #F5F5F5;
+}
+
+.reason-item:active {
+	background-color: #F8F9FA;
+}
+
+.reason-item.selected {
+	background-color: #F0F8FF;
+	border-color: #37B1F2;
+}
+
+.reason-radio {
+	width: 40rpx;
+	height: 40rpx;
+	border-radius: 20rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #DDDDDD;
+	margin-right: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.reason-radio-checked {
+	width: 40rpx;
+	height: 40rpx;
+	border-radius: 20rpx;
+	background-color: #37B1F2;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.check-icon {
+	font-size: 24rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+.reason-text {
+	font-size: 30rpx;
+	color: #333333;
+	flex: 1;
+}
+
+.reason-item.selected .reason-text {
+	color: #37B1F2;
+	font-weight: normal;
+}
+
+.complaint-textarea {
+	width: 100%;
+	min-height: 200rpx;
+	padding: 24rpx;
+	background-color: #F8F9FA;
+	border-radius: 12rpx;
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.6;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #F8F9FA;
+}
+
+.complaint-textarea:focus {
+	border-color: #37B1F2;
+	background-color: #FFFFFF;
+}
+
+.modal-footer {
+	flex-direction: row;
+	padding-top: 24rpx;
+	padding-bottom: 32rpx;
+	padding-left: 0;
+	padding-right: 0;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #EEEEEE;
+}
+
+.action-btn {
+	flex: 1;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-cancel {
+	background-color: #FFFFFF;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #EEEEEE;
+	margin-right: 24rpx;
+}
+
+.action-cancel:active {
+	background-color: #F8F9FA;
+}
+
+.action-submit {
+	background-color: #37B1F2;
+}
+
+.action-submit:active {
+	background-color: #2A9DD9;
+}
+
+.action-disabled {
+	background-color: #CCCCCC;
+}
+
+.action-text {
+	font-size: 32rpx;
+	font-weight: bold;
+}
+
+.action-cancel .action-text {
+	color: #666666;
+}
+
+.action-submit .action-text {
+	color: #FFFFFF;
+}
+</style>

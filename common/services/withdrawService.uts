@@ -1,0 +1,53 @@
+/**
+ * 提现服务 API (UTS 版本)
+ */
+import { request } from '@/utils/request'
+
+/**
+ * 获取账户余额
+ */
+export const getAccountBalance = (params: UTSJSONObject) => {
+	return request.get('/wallet/account-balance', params, false)
+}
+
+/**
+ * 获取提现账户绑定状态
+ */
+export const getCashoutBindStatus = (params: UTSJSONObject) => {
+	return request.get('/wallet/cashout-bind-status', params, false)
+}
+
+/**
+ * 绑定提现账户
+ */
+export const bindCashoutAccount = (params: UTSJSONObject) => {
+	return request.post('/wallet/bind-cashout-account', params, false)
+}
+
+/**
+ * 验证支付密码
+ */
+export const checkPayPassword = (params: UTSJSONObject) => {
+	return request.post('/user/check-pay-password', params, false)
+}
+
+/**
+ * 提交提现申请
+ */
+export const submitWithdraw = (params: UTSJSONObject) => {
+	return request.post('/wallet/cashout', params, false)
+}
+
+/**
+ * 获取提现记录
+ */
+export const getWithdrawRecords = (params: UTSJSONObject) => {
+	return request.get('/wallet/cashout-records', params, false)
+}
+
+/**
+ * 取消提现
+ */
+export const cancelWithdraw = (params: UTSJSONObject) => {
+	return request.post('/wallet/cancel-cashout', params, false)
+}

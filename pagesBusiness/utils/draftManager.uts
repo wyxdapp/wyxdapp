@@ -1,0 +1,166 @@
+/**
+ * 草稿管理器
+ * 负责本地草稿的存储、读取、清除
+ */
+
+// 草稿数据类
+export class RouteDraft {
+  homePics: Array<string> = []
+  lineTitle: string = ''
+  tripPrice: string = ''
+  lineAddress: string = ''
+  lineType: number = 20
+  departureDate: string = ''
+  routeDetail: string = ''
+  insertType: number = 0
+  createdAt: number = 0  // 创建时间戳
+  updatedAt: number = 0  // 最后修改时间戳
+  
+  constructor() {}
+}
+
+// 草稿存储的 key
+const DRAFT_STORAGE_KEY = 'route_draft'
+
+// 草稿过期时间（7天，单位：毫秒）
+const DRAFT_EXPIRE_TIME = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * 保存草稿到本地存储
+ * @param draft 草稿数据
+ * @returns 是否保存成功
+ */
+export function saveRouteDraft(draft: RouteDraft): boolean {
+  try {
+    // 更新时间戳
+    const now = Date.now()
+    draft.updatedAt = now
+    
+    // 如果没有创建时间，设置创建时间
+    if (draft.createdAt == 0) {
+      draft.createdAt = now
+    }
+    
+    // 序列化为 JSON 字符串
+    const draftJson = JSON.stringify(draft)
+    
+    // 保存到 localStorage
+    uni.setStorageSync(DRAFT_STORAGE_KEY, draftJson)
+    
+    return true
+  } catch (e) {
+    console.error('保存草稿失败:', e)
+    return false
+  }
+}
+
+/**
+ * 从本地存储读取草稿
+ * @returns 草稿数据，如果不存在或读取失败则返回 null
+ */
+export function getRouteDraft(): RouteDraft | null {
+  try {
+    // 从 localStorage 读取
+    const draftStr = uni.getStorageSync(DRAFT_STORAGE_KEY)
+    
+    // 检查是否存在
+    if (draftStr == null || draftStr == '') {
+      return null
+    }
+    
+    // 处理不同类型的返回值
+    let jsonStr = ''
+    if (typeof draftStr === 'string') {
+      jsonStr = draftStr as string
+    } else {
+      jsonStr = JSON.stringify(draftStr)
+    }
+    
+    if (jsonStr == '' || jsonStr == '{}') {
+      return null
+    }
+    
+    // 解析 JSON
+    const draftObj = JSON.parse(jsonStr) as UTSJSONObject
+    
+    // 提取字段
+    const homePicsVal = draftObj.get('homePics')
+    const lineTitleVal = draftObj.get('lineTitle')
+    const tripPriceVal = draftObj.get('tripPrice')
+    const lineAddressVal = draftObj.get('lineAddress')
+    const lineTypeVal = draftObj.get('lineType')
+    const departureDateVal = draftObj.get('departureDate')
+    const routeDetailVal = draftObj.get('routeDetail')
+    const insertTypeVal = draftObj.get('insertType')
+    const createdAtVal = draftObj.get('createdAt')
+    const updatedAtVal = draftObj.get('updatedAt')
+    
+    // 构建草稿对象
+    const homePics: Array<string> = []
+    if (homePicsVal != null && Array.isArray(homePicsVal) == true) {
+      const picsArr = homePicsVal as Array<string>
+      for (let i = 0; i < picsArr.length; i = i + 1) {
+        const pic = picsArr[i]
+        if (pic != null && pic.toString() != '') {
+          homePics.push(pic.toString())
+        }
+      }
+    }
+    
+    const draft = new RouteDraft()
+    draft.homePics = homePics
+    draft.lineTitle = lineTitleVal != null ? lineTitleVal.toString() : ''
+    draft.tripPrice = tripPriceVal != null ? tripPriceVal.toString() : ''
+    draft.lineAddress = lineAddressVal != null ? lineAddressVal.toString() : ''
+    draft.lineType = lineTypeVal != null ? parseInt(lineTypeVal.toString()) : 20
+    draft.departureDate = departureDateVal != null ? departureDateVal.toString() : ''
+    draft.routeDetail = routeDetailVal != null ? routeDetailVal.toString() : ''
+    draft.insertType = insertTypeVal != null ? parseInt(insertTypeVal.toString()) : 0
+    draft.createdAt = createdAtVal != null ? parseInt(createdAtVal.toString()) : 0
+    draft.updatedAt = updatedAtVal != null ? parseInt(updatedAtVal.toString()) : 0
+    
+    return draft
+  } catch (e) {
+    console.error('读取草稿失败:', e)
+    // 如果读取失败，清除损坏的草稿
+    clearRouteDraft()
+    return null
+  }
+}
+
+/**
+ * 清除本地草稿
+ */
+export function clearRouteDraft(): void {
+  try {
+    uni.removeStorageSync(DRAFT_STORAGE_KEY)
+  } catch (e) {
+    console.error('清除草稿失败:', e)
+  }
+}
+
+/**
+ * 检查草稿是否过期（7天）
+ * @param draft 草稿数据
+ * @returns 是否过期
+ */
+export function isDraftExpired(draft: RouteDraft): boolean {
+  try {
+    const now = Date.now()
+    const createdAt = draft.createdAt
+    
+    // 如果没有创建时间，认为已过期
+    if (createdAt == 0) {
+      return true
+    }
+    
+    // 计算时间差
+    const diff = now - createdAt
+    
+    // 判断是否超过 7 天
+    return diff > DRAFT_EXPIRE_TIME
+  } catch (e) {
+    console.error('检查草稿过期失败:', e)
+    return true
+  }
+}

@@ -1,0 +1,115 @@
+import { ref } from 'vue'
+import { addGuideFocus, cancelGuideFocus, AddGuideFocusParams, CancelGuideFocusParams } from '@/api/discover.uts'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 关注状态管理 Store - 使用 Vue 响应式 API
+ * 用于全局管理用户之间的关注关系
+ */
+
+// 使用 ref 创建响应式状态
+const followMapRef = ref<Map<string, boolean>>(new Map())
+const processingMapRef = ref<Map<string, boolean>>(new Map())
+
+// 批量关注用户信息类
+export class BatchFollowUser {
+	kid: string = ''
+	isFocus: boolean = false
+	constructor(kid: string, isFocus: boolean) {
+		this.kid = kid
+		this.isFocus = isFocus
+	}
+}
+
+// ===== 直接导出的模块级函数（UTS 规范：避免从返回对象中访问方法）=====
+
+export const isFollowing = (userKid: string): boolean => {
+	return followMapRef.value.get(userKid) == true
+}
+
+export const isProcessing = (userKid: string): boolean => {
+	return processingMapRef.value.get(userKid) == true
+}
+
+export const setFollowStatus = (userKid: string, isFollowingVal: boolean) => {
+	followMapRef.value.set(userKid, isFollowingVal)
+}
+
+export const batchSetFollowStatus = (users: Array<BatchFollowUser>) => {
+	for (let i = 0; i < users.length; i = i + 1) {
+		const user = users[i]
+		if (user.kid != null && user.kid != '') {
+			const isFocusVal = user.isFocus
+			const isFollow = isFocusVal == true
+			followMapRef.value.set(user.kid, isFollow)
+		}
+	}
+}
+
+export const getFollowStatus = (userKid: string): boolean => {
+	return followMapRef.value.get(userKid) == true
+}
+
+export const toggleFollow = async (currentUserKid: string, targetUserKid: string): Promise<boolean> => {
+	// 检查是否正在处理
+	if (processingMapRef.value.get(targetUserKid) == true) {
+		console.log('正在处理关注操作，请稍候')
+		return false
+	}
+	
+	// 标记为处理中
+	processingMapRef.value.set(targetUserKid, true)
+	
+	try {
+		const currentStatus = followMapRef.value.get(targetUserKid) == true
+		// UTS 规范：使用 JSON.parse + 接口类型转换来传递参数
+		const dataJson = JSON.stringify({ userKid: currentUserKid, focusUserKid: targetUserKid })
+		const dataParsed = JSON.parse(dataJson) as UTSJSONObject
+		
+		if (currentStatus == true) {
+			// 取消关注
+			const cancelParams = dataParsed as CancelGuideFocusParams
+			await cancelGuideFocus(cancelParams)
+			followMapRef.value.set(targetUserKid, false)
+			console.log('已取消关注用户: ' + targetUserKid)
+			return false
+		} else {
+			// 关注
+			const addParams = dataParsed as AddGuideFocusParams
+			await addGuideFocus(addParams)
+			followMapRef.value.set(targetUserKid, true)
+			console.log('已关注用户: ' + targetUserKid)
+			return true
+		}
+	} catch (error: any) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(error, '关注操作', errorOptions)
+		throw error
+	} finally {
+		// 移除处理中标记
+		processingMapRef.value.delete(targetUserKid)
+	}
+}
+
+export const clearAllFollowStatus = () => {
+	followMapRef.value.clear()
+	processingMapRef.value.clear()
+}
+
+// 导出 useFollowStore 函数（兼容旧代码）
+export const useFollowStore = () => {
+	return {
+		// Getters
+		isFollowing,
+		isProcessing,
+		getFollowStatus,
+		
+		// Actions
+		setFollowStatus,
+		batchSetFollowStatus,
+		toggleFollow,
+		clearAll: clearAllFollowStatus
+	}
+}

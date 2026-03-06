@@ -1,0 +1,220 @@
+<template>
+	<!-- 遮罩层 -->
+	<view v-if="visible == true" class="modal-mask" @click="handleMaskClick">
+		<!-- 弹窗内容 -->
+		<view class="qrcode-container" @click.stop="">
+			<view class="qrcode-header">
+				<text class="qrcode-title">关注网约向导公众号</text>
+			</view>
+			
+			<view class="qrcode-content">
+				<image 
+					:src="qrcodeUrl" 
+					class="qrcode-image" 
+					mode="aspectFit"
+				/>
+				<text class="qrcode-tip">长按识别二维码关注公众号</text>
+				<text class="qrcode-tip-sub">关注后即可接收订单通知</text>
+			</view>
+			
+			<view class="qrcode-footer">
+				<view class="qrcode-save-btn" @click="handleSave">
+					<text class="qrcode-btn-text">保存二维码</text>
+				</view>
+				<view class="qrcode-close-btn" @click="handleClose">
+					<text class="qrcode-btn-text">关闭</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+
+// Props
+const props = defineProps({
+	qrcodeUrl: {
+		type: String,
+		default: 'https://www.wyxdapp.com/images/erweima.jpg'
+	},
+	visible: {
+		type: Boolean,
+		default: false
+	}
+})
+
+// Emits
+const emit = defineEmits(['close', 'update:visible'])
+
+// 控制弹窗显示（使用 prop 或内部状态）
+const internalVisible = ref<boolean>(false)
+
+// 计算属性：优先使用 prop，否则使用内部状态
+const visible = computed((): boolean => {
+	return props.visible
+})
+
+// 打开弹窗
+const open = () => {
+	internalVisible.value = true
+	emit('update:visible', true)
+}
+
+// 关闭弹窗
+const close = () => {
+	internalVisible.value = false
+	emit('update:visible', false)
+}
+
+// 处理遮罩点击
+const handleMaskClick = () => {
+	close()
+	emit('close')
+}
+
+// 处理关闭按钮
+const handleClose = () => {
+	close()
+	emit('close')
+}
+
+// 处理保存二维码
+const handleSave = () => {
+	uni.downloadFile({
+		url: props.qrcodeUrl,
+		success: (res: any) => {
+			if (res != null) {
+				const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+				const statusCodeVal = resObj.get('statusCode')
+				if (statusCodeVal != null && statusCodeVal.toString() == '200') {
+					const tempFilePathVal = resObj.get('tempFilePath')
+					if (tempFilePathVal != null && tempFilePathVal.toString() != '') {
+						uni.saveImageToPhotosAlbum({
+							filePath: tempFilePathVal.toString(),
+							success: () => {
+								uni.showToast({
+									title: '保存成功',
+									icon: 'success'
+								})
+							},
+							fail: () => {
+								uni.showToast({
+									title: '保存失败，请检查相册权限',
+									icon: 'none'
+								})
+							}
+						})
+					}
+				}
+			}
+		},
+		fail: () => {
+			uni.showToast({
+				title: '下载失败',
+				icon: 'none'
+			})
+		}
+	})
+}
+
+// 暴露方法给父组件
+defineExpose({
+	open,
+	close
+})
+</script>
+
+<style scoped>
+/* 遮罩层 */
+.modal-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 999;
+}
+
+.qrcode-container {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: column;
+}
+
+.qrcode-header {
+	padding: 40rpx 32rpx 24rpx 32rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.qrcode-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.qrcode-content {
+	padding: 0 32rpx 32rpx 32rpx;
+	flex-direction: column;
+	align-items: center;
+}
+
+.qrcode-image {
+	width: 480rpx;
+	height: 480rpx;
+	border-radius: 16rpx;
+	background-color: #f5f5f5;
+}
+
+.qrcode-tip {
+	font-size: 28rpx;
+	color: #666666;
+	margin-top: 24rpx;
+	text-align: center;
+}
+
+.qrcode-tip-sub {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+	text-align: center;
+}
+
+.qrcode-footer {
+	padding: 24rpx 32rpx 32rpx 32rpx;
+	flex-direction: column;
+}
+
+.qrcode-save-btn,
+.qrcode-close-btn {
+	width: 536rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.qrcode-save-btn {
+	background-color: #0187F5;
+}
+
+.qrcode-close-btn {
+	background-color: #07C160;
+	margin-bottom: 0;
+}
+
+.qrcode-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+</style>

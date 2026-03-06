@@ -1,0 +1,171 @@
+import { PAYMENT_STATE_TIMEOUT } from '@/common/config/timeoutConfig.uts'
+
+/**
+ * 微信支付类型定义
+ * 
+ * 独立的类型文件，避免循环依赖
+ * 
+ * @author wyxdapp
+ * @version 2.0.0
+ * @since 2025-12-28
+ */
+
+/**
+ * 支付状态常量
+ */
+export const PAYMENT_STATE_IDLE = 'idle'           // 空闲状态
+export const PAYMENT_STATE_PENDING = 'pending'     // 待支付
+export const PAYMENT_STATE_PROCESSING = 'processing' // 支付处理中
+export const PAYMENT_STATE_SUCCESS = 'success'     // 支付成功
+export const PAYMENT_STATE_FAILED = 'failed'       // 支付失败
+
+/**
+ * 支付状态枚举（兼容旧代码）
+ */
+export const PaymentState = {
+	IDLE: PAYMENT_STATE_IDLE,
+	PENDING: PAYMENT_STATE_PENDING,
+	PROCESSING: PAYMENT_STATE_PROCESSING,
+	SUCCESS: PAYMENT_STATE_SUCCESS,
+	FAILED: PAYMENT_STATE_FAILED
+}
+
+/**
+ * 支付参数类
+ */
+export class PaymentParams {
+	orderId: string = ''      // 订单ID
+	amount: string = ''       // 支付金额（元）
+	goodsName: string = ''    // 商品名称
+	code: string = ''         // 微信授权code（H5/小程序需要）
+	
+	constructor(orderId: string, amount: string, goodsName: string, code: string) {
+		this.orderId = orderId
+		this.amount = amount
+		this.goodsName = goodsName
+		this.code = code
+	}
+}
+
+/**
+ * 支付结果类
+ */
+export class PaymentResult {
+	success: boolean = false     // 是否成功
+	message: string = ''         // 结果消息
+	data: UTSJSONObject | null = null  // 附加数据
+	
+	constructor(success: boolean, message: string, data: UTSJSONObject | null) {
+		this.success = success
+		this.message = message
+		this.data = data
+	}
+}
+
+/**
+ * 创建成功结果（无附加数据）
+ */
+export function createSuccessResult(message: string): PaymentResult {
+	return new PaymentResult(true, message, null)
+}
+
+/**
+ * 创建失败结果
+ */
+export function createFailResult(message: string): PaymentResult {
+	return new PaymentResult(false, message, null)
+}
+
+/**
+ * 支付回调类型
+ */
+export type PaymentSuccessCallback = (result: PaymentResult) => void
+export type PaymentErrorCallback = (error: string) => void
+
+// 支付状态超时时间（5分钟）
+const STATE_TIMEOUT = PAYMENT_STATE_TIMEOUT
+
+/**
+ * 获取支付状态存储 key
+ */
+function getStateKey(orderId: string): string {
+	return 'payment:state:' + orderId
+}
+
+/**
+ * 获取支付状态
+ */
+export function getPaymentState(orderId: string): string {
+	try {
+		const stateDataRaw = uni.getStorageSync(getStateKey(orderId))
+		if (stateDataRaw == null) {
+			return PAYMENT_STATE_IDLE
+		}
+		
+		let stateValue = ''
+		let timestampValue: number = 0
+		
+		try {
+			const stateDataJson = JSON.stringify(stateDataRaw)
+			if (stateDataJson != null && stateDataJson != '') {
+				const stateDataParsed = JSON.parse(stateDataJson) as UTSJSONObject
+				if (stateDataParsed != null) {
+					const stateVal = stateDataParsed.get('state')
+					const tsVal = stateDataParsed.get('timestamp')
+					
+					if (stateVal != null && stateVal.toString() != '') {
+						stateValue = stateVal.toString()
+					}
+					if (tsVal != null) {
+						timestampValue = parseInt(tsVal.toString())
+					}
+				}
+			}
+		} catch (e) {}
+		
+		// 检查是否超时
+		if (timestampValue > 0) {
+			const now = Date.now()
+			if (now - timestampValue > STATE_TIMEOUT) {
+				clearPaymentState(orderId)
+				return PAYMENT_STATE_IDLE
+			}
+		}
+		
+		if (stateValue != '') {
+			return stateValue
+		}
+		return PAYMENT_STATE_IDLE
+	} catch (error) {
+		console.error('[WX-PAY] 获取支付状态失败:', error)
+		return PAYMENT_STATE_IDLE
+	}
+}
+
+/**
+ * 设置支付状态
+ */
+export function setPaymentState(orderId: string, state: string): void {
+	try {
+		const stateData = {
+			state: state,
+			timestamp: Date.now()
+		} as UTSJSONObject
+		uni.setStorageSync(getStateKey(orderId), stateData)
+		console.log('[WX-PAY] 设置支付状态:', state)
+	} catch (error) {
+		console.error('[WX-PAY] 设置支付状态失败:', error)
+	}
+}
+
+/**
+ * 清除支付状态
+ */
+export function clearPaymentState(orderId: string): void {
+	try {
+		uni.removeStorageSync(getStateKey(orderId))
+		console.log('[WX-PAY] 清除支付状态')
+	} catch (error) {
+		console.error('[WX-PAY] 清除支付状态失败:', error)
+	}
+}

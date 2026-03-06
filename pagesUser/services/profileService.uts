@@ -1,0 +1,44 @@
+import request from '@/utils/request'
+import { handleError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+/**
+ * Profile service - safe wrappers for UTS pages
+ * These wrappers centralize JSON roundtrip and avoid anonymous param issues in pages.
+ */
+export const queryUserByKidSafe = async (kid: string): Promise<UTSJSONObject> => {
+	try {
+		const paramsJson = JSON.stringify({ kid: kid })
+		const params: UTSJSONObject = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : new UTSJSONObject()
+		const res = await request.post('/user/baseInfo/queryByKid', params, true)
+		return res as UTSJSONObject
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, '查询用户信息', errorOptions)
+		throw e
+	}
+}
+
+export const updateBaseInfoSafe = async (data: UTSJSONObject): Promise<UTSJSONObject> => {
+	try {
+		const raw = JSON.stringify(data)
+		const params: UTSJSONObject = (raw != null && raw != '') ? JSON.parse(raw) as UTSJSONObject : new UTSJSONObject()
+		const res = await request.post('/user/baseInfo/updateBaseInfo', params, true)
+		return res as UTSJSONObject
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, '更新基本信息', errorOptions)
+		throw e
+	}
+}
+
+// updateContactInfoSafe 复用 updateBaseInfoSafe，后端 updateBaseInfo 接口支持所有用户字段
+export const updateContactInfoSafe = updateBaseInfoSafe
+
+// Backward-compatible aliases
+export const queryUserByKidAny = queryUserByKidSafe
+export const updateBaseInfoAny = updateBaseInfoSafe
+export const updateContactInfoAny = updateContactInfoSafe

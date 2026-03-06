@@ -1,0 +1,49 @@
+/**
+ * 用户推广绑定 API（基于用户短号）
+ * 
+ * @author wyxdapp
+ * @version 2.0.0
+ * @since 2026-01-06
+ */
+
+import request from '@/utils/request'
+import { BindUserReferrerParams } from './types/userTypes.uts'
+
+/**
+ * 绑定推广人（基于用户短号）
+ * POST /api/user/extend/bind
+ * @param params { userKid: string, referrerShortKid: string }
+ */
+export const bindUserReferrer = (params: BindUserReferrerParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		referrerShortKid: params.referrerShortKid
+	} as UTSJSONObject
+	return request.post('/api/user/extend/bind', payload, true)
+}
+
+/**
+ * 获取推广统计
+ * GET /api/user/extend/stats
+ * @param shortKid 用户短号（6-8位）
+ */
+export const getUserExtendStats = (shortKid: string): Promise<UTSJSONObject> => {
+	return request.get('/api/user/extend/stats?shortKid=' + shortKid, null, false)
+}
+
+/**
+ * 获取推广用户列表
+ * GET /api/user/extend/pushList
+ * @param shortKid 推广人短号（6-8位）
+ * @param userKid 当前登录用户KID（用于判断关注状态）
+ * @param pageNumber 页码
+ * @param pageSize 每页数量
+ */
+export const getPushUserList = (shortKid: string, userKid: string, pageNumber: number, pageSize: number): Promise<UTSJSONObject> => {
+	let url = '/api/user/extend/pushList?shortKid=' + shortKid + '&pageNumber=' + pageNumber + '&pageSize=' + pageSize
+	// UTS: userKid 是 string 类型（非可空），只需检查空字符串
+	if (userKid != '') {
+		url = url + '&userKid=' + userKid
+	}
+	return request.get(url, null, true)
+}

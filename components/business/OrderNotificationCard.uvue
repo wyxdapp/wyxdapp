@@ -1,0 +1,159 @@
+<template>
+	<view 
+		class="notification-card"
+		:class="{ unread: !props.read }"
+		@click="$emit('click')"
+	>
+		<view class="card-icon-wrapper">
+			<UniIcons type="shop" :size="48" color="#37B1F2" />
+			<view v-if="!props.read" class="unread-dot"></view>
+		</view>
+		
+		<view class="card-content">
+			<view class="card-header">
+				<text class="card-title">{{ props.title }}</text>
+				<text class="card-time">{{ props.time }}</text>
+			</view>
+			
+			<text class="card-text">{{ props.content }}</text>
+			
+			<view class="order-info">
+				<text class="order-no">订单号: {{ props.orderNo }}</text>
+				<text v-if="props.amount" class="order-amount">¥{{ formattedAmount }}</text>
+			</view>
+		</view>
+		
+		<text class="delete-btn" @click.stop="$emit('delete')">✕</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { fen2yuan } from '@/utils/money.uts'
+
+const props = defineProps({
+	title: { type: String, required: true },
+	content: { type: String, required: true },
+	time: { type: String, required: true },
+	orderNo: { type: String, required: true },
+	amount: { type: Number, default: 0 },
+	read: { type: Boolean, default: false }
+})
+
+const emit = defineEmits<{
+	click: []
+	delete: []
+}>()
+
+// 将分转换为元并格式化（保留两位小数）
+const formattedAmount = computed((): string => {
+	if (props.amount <= 0) return '0.00'
+	return fen2yuan(props.amount)
+})
+</script>
+
+<style scoped>
+.notification-card {
+	display: flex;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.04);
+	position: relative;
+}
+
+.notification-card.unread {
+	background-color: #F0F9FF;
+}
+
+.card-icon-wrapper {
+	position: relative;
+	width: 80rpx;
+	height: 80rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+	flex-shrink: 0;
+}
+
+.card-icon {
+	font-size: 48rpx;
+}
+
+.unread-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #FF5252;
+	border-radius: 8rpx;
+}
+
+.card-content {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.card-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.card-time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.card-text {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+	margin-bottom: 16rpx;
+}
+
+.order-info {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 12rpx;
+	background-color: #F8F9FA;
+	border-radius: 8rpx;
+}
+
+.order-no {
+	font-size: 24rpx;
+	color: #2EAEF2;
+}
+
+.order-amount {
+	font-size: 28rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.delete-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	font-size: 30rpx;
+	color: #cccccc;
+	padding: 4rpx 8rpx;
+}
+
+.delete-btn:active {
+	color: #ff5252;
+}
+</style>

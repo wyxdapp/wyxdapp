@@ -1,0 +1,24 @@
+/**
+ * 第三方平台配置常量模块
+ * 集中管理外部平台 ID、错误码等配置
+ */
+
+// === 携程联盟 ===
+/** 携程联盟 ID */
+export const CTRIP_ALLIANCE_ID = '7418524'
+
+// === 腾讯云 COS ===
+/** COS Bucket ID */
+export const COS_BUCKET_ID = '1258867350'
+
+// === 定位错误码 ===
+/** 定位权限被拒绝 */
+export const LOCATION_ERROR_PERMISSION_DENIED = 1505604
+/** 定位服务不可用 */
+export const LOCATION_ERROR_UNAVAILABLE = 1505605
+/** 定位超时 */
+export const LOCATION_ERROR_TIMEOUT = 1505606
+
+// === 备案信息 ===
+/** ICP 备案号 */
+export const ICP_RECORD_NUMBER = '鄂ICP备9007528号'

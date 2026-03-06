@@ -1,0 +1,96 @@
+/**
+ * 发现/动态模块类型定义
+ * 对应 API 文件: api/discover.uts
+ */
+
+// 获取推荐动态列表请求参数
+export class GetAllTrendsParams {
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+	mediaType: number = 0
+}
+
+// 获取在线列表（推荐关注）请求参数
+export class GetRecommendFollowsParams {
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+}
+
+// 获取动态详情请求参数
+export class GetTrendDetailParams {
+	kid: string = ''
+	dynamicKid: string = ''
+	userKid: string = ''
+	latitude: number = 0
+	longitude: number = 0
+}
+
+// 添加评论请求参数
+export class AddCommentParams {
+	userKid: string = ''
+	contentKid: string = ''
+	commentContent: string = ''
+	commentModule: number = 0
+}
+
+// 获取评论列表请求参数
+export class GetCommentListParams {
+	discoverKid: string = ''
+	contentKid: string = ''
+	dynamicKid: string = ''
+	kid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 10
+	commentModule: number = 0
+}
+
+// 获取回复列表请求参数
+export class GetReplyListParams {
+	commentKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 50
+}
+
+// 添加回复请求参数
+export class AddReplyParams {
+	userKid: string = ''
+	commentKid: string = ''
+	replyContent: string = ''
+	parentReplyKid: string = ''
+	idempotencyKey: string = ''
+}
+
+// 获取城市定位列表请求参数
+export class GetCityListParams {
+	cityType: number = 10 // 城市类型：10国内 20国外
+	searchCondition: string | null = null // 搜索条件（可选）
+}
+
+// 查询所有擅长请求参数
+export class QueryAllForteParams {
+	// 可选参数，无必填字段
+}
+
+// 查询用户擅长请求参数
+export class QueryUserForteParams {
+	userKid: string = ''
+}
+
+// 查询所有标签和语言请求参数
+export class QueryAllSpecialityParams {
+	userKid: string = ''
+}
+
+// 删除标签请求参数
+export class DeleteUserLabelParams {
+	userKid: string = ''
+	labelKid: string = ''
+}
+
+// 删除语言请求参数
+export class DeleteUserLanguageParams {
+	userKid: string = ''
+	languageKid: string = ''
+}

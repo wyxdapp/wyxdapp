@@ -1,0 +1,392 @@
+<template>
+	<view class="exchange-panel">
+		<view class="panel-header">
+			<text class="header-title">幸运值兑换</text>
+			<text class="header-subtitle">满50/100/200/300/500/800点可兑换</text>
+		</view>
+		
+		<view class="exchange-buttons">
+			<view 
+				v-for="(config, index) in exchangeConfigs" 
+				:key="index"
+				class="exchange-btn"
+				:class="{ 
+					'disabled': props.luckyPoints < getConfigPoints(config),
+					'available': props.luckyPoints >= getConfigPoints(config)
+				}"
+				@click="handleExchange(config)"
+			>
+				<text class="exchange-point">{{ getConfigPoints(config) }}点</text>
+				<text class="exchange-label">{{ getConfigLabel(config) }}</text>
+			</view>
+		</view>
+		
+		<!-- 兑换弹窗 -->
+		<view v-if="showExchangeModal == true" class="exchange-modal-overlay" @click="closeModal">
+			<view class="exchange-modal" @click.stop>
+				<view class="exchange-modal-header">
+					<text class="exchange-modal-title">幸运值兑换</text>
+					<view class="exchange-modal-close" @click="closeModal">
+						<text class="close-icon">✕</text>
+					</view>
+				</view>
+				<view class="exchange-modal-content">
+					<text class="exchange-modal-desc">使用 {{ selectedPoints }} 点幸运值兑换奖励</text>
+					<text class="exchange-modal-value">可兑换价值 {{ selectedValue }} 元的奖励</text>
+					<view class="exchange-options">
+						<view class="exchange-option" @click="handleExchangeReward('gift')">
+							<UniIcons type="gift" :size="36" color="#FF6B6B" />
+							<text class="option-label">虚拟礼物</text>
+						</view>
+						<view class="exchange-option" @click="handleExchangeReward('cash')">
+							<UniIcons type="wallet" :size="36" color="#FFB800" />
+							<text class="option-label">现金红包</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { exchangeLuckyPoints } from '@/common/services/lotteryService.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// Props 定义
+const props = defineProps({
+	userKid: { type: String, required: true },
+	luckyPoints: { type: Number, default: 0 }
+})
+
+// Emits 定义
+const emit = defineEmits(['refresh', 'exchangeSuccess'])
+
+// 响应式数据
+const showExchangeModal = ref<boolean>(false)
+const selectedPoints = ref<number>(0)
+const selectedValue = ref<number>(0)
+const loading = ref<boolean>(false)
+
+// 兑换档位配置（使用 any 数组）
+const exchangeConfigs = ref<Array<any>>([
+	{ points: 50, value: 5, label: '兑换' },
+	{ points: 100, value: 10, label: '兑换' },
+	{ points: 200, value: 20, label: '兑换' },
+	{ points: 300, value: 30, label: '兑换' },
+	{ points: 500, value: 50, label: '兑换' },
+	{ points: 800, value: 188, label: '188元' }
+])
+
+// 获取配置的点数
+const getConfigPoints = (config: any): number => {
+	try {
+		const json = JSON.stringify(config)
+		if (json == null || json == '') return 0
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 0
+		const v = parsed.get('points')
+		return (v != null) ? parseInt(v.toString()) : 0
+	} catch (e) {}
+	return 0
+}
+
+// 获取配置的标签
+const getConfigLabel = (config: any): string => {
+	const points = getConfigPoints(config)
+	if (points == 800) {
+		return '188元'
+	}
+	return '兑换'
+}
+
+// 获取配置的价值
+const getConfigValue = (config: any): number => {
+	try {
+		const json = JSON.stringify(config)
+		if (json == null || json == '') return 0
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 0
+		const v = parsed.get('value')
+		return (v != null) ? parseInt(v.toString()) : 0
+	} catch (e) {}
+	return 0
+}
+
+// 关闭弹窗
+const closeModal = () => {
+	showExchangeModal.value = false
+}
+
+// 点击兑换按钮
+const handleExchange = (config: any) => {
+	const points = getConfigPoints(config)
+	const value = getConfigValue(config)
+	
+	if (props.luckyPoints < points) {
+		uni.showToast({
+			title: '幸运值不足，需要' + points.toString() + '点',
+			icon: 'none'
+		})
+		return
+	}
+	
+	selectedPoints.value = points
+	selectedValue.value = value
+	showExchangeModal.value = true
+}
+
+// 执行兑换
+const handleExchangeReward = async (rewardType: string) => {
+	if (loading.value == true) return
+	
+	const userKidValue = props.userKid
+	if (userKidValue == null || userKidValue == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	loading.value = true
+	
+	try {
+		uni.showLoading({ title: '兑换中...' })
+		
+		const params = {
+			userKid: userKidValue,
+			points: selectedPoints.value,
+			rewardType: rewardType == 'gift' ? 10 : 20
+		} as UTSJSONObject
+		
+		const result = await exchangeLuckyPoints(params)
+		
+		// 解析响应
+		let resultCode = 0
+		let resultMsg = '兑换失败'
+		if (result != null) {
+			try {
+				const resultJson = JSON.stringify(result)
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						const codeVal = resultObj.get('code')
+						resultCode = (codeVal != null) ? parseInt(codeVal.toString()) : 0
+						const msgVal = resultObj.get('msg')
+						if (msgVal != null && msgVal.toString() != '') {
+							resultMsg = msgVal.toString()
+						}
+						const messageVal = resultObj.get('message')
+						if (messageVal != null && messageVal.toString() != '') {
+							resultMsg = messageVal.toString()
+						}
+					}
+				}
+			} catch (e) {
+				console.error('解析兑换响应失败:', e)
+			}
+		}
+		
+		if (resultCode == 200) {
+			uni.showToast({ title: '兑换成功', icon: 'success' })
+			showExchangeModal.value = false
+			emit('refresh')
+			emit('exchangeSuccess')
+		} else {
+			uni.showToast({ title: resultMsg, icon: 'none' })
+		}
+	} catch (error: any) {
+		console.error('兑换失败:', error)
+		uni.showToast({
+			title: '兑换失败，请重试',
+			icon: 'none'
+		})
+	} finally {
+		loading.value = false
+		uni.hideLoading()
+	}
+}
+
+// 暴露刷新方法
+defineExpose({
+	refresh: () => {
+		// 组件刷新逻辑（如果需要）
+	}
+})
+</script>
+
+<style scoped>
+.exchange-panel {
+	width: 686rpx;
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 32rpx;
+	padding: 32rpx;
+	background-color: #FFFFFF;
+	border-radius: 24rpx;
+	flex-direction: column;
+	position: relative;
+	z-index: 1;
+}
+
+.panel-header {
+	margin-bottom: 24rpx;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.header-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.header-subtitle {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.exchange-buttons {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.exchange-btn {
+	width: 200rpx;
+	padding: 24rpx 16rpx;
+	background-color: #F5F5F5;
+	border-radius: 16rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.exchange-btn.available {
+	background-color: #9C27B0;
+}
+
+.exchange-btn.disabled {
+	opacity: 0.5;
+}
+
+.exchange-point {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.exchange-btn.available .exchange-point {
+	color: #FFFFFF;
+}
+
+.exchange-label {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.exchange-btn.available .exchange-label {
+	color: rgba(255, 255, 255, 0.9);
+}
+
+/* 兑换弹窗 */
+.exchange-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.6);
+	z-index: 10000;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.exchange-modal {
+	width: 600rpx;
+	background-color: #FFFFFF;
+	border-radius: 32rpx;
+	padding: 48rpx;
+	flex-direction: column;
+}
+
+.exchange-modal-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 32rpx;
+}
+
+.exchange-modal-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.exchange-modal-close {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.exchange-modal-content {
+	flex-direction: column;
+	align-items: center;
+}
+
+.exchange-modal-desc {
+	font-size: 28rpx;
+	color: #666666;
+	margin-bottom: 16rpx;
+	text-align: center;
+}
+
+.exchange-modal-value {
+	font-size: 32rpx;
+	color: #9C27B0;
+	font-weight: bold;
+	margin-bottom: 32rpx;
+	text-align: center;
+}
+
+.exchange-options {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-around;
+	width: 100%;
+}
+
+.exchange-option {
+	width: 200rpx;
+	padding: 32rpx;
+	background-color: #F5F5F5;
+	border-radius: 16rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.option-icon {
+	font-size: 80rpx;
+	margin-bottom: 16rpx;
+}
+
+.option-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+</style>

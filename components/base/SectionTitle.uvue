@@ -1,0 +1,45 @@
+<script setup lang="uts">
+/**
+ * 分隔标题组件
+ * 用于搜索结果页展示"搜索结果"和"推荐列表"的分隔标题
+ */
+
+// Props 定义
+const props = defineProps({
+	title: { type: String, default: '' },
+	showLine: { type: Boolean, default: true }
+})
+</script>
+
+<template>
+	<view class="section-title">
+		<view v-if="showLine == true" class="section-line"></view>
+		<text class="section-text">{{ title }}</text>
+		<view v-if="showLine == true" class="section-line"></view>
+	</view>
+</template>
+
+<style>
+.section-title {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 32rpx;
+	padding-bottom: 24rpx;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+}
+
+.section-line {
+	flex: 1;
+	height: 1rpx;
+	background-color: #EEEEEE;
+}
+
+.section-text {
+	font-size: 26rpx;
+	color: #999999;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+</style>

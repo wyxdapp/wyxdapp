@@ -1,0 +1,964 @@
+<template>
+	<view class="add-trends-page" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+		<!-- 内容输入 -->
+		<view class="content-section">
+			<textarea
+				v-model="formDiscoverContent"
+				placeholder="这一刻的想法..."
+				class="content-input"
+				:maxlength="500"
+			/>
+			<text class="char-count">{{ contentLength }}/500</text>
+		</view>
+
+		<!-- 媒体预览区 -->
+		<view class="media-preview-section">
+			<!-- 视频预览 -->
+			<view v-if="hasVideo == true" class="video-preview-container">
+				<video :src="videoUrl" controls class="video-player" :show-loading="false" />
+				<view class="media-remove-btn" @click="removeVideo">
+					<text class="remove-icon">✕</text>
+				</view>
+			</view>
+
+			<!-- 图片预览 -->
+			<view v-if="hasPictures == true" class="image-preview-grid">
+				<view 
+					v-for="(img, idx) in formPicUrls" 
+					:key="idx"
+					class="image-preview-item"
+				>
+					<image :src="img" mode="aspectFill" class="preview-image" />
+					<view class="media-remove-btn" @click="removeImage(idx)">
+						<text class="remove-icon">✕</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 媒体选择按钮 -->
+		<view class="media-select-bar">
+			<view class="media-btn" @click="showMediaOptions">
+				<text class="media-icon">+</text>
+				<text class="media-text">图片/视频</text>
+			</view>
+		</view>
+
+		<!-- 发布按钮 -->
+		<view class="submit-btn" @click="handlePublish">
+			<text class="submit-text">发布</text>
+		</view>
+
+		<!-- 媒体选择弹窗 -->
+		<view v-if="showMediaModal == true" class="modal-mask" @click="closeMediaModal">
+			<view class="media-modal" @click.stop>
+				<view class="modal-option" @click="chooseImage">
+					<UniIcons type="image" :size="48" color="#37B1F2" />
+					<text class="option-text">选择图片</text>
+				</view>
+				<view class="modal-option" @click="chooseVideo">
+					<text class="option-icon">🎬</text>
+					<text class="option-text">选择视频</text>
+				</view>
+				<view class="modal-cancel" @click="closeMediaModal">
+					<text class="cancel-text">取消</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { publishTrends } from '@/common/services/trendsService.uts'
+import { initUserInfoAction } from '@/stores/user.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+
+// ==================== 定时器生命周期管理 ====================
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 响应式状态 ====================
+
+// 表单字段（使用独立 ref）
+const formUserKid = ref<string>('')
+const formInsertType = ref<number>(0)
+const formPicUrls = ref<Array<string>>([])
+const formDiscoverLat = ref<string>('')
+const formDiscoverLng = ref<string>('')
+const formDiscoverContent = ref<string>('')
+const formDiscoverAddress = ref<string>('')
+const formMediaName = ref<string>('')
+const formVideoPic = ref<string>('')
+
+const videoUrl = ref<string>('')
+const showMediaModal = ref<boolean>(false)
+const uploading = ref<boolean>(false)
+
+// ==================== 计算属性 ====================
+
+const contentLength = computed((): number => {
+	try {
+		const content = formDiscoverContent.value
+		if (content != null) {
+			return content.length
+		}
+	} catch (e) {}
+	return 0
+})
+
+const hasVideo = computed((): boolean => {
+	try {
+		const url = videoUrl.value
+		return url != null && url != ''
+	} catch (e) {
+		return false
+	}
+})
+
+const hasPictures = computed((): boolean => {
+	try {
+		return formPicUrls.value.length > 0
+	} catch (e) {
+		return false
+	}
+})
+
+// ==================== 业务函数 ====================
+
+const uploadDynamicImageToCOS = async (filePath: string): Promise<string> => {
+	try {
+		const result = await cosUploader.uploadDynamic(filePath, (progress: number) => {
+			console.log('📈 动态图片上传进度:', progress.toString() + '%')
+		})
+		
+		if (result != null) {
+			if (result.success == true) {
+				const data = result.data
+				if (data != null) {
+					const dataObj = toUTSJSON(data)
+					if (dataObj != null) {
+						const compressedUrlVal = getString(dataObj, 'compressedUrl')
+						const originalUrlVal = getString(dataObj, 'originalUrl')
+						if (compressedUrlVal != null && compressedUrlVal != '') {
+							return compressedUrlVal
+						} else if (originalUrlVal != null && originalUrlVal != '') {
+							return originalUrlVal
+						}
+					}
+				}
+			}
+			
+			let errorMsg = '上传失败'
+			if (result.error != null && result.error != '') {
+				errorMsg = result.error as string
+			}
+			throw new Error(errorMsg)
+		}
+		
+		throw new Error('上传失败')
+	} catch (error) {
+		console.error('❌ 动态图片上传失败:', error)
+		throw error
+	}
+}
+
+const uploadDynamicVideoToCOS = async (filePath: string): Promise<string> => {
+	try {
+		const result = await cosUploader.uploadDynamicVideo(filePath, (progress: number) => {
+			console.log('📈 动态视频上传进度:', progress.toString() + '%')
+		})
+		
+		if (result != null) {
+			// 🔧 修复：直接访问 UploadResult 类的属性，不使用 JSON 序列化
+			if (result.success == true) {
+				const data = result.data
+				if (data != null) {
+					const dataObj = toUTSJSON(data)
+					if (dataObj != null) {
+						const originalUrlVal = getString(dataObj, 'originalUrl')
+						if (originalUrlVal != null && originalUrlVal != '') {
+							return originalUrlVal
+						}
+					}
+				}
+			}
+			
+			let errorMsg = '上传失败'
+			if (result.error != null && result.error != '') {
+				errorMsg = result.error as string
+			}
+			throw new Error(errorMsg)
+		}
+		
+		throw new Error('上传失败')
+	} catch (error) {
+		console.error('❌ 动态视频上传失败:', error)
+		throw error
+	}
+}
+
+const uploadImages = async (filePaths: Array<string>) => {
+	uploading.value = true
+	
+	// 先显示本地预览
+	for (let i = 0; i < filePaths.length; i++) {
+		formPicUrls.value.push(filePaths[i])
+	}
+	
+	// 逐个上传
+	for (let i = 0; i < filePaths.length; i++) {
+		try {
+			const uploadRes = await uploadDynamicImageToCOS(filePaths[i])
+			
+			if (uploadRes != null && uploadRes != '') {
+				// 替换为云端URL
+				let index = -1
+				const pics = formPicUrls.value
+				for (let j = 0; j < pics.length; j++) {
+					if (pics[j] == filePaths[i]) {
+						index = j
+						break
+					}
+				}
+				if (index != -1) {
+					formPicUrls.value[index] = uploadRes
+				}
+			} else {
+				// 上传失败，移除
+				let index = -1
+				const pics = formPicUrls.value
+				for (let j = 0; j < pics.length; j++) {
+					if (pics[j] == filePaths[i]) {
+						index = j
+						break
+					}
+				}
+				if (index != -1) {
+					formPicUrls.value.splice(index, 1)
+				}
+			}
+		} catch (error) {
+			// 上传失败，移除
+			let index = -1
+			const pics = formPicUrls.value
+			for (let j = 0; j < pics.length; j++) {
+				if (pics[j] == filePaths[i]) {
+					index = j
+					break
+				}
+			}
+			if (index != -1) {
+				formPicUrls.value.splice(index, 1)
+			}
+		}
+	}
+	
+	if (formPicUrls.value.length > 0) {
+		formInsertType.value = 1
+	}
+	
+	uploading.value = false
+}
+
+const uploadVideoFile = async (videoPath: string, thumbPath: string) => {
+	uploading.value = true
+	
+	// 先显示本地预览
+	videoUrl.value = videoPath
+	
+	try {
+		// 上传视频
+		const videoUrlRes = await uploadDynamicVideoToCOS(videoPath)
+		if (videoUrlRes != null && videoUrlRes != '') {
+			videoUrl.value = videoUrlRes
+			formMediaName.value = videoUrlRes
+			formInsertType.value = 3
+			
+		}
+		
+		// 上传封面
+		if (thumbPath != null && thumbPath != '') {
+			console.log('📷 开始上传本地缩略图:', thumbPath)
+			const thumbUrlRes = await uploadDynamicImageToCOS(thumbPath)
+			if (thumbUrlRes != null && thumbUrlRes != '') {
+				formVideoPic.value = thumbUrlRes
+			}
+		}
+		
+		// 🔧 关键修复：如果封面仍为空，使用 COS 视频截帧功能生成封面
+		if (formVideoPic.value == '' && formMediaName.value != '') {
+			// COS 视频截帧 URL 格式：视频URL + ?ci-process=snapshot&time=1&format=jpg
+			// 或者使用视频第一帧作为封面（添加后缀）
+			const videoUrl = formMediaName.value
+			// 方案1：使用 COS 视频截帧（如果 COS 支持）
+			// const snapshotUrl = videoUrl + '?ci-process=snapshot&time=1&format=jpg'
+			
+			// 方案2：使用视频 URL 替换扩展名为 jpg（需要后端支持）
+			// 方案3：使用默认封面图片
+			// 方案4：直接使用视频 URL 作为封面（某些后端可能接受）
+			
+			// 这里使用 COS 视频截帧功能（腾讯云 COS 支持）
+			const snapshotUrl = videoUrl + '?ci-process=snapshot&time=1&format=jpg&width=480&height=480'
+			formVideoPic.value = snapshotUrl
+			console.log('📷 使用 COS 视频截帧作为封面:', snapshotUrl)
+		}
+		
+		// 最终检查
+		if (formVideoPic.value == '') {
+			console.warn('⚠️ 警告：视频封面仍为空，发布可能失败')
+			uni.showToast({
+				title: '视频上传成功，但封面生成失败',
+				icon: 'none'
+			})
+		} else {
+			uni.showToast({
+				title: '视频上传成功',
+				icon: 'success'
+			})
+		}
+	} catch (error) {
+		console.error('视频上传失败:', error)
+		uni.showToast({
+			title: '视频上传失败',
+			icon: 'none'
+		})
+		videoUrl.value = ''
+		formMediaName.value = ''
+		formVideoPic.value = ''
+	} finally {
+		uploading.value = false
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+const showMediaOptions = () => {
+	if (uploading.value == true) {
+		uni.showToast({
+			title: '正在上传中，请稍候',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 如果已有视频，不能再选择图片
+	if (videoUrl.value != null && videoUrl.value != '') {
+		uni.showToast({
+			title: '已有视频，不能再添加图片',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 如果已有图片，不能再选择视频
+	if (formPicUrls.value.length > 0) {
+		uni.showToast({
+			title: '已有图片，不能再添加视频',
+			icon: 'none'
+		})
+		return
+	}
+	
+	showMediaModal.value = true
+}
+
+const closeMediaModal = () => {
+	showMediaModal.value = false
+}
+
+const chooseImage = () => {
+	closeMediaModal()
+	
+	const maxCount = 9 - formPicUrls.value.length
+	if (maxCount <= 0) {
+		uni.showToast({
+			title: '最多只能上传9张图片',
+			icon: 'none'
+		})
+		return
+	}
+	
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		uni.chooseImage({
+			count: maxCount,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						const paths: Array<string> = []
+						for (let i = 0; i < tempFilePaths.length; i++) {
+							const path = tempFilePaths[i]
+							if (path != null && path.toString() != '') {
+								paths.push(path.toString())
+							}
+						}
+						if (paths.length > 0) {
+							uploadImages(paths)
+						}
+					}
+				}
+			}
+		})
+	})
+}
+
+const generateVideoThumbnail = (videoPath: string): Promise<string> => {
+	return new Promise<string>((resolve: (value: string) => void) => {
+		// #ifdef APP-PLUS
+		// APP 端：使用 uni.createVideoContext 截取第一帧
+		// 由于 UTS 限制，使用 compressVideo 的方式获取缩略图
+		uni.compressVideo({
+			src: videoPath,
+			quality: 'low',
+			success: (compressRes: UTSJSONObject | null) => {
+				// 压缩后的视频可能有缩略图
+				if (compressRes != null) {
+					const compressResStr = JSON.stringify(compressRes)
+					const compressResObj = JSON.parse(compressResStr) as UTSJSONObject
+					const tempFilePathVal = compressResObj.get('tempFilePath')
+					// 使用原视频路径作为封面来源，后续上传时会处理
+					resolve('')
+				} else {
+					resolve('')
+				}
+			},
+			fail: () => {
+				resolve('')
+			}
+		})
+		// #endif
+		
+		// #ifdef H5
+		// H5 端：使用 canvas 截取视频第一帧
+		resolve('')
+		// #endif
+		
+		// #ifndef APP-PLUS
+		// #ifndef H5
+		resolve('')
+		// #endif
+		// #endif
+	})
+}
+
+const chooseVideo = () => {
+	closeMediaModal()
+	
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		uni.chooseVideo({
+		sourceType: ['album', 'camera'],
+		maxDuration: 60,
+		compressed: true,
+		success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+				
+				console.log('📹 chooseVideo 返回数据:', resStr)
+				
+				const sizeVal = resObj.get('size')
+				const durationVal = resObj.get('duration')
+				const tempFilePathVal = resObj.get('tempFilePath')
+				const thumbTempFilePathVal = resObj.get('thumbTempFilePath')
+				
+				let size = 0
+				if (sizeVal != null) {
+					size = parseInt(sizeVal.toString())
+				}
+				
+				let duration = 0
+				if (durationVal != null) {
+					duration = parseInt(durationVal.toString())
+				}
+				
+				if (size > 50 * 1024 * 1024) {
+					uni.showToast({
+						title: '视频大小不能超过50MB',
+						icon: 'none'
+					})
+					return
+				}
+				
+				if (duration > 60) {
+					uni.showToast({
+						title: '视频时长不能超过60秒',
+						icon: 'none'
+					})
+					return
+				}
+				
+				let videoPath = ''
+				if (tempFilePathVal != null && tempFilePathVal.toString() != '') {
+					videoPath = tempFilePathVal.toString()
+				}
+				
+				let thumbPath = ''
+				if (thumbTempFilePathVal != null && thumbTempFilePathVal.toString() != '') {
+					thumbPath = thumbTempFilePathVal.toString()
+				}
+				
+				console.log('📹 视频路径:', videoPath)
+				console.log('📹 缩略图路径:', thumbPath)
+				
+				if (videoPath != '') {
+					// 如果没有缩略图，尝试生成
+					if (thumbPath == '') {
+						console.log('⚠️ 缩略图为空，尝试生成...')
+						generateVideoThumbnail(videoPath).then((generatedThumb: string) => {
+							uploadVideoFile(videoPath, generatedThumb)
+						})
+					} else {
+						uploadVideoFile(videoPath, thumbPath)
+					}
+				}
+			}
+		}
+	})
+	})
+}
+
+const removeImage = (index: number) => {
+	formPicUrls.value.splice(index, 1)
+	if (formPicUrls.value.length == 0) {
+		formInsertType.value = 0
+	}
+}
+
+const doRemoveVideo = () => {
+	videoUrl.value = ''
+	formMediaName.value = ''
+	formVideoPic.value = ''
+	formInsertType.value = 0
+}
+
+const removeVideo = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确定要移除视频吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doRemoveVideo()
+			}
+		}
+	})
+}
+
+const handlePublish = async () => {
+	const discoverContentVal = formDiscoverContent.value
+	if (discoverContentVal == null || discoverContentVal.trim() == '') {
+		uni.showToast({
+			title: '请输入这一刻的想法',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (uploading.value == true) {
+		uni.showToast({
+			title: '正在上传中，请稍候',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 确定插入类型
+		const mediaNameVal = formMediaName.value
+		if (formPicUrls.value.length == 0 && (mediaNameVal == null || mediaNameVal == '')) {
+			formInsertType.value = 0
+		}
+		
+		// 🔧 修复：移除 publishTime 字段（后端 DynamicPublishRequest 不需要此字段）
+		const params = {
+			userKid: formUserKid.value,
+			insertType: formInsertType.value,
+			picUrls: formPicUrls.value,
+			discoverContent: formDiscoverContent.value.trim(),
+			discoverLat: formDiscoverLat.value,
+			discoverLng: formDiscoverLng.value,
+			discoverAddress: formDiscoverAddress.value,
+			mediaName: formMediaName.value,
+			videoPic: formVideoPic.value
+		} as UTSJSONObject
+		
+		await publishTrends(params)
+		
+		uni.showToast({
+			title: '发布成功',
+			icon: 'success'
+		})
+		
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+		
+	} catch (error) {
+		console.error('发布失败:', error)
+		uni.showToast({
+			title: '发布失败，请重试',
+			icon: 'none'
+		})
+	}
+}
+
+// 🔧 新增：获取当前位置函数（必须在 initPageData 之前定义）
+const fetchCurrentLocation = () => {
+	getLocationInfo().then((location: any) => {
+		if (location != null) {
+			const locStr = JSON.stringify(location)
+			const locObj = JSON.parse(locStr) as UTSJSONObject
+			
+			const latitudeVal = locObj.get('latitude')
+			const longitudeVal = locObj.get('longitude')
+			const cityVal = locObj.get('city')
+			
+			if (latitudeVal != null && latitudeVal.toString() != '' && latitudeVal.toString() != '0') {
+				formDiscoverLat.value = latitudeVal.toString()
+			}
+			if (longitudeVal != null && longitudeVal.toString() != '' && longitudeVal.toString() != '0') {
+				formDiscoverLng.value = longitudeVal.toString()
+			}
+			if (cityVal != null && cityVal.toString() != '' && cityVal.toString() != '全部') {
+				formDiscoverAddress.value = cityVal.toString()
+			}
+			
+			console.log('📍 获取当前位置成功:', formDiscoverAddress.value, formDiscoverLat.value, formDiscoverLng.value)
+		}
+	}).catch((error: any | null): void => {
+		console.error('获取当前位置失败:', error)
+	})
+}
+
+const initPageData = () => {
+	// 检查登录状态
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	// 设置用户ID
+	const userKid = getUserKidFromStore()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	formUserKid.value = userKid
+	
+	// 获取位置信息 - 🔧 修复：使用正确的存储键 WYXD_LOCATION
+	let hasLocationCache = false
+	try {
+		const locationInfo = uni.getStorageSync('WYXD_LOCATION')
+		if (locationInfo != null && locationInfo != '') {
+			let locStr = ''
+			if (typeof locationInfo == 'string') {
+				locStr = locationInfo as string
+			} else {
+				locStr = JSON.stringify(locationInfo)
+			}
+			
+			if (locStr != '') {
+				const locObj = JSON.parse(locStr) as UTSJSONObject
+				const latitudeVal = locObj.get('latitude')
+				const longitudeVal = locObj.get('longitude')
+				const cityVal = locObj.get('city')
+				
+				if (latitudeVal != null && latitudeVal.toString() != '' && latitudeVal.toString() != '0') {
+					formDiscoverLat.value = latitudeVal.toString()
+					hasLocationCache = true
+				}
+				if (longitudeVal != null && longitudeVal.toString() != '' && longitudeVal.toString() != '0') {
+					formDiscoverLng.value = longitudeVal.toString()
+				}
+				if (cityVal != null && cityVal.toString() != '' && cityVal.toString() != '全部') {
+					formDiscoverAddress.value = cityVal.toString()
+				}
+				
+				console.log('📍 获取缓存位置信息成功:', formDiscoverAddress.value, formDiscoverLat.value, formDiscoverLng.value)
+			}
+		}
+	} catch (e) {
+		console.error('获取缓存位置信息失败:', e)
+	}
+	
+	// 🔧 如果缓存中没有位置信息，主动获取当前位置
+	if (hasLocationCache == false) {
+		console.log('⚠️ 未找到缓存的位置信息，尝试获取当前位置')
+		fetchCurrentLocation()
+	}
+}
+
+// ==================== 生命周期 ====================
+
+onMounted(() => {
+	// 初始化页面布局（状态栏高度）
+	initPageLayout()
+	
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化（解决 APP 端登录状态问题）
+	initUserInfoAction()
+	
+	initPageData()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+
+<style scoped>
+.add-trends-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.content-section {
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.content-input {
+	width: 100%;
+	min-height: 300rpx;
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 44rpx;
+}
+
+.char-count {
+	flex-direction: row;
+	justify-content: flex-end;
+	margin-top: 8rpx;
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.media-preview-section {
+	margin-bottom: 20rpx;
+}
+
+.video-preview-container {
+	width: 100%;
+	border-radius: 12rpx;
+	overflow: hidden;
+	margin-bottom: 20rpx;
+}
+
+.video-player {
+	width: 100%;
+	height: 400rpx;
+}
+
+.media-remove-btn {
+	position: absolute;
+	top: 10rpx;
+	right: 10rpx;
+	width: 50rpx;
+	height: 50rpx;
+	background-color: rgba(0, 0, 0, 0.6);
+	border-radius: 30rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.remove-icon {
+	color: #ffffff;
+	font-size: 32rpx;
+	font-weight: bold;
+}
+
+.image-preview-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.image-preview-item {
+	width: 210rpx;
+	height: 210rpx;
+	border-radius: 8rpx;
+	overflow: hidden;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.preview-image {
+	width: 210rpx;
+	height: 210rpx;
+}
+
+.media-select-bar {
+	margin-bottom: 40rpx;
+}
+
+.media-btn {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 120rpx;
+	height: 120rpx;
+	background-color: #f8f8f8;
+	border-radius: 20rpx;
+}
+
+.media-icon {
+	font-size: 60rpx;
+	color: #37B1F2;
+	margin-bottom: 8rpx;
+}
+
+.media-text {
+	font-size: 22rpx;
+	color: #666666;
+}
+
+.submit-btn {
+	width: 654rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 52rpx;
+	margin-top: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.modal-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.media-modal {
+	width: 750rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx 20rpx 0 0;
+	padding: 20rpx;
+}
+
+.modal-option {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f5f5f5;
+}
+
+.option-icon {
+	font-size: 40rpx;
+	margin-right: 20rpx;
+}
+
+.option-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.modal-cancel {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	margin-top: 10rpx;
+	background-color: #f5f5f5;
+	border-radius: 12rpx;
+}
+
+.cancel-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+</style>

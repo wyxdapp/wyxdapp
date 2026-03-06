@@ -1,0 +1,91 @@
+﻿/**
+ * 会员认证守卡
+ * 用于检查用户是否为会员，非会员时引导开通
+ * 
+ * 注意：此文件从 pagesBusiness/composables/useMemberGuard.uts 移动到主包
+ * 原因：useChatActions 需要引用此 composable，避免跨分包引用错误
+ * 移动时间：2026-02-04
+ */
+
+import { isUserVip, getUserLoginStatus } from '@/stores/user'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+
+// 缓存数据类
+export class CacheData {
+	time: number = 0
+	value: boolean | null = null
+}
+
+// 轻量内存缓存（60秒）
+let _cache: CacheData = new CacheData()
+
+/**
+ * 会员认证检查
+ * @param api API实例（已废弃，保留参数兼容性）
+ * @param store 用户store（已废弃，保留参数兼容性）
+ * @param feature 功能标识，默认为 'contact_view'
+ * @returns 是否为会员
+ */
+export async function useMemberGuard(
+	api: any, 
+	store: any, 
+	feature: string = 'contact_view'
+): Promise<boolean> {
+	try {
+		console.log('🔍 [useMemberGuard] 开始会员认证检查')
+
+		// 🔧 修复：使用导出的函数检查登录状态，避免 JSON 序列化丢失 computed 属性
+		const isLogin = getUserLoginStatus()
+		if (isLogin == false) {
+			uni.showToast({ 
+				title: '请先登录', 
+				icon: 'none' 
+			})
+			return false
+		}
+
+		// 🔧 修复：使用导出的 isUserVip 函数检查会员状态
+		// 之前通过 JSON.stringify(store) 方式无法获取 computed 属性 isMember
+		const isMember = isUserVip()
+		
+		console.log('📊 [useMemberGuard] 会员状态:', isMember)
+
+		if (isMember == true) {
+			return true
+		}
+
+		// 非会员时检查会员功能是否开启
+		// 🔧 新增：检查会员功能是否开启
+		if (isMemberFeatureEnabled() == false) {
+			// 会员功能关闭，不允许开通
+			uni.showToast({
+				title: '会员功能暂未开放',
+				icon: 'none'
+			})
+			return false
+		}
+		
+		// 会员功能开启，引导开通
+		uni.showModal({
+			title: '会员专享',
+			content: '该功能仅对会员开放，是否前往开通？',
+			success: (res) => {
+				if (res.confirm) {
+					uni.navigateTo({ 
+						url: '/pagesUser/my/proveDetails/vip' 
+					})
+				}
+			}
+		})
+		return false
+	} catch (e) {
+		console.error('会员认证检查失败:', e)
+		uni.showToast({ 
+			title: '校验失败，请稍后重试', 
+			icon: 'none' 
+		})
+		return false
+	}
+}
+
+export default { useMemberGuard }

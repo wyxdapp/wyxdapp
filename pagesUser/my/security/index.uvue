@@ -1,0 +1,2058 @@
+<template>
+	<view class="security-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">账户安全</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		<!-- 安全设置列表 -->
+		<view class="section-card">
+			<view class="security-item" @click="handlePhoneClick">
+				<text class="item-label">手机号设置</text>
+				<text class="item-value">{{ maskedPhone }}</text>
+				<text class="item-arrow">›</text>
+			</view>
+			<view class="security-item" @click="handleLoginPasswordClick">
+				<text class="item-label">登录密码设置</text>
+				<text class="item-value">{{ loginPasswordStatus }}</text>
+				<text class="item-arrow">›</text>
+			</view>
+			<view class="security-item" @click="handlePayPasswordClick">
+				<text class="item-label">支付密码设置</text>
+				<text class="item-value">{{ payPasswordStatus }}</text>
+				<text class="item-arrow">›</text>
+			</view>
+		</view>
+		
+		<!-- 注销账户 -->
+		<view class="section-card danger-section">
+			<view class="security-item danger-item" @click="handleDeleteAccountClick">
+				<text class="item-label danger-label">注销账户</text>
+				<text class="item-arrow">›</text>
+			</view>
+		</view>
+		</view>
+		
+		<!-- 注销账户弹窗 -->
+		<view v-if="deleteAccountVisible == true" class="popup-mask" @click="deleteAccountVisible = false">
+			<view class="popup-container delete-popup" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title danger-title">注销账户</text>
+					<text class="close-btn" @click="deleteAccountVisible = false">✕</text>
+				</view>
+				<view class="popup-content">
+					<view class="warning-box">
+						<UniIcons type="info-filled" :size="48" color="#FF9800" />
+						<text class="warning-title">注销账户后，以下信息将被永久删除且无法恢复：</text>
+					</view>
+					<view class="warning-list">
+						<text class="warning-item">• 账户信息（昵称、头像、个人资料等）</text>
+						<text class="warning-item">• 钱包余额及交易记录</text>
+						<text class="warning-item">• 订单记录及评价</text>
+						<text class="warning-item">• 聊天记录及好友关系</text>
+						<text class="warning-item">• 发布的动态及收藏内容</text>
+						<text class="warning-item">• 会员权益及优惠券</text>
+					</view>
+					<view class="warning-notice">
+						<text class="notice-text">注销申请提交后，我们将在15个工作日内完成审核。审核期间您可以取消注销申请。</text>
+					</view>
+					
+					<!-- 验证方式 -->
+					<view class="form-item">
+						<text class="form-label">验证手机号</text>
+						<view class="code-row">
+							<input 
+								v-model="deleteAccountCode"
+								class="form-input code-input"
+								type="number"
+								maxlength="4"
+								placeholder="请输入验证码"
+							/>
+							<view 
+								class="code-btn login-code-btn"
+								:class="{ 'code-btn-disabled': canSendDeleteCode == false || deleteCodeCountdown > 0 }"
+								@click="handleSendDeleteCodeClick"
+							>
+								<text class="code-btn-text">{{ deleteCodeCountdown > 0 ? `${deleteCodeCountdown}s` : '发送验证码' }}</text>
+							</view>
+						</view>
+					</view>
+					
+					<view class="popup-buttons row-actions">
+						<view class="btn cancel-btn" @click="deleteAccountVisible = false">
+							<text class="btn-text cancel-btn-text">取消</text>
+						</view>
+						<view class="btn danger-btn" @click="confirmDeleteAccount">
+							<text class="btn-text danger-btn-text">确认注销</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 更换手机号弹窗 -->
+		<view v-if="phoneChangeVisible" class="popup-mask" @click="phoneChangeVisible = false">
+			<view class="popup-container" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title">更换手机号</text>
+					<text class="close-btn" @click="phoneChangeVisible = false">✕</text>
+				</view>
+				<view class="popup-content">
+					<view class="form-item">
+						<text class="form-label">新手机号</text>
+						<input 
+							v-model="phoneFormPhone"
+							class="form-input"
+							type="number"
+							maxlength="11"
+							placeholder="请输入新手机号"
+						/>
+					</view>
+					<view class="form-item">
+						<view class="code-row">
+							<input 
+								v-model="phoneFormCode"
+								class="form-input code-input"
+								type="number"
+								maxlength="4"
+								placeholder="请输入验证码"
+							/>
+							<view 
+								class="code-btn login-code-btn"
+								:class="{ 'code-btn-disabled': canSendPhoneCode == false || phoneCodeCountdown > 0 }"
+								@click="handleSendPhoneCodeClick"
+							>
+								<text class="code-btn-text">{{ phoneCodeCountdown > 0 ? `${phoneCodeCountdown}s` : '发送验证码' }}</text>
+							</view>
+						</view>
+					</view>
+					<view class="popup-buttons row-actions">
+						<view class="btn cancel-btn" @click="phoneChangeVisible = false">
+							<text class="btn-text cancel-btn-text">取消</text>
+						</view>
+						<view class="btn confirm-btn" @click="confirmPhoneChange">
+							<text class="btn-text confirm-btn-text">确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 修改登录密码弹窗 -->
+		<view v-if="passwordVisible" class="popup-mask" @click="passwordVisible = false">
+			<view class="popup-container" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title">{{ passwordDialogTitle }}</text>
+					<text class="close-btn" @click="passwordVisible = false">✕</text>
+				</view>
+				<view class="popup-content">
+					<!-- 验证方式选择 - Tab 切换样式 -->
+					<view v-if="isFirstSetLoginPassword == false" class="form-item">
+						<text class="form-label left-label">验证方式</text>
+						<view class="verify-tabs">
+							<view 
+								:class="passwordVerifyType == 'original' ? 'verify-tab-item verify-tab-active' : 'verify-tab-item'"
+								@click="passwordVerifyType = 'original'"
+							>
+								<text :class="passwordVerifyType == 'original' ? 'verify-tab-text verify-tab-text-active' : 'verify-tab-text'">原密码验证</text>
+							</view>
+							<view 
+								:class="passwordVerifyType == 'sms' ? 'verify-tab-item verify-tab-active' : 'verify-tab-item'"
+								@click="passwordVerifyType = 'sms'"
+							>
+								<text :class="passwordVerifyType == 'sms' ? 'verify-tab-text verify-tab-text-active' : 'verify-tab-text'">短信验证</text>
+							</view>
+						</view>
+					</view>
+					
+					<!-- 原密码验证 -->
+					<view v-if="isFirstSetLoginPassword == false && passwordVerifyType == 'original'" class="form-item">
+						<text class="form-label field-title">原密码</text>
+						<input 
+							v-model="passwordFormOriginal"
+							class="form-input"
+							type="password"
+							placeholder="请输入原密码"
+						/>
+					</view>
+					
+					<!-- 短信验证 -->
+					<template v-if="isFirstSetLoginPassword == false && passwordVerifyType == 'sms'">
+						<view class="form-item">
+							<text class="form-label field-title">手机号</text>
+							<input 
+								v-model="currentPhone"
+								class="form-input"
+								disabled
+								placeholder="当前绑定手机号"
+							/>
+						</view>
+						<view class="form-item">
+							<view class="code-row inline-row">
+								<input 
+									v-model="passwordFormSmsCode"
+									class="form-input code-input"
+									type="number"
+									maxlength="4"
+									placeholder="请输入验证码"
+								/>
+								<view 
+									class="code-btn login-code-btn"
+									:class="{ 'code-btn-disabled': canSendSmsCode == false || smsCodeCountdown > 0 }"
+									@click="handleSendSmsCodeClick"
+								>
+									<text class="code-btn-text">{{ smsCodeCountdown > 0 ? `${smsCodeCountdown}s` : '发送验证码' }}</text>
+								</view>
+							</view>
+						</view>
+					</template>
+					
+					<view class="form-item">
+						<text class="form-label field-title">新密码</text>
+						<input 
+							v-model="passwordFormNew"
+							class="form-input"
+							type="password"
+							placeholder="请输入新密码（6-20位）"
+						/>
+					</view>
+					<view class="form-item">
+						<text class="form-label field-title">确认密码</text>
+						<input 
+							v-model="passwordFormConfirm"
+							class="form-input"
+							type="password"
+							placeholder="请再次输入新密码"
+						/>
+					</view>
+					<view class="popup-buttons row-actions">
+						<view class="btn cancel-btn" @click="passwordVisible = false">
+							<text class="btn-text cancel-btn-text">取消</text>
+						</view>
+						<view class="btn confirm-btn" @click="confirmPasswordChange">
+							<text class="btn-text confirm-btn-text">确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 设置支付密码弹窗 -->
+		<view v-if="payPasswordVisible == true" class="popup-mask" @click="payPasswordVisible = false">
+			<view class="popup-container" @click.stop>
+				<view class="popup-header">
+					<text class="popup-title">{{ payPasswordTitleText }}</text>
+					<text class="close-btn" @click="payPasswordVisible = false">✕</text>
+				</view>
+				<view class="popup-content">
+					<!-- 修改支付密码时显示验证方式选择 - Tab 切换样式 -->
+					<view v-if="isFirstSetPayPassword == false" class="form-item">
+						<text class="form-label left-label">验证方式</text>
+						<view class="verify-tabs">
+							<view 
+								:class="payPasswordVerifyType == 'original' ? 'verify-tab-item verify-tab-active' : 'verify-tab-item'"
+								@click="payPasswordVerifyType = 'original'"
+							>
+								<text :class="payPasswordVerifyType == 'original' ? 'verify-tab-text verify-tab-text-active' : 'verify-tab-text'">原密码验证</text>
+							</view>
+							<view 
+								:class="payPasswordVerifyType == 'sms' ? 'verify-tab-item verify-tab-active' : 'verify-tab-item'"
+								@click="payPasswordVerifyType = 'sms'"
+							>
+								<text :class="payPasswordVerifyType == 'sms' ? 'verify-tab-text verify-tab-text-active' : 'verify-tab-text'">短信验证</text>
+							</view>
+						</view>
+					</view>
+					
+					<!-- 原密码验证（修改时） -->
+					<view v-if="isFirstSetPayPassword == false && payPasswordVerifyType == 'original'" class="form-item">
+						<text class="form-label field-title">原密码</text>
+						<input 
+							v-model="payPasswordFormOld"
+							class="form-input"
+							type="number"
+							maxlength="6"
+							placeholder="请输入原支付密码"
+						/>
+					</view>
+					
+					<!-- 短信验证（修改时） -->
+					<template v-if="isFirstSetPayPassword == false && payPasswordVerifyType == 'sms'">
+						<view class="form-item">
+							<text class="form-label field-title">手机号</text>
+							<input 
+								v-model="currentPhone"
+								class="form-input"
+								disabled
+								placeholder="当前绑定手机号"
+							/>
+						</view>
+						<view class="form-item">
+							<view class="code-row inline-row">
+								<input 
+									v-model="payPasswordFormSmsCode"
+									class="form-input code-input"
+									type="number"
+									maxlength="4"
+									placeholder="请输入验证码"
+								/>
+								<view 
+									class="code-btn login-code-btn"
+									:class="{ 'code-btn-disabled': canSendPayPasswordSmsCode == false || payPasswordSmsCodeCountdown > 0 }"
+									@click="handleSendPayPasswordSmsCodeClick"
+								>
+									<text class="code-btn-text">{{ payPasswordSmsCodeCountdown > 0 ? `${payPasswordSmsCodeCountdown}s` : '发送验证码' }}</text>
+								</view>
+							</view>
+						</view>
+					</template>
+					
+					<view class="form-item">
+						<text class="form-label field-title">支付密码</text>
+						<input 
+							v-model="payPasswordFormValue"
+							class="form-input"
+							type="number"
+							maxlength="6"
+							placeholder="请输入6位数字支付密码"
+						/>
+					</view>
+					<view class="form-item">
+						<text class="form-label field-title">确认密码</text>
+						<input 
+							v-model="payPasswordFormAgain"
+							class="form-input"
+							type="number"
+							maxlength="6"
+							placeholder="请再次输入支付密码"
+						/>
+					</view>
+					<view class="popup-buttons row-actions">
+						<view class="btn cancel-btn" @click="payPasswordVisible = false">
+							<text class="btn-text cancel-btn-text">取消</text>
+						</view>
+						<view class="btn confirm-btn" @click="confirmPayPasswordSet">
+							<text class="btn-text confirm-btn-text">确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { useUserStore, getUserId, getUserPhone, getUserProp } from '@/stores/user'
+import { getMobileCode, changePhone, retrievePassword, setPayPassword, updatePayPassword, updatePayPasswordBySms, checkLoginPassword, checkCode } from '@/pagesUser/services/authService'
+import { post } from '@/utils/request'
+import { getAccountBalance } from '@/api/wallet.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+
+const userStore = useUserStore()
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+// 参数类：AuthGetMobileCodeParams（本文件局部，用于构造请求参数，避免匿名对象字面量）
+class AuthGetMobileCodeParams {
+	phone: string = ''
+	constructor(phone?: string) {
+		this.phone = (phone != null && phone != '') ? phone : ''
+	}
+}
+
+// 参数类：ChangePhoneParams（本文件局部，用于构造请求参数，避免匿名对象字面量）
+class ChangePhoneParams {
+	oldPhone: string = ''
+	newPhone: string = ''
+	code: string = ''
+	userKid: string = ''
+	constructor(oldPhone?: string, newPhone?: string, code?: string, userKid?: string) {
+		this.oldPhone = (oldPhone != null && oldPhone != '') ? oldPhone : ''
+		this.newPhone = (newPhone != null && newPhone != '') ? newPhone : ''
+		this.code = (code != null && code != '') ? code : ''
+		this.userKid = (userKid != null && userKid != '') ? userKid : ''
+	}
+}
+
+// 弹窗控制
+const phoneChangeVisible = ref(false)
+const passwordVisible = ref(false)
+const payPasswordVisible = ref(false)
+const deleteAccountVisible = ref(false)
+
+// 注销账户表单
+const deleteAccountCodeRef = ref<string>('')
+const deleteCodeCountdown = ref(0)
+let deleteCodeTimer: number | null = null
+const deleteAccountCode = deleteAccountCodeRef
+
+// 更换手机号表单 - 使用独立 ref（UTS 不支持 computed getter/setter）
+const phoneFormPhoneRef = ref<string>('')
+const phoneFormCodeRef = ref<string>('')
+
+// 修改登录密码表单 - 使用独立 ref
+const passwordFormOriginalRef = ref<string>('')
+const passwordFormSmsCodeRef = ref<string>('')
+const passwordFormNewRef = ref<string>('')
+const passwordFormConfirmRef = ref<string>('')
+const passwordVerifyType = ref('original') // original: 原密码验证, sms: 短信验证
+
+// 设置支付密码表单 - 使用独立 ref
+const payPasswordFormOldRef = ref<string>('')
+const payPasswordFormSmsCodeRef = ref<string>('')
+const payPasswordFormValueRef = ref<string>('')
+const payPasswordFormAgainRef = ref<string>('')
+const payPasswordVerifyType = ref('original') // original: 原密码验证, sms: 短信验证
+
+// 支付密码状态
+const hasPayPassword = ref(false)
+
+// 登录密码状态
+const hasLoginPassword = ref(false)
+
+// 倒计时
+const phoneCodeCountdown = ref(0)
+const smsCodeCountdown = ref(0)
+const payPasswordSmsCodeCountdown = ref(0)
+let phoneCodeTimer: number | null = null
+let smsCodeTimer: number | null = null
+let payPasswordSmsCodeTimer: number | null = null
+
+// 表单字段别名（直接使用 ref，UTS 不支持 computed getter/setter）
+const phoneFormPhone = phoneFormPhoneRef
+const phoneFormCode = phoneFormCodeRef
+const passwordFormOriginal = passwordFormOriginalRef
+const passwordFormSmsCode = passwordFormSmsCodeRef
+const passwordFormNew = passwordFormNewRef
+const passwordFormConfirm = passwordFormConfirmRef
+const payPasswordFormOld = payPasswordFormOldRef
+const payPasswordFormSmsCode = payPasswordFormSmsCodeRef
+const payPasswordFormValue = payPasswordFormValueRef
+const payPasswordFormAgain = payPasswordFormAgainRef
+
+// 点击发送短信验证码的包装处理，避免在模板内返回 Promise 导致类型不匹配
+// （定义位置靠后，实际实现会被放在 sendSmsCode 定义之后）
+
+// 安全访问辅助函数：使用统一的 store 函数获取用户信息
+const getUserInfoProp = (key: string): string => {
+	try {
+		if (key == 'phone') {
+			const phone = getUserPhone()
+			return (phone != null && phone != '') ? phone : ''
+		}
+		if (key == 'kid' || key == 'shortKid') {
+			const kid = getUserId()
+			return (kid != null && kid != '') ? kid : ''
+		}
+		// 其他字段使用通用的 getUserProp 函数
+		const val = getUserProp(key)
+		return (val != null && val != '') ? val : ''
+	} catch (e) {}
+	return ''
+}
+
+// 计算属性（添加返回类型）
+const maskedPhone = computed((): string => {
+	try {
+		const phone = getUserInfoProp('phone')
+		if (phone == null || phone == '') return '未绑定'
+		const phoneStr = phone.toString()
+		return phoneStr.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+	} catch (e) {
+		return '未绑定'
+	}
+})
+
+const currentPhone = computed((): string => {
+	try {
+		const phone = getUserInfoProp('phone')
+		if (phone == null) return ''
+		return phone.toString()
+	} catch (e) {
+		return ''
+	}
+})
+
+const payPasswordStatus = computed((): string => {
+	if (hasPayPassword.value == true) {
+		return '修改'
+	}
+	return '设置'
+})
+
+const isFirstSetPayPassword = computed((): boolean => {
+	return hasPayPassword.value == false
+})
+
+const payPasswordTitleText = computed((): string => {
+	if (isFirstSetPayPassword.value == true) {
+		return '设置支付密码'
+	}
+	return '修改支付密码'
+})
+
+const loginPasswordStatus = computed((): string => {
+	if (hasLoginPassword.value == true) {
+		return '修改'
+	}
+	return '设置'
+})
+
+const isFirstSetLoginPassword = computed((): boolean => {
+	return hasLoginPassword.value == false
+})
+
+const passwordDialogTitle = computed((): string => {
+	if (isFirstSetLoginPassword.value == true) {
+		return '设置登录密码'
+	}
+	return '修改登录密码'
+})
+
+const canSendPhoneCode = computed((): boolean => {
+	try {
+		// 直接使用 ref 变量
+		const phone = phoneFormPhoneRef.value
+		if (phone == null || phone == '') return false
+		return /^1[3-9]\d{9}$/.test(phone)
+	} catch (e) {
+		return false
+	}
+})
+
+const canSendSmsCode = computed((): boolean => {
+	try {
+		const phone = currentPhone.value
+		if (phone == null || phone == '') return false
+		return /^1[3-9]\d{9}$/.test(phone)
+	} catch (e) {
+		return false
+	}
+})
+
+const canSendPayPasswordSmsCode = computed((): boolean => {
+	try {
+		const phone = currentPhone.value
+		if (phone == null || phone == '') return false
+		return /^1[3-9]\d{9}$/.test(phone)
+	} catch (e) {
+		return false
+	}
+})
+
+// 注销账户验证码发送条件
+const canSendDeleteCode = computed((): boolean => {
+	try {
+		const phone = currentPhone.value
+		if (phone == null || phone == '') return false
+		return /^1[3-9]\d{9}$/.test(phone)
+	} catch (e) {
+		return false
+	}
+})
+
+// 加载支付密码状态
+const loadPayPasswordStatus = async () => {
+	try {
+		const userKid = getUserInfoProp('kid')
+		if (userKid == null || userKid == '') {
+			hasPayPassword.value = false
+			return
+		}
+		
+			const resRaw = await getAccountBalance(userKid.toString()) as UTSJSONObject
+			// 安全读取返回值（UTSJSONObject）
+			const resJson = JSON.stringify(resRaw)
+			const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+			let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+			const codeVal = (codeGetVal != null) ? codeGetVal : ''
+			if (codeVal == 200 || codeVal == '200') {
+				let data: string | number | boolean | UTSJSONObject | null = null
+				try { data = (resObj != null) ? resObj.get('data') : null } catch (e) { data = null }
+			if (data != null) {
+				try {
+				let hasPassword: string | boolean = ''
+						try {
+							const dataJson2 = JSON.stringify(data)
+							const dataObj2 = (dataJson2 != null && dataJson2 != '') ? JSON.parse(dataJson2) as UTSJSONObject : null
+							let hpVal: string | boolean = ''
+							try {
+								if (dataObj2 != null) {
+									const dataObj3Json = JSON.stringify(dataObj2)
+									const dataObj3 = (dataObj3Json != null && dataObj3Json != '') ? JSON.parse(dataObj3Json) as UTSJSONObject : null
+									let tmpHas: string | number | boolean | UTSJSONObject | null = null
+									try {
+										tmpHas = (dataObj3 != null) ? dataObj3.get('hasPayPassword') : null
+									} catch (e) { tmpHas = null }
+									hpVal = (tmpHas != null && tmpHas != '') ? tmpHas.toString() : ''
+								}
+					} catch (e) {
+								hpVal = ''
+							}
+							hasPassword = (hpVal != null && hpVal != '') ? hpVal : ''
+						} catch (e) {
+							hasPassword = ''
+					}
+					hasPayPassword.value = (hasPassword == 'true' || hasPassword == '1')
+				} catch (e) {
+					hasPayPassword.value = false
+				}
+			} else {
+				hasPayPassword.value = false
+			}
+		} else {
+			hasPayPassword.value = false
+		}
+	} catch (error) {
+		handleSilentError(error, '加载支付密码状态')
+		// 默认认为未设置
+		hasPayPassword.value = false
+	}
+}
+
+// 加载登录密码状态
+const loadLoginPasswordStatus = async () => {
+	try {
+		const userKid = getUserInfoProp('kid')
+		if (userKid == null || userKid == '') {
+			hasLoginPassword.value = true
+			return
+		}
+		
+		const paramsObj = {
+			userKid: userKid.toString()
+		} as UTSJSONObject
+		const params = paramsObj
+		
+		const res = await post('/user/baseInfo/checkLoginPasswordStatus', params, false) as UTSJSONObject
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal2: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal2 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const codeVal = (codeGetVal2 != null) ? codeGetVal2 : ''
+		if (codeVal == 200 || codeVal == '200') {
+			let data: string | number | boolean | UTSJSONObject | null = null
+			try { data = (resObj != null) ? resObj.get('data') : null } catch (e) { data = null }
+			if (data != null) {
+				try {
+					let hasPassword: string | boolean = ''
+					try {
+						const dataJson2 = JSON.stringify(data)
+						const dataObj2 = (dataJson2 != null && dataJson2 != '') ? JSON.parse(dataJson2) as UTSJSONObject : null
+						let hpVal2: string | boolean = ''
+						try {
+							if (dataObj2 != null) {
+								const dataObj3Json = JSON.stringify(dataObj2)
+								const dataObj3 = (dataObj3Json != null && dataObj3Json != '') ? JSON.parse(dataObj3Json) as UTSJSONObject : null
+								let tmpHas: string | number | boolean | UTSJSONObject | null = null
+								try {
+									tmpHas = (dataObj3 != null) ? dataObj3.get('hasLoginPassword') : null
+								} catch (e) { tmpHas = null }
+								hpVal2 = (tmpHas != null && tmpHas != '') ? tmpHas.toString() : ''
+							}
+						} catch (e) {
+							hpVal2 = ''
+						}
+						hasPassword = (hpVal2 != null && hpVal2 != '') ? hpVal2 : ''
+					} catch (e) {
+						hasPassword = ''
+					}
+					hasLoginPassword.value = (hasPassword == 'true' || hasPassword == '1')
+				} catch (e) {
+					hasLoginPassword.value = true
+				}
+			} else {
+				hasLoginPassword.value = true
+			}
+		} else {
+			hasLoginPassword.value = true
+		}
+	} catch (error) {
+		handleSilentError(error, '加载登录密码状态')
+		// 默认认为已设置(更安全,显示完整验证选项)
+		hasLoginPassword.value = true
+	}
+}
+
+// 本地表单类型，避免在脚本中对 any 直接点访问导致 error18
+interface PhoneFormData {
+	phone?: string | null
+	code?: string | null
+}
+
+// 错误解析类型
+interface ErrorParsed {
+	message?: string | null
+	msg?: string | null
+}
+
+// 密码表单类型（顶层定义，避免局部接口）
+interface PasswordFormData {
+	originalPassword?: string | null
+	smsCode?: string | null
+	newPassword?: string | null
+	confirmPassword?: string | null
+}
+
+// 通用接口响应类型（本地使用，避免在脚本中使用匿名对象字面量）
+interface ApiResponseAny {
+	code?: number | string | null
+	msg?: string | null
+	message?: string | null
+	data?: UTSJSONObject | null
+}
+
+// 支付密码表单类型（顶层）
+interface PayPasswordFormData {
+	oldPassword?: string | null
+	smsCode?: string | null
+	payPassword?: string | null
+	payPasswordAgain?: string | null
+}
+
+// 参数类：CheckLoginPasswordParams / CheckCodeParams / RetrievePasswordParams（本文件局部，用于构造请求参数）
+class CheckLoginPasswordParams {
+	userKid: string = ''
+	password: string = ''
+	constructor(userKid?: string, password?: string) {
+		this.userKid = (userKid != null && userKid != '') ? userKid : ''
+		this.password = (password != null && password != '') ? password : ''
+	}
+}
+
+class CheckCodeParams {
+	phone: string = ''
+	code: string = ''
+	constructor(phone?: string, code?: string) {
+		this.phone = (phone != null && phone != '') ? phone : ''
+		this.code = (code != null && code != '') ? code : ''
+	}
+}
+
+class RetrievePasswordParams {
+	phone: string = ''
+	code: string = ''
+	newPassword: string = ''
+	constructor(phone?: string, code?: string, newPassword?: string) {
+		this.phone = (phone != null && phone != '') ? phone : ''
+		this.code = (code != null && code != '') ? code : ''
+		this.newPassword = (newPassword != null && newPassword != '') ? newPassword : ''
+	}
+}
+
+// 点击处理
+const handlePhoneClick = () => {
+	phoneChangeVisible.value = true
+}
+
+const handleLoginPasswordClick = () => {
+	passwordVisible.value = true
+}
+
+const handlePayPasswordClick = () => {
+	payPasswordVisible.value = true
+	// 打开弹窗时重新加载支付密码状态
+	loadPayPasswordStatus()
+}
+
+// 注销账户点击处理
+const handleDeleteAccountClick = () => {
+	deleteAccountVisible.value = true
+}
+
+// 开始注销验证码倒计时
+const startDeleteCodeCountdown = () => {
+	deleteCodeCountdown.value = 60
+	deleteCodeTimer = setInterval(() => {
+		deleteCodeCountdown.value = deleteCodeCountdown.value - 1
+		if (deleteCodeCountdown.value <= 0) {
+			if (deleteCodeTimer != null) {
+				const t = deleteCodeTimer as number
+				try { clearInterval(t) } catch (e) {}
+				deleteCodeTimer = null
+			}
+		}
+	}, 1000) as number
+}
+
+// 发送注销验证码
+const sendDeleteCode = async () => {
+	if (canSendDeleteCode.value == false) {
+		uni.showToast({ title: '当前无绑定手机号', icon: 'none' })
+		return
+	}
+	
+	try {
+		const paramsInstance = new AuthGetMobileCodeParams(currentPhone.value)
+		const paramsJson = JSON.stringify(paramsInstance)
+		const paramsPlain = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const res = await post('/user/baseInfo/getCode', paramsPlain as UTSJSONObject, false) as UTSJSONObject
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal3: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal3 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal3 != null) codeValNum = parseInt(codeGetVal3.toString()) } catch (e) {}
+		if (codeValNum == 200) {
+			uni.showToast({ title: '验证码发送成功', icon: 'success' })
+			startDeleteCodeCountdown()
+		} else {
+			let msg = '验证码发送失败'
+			try {
+				let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+				let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+				try { messageGetVal = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+				msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : msg)
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '发送验证码', null)
+	}
+}
+
+// 发送注销验证码点击处理
+const handleSendDeleteCodeClick = (): void => {
+	try {
+		if (canSendDeleteCode.value == true && deleteCodeCountdown.value == 0) {
+			try { sendDeleteCode() } catch (e) {}
+		}
+	} catch (e) {}
+}
+
+// 提交注销申请（必须在 confirmDeleteAccount 之前定义，因为 UTS 没有函数提升）
+const submitDeleteAccount = async () => {
+	try {
+		const userKid = getUserInfoProp('kid')
+		const phone = currentPhone.value
+		const code = deleteAccountCodeRef.value
+		
+		if (userKid == null || userKid == '' || phone == null || phone == '') {
+			throw new Error('用户信息缺失，请重新登录后重试')
+		}
+		
+		const paramsObj = {
+			userKid: userKid.toString(),
+			phone: phone,
+			code: code
+		} as UTSJSONObject
+		const params = paramsObj
+		
+		const res = await post('/user/baseInfo/deleteAccount', params, false) as UTSJSONObject
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal4: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal4 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal4 != null) codeValNum = parseInt(codeGetVal4.toString()) } catch (e) {}
+		
+		if (codeValNum == 200) {
+			uni.showToast({ title: '注销申请已提交', icon: 'success' })
+			deleteAccountVisible.value = false
+			deleteAccountCodeRef.value = ''
+			
+			// 清除本地登录状态
+			try { uni.removeStorageSync('token') } catch (e) {}
+			try { uni.removeStorageSync('userInfo') } catch (e) {}
+			
+			// 延迟跳转到登录页
+			setTimeout(() => {
+				uni.reLaunch({
+					url: '/pagesUser/login/index'
+				})
+			}, 1500)
+		} else {
+			let msg = '注销申请失败'
+			let msgGetVal2: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal2 = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+			let messageGetVal2: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal2 = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+			msg = (msgGetVal2 != null && msgGetVal2 != '') ? msgGetVal2.toString() : ((messageGetVal2 != null && messageGetVal2 != '') ? messageGetVal2.toString() : msg)
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '注销账户', null)
+	}
+}
+
+// 确认注销账户
+const confirmDeleteAccount = async () => {
+	const code = deleteAccountCodeRef.value
+	if (code == null || code == '') {
+		uni.showToast({ title: '请输入验证码', icon: 'none' })
+		return
+	}
+	if (!/^\d{4}$/.test(code)) {
+		uni.showToast({ title: '验证码必须为4位数字', icon: 'none' })
+		return
+	}
+	
+	uni.showModal({
+		title: '最终确认',
+		content: '账户注销后所有数据将被永久删除且无法恢复，确定要注销吗？',
+		confirmText: '确认注销',
+		confirmColor: '#FF4D4F',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				submitDeleteAccount()
+			}
+		}
+	})
+}
+
+// 发送手机验证码
+const sendPhoneCode = async () => {
+	if (canSendPhoneCode.value == false) {
+		uni.showToast({ title: '请输入正确的手机号', icon: 'none' })
+		return
+	}
+	
+	// 倒计时函数（在本处定义，确保在调用前存在）
+	const startPhoneCodeCountdown = () => {
+		phoneCodeCountdown.value = 60
+		phoneCodeTimer = setInterval(() => {
+			phoneCodeCountdown.value--
+			if (phoneCodeCountdown.value <= 0) {
+				if (phoneCodeTimer != null) {
+					const t = phoneCodeTimer as number
+					try { clearInterval(t) } catch (e) {}
+					phoneCodeTimer = null
+				}
+			}
+		}, 1000) as number
+	}
+
+	try {
+		// 直接使用 ref 变量获取手机号
+		const phoneParam = phoneFormPhoneRef.value
+		// 构造参数对象并显式转换为接口类型（避免 anonymous object）
+		const paramsObjInstance = new AuthGetMobileCodeParams(phoneParam)
+		const paramsForApiJson = JSON.stringify(paramsObjInstance)
+		const paramsForApiPlain = (paramsForApiJson != null && paramsForApiJson != '') ? JSON.parse(paramsForApiJson) as UTSJSONObject : {} as UTSJSONObject
+		const res = await post('/user/baseInfo/getCode', paramsForApiPlain as UTSJSONObject, false) as UTSJSONObject
+		// 解析返回并统一为数字 code
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal5: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal5 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal5 != null) codeValNum = parseInt(codeGetVal5.toString()) } catch (e) {}
+		if (codeValNum === 200) {
+			uni.showToast({ title: '验证码发送成功', icon: 'success' })
+			startPhoneCodeCountdown()
+		} else {
+			let msg = '验证码发送失败'
+			try {
+				if (resObj != null) {
+					let msgGetVal3: string | number | boolean | UTSJSONObject | null = null
+					try { msgGetVal3 = resObj.get('msg') } catch (e) {}
+					let messageGetVal3: string | number | boolean | UTSJSONObject | null = null
+					try { messageGetVal3 = resObj.get('message') } catch (e) {}
+					msg = (msgGetVal3 != null && msgGetVal3 != '') ? msgGetVal3.toString() : ((messageGetVal3 != null && messageGetVal3 != '') ? messageGetVal3.toString() : '验证码发送失败')
+				}
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '发送验证码', null)
+	}
+}
+
+// 包装：在 sendPhoneCode 定义之后再实现点击处理器（避免模板内直接调用 async）
+const handleSendPhoneCodeClick = (): void => {
+	try {
+		if (canSendPhoneCode.value == true && phoneCodeCountdown.value === 0) {
+			try { sendPhoneCode() } catch (e) {}
+		}
+	} catch (e) {}
+}
+
+// 倒计时：开始短信验证码倒计时（提前定义，确保在调用前存在）
+const startSmsCodeCountdown = () => {
+	smsCodeCountdown.value = 60
+	smsCodeTimer = setInterval(() => {
+		smsCodeCountdown.value--
+		if (smsCodeCountdown.value <= 0) {
+			if (smsCodeTimer != null) {
+				const t = smsCodeTimer as number
+				try { clearInterval(t) } catch (e) {}
+				smsCodeTimer = null
+			}
+		}
+	}, 1000) as number
+}
+
+// 倒计时：开始支付密码短信验证码倒计时（提前定义，确保在调用前存在）
+const startPayPasswordSmsCodeCountdown = () => {
+	payPasswordSmsCodeCountdown.value = 60
+	payPasswordSmsCodeTimer = setInterval(() => {
+		payPasswordSmsCodeCountdown.value--
+		if (payPasswordSmsCodeCountdown.value <= 0) {
+			if (payPasswordSmsCodeTimer != null) {
+				const t = payPasswordSmsCodeTimer as number
+				try { clearInterval(t) } catch (e) {}
+				payPasswordSmsCodeTimer = null
+			}
+		}
+	}, 1000) as number
+}
+
+// 发送短信验证码
+const sendSmsCode = async () => {
+	if (canSendSmsCode.value == false) {
+		uni.showToast({ title: '当前无绑定手机号', icon: 'none' })
+		return
+	}
+	
+	try {
+		// 构造参数类并调用 post，统一返回解析流程（避免匿名对象类型和动态访问）
+		const paramsInstance = new AuthGetMobileCodeParams(currentPhone.value)
+		const paramsJson = JSON.stringify(paramsInstance)
+		const paramsPlain = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const res = await post('/user/baseInfo/getCode', paramsPlain as UTSJSONObject, false) as UTSJSONObject
+		// 解析返回为 UTSJSONObject 并取 code
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal6: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal6 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal6 != null) codeValNum = parseInt(codeGetVal6.toString()) } catch (e) {}
+		if (codeValNum === 200) {
+			uni.showToast({ title: '验证码发送成功', icon: 'success' })
+			startSmsCodeCountdown()
+		} else {
+			let msg = '验证码发送失败'
+			try {
+				let msgGetVal4: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal4 = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+				let messageGetVal4: string | number | boolean | UTSJSONObject | null = null
+				try { messageGetVal4 = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+				msg = (msgGetVal4 != null && msgGetVal4 != '') ? msgGetVal4.toString() : ((messageGetVal4 != null && messageGetVal4 != '') ? messageGetVal4.toString() : msg)
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '发送验证码', null)
+	}
+}
+
+// 包装：在 sendSmsCode 定义之后再实现点击处理器（避免函数/变量使用顺序问题）
+const handleSendSmsCodeClick = (): void => {
+	try {
+		if (canSendSmsCode.value == true && smsCodeCountdown.value === 0) {
+			// 调用异步函数（不在模板表达式中直接调用）
+			try { sendSmsCode() } catch (e) {}
+		}
+	} catch (e) {}
+}
+
+// 开始手机验证码倒计时
+const startPhoneCodeCountdown = () => {
+	phoneCodeCountdown.value = 60
+	phoneCodeTimer = setInterval(() => {
+		phoneCodeCountdown.value--
+		if (phoneCodeCountdown.value <= 0) {
+			if (phoneCodeTimer != null) {
+				const t = phoneCodeTimer as number
+				try { clearInterval(t) } catch (e) {}
+				phoneCodeTimer = null
+			}
+		}
+	}, 1000) as number
+}
+
+// （已在上方定义 startSmsCodeCountdown）
+
+// 发送支付密码短信验证码
+const sendPayPasswordSmsCode = async () => {
+	if (canSendPayPasswordSmsCode.value == false) {
+		uni.showToast({ title: '当前无绑定手机号', icon: 'none' })
+		return
+	}
+	
+	try {
+		// 使用本文件定义的参数类并通过 post 调用，避免匿名对象类型导致的 error17
+		const paramsInstance = new AuthGetMobileCodeParams(currentPhone.value)
+		const paramsJson = JSON.stringify(paramsInstance)
+		const paramsPlain = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const res = await post('/user/baseInfo/getCode', paramsPlain as UTSJSONObject, false) as UTSJSONObject
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal7: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal7 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal7 != null) codeValNum = parseInt(codeGetVal7.toString()) } catch (e) {}
+		if (codeValNum === 200) {
+			uni.showToast({ title: '验证码发送成功', icon: 'success' })
+			startPayPasswordSmsCodeCountdown()
+		} else {
+			let msg = '验证码发送失败'
+			try {
+				let msgGetVal5: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal5 = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+				let messageGetVal5: string | number | boolean | UTSJSONObject | null = null
+				try { messageGetVal5 = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+				msg = (msgGetVal5 != null && msgGetVal5 != '') ? msgGetVal5.toString() : ((messageGetVal5 != null && messageGetVal5 != '') ? messageGetVal5.toString() : msg)
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '发送验证码', null)
+	}
+}
+
+// 包装：在 sendPayPasswordSmsCode 定义之后再实现点击处理器
+const handleSendPayPasswordSmsCodeClick = (): void => {
+	try {
+		if (canSendPayPasswordSmsCode.value == true && payPasswordSmsCodeCountdown.value === 0) {
+			try { sendPayPasswordSmsCode() } catch (e) {}
+		}
+	} catch (e) {}
+}
+
+// （已在上方定义 startPayPasswordSmsCodeCountdown）
+
+// 确认更换手机号
+const confirmPhoneChange = async () => {
+	// 直接使用 ref 变量获取表单数据
+	const phone = phoneFormPhoneRef.value
+	if (phone == null || phone == '') {
+		uni.showToast({ title: '请输入手机号', icon: 'none' })
+		return
+	}
+	if (!/^1[3-9]\d{9}$/.test(phone)) {
+		uni.showToast({ title: '请输入正确的手机号格式', icon: 'none' })
+		return
+	}
+	const code = phoneFormCodeRef.value
+	if (code == null || code == '') {
+		uni.showToast({ title: '请输入验证码', icon: 'none' })
+		return
+	}
+	if (!/^\d{4}$/.test(code)) {
+		uni.showToast({ title: '验证码必须为4位数字', icon: 'none' })
+		return
+	}
+	
+	try {
+		const oldPhone = getUserInfoProp('phone')
+		const userKid = getUserInfoProp('kid')
+		if (userKid == null || userKid == '' || oldPhone == null || oldPhone == '') {
+			throw new Error('用户信息缺失，请重新登录后重试')
+		}
+		const newPhone = phone
+		// 使用本地参数类并通过 post 调用，避免匿名对象类型导致的 error17
+		const paramsInstance = new ChangePhoneParams(oldPhone.toString(), newPhone, code, userKid.toString())
+		const paramsJson = JSON.stringify(paramsInstance)
+		const paramsPlain = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const res = await post('/user/baseInfo/changePhone', paramsPlain as UTSJSONObject, false) as UTSJSONObject
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal8: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal8 = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		let codeValNum = 0
+		try { if (codeGetVal8 != null) codeValNum = parseInt(codeGetVal8.toString()) } catch (e) {}
+		if (codeValNum == 200) {
+			uni.showToast({ title: '手机号更换成功', icon: 'success' })
+			// 更新本地缓存中的手机号（避免直接调用 store 方法导致编译错误）
+			try {
+				const storageVal = uni.getStorageSync('userInfo')
+				const storageJson = (storageVal != null && typeof storageVal == 'string') ? storageVal : JSON.stringify(storageVal)
+				const storageParsed = (storageJson != null && storageJson != '') ? JSON.parse(storageJson) as UTSJSONObject : null
+				if (storageParsed != null) {
+					// 使用 UTSJSONObject.get() 方法访问属性
+					const nicknameVal = storageParsed.get('nickname')
+					const imageVal = storageParsed.get('image')
+					const kidVal = storageParsed.get('kid')
+					const shortKidVal = storageParsed.get('shortKid')
+					const newStorageObj = {
+						phone: newPhone,
+						nickname: (nicknameVal != null) ? nicknameVal.toString() : '',
+						image: (imageVal != null) ? imageVal.toString() : '',
+						kid: (kidVal != null) ? kidVal.toString() : '',
+						shortKid: (shortKidVal != null) ? shortKidVal.toString() : ''
+					} as UTSJSONObject
+					try { uni.setStorageSync('userInfo', newStorageObj) } catch (e) {}
+				}
+			} catch (e) {}
+			phoneChangeVisible.value = false
+			// 重置表单
+			phoneFormPhoneRef.value = ''
+			phoneFormCodeRef.value = ''
+		} else {
+			let msg = '手机号更换失败'
+			try {
+				let msgGetVal6: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal6 = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+				let messageGetVal6: string | number | boolean | UTSJSONObject | null = null
+				try { messageGetVal6 = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+				msg = (msgGetVal6 != null && msgGetVal6 != '') ? msgGetVal6.toString() : ((messageGetVal6 != null && messageGetVal6 != '') ? messageGetVal6.toString() : msg)
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '更换手机号', null)
+	}
+}
+
+// 确认修改登录密码
+const confirmPasswordChange = async () => {
+	try {
+		// 直接使用独立 ref 变量获取表单数据
+		const newPassword = passwordFormNewRef.value
+		if (newPassword == null || newPassword == '') {
+			uni.showToast({ title: '请输入新密码', icon: 'none' })
+			return
+		}
+		if (newPassword.length < 6 || newPassword.length > 20) {
+			uni.showToast({ title: '密码长度为6-20位', icon: 'none' })
+			return
+		}
+		const confirmPassword = passwordFormConfirmRef.value
+		if (confirmPassword == null || confirmPassword == '') {
+			uni.showToast({ title: '请再次输入新密码', icon: 'none' })
+			return
+		}
+		if (newPassword != confirmPassword) {
+			uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
+			return
+		}
+		
+		// 已有密码用户需要验证
+		if (isFirstSetLoginPassword.value == false) {
+			// 验证方式
+			if (passwordVerifyType.value == 'original') {
+				const originalPassword = passwordFormOriginalRef.value
+				if (originalPassword == null || originalPassword == '') {
+					uni.showToast({ title: '请输入原密码', icon: 'none' })
+					return
+				}
+			} else {
+				const smsCode = passwordFormSmsCodeRef.value
+				if (smsCode == null || smsCode == '') {
+					uni.showToast({ title: '请输入验证码', icon: 'none' })
+					return
+				}
+				if (!/^\d{4}$/.test(smsCode)) {
+					uni.showToast({ title: '验证码必须为4位数字', icon: 'none' })
+					return
+				}
+			}
+		}
+		
+		const userKid = getUserInfoProp('kid')
+		const phone = currentPhone.value
+		if (userKid == null || userKid == '' || phone == null || phone == '') {
+			throw new Error('用户信息缺失，请重新登录后重试')
+		}
+		const userKidStr = userKid.toString()
+		
+		// 已有密码用户：根据验证方式先在后端校验
+		if (isFirstSetLoginPassword.value == false) {
+			if (passwordVerifyType.value == 'original') {
+				const paramsCheckObj = {
+					userKid: userKidStr,
+					password: passwordFormOriginalRef.value
+				} as UTSJSONObject
+				const paramsCheck = paramsCheckObj
+				await post('/user/baseInfo/checkPassword', paramsCheck, false)
+			} else {
+				const paramsCodeObj = {
+					phone: phone,
+					code: passwordFormSmsCodeRef.value
+				} as UTSJSONObject
+				const paramsCode = paramsCodeObj
+				await post('/user/baseInfo/checkCode', paramsCode, false)
+			}
+		}
+		
+		// 首次设置密码调用 setPassword，已有密码调用 retrievePassword
+		let resRaw: UTSJSONObject | null = null
+		if (isFirstSetLoginPassword.value == true) {
+			const paramsSetObj = {
+				userKid: userKidStr,
+				newPassword: newPassword
+			} as UTSJSONObject
+			resRaw = await post('/user/baseInfo/setPassword', paramsSetObj, false) as UTSJSONObject
+		} else {
+			const paramsRetrieveObj = {
+				phone: phone,
+				code: (passwordVerifyType.value == 'sms') ? passwordFormSmsCodeRef.value : '',
+				newPassword: newPassword
+			} as UTSJSONObject
+			resRaw = await post('/user/baseInfo/retrievePassword', paramsRetrieveObj, false) as UTSJSONObject
+		}
+		const resJson = (resRaw != null) ? JSON.stringify(resRaw) : ''
+		let codeVal: string | number = ''
+		try {
+			const resParsed = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+			if (resParsed != null) {
+				// 优先尝试作为 UTSJSONObject 调用 get()
+				try {
+					const resObj = resParsed as UTSJSONObject
+					const codeGetResult = resObj.get('code')
+					codeVal = (codeGetResult != null) ? codeGetResult.toString() : ''
+				} catch (innerE) {
+					// 回退为普通对象读取（使用顶层接口 ApiResponseAny）
+					try {
+						const tmp = resParsed as ApiResponseAny
+						if (tmp != null && tmp.code != null) {
+							codeVal = (tmp.code != null) ? tmp.code.toString() : ''
+						}
+					} catch (e2) {}
+				}
+			}
+		} catch (e) {}
+		if (codeVal == 200 || codeVal == '200') {
+			const successMsg = isFirstSetLoginPassword.value == true ? '密码设置成功' : '密码修改成功'
+			uni.showToast({ title: successMsg, icon: 'success' })
+			passwordVisible.value = false
+			// 重置表单
+			passwordFormOriginalRef.value = ''
+			passwordFormSmsCodeRef.value = ''
+			passwordFormNewRef.value = ''
+			passwordFormConfirmRef.value = ''
+			passwordVerifyType.value = 'original'
+			// 更新登录密码状态
+			hasLoginPassword.value = true
+		} else {
+			let msg = '操作失败'
+			try {
+				// 优先使用 UTSJSONObject 安全读取 msg/message
+				const resParsed2 = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+				if (resParsed2 != null) {
+					try {
+						const resObj2 = resParsed2 as UTSJSONObject
+						const msgAny = resObj2.get('msg')
+						const messageAny = resObj2.get('message')
+						if (msgAny != null && msgAny != '') {
+							msg = msgAny.toString()
+						} else if (messageAny != null && messageAny != '') {
+							msg = messageAny.toString()
+						}
+					} catch (innerE2) {
+						// 回退到普通对象读取
+						try {
+							const tmp2 = resParsed2 as ApiResponseAny
+							if (tmp2 != null) {
+								if (tmp2.msg != null && tmp2.msg != '') msg = tmp2.msg.toString()
+								else if (tmp2.message != null && tmp2.message != '') msg = tmp2.message.toString()
+							}
+						} catch (e3) {}
+					}
+				}
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '修改登录密码', null)
+	}
+}
+
+// 确认设置支付密码
+const confirmPayPasswordSet = async () => {
+	try {
+		// 直接使用独立 ref 变量获取表单数据
+		const payPwdVal = payPasswordFormValueRef.value
+		const payPwdAgainVal = payPasswordFormAgainRef.value
+		if (payPwdVal == null || payPwdVal == '') {
+			uni.showToast({ title: '请输入支付密码', icon: 'none' })
+			return
+		}
+		if (!/^\d{6}$/.test(payPwdVal)) {
+			uni.showToast({ title: '支付密码必须为6位数字', icon: 'none' })
+			return
+		}
+		if (payPwdAgainVal == null || payPwdAgainVal == '') {
+			uni.showToast({ title: '请再次输入支付密码', icon: 'none' })
+			return
+		}
+		if (payPwdVal != payPwdAgainVal) {
+			uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
+			return
+		}
+		
+		// 修改支付密码时需要验证
+		if (isFirstSetPayPassword.value == false) {
+			if (payPasswordVerifyType.value == 'original') {
+				// 原密码验证
+				const oldPwdVal = payPasswordFormOldRef.value
+				if (oldPwdVal == null || oldPwdVal == '') {
+					uni.showToast({ title: '请输入原支付密码', icon: 'none' })
+					return
+				}
+				if (!/^\d{6}$/.test(oldPwdVal)) {
+					uni.showToast({ title: '原支付密码必须为6位数字', icon: 'none' })
+					return
+				}
+			} else {
+				// 短信验证码验证
+				const smsCodeVal = payPasswordFormSmsCodeRef.value
+				if (smsCodeVal == null || smsCodeVal == '') {
+					uni.showToast({ title: '请输入验证码', icon: 'none' })
+					return
+				}
+				if (!/^\d{4}$/.test(smsCodeVal)) {
+					uni.showToast({ title: '验证码必须为4位数字', icon: 'none' })
+					return
+				}
+			}
+		}
+		
+		const userKid = getUserInfoProp('kid')
+		if (userKid == null || userKid == '') {
+			throw new Error('用户信息缺失，请重新登录后重试')
+		}
+		const userKidStr = userKid.toString()
+		
+		let res: UTSJSONObject = {} as UTSJSONObject
+		if (isFirstSetPayPassword.value == true) {
+			// 首次设置
+			const paramsSetObj = {
+				userKid: userKidStr,
+				password: payPwdVal,
+				confirmPassword: payPwdAgainVal
+			} as UTSJSONObject
+			const paramsSet = paramsSetObj
+			res = await post('/user/userWallet/setPayPassword', paramsSet, false) as UTSJSONObject
+		} else {
+			// 修改支付密码
+			const phone = currentPhone.value
+			if (phone == null || phone == '') {
+				throw new Error('手机号信息缺失')
+			}
+			
+			if (payPasswordVerifyType.value == 'original') {
+				// 原密码验证方式
+				const paramsUpdateObj = {
+					userKid: userKidStr,
+					oldPassword: payPasswordFormOldRef.value,
+					newPassword: payPwdVal
+				} as UTSJSONObject
+				const paramsUpdate = paramsUpdateObj
+				res = await post('/user/userWallet/updatePayPassword', paramsUpdate, false) as UTSJSONObject
+			} else {
+				// 短信验证码方式
+				const paramsUpdateSmsObj = {
+					userKid: userKidStr,
+					phone: phone,
+					code: payPasswordFormSmsCodeRef.value,
+					newPassword: payPwdVal
+				} as UTSJSONObject
+				const paramsUpdateSms = paramsUpdateSmsObj
+				res = await post('/user/userWallet/updatePayPasswordBySms', paramsUpdateSms, false) as UTSJSONObject
+			}
+		}
+		
+		// 安全读取响应 code（优先 UTSJSONObject，再回退为普通对象）
+		let codeValResult: string | number = ''
+		try {
+			const resJson = (res != null) ? JSON.stringify(res) : ''
+			const resParsed = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+			if (resParsed != null) {
+				try {
+					const resObj = resParsed as UTSJSONObject
+					const codeGetResult2 = resObj.get('code')
+					codeValResult = (codeGetResult2 != null) ? codeGetResult2.toString() : ''
+				} catch (eInner) {
+					const tmp = resParsed as ApiResponseAny
+					if (tmp != null && tmp.code != null) {
+						codeValResult = (tmp.code != null) ? tmp.code.toString() : ''
+					}
+				}
+			}
+		} catch (e) {}
+		const codeValNum = (codeValResult != null && codeValResult != '') ? parseInt(codeValResult.toString()) : 0
+		if (codeValNum == 200) {
+			const successMsg = isFirstSetPayPassword.value == true ? '支付密码设置成功' : '支付密码修改成功'
+			uni.showToast({ title: successMsg, icon: 'success' })
+			payPasswordVisible.value = false
+			// 重置表单
+			payPasswordFormOldRef.value = ''
+			payPasswordFormSmsCodeRef.value = ''
+			payPasswordFormValueRef.value = ''
+			payPasswordFormAgainRef.value = ''
+			payPasswordVerifyType.value = 'original'
+			// 更新支付密码状态
+			hasPayPassword.value = true
+		} else {
+			let msg = '操作失败'
+			try {
+				if (res != null) {
+					const resJson = JSON.stringify(res)
+					if (resJson != null && resJson != '') {
+						const resParsed = JSON.parse(resJson) as ApiResponseAny
+						if (resParsed != null) {
+							if (resParsed.msg != null && resParsed.msg != '') msg = resParsed.msg.toString()
+							else if (resParsed.message != null && resParsed.message != '') msg = resParsed.message.toString()
+						}
+					}
+				}
+			} catch (e) {}
+			throw new Error(msg)
+		}
+	} catch (error) {
+		handlePageError(error, '设置支付密码', null)
+	}
+}
+
+// 页面加载 - 处理跳转参数
+onLoad((options: OnLoadOptions) => {
+	if (options != null) {
+		try {
+			const optionsStr = JSON.stringify(options)
+			const optionsObj = (optionsStr != null && optionsStr != '') ? JSON.parse(optionsStr) as UTSJSONObject : null
+			if (optionsObj != null) {
+				let actionVal: string | number | boolean | UTSJSONObject | null = null
+				try { actionVal = optionsObj.get('action') } catch (e) {}
+				if (actionVal != null && actionVal.toString() == 'resetPayPassword') {
+					payPasswordVisible.value = true
+					payPasswordVerifyType.value = 'sms'
+				}
+			}
+		} catch (e) {}
+	}
+})
+
+// 生命周期
+onMounted(() => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	// 加载支付密码状态
+	loadPayPasswordStatus()
+	// 加载登录密码状态
+	loadLoginPasswordStatus()
+})
+
+// 清除定时器
+onUnmounted(() => {
+	if (phoneCodeTimer != null) {
+		const t = phoneCodeTimer as number
+		try { clearInterval(t) } catch (e) {}
+		phoneCodeTimer = null
+	}
+	if (smsCodeTimer != null) {
+		const ts = smsCodeTimer as number
+		try { clearInterval(ts) } catch (e) {}
+		smsCodeTimer = null
+	}
+	if (payPasswordSmsCodeTimer != null) {
+		const tp = payPasswordSmsCodeTimer as number
+		try { clearInterval(tp) } catch (e) {}
+		payPasswordSmsCodeTimer = null
+	}
+	if (deleteCodeTimer != null) {
+		const td = deleteCodeTimer as number
+		try { clearInterval(td) } catch (e) {}
+		deleteCodeTimer = null
+	}
+})
+</script>
+
+<style scoped>
+.security-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.section-card {
+	background-color: #ffffff;
+}
+
+.security-item {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 32rpx 28rpx;
+	border-bottom: 1rpx solid #f0f0f0;
+}
+
+.security-item:last-child {
+	border-bottom: none;
+}
+
+.item-label {
+	font-size: 32rpx;
+	color: #333333;
+}
+
+.item-value {
+	flex: 1;
+	text-align: right;
+	font-size: 28rpx;
+	color: #666666;
+	margin-right: 16rpx;
+}
+
+.item-arrow {
+	font-size: 40rpx;
+	color: #cccccc;
+}
+
+/* 弹窗遮罩 */
+.popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	z-index: 999;
+}
+
+.popup-container {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	overflow: hidden;
+}
+
+.popup-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 32rpx 32rpx 16rpx;
+	border-bottom: 1rpx solid #f0f0f0;
+}
+
+.popup-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.close-btn {
+	font-size: 32rpx;
+	color: #999999;
+	padding: 8rpx;
+}
+
+.popup-content {
+	padding: 32rpx;
+}
+
+.form-item {
+	margin-bottom: 32rpx;
+}
+
+.verify-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+
+.form-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+	width: 100%;
+	min-height: 80rpx;
+}
+
+
+.verify-row {
+	align-items: center;
+}
+
+.left-label {
+	text-align: left;
+	width: 100%;
+	padding-left: 0;
+}
+
+.form-label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 12rpx;
+}
+
+.field-title {
+	text-align: left;
+	width: 100%;
+	padding-left: 0;
+}
+
+.form-row .form-label {
+	margin-bottom: 0;
+}
+
+.row-label {
+	margin-bottom: 0;
+	width: 120rpx;
+	flex-shrink: 0;
+	text-align: left;
+	padding-left: 0;
+	align-self: center;
+	line-height: 80rpx;
+	height: 80rpx;
+}
+
+.row-input {
+	flex: 1;
+	width: auto;
+	height: 80rpx;
+	padding: 0 24rpx;
+	font-size: 28rpx;
+	color: #333333;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	border: none;
+	box-sizing: border-box;
+}
+
+.form-input {
+	width: 100%;
+	height: 80rpx;
+	padding: 0 24rpx;
+	font-size: 28rpx;
+	color: #333333;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	border: none;
+	box-sizing: border-box;
+}
+
+.form-input.disabled {
+	color: #999999;
+}
+
+/* 验证码输入框 */
+.code-input-box {
+	display: flex;
+}
+
+
+.code-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	width: 100%;
+	justify-content: flex-start;
+	flex-wrap: nowrap;
+}
+
+
+.inline-row {
+	width: 100%;
+	flex-wrap: nowrap;
+}
+
+.login-code-btn {
+	height: 80rpx;
+	padding: 0 24rpx;
+	border-radius: 16rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.code-input {
+	flex: 1 1 0;
+	width: 0;
+	min-width: 0;
+	height: 80rpx;
+	padding: 0 24rpx;
+	box-sizing: border-box;
+}
+
+.code-btn {
+	min-width: 140rpx;
+	flex: 0 0 180rpx;
+	height: 80rpx;
+	padding: 0 20rpx;
+	background-color: #37B1F2;
+	border-radius: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.code-btn-text {
+	font-size: 26rpx;
+	color: #ffffff;
+}
+
+.code-btn-disabled {
+	background: #cccccc;
+}
+
+/* 单选按钮组 */
+.radio-group {
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+}
+
+
+.radio-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin: 16rpx 0;
+}
+
+.left-align {
+	justify-content: flex-start;
+}
+
+.radio-item {
+	display: flex;
+	align-items: center;
+}
+
+
+.radio-icon {
+	font-size: 32rpx;
+	color: #cccccc;
+}
+
+.radio-checked .radio-icon {
+	color: #37B1F2;
+}
+
+.radio-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.radio-checked .radio-label {
+	color: #333333;
+}
+
+/* 弹窗按钮 */
+.popup-buttons {
+	display: flex;
+	flex-direction: column;
+	margin-top: 48rpx;
+}
+
+
+.row-actions {
+	flex-direction: row;
+	align-items: center;
+}
+
+.btn {
+	flex: 1;
+	height: 80rpx;
+	font-size: 28rpx;
+	border-radius: 40rpx;
+	border: none;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-text {
+	font-size: 28rpx;
+}
+
+.cancel-btn {
+	background-color: #f5f5f5;
+}
+
+.cancel-btn-text {
+	color: #666666;
+}
+
+.confirm-btn {
+	background-color: #37B1F2;
+}
+
+.confirm-btn-text {
+	color: #ffffff;
+}
+
+/* 验证方式 Tab 切换样式 */
+.verify-tabs {
+	flex-direction: row;
+	margin-top: 16rpx;
+	margin-bottom: 8rpx;
+	background-color: #F5F7FA;
+	border-radius: 20rpx;
+	padding-left: 6rpx;
+	padding-right: 6rpx;
+	padding-top: 6rpx;
+	padding-bottom: 6rpx;
+}
+
+.verify-tab-item {
+	flex: 1;
+	height: 64rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-radius: 16rpx;
+}
+
+.verify-tab-active {
+	background-color: #ffffff;
+}
+
+.verify-tab-text {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.verify-tab-text-active {
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+/* 注销账户相关样式 */
+.danger-section {
+	margin-top: 40rpx;
+}
+
+.danger-item {
+	background-color: #ffffff;
+}
+
+.danger-label {
+	color: #FF4D4F;
+}
+
+.danger-title {
+	color: #FF4D4F;
+}
+
+.delete-popup {
+	width: 650rpx;
+}
+
+.warning-box {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.warning-icon {
+	font-size: 40rpx;
+	margin-right: 12rpx;
+}
+
+.warning-title {
+	font-size: 28rpx;
+	color: #FF4D4F;
+	font-weight: bold;
+	flex: 1;
+}
+
+.warning-list {
+	flex-direction: column;
+	background-color: #FFF7F7;
+	padding: 24rpx;
+	border-radius: 12rpx;
+	margin-bottom: 24rpx;
+}
+
+.warning-item {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 44rpx;
+}
+
+.warning-notice {
+	background-color: #FFFBE6;
+	padding: 20rpx;
+	border-radius: 12rpx;
+	margin-bottom: 24rpx;
+}
+
+.notice-text {
+	font-size: 24rpx;
+	color: #D48806;
+	line-height: 36rpx;
+}
+
+.danger-btn {
+	background-color: #FF4D4F;
+}
+
+.danger-btn-text {
+	color: #ffffff;
+}
+</style>

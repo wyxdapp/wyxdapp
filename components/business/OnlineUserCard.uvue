@@ -1,0 +1,174 @@
+<template>
+	<view class="online-user-card" @click="handleClick">
+		<Avatar
+			:url="avatar"
+			:userId="userKid"
+			:isOnline="true"
+			:customSize="96"
+			clickMode="none"
+		/>
+		<view class="online-info">
+			<NicknameWithBadges
+				:nickname="nickname"
+				:vipType="vipType"
+				:giftLevel="giftLevel"
+				size="medium"
+			/>
+			<text class="online-desc">{{ signature }}</text>
+		</view>
+		<FollowButton 
+			:targetUserKid="userKid"
+			:isFollow="isFollowed"
+			@change="onFollowChange"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+import FollowButton from '@/components/base/FollowButton.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+
+// Props
+const props = defineProps({
+	data: { type: Object, required: true }
+})
+
+// Emits
+const emit = defineEmits(['click', 'follow'])
+
+// 辅助函数
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.data, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return safeGetNumberProp(props.data, key)
+}
+
+// 计算属性
+const avatar = computed((): string => {
+	// 尝试多个可能的头像字段名
+	let avatarVal = getDataProp('avatar')
+	if (avatarVal != '') return avatarVal
+	
+	avatarVal = getDataProp('image')
+	if (avatarVal != '') return avatarVal
+	
+	avatarVal = getDataProp('imagePhoto')
+	if (avatarVal != '') return avatarVal
+	
+	avatarVal = getDataProp('headImg')
+	if (avatarVal != '') return avatarVal
+	
+	avatarVal = getDataProp('userAvatar')
+	if (avatarVal != '') return avatarVal
+	
+	return ''
+})
+
+const nickname = computed((): string => {
+	const nicknameVal = getDataProp('nickname')
+	return (nicknameVal != '') ? nicknameVal : '用户'
+})
+
+const signature = computed((): string => {
+	return getDataProp('signature')
+})
+
+const userKid = computed((): string => {
+	// 尝试多个可能的用户ID字段名
+	let kidVal = getDataProp('userKid')
+	if (kidVal != '') return kidVal
+	
+	kidVal = getDataProp('kid')
+	if (kidVal != '') return kidVal
+	
+	return ''
+})
+
+const isFollowed = computed((): boolean => {
+	const isFollow = getDataNumberProp('isFollow')
+	return isFollow == 10
+})
+
+// VIP类型计算
+const vipType = computed((): string => {
+	const vip = getDataNumberProp('vip')
+	const vipExpireTime = getDataProp('vipExpireTime')
+
+	// vip=VIP_ACTIVATED 表示已开通
+	if (vip == 20) {
+		if (vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate > now) {
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				const vipTypeNum = getDataNumberProp('vipType')
+				if (vipTypeNum == 20) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+			const vipTypeNum = getDataNumberProp('vipType')
+			if (vipTypeNum == 20) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+})
+
+// 礼物等级
+const giftLevel = computed((): number => {
+	return getDataNumberProp('giftLevel')
+})
+
+// 事件处理
+const handleClick = () => {
+	emit('click', props.data)
+}
+
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	emit('follow', { isFollow: isFollow, targetUserKid: targetUserKid, data: props.data })
+}
+</script>
+
+<style scoped>
+.online-user-card {
+	flex-direction: row;
+	align-items: center;
+	width: 694rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.online-info {
+	flex: 1;
+	flex-direction: column;
+	justify-content: center;
+	margin-left: 20rpx;
+}
+
+.online-nickname {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.online-desc {
+	font-size: 24rpx;
+	color: #999999;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+</style>

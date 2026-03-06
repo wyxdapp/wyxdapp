@@ -1,0 +1,498 @@
+<template>
+	<scroll-view class="fortes-page" scroll-y="true">
+		<!-- 顶部状态栏占位 - APP端避免被状态栏遮挡 -->
+		<!-- #ifndef H5 -->
+		<view class="status-bar-placeholder" :style="{ height: pageStatusBarHeight + 'px' }"></view>
+		<!-- #endif -->
+		
+		<view class="section-card">
+			<view class="section-header">
+				<uni-icons type="star-filled" :size="20" color="#37B1F2" />
+				<view class="section-info">
+					<text class="section-title">擅长标签</text>
+					<text class="section-subtitle">选择您作为向导的专业技能</text>
+				</view>
+				<view v-if="selectedFortes.length > 0" class="section-badge">
+					<text class="section-badge-text">{{ selectedFortes.length }}</text>
+				</view>
+			</view>
+			
+			<view class="tags-container">
+				<view v-if="loading == true" class="tag-loading">
+					<text class="tag-loading-text">加载中...</text>
+				</view>
+				<view v-else-if="forteOptions.length == 0" class="empty-tip">
+					<text class="empty-tip-text">暂无擅长标签数据</text>
+				</view>
+				<template v-else>
+					<view
+						v-for="item in forteListDisplay"
+						:key="item.kid"
+						class="tag-item"
+						:class="{ selected: item.isSelected == true }"
+						@click="toggleForte(item)"
+					>
+						<text class="tag-text" :class="{ 'tag-text-selected': item.isSelected == true }">{{ item.name }}</text>
+					</view>
+				</template>
+			</view>
+		</view>
+
+		<view class="btn-container">
+			<view :class="submitBtnClass" @click="handleSave">
+				<text class="btn-text">{{ displayBtnText }}</text>
+			</view>
+		</view>
+		
+		<!-- 底部安全区域 -->
+		<view class="safe-bottom"></view>
+	</scroll-view>
+</template>
+
+<script setup lang="uts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import { useUserStore } from '@/stores/user'
+import { request } from '@/utils/request'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable
+} from '@/common/utils/loginHelper.uts'
+import { 
+	toJsonObj,
+	getResponseCode,
+	getResponseData,
+	getStringProp,
+	getBoolProp
+} from '@/common/utils/utsSafe.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+interface ForteOption {
+	kid: string
+	name: string
+	isSelected: boolean
+}
+
+class ForteOptionImpl implements ForteOption {
+	kid: string = ''
+	name: string = ''
+	isSelected: boolean = false
+	
+	constructor(kid: string, name: string, isSelected: boolean) {
+		this.kid = kid
+		this.name = name
+		this.isSelected = isSelected
+	}
+}
+
+const userStore = useUserStore()
+
+// 使用可靠的方式获取用户 ID
+const currentUserKid = computed((): string => {
+	const userId = getCurrentUserIdReliable()
+	console.log('🔍 [fortes] currentUserKid computed:', userId)
+	return userId
+})
+
+const loading = ref(false)
+const saving = ref(false)
+const forteOptions = ref<ForteOption[]>([])
+
+const selectedFortes = computed((): ForteOption[] => {
+	const result: ForteOption[] = []
+	const list = forteOptions.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		if (item.isSelected == true) {
+			result.push(item)
+		}
+	}
+	return result
+})
+
+const forteListDisplay = computed((): ForteOption[] => {
+	// 先复制数组
+	const list = forteOptions.value
+	
+	// 分离选中和未选中的标签
+	const selected: ForteOption[] = []
+	const unselected: ForteOption[] = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		if (item.isSelected == true) {
+			selected.push(item)
+		} else {
+			unselected.push(item)
+		}
+	}
+	
+	// 合并数组（选中的在前）
+	const sorted: ForteOption[] = []
+	for (let i = 0; i < selected.length; i = i + 1) {
+		sorted.push(selected[i])
+	}
+	for (let i = 0; i < unselected.length; i = i + 1) {
+		sorted.push(unselected[i])
+	}
+	
+	return sorted
+})
+
+const displayBtnText = computed((): string => {
+	if (saving.value == true) {
+		return '保存中...'
+	}
+	return '保存设置'
+})
+
+const submitBtnClass = computed((): string => {
+	if (saving.value == true) {
+		return 'btn btn-disabled'
+	}
+	return 'btn'
+})
+
+const ensureLogin = async (): Promise<boolean> => {
+	// 使用 loginHelper 进行可靠的登录检查
+	const isLoginFlag = checkUserLoginReliable()
+	const userKid = getCurrentUserIdReliable()
+
+	if (isLoginFlag == false || userKid == null || userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		safeSetTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return false
+	}
+	return true
+}
+
+const loadFortes = () => {
+	const loginCheck = ensureLogin()
+	loginCheck.then((isLogin: boolean) => {
+		if (isLogin == false) return
+		
+		loading.value = true
+		
+		// 直接获取用户 ID，不依赖 computed
+		const userKid = getCurrentUserIdReliable()
+		const params = { userKid: userKid } as UTSJSONObject
+		
+		console.log('📡 [fortes] 开始加载擅长标签, userKid:', userKid)
+		
+		request.post('/user/userForte/queryUserForte', params, true).then((res: UTSJSONObject) => {
+			
+			// 使用utsSafe工具函数解析响应
+			const code = getResponseCode(res)
+			const dataObj = getResponseData(res)
+			
+			console.log('📊 [fortes] 响应码:', code)
+			
+			if (code == 200 && dataObj != null) {
+				const fortesVal = dataObj.get('fortes')
+				
+				if (fortesVal != null && Array.isArray(fortesVal) == true) {
+					const fortesArr = fortesVal as Array<UTSJSONObject>
+					const tempList: ForteOption[] = []
+					
+					console.log('📝 [fortes] 解析标签数据, 数量:', fortesArr.length)
+					
+					for (let i = 0; i < fortesArr.length; i = i + 1) {
+						const rawItem = fortesArr[i]
+						const kid = getStringProp(rawItem, 'kid')
+						const name = getStringProp(rawItem, 'labelName')
+						const isSelected = getBoolProp(rawItem, 'isSelected')
+						
+						// 添加调试日志
+						console.log('🔍 [fortes] 标签:', name, 'kid:', kid, 'isSelected:', isSelected)
+						
+						if (kid != '' && name != '') {
+							const newItem = new ForteOptionImpl(kid, name, isSelected)
+							tempList.push(newItem)
+						}
+					}
+					
+					forteOptions.value = tempList
+				} else {
+					handleSilentError(new Error('fortes字段为空或不是数组'), '[fortes] 加载标签')
+				}
+			} else {
+				handleSilentError(new Error('API返回错误码'), '[fortes] 加载标签')
+			}
+			
+			loading.value = false
+		}).catch((error: any | null): void => {
+			if (!isAuthError(error as any)) {
+				handlePageError(error as any, '加载擅长标签', null)
+			}
+			loading.value = false
+		})
+	})
+}
+
+const toggleForte = (item: ForteOption) => {
+	console.log('🔄 [fortes] 切换标签状态:', item.name, '当前状态:', item.isSelected)
+	
+	// 创建新数组，确保触发响应式更新
+	const list = forteOptions.value
+	const newList: ForteOption[] = []
+	
+	for (let i = 0; i < list.length; i = i + 1) {
+		const currentItem = list[i]
+		if (currentItem.kid == item.kid) {
+			// 创建新对象，切换状态
+			const newItem = new ForteOptionImpl(
+				currentItem.kid,
+				currentItem.name,
+				!currentItem.isSelected
+			)
+			newList.push(newItem)
+		} else {
+			// 保持原对象
+			newList.push(currentItem)
+		}
+	}
+	
+	// 替换整个数组触发响应式更新
+	forteOptions.value = newList
+	console.log('🔄 [fortes] 数组已更新，触发视图刷新')
+}
+
+const handleSave = () => {
+	const loginCheck = ensureLogin()
+	loginCheck.then((isLogin: boolean) => {
+		if (isLogin == false) return
+		
+		if (selectedFortes.value.length == 0) {
+			uni.showToast({ title: '请至少选择一个擅长标签', icon: 'none' })
+			return
+		}
+		
+		saving.value = true
+		
+		// 直接获取用户 ID
+		const userKid = getCurrentUserIdReliable()
+		
+		// 手动构建 forteKids 数组
+		const forteKids: Array<string> = []
+		const selected = selectedFortes.value
+		for (let i = 0; i < selected.length; i = i + 1) {
+			forteKids.push(selected[i].kid)
+		}
+		
+		const payloadJson = JSON.stringify({
+			userKid: userKid,
+			forteKids: forteKids
+		})
+		const payload = (payloadJson != null && payloadJson != '') ? JSON.parse(payloadJson) as UTSJSONObject : {}
+		
+		request.post('/user/userForte/addUserForte', payload, true).then((res: UTSJSONObject) => {
+			uni.showToast({ title: '保存成功', icon: 'success' })
+			safeSetTimeout(() => {
+				try { uni.navigateBack() } catch (e) {}
+			}, 1200)
+			saving.value = false
+		}).catch((error: any | null): void => {
+			if (!isAuthError(error as any)) {
+				handlePageError(error as any, '保存擅长标签', null)
+			}
+			saving.value = false
+		})
+	})
+}
+
+onMounted(() => {
+	initPageLayout()  // 初始化页面布局（包括状态栏高度）
+	loadFortes()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+.fortes-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+	padding-top: 24rpx;
+	padding-bottom: 0;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+/* 状态栏占位 - APP端使用 */
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+.section-card {
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	padding-top: 28rpx;
+	padding-bottom: 28rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	margin-bottom: 24rpx;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.section-info {
+	flex: 1;
+	flex-direction: column;
+	margin-left: 12rpx;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #222831;
+	line-height: 44rpx;
+}
+
+.section-subtitle {
+	font-size: 24rpx;
+	color: #99a3b4;
+	line-height: 34rpx;
+	margin-top: 4rpx;
+}
+
+.section-badge {
+	min-width: 44rpx;
+	height: 44rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	border-radius: 22rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.section-badge-text {
+	font-size: 24rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.tags-container {
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: flex-start;
+	align-items: flex-start;
+}
+
+.tag-item {
+	position: relative;
+	margin-top: 0;
+	margin-bottom: 16rpx;
+	margin-left: 0;
+	margin-right: 16rpx;
+	padding-top: 14rpx;
+	padding-bottom: 14rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-radius: 40rpx;
+	background-color: #e6f3ff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #d0e9ff;
+}
+
+.tag-item.selected {
+	background-color: #37B1F2;
+	border-color: #37B1F2;
+}
+
+.tag-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+	line-height: 40rpx;
+}
+
+.tag-text-selected {
+	color: #ffffff;
+}
+
+.tag-loading,
+.empty-tip {
+	width: 750rpx;
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	flex-direction: row;
+	justify-content: center;
+}
+
+.tag-loading-text,
+.empty-tip-text {
+	font-size: 28rpx;
+	color: #99a3b4;
+}
+
+/* 提交按钮容器 */
+.btn-container {
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	padding-left: 0;
+	padding-right: 0;
+	flex-direction: row;
+	justify-content: center;
+}
+
+/* 提交按钮 */
+.btn {
+	width: 654rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-disabled {
+	background-color: #9bd9f9;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 底部安全区域 */
+.safe-bottom {
+	width: 750rpx;
+	height: 60rpx;
+}
+</style>

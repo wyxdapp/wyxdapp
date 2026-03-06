@@ -1,0 +1,205 @@
+/**
+ * 通知状态管理 Store - 使用 Vue 响应式 API
+ * UTS 版本
+ */
+import { ref, computed } from 'vue'
+import { toUTSJSON, getString } from '../common/utils/typeConverter.uts'
+
+// 使用 ref 创建响应式状态
+const notifications = ref<Array<any>>([])
+const unreadCountRef = ref<number>(0)
+const unreadOrderCount = ref<number>(0)
+const unreadSystemCount = ref<number>(0)
+const unreadInteractCount = ref<number>(0)
+
+// Getters
+const hasUnread = computed((): boolean => {
+	return unreadCountRef.value > 0
+})
+
+// Actions
+const updateUnreadCount = () => {
+	let count = 0
+	let orderCount = 0
+	let systemCount = 0
+	let interactCount = 0
+	
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		const n = notifications.value[i]
+		if (n == null) continue
+		
+		const nObj = toUTSJSON(n)
+		const isRead = getString(nObj, 'read') == 'true'
+		
+		if (isRead == false) {
+			count = count + 1
+			
+			const notifType = getString(nObj, 'type')
+			
+			if (notifType == 'ORDER') {
+				orderCount = orderCount + 1
+			} else if (notifType == 'SYSTEM') {
+				systemCount = systemCount + 1
+			} else if (notifType == 'INTERACT') {
+				interactCount = interactCount + 1
+			}
+		}
+	}
+	
+	unreadCountRef.value = count
+	unreadOrderCount.value = orderCount
+	unreadSystemCount.value = systemCount
+	unreadInteractCount.value = interactCount
+}
+
+
+const addNotification = (notification: UTSJSONObject | null) => {
+	if (notification == null) return
+	notifications.value.unshift(notification)
+	
+	let isRead = true
+	let notifType = ''
+	
+	const nObj = toUTSJSON(notification)
+	isRead = getString(nObj, 'read') == 'true'
+	notifType = getString(nObj, 'type')
+	
+	if (isRead == false) {
+		unreadCountRef.value = unreadCountRef.value + 1
+		
+		if (notifType == 'ORDER') {
+			unreadOrderCount.value = unreadOrderCount.value + 1
+		} else if (notifType == 'SYSTEM') {
+			unreadSystemCount.value = unreadSystemCount.value + 1
+		} else if (notifType == 'INTERACT') {
+			unreadInteractCount.value = unreadInteractCount.value + 1
+		}
+	}
+	
+	// 限制通知数量
+	if (notifications.value.length > 100) {
+		const newList: Array<any> = []
+		for (let i = 0; i < 100; i = i + 1) {
+			newList.push(notifications.value[i])
+		}
+		notifications.value = newList
+	}
+}
+
+const setNotifications = (list: Array<any>) => {
+	notifications.value = list
+	updateUnreadCount()
+}
+
+const markAsRead = (id: string) => {
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		const n = notifications.value[i]
+		if (n == null) continue
+		
+		let notifId = ''
+		let isRead = true
+		
+		const nObj = toUTSJSON(n)
+		notifId = getString(nObj, 'id')
+		isRead = getString(nObj, 'read') == 'true'
+		
+		if (notifId == id && isRead == false) {
+			n.read = true
+			updateUnreadCount()
+			break
+		}
+	}
+}
+
+const markAllAsRead = () => {
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		const n = notifications.value[i]
+		if (n != null) {
+			n.read = true
+		}
+	}
+	updateUnreadCount()
+}
+
+const deleteNotification = (id: string) => {
+	let index = -1
+	for (let i = 0; i < notifications.value.length; i = i + 1) {
+		const n = notifications.value[i]
+		if (n == null) continue
+		
+		let notifId = ''
+		const nObj = toUTSJSON(n)
+		notifId = getString(nObj, 'id')
+		
+		if (notifId == id) {
+			index = i
+			break
+		}
+	}
+	
+	if (index > -1) {
+		notifications.value.splice(index, 1)
+		updateUnreadCount()
+	}
+}
+
+const clearAll = () => {
+	notifications.value = []
+	unreadCountRef.value = 0
+	unreadOrderCount.value = 0
+	unreadSystemCount.value = 0
+	unreadInteractCount.value = 0
+}
+
+// 获取未读数量
+export const getNotificationUnreadCount = (): number => {
+	return unreadCountRef.value
+}
+
+// 获取是否有未读
+export const getNotificationHasUnread = (): boolean => {
+	return unreadCountRef.value > 0
+}
+
+// 获取各类型未读数量
+export const getNotificationUnreadByType = (type: string): number => {
+	if (type == 'ORDER') {
+		return unreadOrderCount.value
+	} else if (type == 'SYSTEM') {
+		return unreadSystemCount.value
+	} else if (type == 'INTERACT') {
+		return unreadInteractCount.value
+	}
+	return 0
+}
+
+// 导出 useNotificationStore 函数
+export const useNotificationStore = () => {
+	return {
+		// Actions
+		addNotification: addNotification,
+		setNotifications: setNotifications,
+		updateUnreadCount: updateUnreadCount,
+		markAsRead: markAsRead,
+		markAllAsRead: markAllAsRead,
+		deleteNotification: deleteNotification,
+		clearAll: clearAll
+	}
+}
+
+// 导出独立函数供外部调用
+export const addNotificationAction = (notification: UTSJSONObject | null) => {
+	addNotification(notification)
+}
+
+export const markNotificationAsRead = (id: string) => {
+	markAsRead(id)
+}
+
+export const markAllNotificationsAsRead = () => {
+	markAllAsRead()
+}
+
+export const clearAllNotifications = () => {
+	clearAll()
+}

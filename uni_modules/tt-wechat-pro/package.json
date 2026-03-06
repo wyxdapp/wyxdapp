@@ -1,0 +1,122 @@
+{
+  "id": "tt-wechat-pro",
+  "displayName": "【Android+iOS+Harmony】微信授权登录、微信分享、微信支付、打开小程序、微信客服",
+  "version": "1.2.5",
+  "description": "微信授权登录、分享、支付、打开小程序、打开微信客服等功能",
+  "keywords": [
+    "微信授权登录",
+    "微信分享",
+    "微信支付",
+    "微信客服"
+],
+  "repository": "",
+  "engines": {
+    "HBuilderX": "^3.6.8",
+    "uni-app": "^4.36",
+    "uni-app-x": "^4.36"
+  },
+  "dcloudext": {
+    "type": "uts",
+    "sale": {
+      "regular": {
+        "price": "19.99"
+      },
+      "sourcecode": {
+        "price": "179.99"
+      }
+    },
+    "contact": {
+      "qq": "3914078257"
+    },
+    "declaration": {
+      "ads": "无",
+      "data": "无",
+      "permissions": "无"
+    },
+    "npmurl": "",
+    "darkmode": "x",
+    "i18n": "x",
+    "widescreen": "x"
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "cloud": {
+        "tcb": "√",
+        "aliyun": "√",
+        "alipay": "√"
+      },
+      "client": {
+        "uni-app": {
+          "vue": {
+            "vue2": {
+            },
+            "vue3": {
+            }
+          },
+          "web": {
+            "safari": "x",
+            "chrome": "x"
+          },
+          "app": {
+            "vue": {
+            },
+            "nvue": {
+            },
+            "android": {
+                "extVersion": "1.1.0",
+                "minVersion": "21"
+            },
+            "ios": {
+                "extVersion": "1.1.0",
+                "minVersion": "12"
+            },
+            "harmony": {
+                "extVersion": "1.1.0",
+                "minVersion": "12"
+            }
+          },
+          "mp": {
+            "weixin": "x",
+            "alipay": "x",
+            "toutiao": "x",
+            "baidu": "x",
+            "kuaishou": "x",
+            "jd": "x",
+            "harmony": "x",
+            "qq": "x",
+            "lark": "x"
+          },
+          "quickapp": {
+            "huawei": "x",
+            "union": "x"
+          }
+        },
+        "uni-app-x": {
+          "web": {
+            "safari": "x",
+            "chrome": "x"
+          },
+          "app": {
+            "android": {
+                "extVersion": "1.1.0",
+                "minVersion": "21"
+            },
+            "ios": {
+                "extVersion": "1.1.0",
+                "minVersion": "12"
+            },
+            "harmony": {
+                "extVersion": "1.1.0",
+                "minVersion": "12"
+            }
+          },
+          "mp": {
+            "weixin": "x"
+          }
+        }
+      }
+    }
+  }
+}

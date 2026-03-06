@@ -1,0 +1,134 @@
+/**
+ * 腾讯云COS上传配置
+ * 适配 uni-app x (uvue) 环境
+ */
+
+// COS基础配置：从统一配置文件导入，避免重复定义
+export { COS_CONFIG } from '../config.uts'
+
+// 上传场景路径配置
+export const UPLOAD_SCENES = {
+	avatar: { path: 'img/avatar/', desc: '用户头像' },
+	background: { path: 'img/background/', desc: '背景图片' },
+	drivercard: { path: 'img/drivercard/', desc: '驾驶证' },
+	dynamic: { path: 'img/dynamic/', desc: '动态图片' },
+	guide: { path: 'img/guide/', desc: '向导形象照' },
+	idcard: { path: 'img/idcard/', desc: '身份证' },
+	line: { path: 'img/line/', desc: '路线封面' },
+	chat: { path: 'img/chat/', desc: '聊天图片' },
+	emoji: { path: 'img/emoji/', desc: '自定义表情' },  // ⭐ 新增
+	// ⭐ 新增：音视频上传场景（与后端 FileSignController 同步）
+	dynamicVideo: { path: 'vid/dynamic/', desc: '动态视频' },
+	chatVideo: { path: 'vid/chat/', desc: '聊天视频' },
+	chatAudio: { path: 'aud/chat/', desc: '聊天语音' }
+}
+
+// 图片压缩场景配置
+export const COMPRESS_SCENES = {
+	// 聊天图片：宽度400px，质量0.86，WebP格式
+	chat: {
+		targetWidth: 400,
+		quality: 86,
+		maxSize: 0.8 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 头像：宽度400px，质量0.85
+	avatar: {
+		targetWidth: 400,
+		quality: 85,
+		maxSize: 0.8 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 背景图：宽度500px，质量0.82
+	background: {
+		targetWidth: 500,
+		quality: 82,
+		maxSize: 2 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 动态图片：宽度400px，质量0.86
+	dynamic: {
+		targetWidth: 400,
+		quality: 86,
+		maxSize: 1.5 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 向导形象照：宽度600px，质量0.86
+	guide: {
+		targetWidth: 600,
+		quality: 86,
+		maxSize: 1.5 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 身份证/驾驶证：宽度600px，质量0.92，JPEG格式（保真）
+	idcard: {
+		targetWidth: 600,
+		quality: 92,
+		maxSize: 2 * 1024 * 1024,
+		format: 'jpg',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尼寸
+	},
+	// 路线封面：宽度600px，质量0.86
+	line: {
+		targetWidth: 600,
+		quality: 86,
+		maxSize: 2 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 小图保持原始尺寸
+	},
+	// 自定义表情：保持原始尺寸（最大300px），质量0.92，WebP格式
+	emoji: {
+		targetWidth: 300,  // ⭐ 增加到300px，保留更多细节
+		quality: 92,       // ⭐ 提高质量到92，保证清晰度
+		maxSize: 0.5 * 1024 * 1024,
+		format: 'webp',
+		keepOriginalIfSmaller: true  // ⭐ 如果原图小于300px，保持原始尺寸
+	}
+}
+
+/**
+ * 获取场景压缩配置
+ */
+export function getSceneCompressConfig(scene: string): UTSJSONObject {
+	// 使用 switch 语句安全访问 COMPRESS_SCENES[scene]，避免括号访问（String.get 错误）
+	// 使用 as UTSJSONObject 确保返回类型安全
+	switch (scene) {
+		case 'chat':
+			return COMPRESS_SCENES.chat as UTSJSONObject
+		case 'avatar':
+			return COMPRESS_SCENES.avatar as UTSJSONObject
+		case 'background':
+			return COMPRESS_SCENES.background as UTSJSONObject
+		case 'dynamic':
+			return COMPRESS_SCENES.dynamic as UTSJSONObject
+		case 'guide':
+			return COMPRESS_SCENES.guide as UTSJSONObject
+		case 'idcard':
+			return COMPRESS_SCENES.idcard as UTSJSONObject
+		case 'line':
+			return COMPRESS_SCENES.line as UTSJSONObject
+		case 'emoji':
+			return COMPRESS_SCENES.emoji as UTSJSONObject
+		default:
+			return COMPRESS_SCENES.chat as UTSJSONObject
+	}
+}
+
+/**
+ * 获取场景上传路径
+ */
+export function getSceneUploadPath(scene: string): string {
+	// 安全获取：避免在 any 上使用可选链或下标访问导致 String.get 错误
+	try {
+		const entry = (UPLOAD_SCENES != null && (UPLOAD_SCENES as UTSJSONObject)[scene] != null) ? (UPLOAD_SCENES as UTSJSONObject)[scene] : null
+		if (entry != null && entry.path != null && entry.path != '') {
+			return entry.path.toString()
+		}
+	} catch (e) {}
+	return 'img/chat/'
+}

@@ -1,0 +1,251 @@
+﻿﻿﻿﻿﻿﻿﻿﻿/**
+ * 聊天礼物赠送 Composable
+ * 管理礼物选择和赠送逻辑
+ */
+
+import { ref } from 'vue'
+import { sendGiftFromBag } from '@/common/services/lotteryService'
+import { createGiftOrder } from '@/common/services/orderService'
+import { chatService, MessageType } from '@/stores/chatService'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { getObjString } from '@/common/utils/messageHelper.uts'
+import { buildGiftMessageContentFromObject } from '@/common/utils/giftMessageHelper.uts'
+import { ChatGiftResult } from '@/common/types/chatTypes.uts'
+import { SK_PENDING_GIFT_ORDER } from '@/common/config/storageKeys.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON } from '@/common/utils/typeConverter'
+import { checkBalancePayEnabled } from '@/utils/paymentRouter'
+
+// 重新导出类型供外部使用
+export { ChatGiftResult } from '@/common/types/chatTypes.uts'
+
+/**
+ * 聊天礼物赠送 Composable
+ * @param currentUserId 当前用户ID
+ * @param targetUserId 目标用户ID
+ */
+export function useChatGift(currentUserId: string, targetUserId: string): ChatGiftResult {
+	// 响应式状态
+	const showGiftSelector = ref<boolean>(false)
+	
+	/**
+	 * 显示礼物选择弹窗
+	 */
+	const handleShowGiftSelector = () => {
+		if (currentUserId == null || currentUserId == '') {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			return
+		}
+		showGiftSelector.value = true
+	}
+	
+	/**
+	 * 关闭礼物选择弹窗
+	 */
+	const closeGiftSelector = () => {
+		showGiftSelector.value = false
+	}
+	
+	/**
+	 * 发送礼物消息
+	 * @param gift 礼物对象
+	 */
+	const sendGiftMessage = async (gift: any) => {
+		try {
+			// 使用 giftMessageHelper 构造礼物消息内容
+			const giftObj = toUTSJSON(gift)
+			if (giftObj == null) {
+				console.error('❌ [useChatGift] 礼物对象转换失败')
+				return
+			}
+			const giftContent = buildGiftMessageContentFromObject(giftObj as UTSJSONObject)
+			
+			// 通过新系统发送礼物消息
+			await chatService.sendMessage(giftContent, targetUserId, MessageType.GIFT)
+			
+		} catch (error: any) {
+			console.error('❌ [useChatGift] 发送礼物消息失败:', error)
+			uni.showToast({
+				title: '发送消息失败',
+				icon: 'none'
+			})
+		}
+	}
+
+	/**
+	 * 从商店付费赠送礼物
+	 * @param gift 礼物对象
+	 */
+	const handlePayGiftFromShop = async (gift: any) => {
+		try {
+			uni.showLoading({ title: '创建订单中...' })
+			
+			const giftObj = toJsonObj(gift)
+			
+			// 创建礼物订单
+			const giftNameVal = (giftObj != null) ? getObjString(giftObj, 'giftName') : ''
+			const giftNameFinal = (giftNameVal != '') ? giftNameVal : '虎拟礼物'
+			const giftImageVal = (giftObj != null) ? getObjString(giftObj, 'giftImage') : ''
+			const giftKidVal = (giftObj != null) ? getObjString(giftObj, 'giftKid') : ''
+			const giftValueVal = (giftObj != null) ? getObjString(giftObj, 'giftValue') : '0'
+			const giftValueNum = parseInt(giftValueVal)
+			const totalMoney = isNaN(giftValueNum) == false ? giftValueNum : 0
+			
+			const orderParams = new UTSJSONObject()
+			orderParams['userKid'] = currentUserId
+			orderParams['giftKid'] = giftKidVal
+			orderParams['receiveUserKid'] = targetUserId
+			orderParams['totalMoney'] = totalMoney
+			orderParams['giftName'] = giftNameFinal
+			orderParams['giftImage'] = giftImageVal
+			const orderResult = await createGiftOrder(orderParams)
+			
+			const orderResultObj = toJsonObj(orderResult)
+			const codeVal = (orderResultObj != null) ? getObjString(orderResultObj, 'code') : ''
+			
+			if (codeVal == '200') {
+				const dataVal = (orderResultObj != null) ? orderResultObj.get('data') : null
+				const dataObj = toJsonObj(dataVal)
+				const orderKidVal = (dataObj != null) ? getObjString(dataObj, 'kid') : ''
+				const orderKidVal2 = (dataObj != null) ? getObjString(dataObj, 'orderKid') : ''
+				const orderKid = (orderKidVal != '') ? orderKidVal : orderKidVal2
+				
+				if (orderKid == '') {
+					uni.showToast({
+						title: '订单创建失败，请重试',
+						icon: 'none'
+					})
+					return
+				}
+				
+				// 保存订单信息，用于支付成功后完成礼物赠送
+				safeSetStorageSync(SK_PENDING_GIFT_ORDER, JSON.stringify({
+					orderKid: orderKid,
+					receiveUserKid: targetUserId,
+					giftName: giftNameVal,
+					giftImage: giftImageVal,
+					giftValue: giftValueVal
+				}))
+				
+				// 新增：检查零钱支付资格
+				let balancePayFlag = false
+				try {
+					const balanceResult = await checkBalancePayEnabled(currentUserId, '', 40)
+					balancePayFlag = balanceResult.balancePayEnabled
+				} catch (e : Error) {
+					console.log('零钱支付资格检查失败', e)
+				}
+				
+				// 跳转到支付页面
+				uni.navigateTo({
+					url: '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid + '&balancePayEnabled=' + (balancePayFlag ? '1' : '0')
+				})
+			} else {
+				const msgVal = (orderResultObj != null) ? getObjString(orderResultObj, 'msg') : ''
+				const messageVal = (orderResultObj != null) ? getObjString(orderResultObj, 'message') : ''
+				let finalMsg = '创建订单失败'
+				if (msgVal != '') {
+					finalMsg = msgVal
+				} else if (messageVal != '') {
+					finalMsg = messageVal
+				}
+				uni.showToast({
+					title: finalMsg,
+					icon: 'none'
+				})
+			}
+		} catch (error: any) {
+			console.error('创建礼物订单失败:', error)
+			uni.showToast({
+				title: '创建订单失败，请重试',
+				icon: 'none'
+			})
+		} finally {
+			uni.hideLoading()
+		}
+	}
+
+	/**
+	 * 选择礼物
+	 * @param gift 礼物对象
+	 * @param source 来源（'bag' 或 'shop'）
+	 */
+	const handleSelectGift = async (gift: any, source: string) => {
+		try {
+			uni.showLoading({ title: '赠送中...' })
+			
+			const giftObj = toJsonObj(gift)
+			
+			if (source == 'bag') {
+				// 从背包赠送
+				const lotteryRecordKid = (giftObj != null) ? getObjString(giftObj, 'lotteryRecordKid') : ''
+				const params = new UTSJSONObject()
+				params['userKid'] = currentUserId
+				params['lotteryRecordKid'] = lotteryRecordKid
+				params['receiveUserKid'] = targetUserId
+				const result = await sendGiftFromBag(params)
+				
+				const resultObj = toJsonObj(result)
+				const codeVal = (resultObj != null) ? getObjString(resultObj, 'code') : ''
+				if (codeVal == '200') {
+					// 发送礼物消息
+					await sendGiftMessage(gift)
+					uni.showToast({
+						title: '礼物已赠送',
+						icon: 'success'
+					})
+				} else {
+					const msgVal = (resultObj != null) ? getObjString(resultObj, 'msg') : ''
+					const messageVal = (resultObj != null) ? getObjString(resultObj, 'message') : ''
+					let errMsg = '赠送失败'
+					if (msgVal != '') {
+						errMsg = msgVal
+					} else if (messageVal != '') {
+						errMsg = messageVal
+					}
+					uni.showToast({
+						title: errMsg,
+						icon: 'none'
+					})
+				}
+			} else {
+				// 从商店付费赠送：创建订单并跳转到支付页面
+				await handlePayGiftFromShop(gift)
+			}
+		} catch (error: any) {
+			console.error('赠送礼物失败:', error)
+			uni.showToast({
+				title: '赠送失败，请重试',
+				icon: 'none'
+			})
+		} finally {
+			uni.hideLoading()
+		}
+	}
+	
+	/**
+	 * 从待发送消息发送礼物
+	 * @param giftStr 礼物JSON字符串
+	 */
+	const sendGiftMessageFromPending = async (giftStr: string) => {
+		try {
+			if (giftStr == null || giftStr == '') return
+			const giftObj = JSON.parse(giftStr) as UTSJSONObject
+			await sendGiftMessage(giftObj)
+		} catch (error: any) {
+			console.error('❌ [useChatGift] 发送待发送礼物消息失败:', error)
+		}
+	}
+	
+	return new ChatGiftResult(
+		showGiftSelector,
+		handleShowGiftSelector,
+		closeGiftSelector,
+		handleSelectGift,
+		sendGiftMessage,
+		sendGiftMessageFromPending
+	)
+}

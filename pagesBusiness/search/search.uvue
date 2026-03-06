@@ -1,0 +1,374 @@
+<template>
+	<view class="page" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<!-- 背景图片 -->
+		<image 
+			class="bg-index-header" 
+			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
+			mode="aspectFill"
+		></image>
+		
+		<!-- 顶部搜索栏 -->
+		<view class="search-header" :style="{ paddingRight: (menuButtonRight > 0 ? menuButtonRight + 6 : 24) + 'px' }">
+			<!-- 返回按钮 -->
+			<view class="back-btn" @click="handleBack">
+				<UniIcons type="back" :size="44" color="#333333" />
+			</view>
+			
+			<!-- 搜索框 -->
+			<view class="search-bar">
+				<image
+					class="search-icon"
+					src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png"
+					mode="aspectFit"
+				></image>
+				<input
+					class="search-input"
+					v-model="keyword"
+					placeholder="搜索向导、商家、路线"
+					confirm-type="search"
+					@confirm="handleSearch"
+					:focus="true"
+				/>
+				<text v-if="keyword != ''" class="clear-icon" @click="keyword = ''">✕</text>
+			</view>
+		</view>
+		
+		<!-- 搜索历史区域 -->
+		<view class="history-section plr-28">
+			<view class="flex-row align-center space-between ptb-24 u-border-bottom mb-24">
+				<text class="fs-md color-title font-bold">搜索历史</text>
+				<text class="clear-btn" @click="clearHistory">清空</text>
+			</view>
+			<view v-if="historyList.length == 0" class="flex-row align-center flex-center mt-128">
+				<text class="empty-text">- 暂无搜索历史 -</text>
+			</view>
+			<template v-else>
+				<view class="history-tags">
+					<view
+						v-for="item in visibleHistory"
+						:key="item"
+						class="history-tag"
+						@click="handleSelect(item)"
+					>
+						<text>{{ item }}</text>
+					</view>
+				</view>
+				<view
+					v-if="historyList.length > historyFoldCount"
+					class="read-more"
+					@click="toggleHistory"
+				>
+					<text class="read-more-text">{{ showAllHistory ? '收起' : '展开查看更多' }}</text>
+				</view>
+			</template>
+		</view>
+		
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted, computed } from 'vue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+const keyword = ref<string>('')
+const historyList = ref<Array<string>>([])
+const historyFoldCount = 6
+const showAllHistory = ref(false)
+
+// 微信小程序胶囊按钮右侧占用宽度
+const menuButtonRight = ref<number>(0)
+
+const visibleHistory = computed((): Array<string> => {
+	if (showAllHistory.value == true) {
+		return historyList.value
+	}
+	return historyList.value.slice(0, historyFoldCount)
+})
+
+// 加载历史记录（必须在 onMounted 之前定义）
+const loadHistory = () => {
+	const stored = uni.getStorageSync('searchHistory')
+	if (stored != null && stored.toString() != '') {
+		try {
+			const parsed = JSON.parse(stored.toString())
+			if (Array.isArray(parsed) == true) {
+				const result: Array<string> = []
+				const parsedArr = parsed as Array<string>
+				for (let i = 0; i < parsedArr.length; i = i + 1) {
+					const item = parsedArr[i]
+					if (item != null && item.toString() != '') {
+						result.push(item.toString())
+					}
+				}
+				historyList.value = result
+			}
+		} catch (e) {
+			handleSilentError(e, '解析搜索历史')
+		}
+	}
+}
+
+onMounted(() => {
+	initPageLayout()
+	loadHistory()
+	
+	// 🔧 微信小程序：获取胶囊按钮信息，计算右侧安全区域
+	// #ifdef MP-WEIXIN
+	try {
+		const menuButtonInfo = uni.getMenuButtonBoundingClientRect()
+		if (menuButtonInfo != null) {
+			const menuButtonObj = JSON.parse(JSON.stringify(menuButtonInfo)) as UTSJSONObject
+			const leftVal = menuButtonObj.get('left')
+			if (leftVal != null) {
+				const leftPx = parseFloat(leftVal.toString())
+				if (isNaN(leftPx) == false) {
+					const systemInfo = uni.getSystemInfoSync()
+					const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+					const screenWidthVal = systemInfoObj.get('screenWidth')
+					if (screenWidthVal != null) {
+						const screenWidth = parseFloat(screenWidthVal.toString())
+						if (isNaN(screenWidth) == false && screenWidth > 0) {
+							menuButtonRight.value = screenWidth - leftPx
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {
+		menuButtonRight.value = 0
+	}
+	// #endif
+})
+
+const saveHistory = (kw: string) => {
+	const value = kw.trim()
+	if (value == '') return
+	// 手动过滤
+	const filtered: Array<string> = []
+	for (let i = 0; i < historyList.value.length; i = i + 1) {
+		const item = historyList.value[i]
+		if (item != value) {
+			filtered.push(item)
+		}
+	}
+	filtered.unshift(value)
+	historyList.value = filtered.slice(0, 10)
+	safeSetStorageSync('searchHistory', JSON.stringify(historyList.value))
+}
+
+const clearHistory = () => {
+	if (historyList.value.length == 0) return
+	uni.showModal({
+		title: '提示',
+		content: '确认清空搜索历史？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				historyList.value = []
+				uni.removeStorageSync('searchHistory')
+			}
+		}
+	})
+}
+
+const toggleHistory = () => {
+	showAllHistory.value = (showAllHistory.value == true) ? false : true
+}
+
+const handleSearch = () => {
+	const kw = keyword.value.trim()
+	if (kw == '') {
+		uni.showToast({
+			title: '请输入搜索关键词',
+			icon: 'none'
+		})
+		return
+	}
+	
+	saveHistory(kw)
+	uni.navigateTo({
+		url: `/pagesBusiness/search/searchResult?key=${encodeURIComponent(kw)}`
+	})
+}
+
+const handleSelect = (val: string) => {
+	keyword.value = val
+	handleSearch()
+}
+
+const handleBack = () => {
+	uni.navigateBack()
+}
+</script>
+
+<style scoped>
+.page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #FFFFFF;
+}
+
+/* ==================== 背景图片 ==================== */
+.bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+.search-header {
+	position: relative;
+	z-index: 10;
+	flex-direction: row;
+	align-items: center;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	/* #ifdef MP-WEIXIN */
+	box-sizing: border-box;
+	/* #endif */
+}
+
+.back-btn {
+	width: 64rpx;
+	height: 64rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.search-bar {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	background-color: #f5f5f5;
+	border-radius: 32rpx;
+	padding-left: 24rpx;
+	padding-right: 12rpx;
+	height: 72rpx;
+	margin-left: 16rpx;
+}
+
+.search-icon {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 16rpx;
+}
+
+.search-input {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.clear-icon {
+	font-size: 28rpx;
+	color: #999999;
+	padding: 8rpx;
+}
+
+.history-section {
+	position: relative;
+	z-index: 10;
+	flex-direction: column;
+	background-color: #ffffff;
+	margin-top: 20rpx;
+	padding-top: 8rpx;
+}
+
+.clear-btn {
+	font-size: 24rpx;
+	color: #fa5251;
+}
+
+.history-tags {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin: -12rpx;
+}
+
+.history-tag {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #f5f5f5;
+	border-radius: 20rpx;
+	margin: 12rpx;
+}
+
+.read-more {
+	margin-top: 16rpx;
+	padding-bottom: 24rpx;
+}
+
+.read-more-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.empty-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 公共样式 */
+.plr-28 {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.ptb-24 {
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.mb-24 {
+	margin-bottom: 24rpx;
+}
+
+.mt-128 {
+	margin-top: 128rpx;
+}
+
+.flex-row {
+	flex-direction: row;
+}
+
+.align-center {
+	align-items: center;
+}
+
+.flex-center {
+	justify-content: center;
+}
+
+.space-between {
+	justify-content: space-between;
+}
+
+.fs-md {
+	font-size: 28rpx;
+}
+
+.color-title {
+	color: #333333;
+}
+
+.font-bold {
+	font-weight: bold;
+}
+
+.u-border-bottom {
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+}
+</style>

@@ -1,0 +1,33 @@
+// tt-wechat-pro 主入口文件
+// 根据平台导入对应的实现
+
+// #ifdef APP-ANDROID
+export { getTTWeChatSDK } from './utssdk/app-android/index.uts'
+// #endif
+
+// #ifdef APP-IOS
+export { getTTWeChatSDK } from './utssdk/app-ios/index.uts'
+// #endif
+
+// #ifdef APP-HARMONY
+export { getTTWeChatSDK } from './utssdk/app-harmony/index.uts'
+// #endif
+
+// #ifdef H5
+// H5 平台不支持微信SDK，导出空实现
+export const getTTWeChatSDK = (): any | null => {
+	console.warn('[tt-wechat-pro] H5平台不支持微信SDK')
+	return null
+}
+// #endif
+
+// #ifdef MP-WEIXIN
+// 微信小程序平台不支持微信SDK，导出空实现
+export const getTTWeChatSDK = (): any | null => {
+	console.warn('[tt-wechat-pro] 微信小程序平台不支持微信SDK')
+	return null
+}
+// #endif
+
+// 导出接口定义
+export * from './utssdk/interface.uts'

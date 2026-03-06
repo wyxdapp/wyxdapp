@@ -1,0 +1,732 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">通知设置</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 推送总开关 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">推送通知</text>
+			</view>
+			<view class="cell-item">
+				<view class="cell-left">
+					<text class="cell-label">接收推送通知</text>
+					<text class="cell-desc">关闭后将无法收到任何推送消息</text>
+				</view>
+				<switch 
+					:checked="pushEnabled" 
+					@change="onPushEnabledChange"
+					color="#37B1F2"
+				/>
+			</view>
+		</view>
+		
+		<!-- 通知渠道 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">通知渠道</text>
+			</view>
+			
+			<!-- 聊天通知 -->
+			<view class="cell-item">
+				<view class="cell-left">
+					<text class="cell-label">聊天通知</text>
+					<text class="cell-desc">通过官方聊天账户发送消息提醒</text>
+				</view>
+				<switch 
+					:checked="chatPushEnabled" 
+					@change="onChatPushChange"
+					color="#37B1F2"
+				/>
+			</view>
+			
+			<!-- 短信通知 -->
+			<view class="cell-item">
+				<view class="cell-left">
+					<view class="label-row">
+						<text class="cell-label">短信通知</text>
+						<!-- 会员专属标签：始终显示 -->
+						<view class="vip-badge">
+							<text class="vip-badge-text">会员专属</text>
+						</view>
+					</view>
+					<text class="cell-desc">重要订单信息通过短信发送</text>
+				</view>
+				<view class="cell-right">
+					<switch 
+						:checked="smsNotificationEnabled" 
+						@change="onSmsSwitchClick"
+						color="#37B1F2"
+					/>
+				</view>
+			</view>
+			
+			<!-- 公众号通知 -->
+			<view class="cell-item">
+				<view class="cell-left">
+					<view class="label-row">
+						<text class="cell-label">公众号通知</text>
+						<!-- 去关注按钮：放在标签后面 -->
+						<view class="follow-btn-inline" @click="showQRCode">
+							<text class="follow-btn-text-inline">去关注</text>
+						</view>
+					</view>
+					<text class="cell-desc">通过微信公众号接收订单通知</text>
+				</view>
+				<view class="cell-right">
+					<switch 
+						:checked="wechatNotificationEnabled" 
+						@change="onWechatNotificationChange"
+						color="#37B1F2"
+					/>
+				</view>
+			</view>
+			
+			<!-- 小程序通知 -->
+			<view class="cell-item">
+				<view class="cell-left">
+					<text class="cell-label">小程序通知</text>
+					<text class="cell-desc">通过微信小程序发送订阅消息</text>
+				</view>
+				<view class="cell-right">
+					<switch 
+						:checked="miniProgramNotificationEnabled" 
+						@change="onMiniProgramNotificationChange"
+						color="#37B1F2"
+					/>
+				</view>
+			</view>
+		</view>
+		
+		</view>
+		
+		<!-- 公众号二维码弹窗 -->
+		<QRCodeModal :visible="showQRCodeModal" :qrcodeUrl="qrcodeUrl" @close="onQRCodeClose" @update:visible="handleVisibleUpdate" />
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { getPushConfig, updatePushConfig, PushConfigData, updateSmsNotificationEnabled, updateWechatNotificationEnabled, updateMiniProgramNotificationEnabled } from '@/api/push.uts'
+import { getResponseCode, getResponseData, getStringProp, getBoolProp } from '@/common/utils/utsSafe.uts'
+import { getCurrentUserIdReliable, checkUserLoginReliable } from '@/common/utils/loginHelper.uts'
+import QRCodeModal from '@/components/wechat/QRCodeModal.uvue'
+// 🔧 新增：导入功能开关
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+
+// 推送开关状态
+const pushEnabled = ref<boolean>(true)
+const chatPushEnabled = ref<boolean>(true)
+
+// 扩展通知开关
+const smsNotificationEnabled = ref<boolean>(false)
+const wechatNotificationEnabled = ref<boolean>(false)
+const miniProgramNotificationEnabled = ref<boolean>(false)
+
+// 资格状态
+const canEnableSms = ref<boolean>(false)
+const canEnableWechat = ref<boolean>(false)
+const smsEligibilityMsg = ref<string>('短信通知为会员专属功能')
+const wechatEligibilityMsg = ref<string>('公众号通知需要绑定微信')
+
+// 微信绑定状态
+const wechatBound = ref<boolean>(false)
+const wechatSubscribed = ref<boolean>(false)
+
+// 公众号二维码
+const qrcodeUrl = ref<string>('https://www.wyxdapp.com/images/erweima.jpg')
+const showQRCodeModal = ref<boolean>(false)  // 使用布尔值控制显示
+
+// 加载状态
+const loading = ref<boolean>(false)
+
+// 计算微信操作按钮文本（已移除，不再需要）
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+// 跳转到会员页面
+const goToVip = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+// 显示公众号二维码
+const showQRCode = () => {
+	showQRCodeModal.value = true
+}
+
+// 二维码弹窗关闭回调
+const onQRCodeClose = () => {
+	showQRCodeModal.value = false
+}
+
+// 处理 visible 更新
+const handleVisibleUpdate = (val: boolean) => {
+	showQRCodeModal.value = val
+}
+
+// 加载推送配置
+const loadPushConfig = () => {
+	if (loading.value == true) return
+	loading.value = true
+	
+	getPushConfig().then((res: UTSJSONObject) => {
+		loading.value = false
+		const code = getResponseCode(res)
+		if (code == 200) {
+			const data = getResponseData(res)
+			if (data != null) {
+				// 解析基础配置
+				const pushEnabledVal = getBoolProp(data, 'pushEnabled')
+				const chatVal = getBoolProp(data, 'chatPushEnabled')
+				
+				pushEnabled.value = pushEnabledVal
+				chatPushEnabled.value = chatVal
+				
+				// 解析扩展配置
+				const smsVal = getBoolProp(data, 'smsNotificationEnabled')
+				const wechatVal = getBoolProp(data, 'wechatNotificationEnabled')
+				const miniProgramVal = getBoolProp(data, 'miniProgramNotificationEnabled')
+				smsNotificationEnabled.value = smsVal
+				wechatNotificationEnabled.value = wechatVal
+				miniProgramNotificationEnabled.value = miniProgramVal
+				
+				// 解析资格状态
+				const canSmsVal = getBoolProp(data, 'canEnableSms')
+				const canWechatVal = getBoolProp(data, 'canEnableWechat')
+				canEnableSms.value = canSmsVal
+				canEnableWechat.value = canWechatVal
+				
+				// 解析微信绑定状态
+				const wechatBoundVal = getBoolProp(data, 'wechatBound')
+				const wechatSubscribedVal = getBoolProp(data, 'wechatSubscribed')
+				wechatBound.value = wechatBoundVal
+				wechatSubscribed.value = wechatSubscribedVal
+				
+				// 调试信息
+				console.log('微信绑定状态 - wechatBound:', wechatBoundVal, 'wechatSubscribed:', wechatSubscribedVal)
+				
+				// 解析提示信息
+				const smsMsgVal = getStringProp(data, 'smsEligibilityMsg')
+				const wechatMsgVal = getStringProp(data, 'wechatEligibilityMsg')
+				if (smsMsgVal != '') {
+					smsEligibilityMsg.value = smsMsgVal
+				}
+				if (wechatMsgVal != '') {
+					// 根据绑定和关注状态优化提示信息
+					if (wechatBoundVal == false) {
+						wechatEligibilityMsg.value = '请先绑定微信公众号'
+					} else if (wechatSubscribedVal == false) {
+						wechatEligibilityMsg.value = '请先关注公众号'
+					} else {
+						wechatEligibilityMsg.value = wechatMsgVal
+					}
+				}
+			}
+		}
+	}).catch((error: any | null): void => {
+		loading.value = false
+		handlePageError(error as any, '加载推送配置', null)
+	})
+}
+
+// 保存推送配置
+const savePushConfig = () => {
+	const params = new PushConfigData()
+	params.pushEnabled = pushEnabled.value
+	params.chatPushEnabled = chatPushEnabled.value
+	
+	updatePushConfig(params).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+			uni.showToast({
+				title: '设置已保存',
+				icon: 'success'
+			})
+		} else {
+			uni.showToast({
+				title: '保存失败',
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '保存推送配置')
+	})
+}
+
+// 从 switch 事件中提取 value
+const getSwitchValue = (e: UTSJSONObject | null): boolean => {
+	if (e == null) return false
+	const eStr = JSON.stringify(e)
+	const eObj = JSON.parse(eStr) as UTSJSONObject
+	const detailVal = eObj.get('detail')
+	if (detailVal == null) return false
+	const detailStr = JSON.stringify(detailVal)
+	const detailObj = JSON.parse(detailStr) as UTSJSONObject
+	const valueVal = detailObj.get('value')
+	if (valueVal == null) return false
+	return valueVal.toString() == 'true'
+}
+
+// 推送总开关变更
+const onPushEnabledChange = (e: UTSJSONObject | null) => {
+	pushEnabled.value = getSwitchValue(e)
+	savePushConfig()
+}
+
+// 聊天通知开关变更
+const onChatPushChange = (e: UTSJSONObject | null) => {
+	chatPushEnabled.value = getSwitchValue(e)
+	savePushConfig()
+}
+
+// 短信通知开关变更
+const onSmsNotificationChange = (e: UTSJSONObject | null) => {
+	const newValue = getSwitchValue(e)
+	
+	updateSmsNotificationEnabled(newValue).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+			smsNotificationEnabled.value = newValue
+			uni.showToast({
+				title: '设置已保存',
+				icon: 'success'
+			})
+		} else {
+			// 恢复原值
+			smsNotificationEnabled.value = newValue == false
+			const data = getResponseData(res)
+			let msg = '保存失败'
+			if (data != null) {
+				const msgVal = getStringProp(data, 'msg')
+				if (msgVal != '') {
+					msg = msgVal
+				}
+			}
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		// 恢复原值
+		smsNotificationEnabled.value = newValue == false
+		// 不再重复弹 toast，request 层已经弹过了
+	})
+}
+
+// 处理短信通知开关点击（检查会员资格）
+const onSmsSwitchClick = (e: UTSJSONObject | null) => {
+	const newValue = getSwitchValue(e)
+	
+	// 如果要开启，先检查是否是会员
+	if (newValue == true) {
+		// 检查会员资格
+		if (canEnableSms.value == false) {
+			// 不是会员，阻止开关切换并跳转到会员页面
+			uni.showToast({
+				title: '短信通知为会员专属功能',
+				icon: 'none'
+			})
+			// 延迟跳转，让用户看到提示
+			setTimeout(() => {
+				goToVip()
+			}, 1500)
+			return
+		}
+	}
+	
+	// 是会员或要关闭，正常处理
+	updateSmsNotificationEnabled(newValue).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+			smsNotificationEnabled.value = newValue
+			uni.showToast({
+				title: '设置已保存',
+				icon: 'success'
+			})
+		} else {
+			// 恢复原值
+			smsNotificationEnabled.value = newValue == false
+			const data = getResponseData(res)
+			let msg = '保存失败'
+			if (data != null) {
+				const msgVal = getStringProp(data, 'msg')
+				if (msgVal != '') {
+					msg = msgVal
+				}
+			}
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		// 恢复原值
+		smsNotificationEnabled.value = newValue == false
+		// 不再重复弹 toast，request 层已经弹过了
+	})
+}
+
+// 公众号通知开关变更
+const onWechatNotificationChange = (e: UTSJSONObject | null) => {
+	const newValue = getSwitchValue(e)
+	
+	// 如果要开启，先检查资格
+	if (newValue == true) {
+		if (wechatBound.value == false) {
+			// 未绑定微信，阻止开启并提示
+			wechatNotificationEnabled.value = false
+			uni.showToast({
+				title: '请先绑定微信公众号',
+				icon: 'none'
+			})
+			return
+		}
+		if (wechatSubscribed.value == false) {
+			// 未关注公众号，阻止开启并提示
+			wechatNotificationEnabled.value = false
+			uni.showToast({
+				title: '请先关注公众号',
+				icon: 'none'
+			})
+			showQRCode()
+			return
+		}
+	}
+	
+	updateWechatNotificationEnabled(newValue).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+			wechatNotificationEnabled.value = newValue
+			uni.showToast({
+				title: '设置已保存',
+				icon: 'success'
+			})
+		} else {
+			// 恢复原值
+			wechatNotificationEnabled.value = newValue == false
+			const data = getResponseData(res)
+			let msg = '保存失败'
+			if (data != null) {
+				const msgVal = getStringProp(data, 'msg')
+				if (msgVal != '') {
+					msg = msgVal
+				}
+			}
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		// 恢复原值
+		wechatNotificationEnabled.value = newValue == false
+		// 不再重复弹 toast，request 层已经弹过了
+	})
+}
+
+// 小程序通知开关变更
+const onMiniProgramNotificationChange = (e: UTSJSONObject | null) => {
+	const newValue = getSwitchValue(e)
+	
+	updateMiniProgramNotificationEnabled(newValue).then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+			miniProgramNotificationEnabled.value = newValue
+			uni.showToast({
+				title: '设置已保存',
+				icon: 'success'
+			})
+		} else {
+			// 恢复原值
+			miniProgramNotificationEnabled.value = newValue == false
+			const data = getResponseData(res)
+			let msg = '保存失败'
+			if (data != null) {
+				const msgVal = getStringProp(data, 'msg')
+				if (msgVal != '') {
+					msg = msgVal
+				}
+			}
+			uni.showToast({
+				title: msg,
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		// 恢复原值
+		miniProgramNotificationEnabled.value = newValue == false
+		// 不再重复弹 toast，request 层已经弹过了
+	})
+}
+
+// 处理未绑定或未关注时的开关点击
+const onWechatSwitchClick = (e: UTSJSONObject | null) => {
+	// 阻止开关切换
+	e.preventDefault()
+	
+	if (wechatBound.value == false) {
+		// 未绑定，跳转到绑定页面
+		goToBindWechat()
+	} else if (wechatSubscribed.value == false) {
+		// 已绑定但未关注，显示二维码弹窗
+		showQRCode()
+	}
+}
+
+// 生命周期
+onMounted(() => {
+	initPageLayout()
+	
+	// 检查登录状态
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == true) {
+		loadPushConfig()
+	}
+})
+
+onShow(() => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == true) {
+		loadPushConfig()
+	}
+})
+</script>
+
+<style scoped>
+.page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.section {
+	background-color: #ffffff;
+	margin-top: 20rpx;
+	flex-direction: column;
+}
+
+.section-header {
+	padding: 24rpx 28rpx 12rpx 28rpx;
+	flex-direction: row;
+}
+
+.section-title {
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.cell-item {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.cell-left {
+	flex: 1;
+	flex-direction: column;
+}
+
+.label-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.cell-right {
+	flex-direction: row;
+	align-items: center;
+}
+
+.cell-label {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.cell-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.cell-desc-warn {
+	color: #FF6B35;
+}
+
+.vip-btn {
+	padding: 12rpx 24rpx;
+	background-color: #FFD700;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.vip-btn-text {
+	font-size: 24rpx;
+	color: #8B4513;
+	font-weight: bold;
+}
+
+.bind-btn {
+	padding: 12rpx 24rpx;
+	background-color: #07C160;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.bind-btn-text {
+	font-size: 24rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.qrcode-btn {
+	padding: 12rpx 24rpx;
+	background-color: #37B1F2;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.qrcode-btn-text {
+	font-size: 24rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.follow-btn {
+	padding: 12rpx 24rpx;
+	background-color: #07C160;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+}
+
+.follow-btn-text {
+	font-size: 24rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.follow-btn-inline {
+	padding: 4rpx 16rpx;
+	background-color: #07C160;
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 12rpx;
+}
+
+.follow-btn-text-inline {
+	font-size: 22rpx;
+	color: #ffffff;
+}
+
+.vip-badge {
+	padding: 4rpx 16rpx;
+	background-color: #FFD700;
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 12rpx;
+}
+
+.vip-badge-text {
+	font-size: 22rpx;
+	color: #8B4513;
+	font-weight: bold;
+}
+</style>

@@ -1,0 +1,1542 @@
+<template>
+	<view class="lottery-page-wrapper">
+		<!-- 可滚动的整体区域 -->
+		<!-- #ifndef H5 -->
+		<scroll-view class="lottery-info-scroll" scroll-y="true">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<scroll-view class="lottery-info-scroll-h5" :style="{ height: scrollAreaHeight + 'px' }" scroll-y="true">
+		<!-- #endif -->
+			<!-- 视频区域 (可滚动) -->
+			<view class="video-section">
+				<!-- 视频组件 -->
+				<video
+					id="lotteryVideo"
+					ref="videoRef"
+					class="lottery-video"
+					src="https://jiasu.wyxdapp.com/iconimages/choujiang.mp4"
+					poster="https://jiasu.wyxdapp.com/iconimages/choujiang_poster.jpg"
+					:controls="false"
+					:show-center-play-btn="false"
+					:enable-progress-gesture="false"
+					:show-fullscreen-btn="false"
+					:show-play-btn="false"
+					:show-loading="false"
+					:enable-play-gesture="false"
+					:muted="false"
+					object-fit="cover"
+					@ended="onVideoEnded"
+					@error="onVideoError"
+				/>
+				
+				<!-- 返回按钮 (左上角) -->
+				<view class="video-back-btn" @click="goBack">
+					<UniIcons type="back" :size="48" color="#FFFFFF" />
+				</view>
+				
+				<!-- 分享按钮 (右上角) -->
+				<view class="video-share-btn" @click="handleShare">
+					<UniIcons type="share" :size="48" color="#FFFFFF" />
+				</view>
+				
+				<!-- 抽奖信息卡片 - 视频播放时隐藏 -->
+				<view class="info-card-overlay" v-if="isVideoPlaying == false">
+					<view class="info-row">
+						<view class="info-item">
+							<text class="info-label">免费次数</text>
+							<text class="info-value">{{ freeCountDisplay }}/{{ maxFreeCountDisplay }}</text>
+						</view>
+						<view class="info-divider"></view>
+						<view class="info-item">
+							<text class="info-label">幸运值</text>
+							<text class="info-value lucky">{{ luckyPointsDisplay }}</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 抽奖按钮区域 - 视频播放时隐藏 -->
+				<view class="lottery-actions-overlay" v-if="isVideoPlaying == false">
+					<view class="paid-buttons">
+						<view 
+							class="action-btn paid-btn single"
+							:class="{ 'disabled': loading == true || isVideoPlaying == true }"
+							@click="handlePaidDraw(1)"
+						>
+							<text class="btn-text">
+								{{ (freeCountDisplay > 0) ? '免费' : '¥1' }}
+							</text>
+							<text class="btn-subtext">单次抽奖</text>
+						</view>
+						<view 
+							class="action-btn paid-btn ten"
+							:class="{ 'disabled': loading == true || isVideoPlaying == true }"
+							@click="handlePaidDraw(10)"
+						>
+							<text class="btn-text">¥9</text>
+							<text class="btn-subtext">十连抽</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 幸运值兑换组件 (彩色渐变卡片区域) -->
+			<view class="lottery-info-container">
+				<!-- 彩色渐变背景图 -->
+				<image class="lottery-info-bg" src="https://jiasu.wyxdapp.com/iconimages/n_persionInfo_bg.png" mode="scaleToFill" />
+				
+				<LotteryExchangePanel
+					:userKid="userKidDisplay"
+					:luckyPoints="luckyPointsDisplay"
+					@refresh="loadLotteryInfo"
+					@exchangeSuccess="handleExchangeSuccess"
+				/>
+				
+				<!-- 抽奖任务组件 -->
+				<LotteryTaskPanel 
+					ref="taskPanelRef"
+					:userKid="userKidDisplay"
+					@refresh="loadLotteryInfo"
+					@share="handleShowSharePopup"
+				/>
+			</view>
+			
+			<!-- 底部抽奖规则链接 -->
+			<view class="rules-link-section">
+				<text class="rules-link" @click="handleViewRules">抽奖规则</text>
+			</view>
+		</scroll-view>
+		
+		<!-- 抽奖结果弹窗 -->
+		<LotteryResult
+			:show="showLotteryResult"
+			:userKid="userKidDisplay"
+			:reward="lotteryReward"
+			:canDirectWithdraw="canDirectWithdraw"
+			@close="showLotteryResult = false"
+			@viewGiftBox="handleViewGiftBox"
+			@withdraw="handleWithdraw"
+			@deposit="handleDeposit"
+		/>
+		
+		<!-- 礼物盒组件 -->
+		<GiftBox
+			:show="showGiftBox"
+			:userKid="userKidDisplay"
+			@close="showGiftBox = false"
+		/>
+		
+		<!-- 分享弹窗 -->
+		<SharePopup 
+			v-model:visity="showSharePopup" 
+			:shareData="shareData" 
+			:chatList="emptyChatList"
+			@share="handleShareComplete"
+			@wechat-share="handleWechatShare"
+			@moments-share="handleMomentsShare"
+			@copy-link="handleCopyLink"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow, onLoad } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import LotteryResult from '@/components/lottery/LotteryResult.uvue'
+import GiftBox from '@/components/lottery/GiftBox.uvue'
+import LotteryTaskPanel from '@/components/lottery/LotteryTaskPanel.uvue'
+import LotteryExchangePanel from '@/components/lottery/LotteryExchangePanel.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { useUserStore } from '@/stores/user'
+import { getLotteryInfo, drawLottery, handleCashReward, completeTask, DrawLotteryParams } from '@/common/services/lotteryService.uts'
+import { getLotteryRecordsByOrder } from '@/api/lottery.uts'
+import { LotteryRecordsByOrderParams } from '@/api/types/lotteryTypes.uts'
+import { 
+	getResponseCode, 
+	getResponseData, 
+	getStringProp, 
+	getNumberProp, 
+	getArrayProp,
+	toJsonObj
+} from '@/common/utils/utsSafe.uts'
+import { getCashoutBindStatus } from '@/common/services/withdrawService.uts'
+import { createLotteryOrder } from '@/common/services/orderService.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+// 🎯 导入统一的用户信息缓存
+import { 
+	getCurrentUserProfile,
+	hasValidCache,
+	refreshCurrentUserProfile
+} from '@/common/composables/useCurrentUserProfile.uts'
+import { LOTTERY_TYPE_FREE, LOTTERY_ACTION_SELF, LOTTERY_ACTION_GIFT } from '@/common/config/businessCodes.uts'
+import { delay } from '@/common/utils/delay.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+import { checkBalancePayEnabled } from '@/utils/paymentRouter'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// Stores
+const userStore = useUserStore()
+
+// 响应式数据
+const userInfo = computed((): UTSJSONObject => {
+	try {
+		const storeObj = toJsonObj(userStore)
+		if (storeObj == null) return {} as UTSJSONObject
+		let userGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { userGetVal = storeObj.get('userInfo') } catch (e) {}
+		if (userGetVal == null || userGetVal == '') return {} as UTSJSONObject
+		const userJson = JSON.stringify(userGetVal)
+		return (userJson != null && userJson != '') ? JSON.parse(userJson) as UTSJSONObject : ({} as UTSJSONObject)
+	} catch (e) {}
+	return {} as UTSJSONObject
+})
+const lotteryInfo = ref<UTSJSONObject | null>(null)
+// 模板安全访问：展示用 computed
+const freeCountDisplay = computed((): number => {
+	try {
+		const json = JSON.stringify(lotteryInfo.value)
+		if (json == null || json == '') return 0
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 0
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('freeCount') } catch (e) {}
+		return (v != null && v != '') ? parseInt(v.toString()) : 0
+	} catch (e) {}
+	return 0
+})
+const maxFreeCountDisplay = computed((): number => {
+	try {
+		const json = JSON.stringify(lotteryInfo.value)
+		if (json == null || json == '') return 1
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 1
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('maxFreeCount') } catch (e) {}
+		return (v != null && v != '') ? parseInt(v.toString()) : 1
+	} catch (e) {}
+	return 1
+})
+const luckyPointsDisplay = computed((): number => {
+	try {
+		const json = JSON.stringify(lotteryInfo.value)
+		if (json == null || json == '') return 0
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 0
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('luckyPoints') } catch (e) {}
+		return (v != null && v != '') ? parseInt(v.toString()) : 0
+	} catch (e) {}
+	return 0
+})
+
+// 用户 KID（模板安全访问）- 使用 loginHelper 可靠版本
+const userKidDisplay = computed((): string => {
+	// 优先使用 loginHelper 的可靠版本（直接从 Storage 读取，不依赖 Store 初始化）
+	const reliableUserId = getCurrentUserIdReliable()
+	if (reliableUserId != null && reliableUserId != '') {
+		return reliableUserId
+	}
+	
+	// 降级使用 userInfo computed（从 Store 获取）
+	try {
+		const json = JSON.stringify(userInfo.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('kid') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+})
+const loading = ref(false)
+const isDrawing = ref(false)
+const currentReward = ref<UTSJSONObject | null>(null)
+const showLotteryResult = ref(false)
+const showGiftBox = ref(false)
+const lotteryReward = ref<UTSJSONObject | null>(null)
+const canDirectWithdraw = ref(false)
+const multiRewards = ref<UTSJSONObject[]>([])
+const showSharePopup = ref(false)
+const taskPanelRef = ref(null)
+
+// 视频播放相关
+const videoRef = ref<UTSJSONObject | null>(null)
+const isVideoPlaying = ref<boolean>(false)
+let pendingDrawCount = 0
+let pendingLotteryResult: UTSJSONObject | null = null
+
+// 🔧 新增：页面参数（支付成功后自动展示结果）
+const autoShowResult = ref<boolean>(false)
+const fromOrderKid = ref<string>('')
+
+// 🔧 新增：信息区域高度（用于 H5 端滚动）
+const scrollAreaHeight = ref<number>(600)
+
+// 空 chat list 用于传递到 SharePopup，避免模板内使用匿名空数组
+const emptyChatList = [] as UTSJSONObject[]
+
+// 分享数据
+const shareData = computed(() => {
+	const userInfoObj = toUTSJSON(userInfo.value)
+	const userKid = getString(userInfoObj, 'kid')
+
+	const raw = {
+		title: '网约向导趣游玩 - 幸运抽奖',
+		desc: '每天免费抽奖，赢取礼物和现金红包！',
+		summary: '每天免费抽奖，赢取礼物和现金红包！',
+		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/lottery_share.png',
+		url: '/pagesUser/my/proveDetails/lottery',
+		link: 'https://m.wyxdapp.com/#/pagesUser/my/proveDetails/lottery',
+		userId: userKid
+	} as UTSJSONObject
+	
+	return raw
+})
+
+// 抽奖动画相关
+const animationItems = ref<UTSJSONObject[]>([])
+const currentAnimationIndex = ref(0)
+let animationTimer: number | null = null
+let animationInterval: number | null = null
+
+// 辅助：安全读取 animation item 字段
+const getAnimationItemType = (item: UTSJSONObject | null): string => {
+	try {
+		if (item == null) return ''
+		const json = JSON.stringify(item)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('type') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getAnimationItemImage = (item: UTSJSONObject | null): string => {
+	try {
+		if (item == null) return ''
+		const json = JSON.stringify(item)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('image') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getAnimationItemValue = (item: UTSJSONObject | null): string => {
+	try {
+		if (item == null) return ''
+		const json = JSON.stringify(item)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('value') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+// 辅助：安全读取 reward/item 字段
+const getRewardType = (itemAny: UTSJSONObject | null): number => {
+	try {
+		if (itemAny == null) return 0
+		const json = JSON.stringify(itemAny)
+		if (json == null || json == '') return 0
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return 0
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('rewardType') } catch (e) {}
+		return (v != null && v != '') ? parseInt(v.toString()) : 0
+	} catch (e) {}
+	return 0
+}
+
+const getRewardImage = (itemAny: UTSJSONObject | null): string => {
+	try {
+		if (itemAny == null) return ''
+		const json = JSON.stringify(itemAny)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('rewardImage') } catch (e) {}
+		if (v == null || v == '') {
+			try { v = parsed.get('image') } catch (e) {}
+		}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getRewardName = (itemAny: UTSJSONObject | null): string => {
+	try {
+		if (itemAny == null) return ''
+		const json = JSON.stringify(itemAny)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('rewardName') } catch (e) {}
+		if (v == null || v == '') {
+			try { v = parsed.get('name') } catch (e) {}
+		}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getRewardValue = (itemAny: UTSJSONObject | null): string => {
+	try {
+		if (itemAny == null) return ''
+		const json = JSON.stringify(itemAny)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('rewardValue') } catch (e) {}
+		if (v == null || v == '') {
+			try { v = parsed.get('value') } catch (e) {}
+		}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+// 辅助函数：获取当前用户ID（使用 loginHelper 可靠版本）
+const getCurrentUserKidSafe = (): string => {
+	// 优先使用 loginHelper 的可靠版本
+	const reliableUserId = getCurrentUserIdReliable()
+	if (reliableUserId != null && reliableUserId != '') {
+		return reliableUserId
+	}
+	
+	// 降级使用 userInfo computed
+	try {
+		const uiJson = JSON.stringify(userInfo.value)
+		if (uiJson != null && uiJson != '') {
+			const uiObj = JSON.parse(uiJson) as UTSJSONObject
+			if (uiObj != null) {
+				let kidGetVal: string | number | boolean | UTSJSONObject | null = null
+				try { kidGetVal = uiObj.get('kid') } catch (e) {}
+				return (kidGetVal != null && kidGetVal != '') ? kidGetVal.toString() : ''
+			}
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 辅助函数：检查登录状态（使用 loginHelper 可靠版本）
+const checkLoginStatus = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// 生命周期（在函数定义后挂载）
+
+// 加载抽奖信息
+const loadLotteryInfo = async () => {
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+		return
+	}
+	
+	try {
+		// 构造参数
+		const params = { userKid: userKidVal } as UTSJSONObject
+
+		const res = await getLotteryInfo(params)
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+
+		if (code == 200 || code == '200') {
+			let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+			lotteryInfo.value = (dataGetVal != null) ? dataGetVal as UTSJSONObject : null
+			
+			// 调试日志：输出抽奖信息和幸运值
+			console.log('🎰 [lottery] 抽奖信息:', JSON.stringify(lotteryInfo.value))
+			console.log('🎰 [lottery] 幸运值:', luckyPointsDisplay.value)
+			console.log('🎰 [lottery] 免费次数:', freeCountDisplay.value, '/', maxFreeCountDisplay.value)
+		} else {
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '加载抽奖信息失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '加载抽奖信息', null)
+	}
+}
+
+// 加载礼物和现金列表（用于动画）
+const loadGiftAndCashList = async () => {
+	// 使用礼物配置中的部分礼物图标 + 不同面额现金，作为轮播动画素材
+	animationItems.value = [
+		// 小礼物
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/xiaoxinxin.png', value: 0 },
+		{ type: 'cash', image: '', value: 0.5 },
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/bixin.png', value: 0 },
+		{ type: 'cash', image: '', value: 1 },
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/xianhua.png', value: 0 },
+		{ type: 'cash', image: '', value: 2 },
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/meigui.png', value: 0 },
+		{ type: 'cash', image: '', value: 5 },
+		// 高价值礼物
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/feiji.png', value: 0 },
+		{ type: 'cash', image: '', value: 10 },
+		{ type: 'gift', image: 'https://jiasu.wyxdapp.com/iconimages/liwu/huojian.png', value: 0 },
+		{ type: 'cash', image: '', value: 20 }
+	]
+}
+
+// 停止动画
+const stopAnimation = () => {
+	if (animationTimer != null) {
+		const t = animationTimer as number
+		clearTimeout(t)
+		animationTimer = null
+	}
+	if (animationInterval != null) {
+		const it = animationInterval as number
+		clearInterval(it)
+		animationInterval = null
+	}
+}
+
+// ========== 视频播放控制 ==========
+
+// 播放抽奖视频
+const playLotteryVideo = () => {
+	isVideoPlaying.value = true
+	const videoContext = uni.createVideoContext('lotteryVideo')
+	if (videoContext != null) {
+		videoContext.seek(0)
+		videoContext.play()
+	}
+}
+
+// 重置视频到首帧
+const resetVideo = () => {
+	isVideoPlaying.value = false
+	const videoContext = uni.createVideoContext('lotteryVideo')
+	if (videoContext != null) {
+		videoContext.pause()
+		videoContext.seek(0)
+	}
+}
+
+// 检查提现状态（必须在 onVideoEnded/onVideoError 之前定义）
+const checkWithdrawStatus = async () => {
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		return
+	}
+
+	try {
+		const params = { userKid: userKidVal } as UTSJSONObject
+
+		const bindStatus = await getCashoutBindStatus(params)
+		const bindJson = JSON.stringify(bindStatus)
+		const bindObj = (bindJson != null && bindJson != '') ? JSON.parse(bindJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (bindObj != null) ? bindObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		if (code == 200 || code == '200') {
+			let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { dataGetVal = (bindObj != null) ? bindObj.get('data') : null } catch (e) {}
+			if (dataGetVal != null && dataGetVal != '') {
+				try {
+					const dataJson2 = JSON.stringify(dataGetVal)
+					const dataObj = (dataJson2 != null && dataJson2 != '') ? JSON.parse(dataJson2) as UTSJSONObject : null
+					let wechatGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { wechatGetVal = (dataObj != null) ? dataObj.get('wechat') : null } catch (e) {}
+					let alipayGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { alipayGetVal = (dataObj != null) ? dataObj.get('alipay') : null } catch (e) {}
+					let firstCashGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { firstCashGetVal = (dataObj != null) ? dataObj.get('firstCashToday') : null } catch (e) {}
+					canDirectWithdraw.value = ((wechatGetVal == true || alipayGetVal == true) && firstCashGetVal == true)
+				} catch (e) {
+					canDirectWithdraw.value = false
+				}
+			} else {
+				canDirectWithdraw.value = false
+			}
+		}
+	} catch (error) {
+		handleSilentError(error, '检查提现状态')
+		canDirectWithdraw.value = false
+	}
+}
+
+// 视频播放结束事件
+const onVideoEnded = () => {
+	isVideoPlaying.value = false
+	
+	// 显示抽奖结果弹窗
+	if (pendingLotteryResult != null) {
+		console.log('🎁 [lottery] 准备显示抽奖结果:', JSON.stringify(pendingLotteryResult))
+		lotteryReward.value = pendingLotteryResult
+		// 先显示弹窗，再异步检查提现状态（不阻塞弹窗显示）
+		showLotteryResult.value = true
+		console.log('🎁 [lottery] lotteryReward.value 已设置:', JSON.stringify(lotteryReward.value))
+		pendingLotteryResult = null
+		// 刷新抽奖信息
+		loadLotteryInfo()
+		// 异步检查提现状态（不影响弹窗显示）
+		checkWithdrawStatus().catch((err: any | null): void => {
+			handleSilentError(err as any, '检查提现状态')
+		})
+	}
+	
+	// 重置视频到首帧
+	safeSetTimeout(() => {
+		resetVideo()
+	}, 500)
+}
+
+// 视频播放错误事件
+const onVideoError = (e: UTSJSONObject) => {
+	handleSilentError(e, '[lottery] 视频播放错误')
+	isVideoPlaying.value = false
+	// 如果视频播放失败，直接显示结果
+	if (pendingLotteryResult != null) {
+		lotteryReward.value = pendingLotteryResult
+		showLotteryResult.value = true
+		pendingLotteryResult = null
+		loadLotteryInfo()
+		// 异步检查提现状态（不影响弹窗显示）
+		checkWithdrawStatus().catch((err: any | null): void => {
+			handleSilentError(err as any, '检查提现状态')
+		})
+	}
+}
+
+// ========== 视频播放控制结束 ==========
+
+// 开始抽奖动画
+const startAnimation = () => {
+	currentAnimationIndex.value = 0
+	const speed = 50 // 动画速度（毫秒）
+	
+	animationInterval = setInterval(() => {
+		currentAnimationIndex.value = (currentAnimationIndex.value + 1) % animationItems.value.length
+	}, speed) as number
+	
+	// 动画持续时间（2-3秒）
+	const duration = 2000 + Math.random() * 1000
+	animationTimer = safeSetTimeout(() => {
+		stopAnimation()
+	}, duration) as number
+}
+
+// 执行抽奖（提前定义，确保在调用前存在）
+const performDraw = async (lotteryType: number, drawCount: number) => {
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 防止重复点击
+	if (isVideoPlaying.value == true) {
+		return
+	}
+	
+	try {
+		loading.value = true
+		isDrawing.value = true
+		currentReward.value = null
+		multiRewards.value = []
+		pendingLotteryResult = null
+		
+		// 播放抽奖视频
+		playLotteryVideo()
+		
+		// 构造参数并调用抽奖API（避免匿名对象类型）
+		const params = {
+			userKid: userKidVal,
+			lotteryType: lotteryType,
+			drawCount: drawCount
+		} as UTSJSONObject
+
+		const res = await drawLottery(params)
+		
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+
+		if (code == 200 || code == '200') {
+			let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+			let rewards: UTSJSONObject[] = []
+			if (dataGetVal != null && dataGetVal != '') {
+				try {
+					const dataJson2 = JSON.stringify(dataGetVal)
+					const dataObj = (dataJson2 != null && dataJson2 != '') ? JSON.parse(dataJson2) as UTSJSONObject : null
+					let rewardsGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { rewardsGetVal = (dataObj != null) ? dataObj.get('rewards') : null } catch (e) {}
+					rewards = (rewardsGetVal != null && Array.isArray(rewardsGetVal)) ? rewardsGetVal as UTSJSONObject[] : []
+				} catch (e) { rewards = [] }
+			}
+			if (rewards.length > 0) {
+				// 保存抽奖结果，等视频播放完成后显示
+				if (drawCount == 1) {
+					pendingLotteryResult = rewards[0]
+					currentReward.value = rewards[0]
+				} else {
+					// 十连抽：显示多个奖励
+					multiRewards.value = rewards
+					pendingLotteryResult = rewards[0]
+					currentReward.value = null
+				}
+				isDrawing.value = false
+				// 注意：结果弹窗将在视频播放结束后由 onVideoEnded 触发显示
+			} else {
+				isDrawing.value = false
+				resetVideo()
+				uni.showToast({ title: '抽奖失败，未获得奖励', icon: 'none' })
+			}
+		} else {
+			isDrawing.value = false
+			resetVideo()
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '抽奖失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '抽奖', null)
+		isDrawing.value = false
+		resetVideo()
+	} finally {
+		loading.value = false
+	}
+}
+
+// 免费抽奖
+const handleFreeDraw = async () => {
+	if (loading.value == true) return
+	if (((lotteryInfo.value != null && lotteryInfo.value.freeCount != null) ? lotteryInfo.value.freeCount : 0) <= 0) {
+		uni.showToast({
+			title: '今日免费次数已用完',
+			icon: 'none'
+		})
+		return
+	}
+	
+	await performDraw(LOTTERY_TYPE_FREE, 1)
+}
+
+// 付费抽奖
+const handlePaidDraw = async (drawCount: number) => {
+	if (loading.value == true) return
+	
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 有免费次数时，单次抽奖优先使用免费次数（不创建订单）
+	if (drawCount == 1) {
+		// 安全读取 lotteryInfo.value.freeCount（避免直接点访问）
+		let freeCountVal = 0
+		try {
+			const liJson = JSON.stringify(lotteryInfo.value)
+			if (liJson != null && liJson != '') {
+				const liObj = JSON.parse(liJson) as UTSJSONObject
+				if (liObj != null) {
+					let fcGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { fcGetVal = liObj.get('freeCount') } catch (e) {}
+					freeCountVal = (fcGetVal != null && fcGetVal != '') ? parseInt(fcGetVal.toString()) : 0
+				}
+			}
+		} catch (e) { freeCountVal = 0 }
+		if (freeCountVal > 0) {
+			await performDraw(LOTTERY_TYPE_FREE, 1)
+			return
+		}
+	}
+	
+	// 计算订单金额：单次1元，十连9元
+	const totalMoney = drawCount == 10 ? 9 : 1
+	
+	try {
+		uni.showLoading({ title: '创建订单中...', mask: true })
+		
+		// 创建抽奖订单
+		const params = {
+			userKid: userKidVal,
+			drawCount: drawCount,
+			totalMoney: totalMoney
+		} as UTSJSONObject
+
+		console.log('🎰 [lottery] 创建抽奖订单，参数:', JSON.stringify(params))
+		
+		const res = await createLotteryOrder(params, '')
+		
+		// 先隐藏 loading
+		uni.hideLoading()
+		
+		console.log('🎰 [lottery] 创建订单响应:', JSON.stringify(res))
+		
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		
+		console.log('🎰 [lottery] 响应码:', code)
+
+		if (code == 200 || code == '200') {
+			let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+			
+			console.log('🎰 [lottery] 响应数据:', JSON.stringify(dataGetVal))
+			
+			let orderKidVal = ''
+			if (dataGetVal != null && dataGetVal != '') {
+				try {
+					const dataJson3 = JSON.stringify(dataGetVal)
+					const dataObj3 = (dataJson3 != null && dataJson3 != '') ? JSON.parse(dataJson3) as UTSJSONObject : null
+					
+					// 尝试读取 kid 字段
+					let kidGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { kidGetVal = (dataObj3 != null) ? dataObj3.get('kid') : null } catch (e) {}
+					
+					// 如果 kid 为空，尝试读取 orderKid 字段
+					if (kidGetVal == null || kidGetVal == '') {
+						try { kidGetVal = (dataObj3 != null) ? dataObj3.get('orderKid') : null } catch (e) {}
+					}
+					
+					orderKidVal = (kidGetVal != null && kidGetVal != '') ? kidGetVal.toString() : ''
+					console.log('🎰 [lottery] 解析到订单ID:', orderKidVal)
+				} catch (e) { 
+					handleSilentError(e, '解析订单数据')
+					orderKidVal = '' 
+				}
+			}
+			
+			if (orderKidVal != '') {
+				// 新增：检查零钱支付资格
+				let balancePayFlag = false
+				try {
+					const balanceResult = await checkBalancePayEnabled(userKidVal, '', 50)
+					balancePayFlag = balanceResult.balancePayEnabled
+				} catch (e : Error) {
+					console.log('零钱支付资格检查失败', e)
+				}
+				
+				// 跳转到支付页面
+				const payUrl = '/pagesTrade/payment/payOrder/index?orderKid=' + orderKidVal
+					+ '&balancePayEnabled=' + (balancePayFlag ? '1' : '0')
+				console.log('🎰 [lottery] 跳转到支付页面:', payUrl)
+				
+				uni.navigateTo({
+					url: payUrl,
+					success: () => {
+					},
+					fail: (_err: any | null) => {
+						handleSilentError(_err as any, '[lottery] 跳转支付页面')
+						uni.showToast({ title: '跳转支付页面失败', icon: 'none' })
+					}
+				})
+			} else {
+				handleSilentError(new Error('订单ID为空'), '[lottery] 创建订单')
+				uni.showToast({ title: '订单创建失败，请重试', icon: 'none' })
+			}
+		} else {
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '订单创建失败')
+			handleSilentError(new Error(msg), '[lottery] 创建订单')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '创建抽奖订单', null)
+	}
+}
+
+// 🔧 新增：延迟函数（使用公共 delay 工具函数）
+const delayMs = (ms: number): Promise<void> => {
+	return delay(ms)
+}
+
+// 🔧 新增：加载并展示抽奖结果（带重试机制）
+const loadAndShowLotteryResult = async (orderKid: string) => {
+	// 获取当前用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		handleSilentError(new Error('用户未登录'), '[lottery] 加载抽奖结果')
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	// 重试配置：最多重试3次，每次间隔1秒
+	const maxRetries = 3
+	const retryDelayMs = 1000
+	let retryCount = 0
+	let success = false
+	
+	uni.showLoading({ title: '加载抽奖结果...' })
+	
+	while (retryCount < maxRetries && success == false) {
+		try {
+			console.log('🔄 [lottery] 查询抽奖记录，第', retryCount + 1, '次尝试')
+			
+			// 调用 API 查询订单的抽奖记录
+			const params = new LotteryRecordsByOrderParams()
+			params.userKid = userKidVal
+			params.orderKid = orderKid
+			
+			const res = await getLotteryRecordsByOrder(params)
+			const code = getResponseCode(res)
+			const dataObj = getResponseData(res)
+			
+			if (code == 200 && dataObj != null) {
+				const records = getArrayProp(dataObj, 'records')
+				
+				if (records != null && Array.isArray(records) == true && records.length > 0) {
+					// 构建抽奖结果
+					const rewards: Array<UTSJSONObject> = []
+					for (let i = 0; i < records.length; i = i + 1) {
+						const record = records[i]
+						const reward = {
+							lotteryRecordKid: getStringProp(record, 'kid'),
+							rewardType: getNumberProp(record, 'rewardType'),
+							rewardId: getStringProp(record, 'rewardId'),
+							rewardName: getStringProp(record, 'rewardName'),
+							rewardImage: getStringProp(record, 'rewardImage'),
+							rewardValue: getStringProp(record, 'rewardValue'),
+							luckyPoints: getNumberProp(record, 'luckyPoints')
+						}
+						rewards.push(reward)
+					}
+					
+					// 展示抽奖结果
+					if (rewards.length == 1) {
+						// 单次抽奖：设置 lotteryReward 并显示弹窗
+						lotteryReward.value = rewards[0]
+						showLotteryResult.value = true
+					} else {
+						// 十连抽：设置第一个奖励并显示弹窗
+						multiRewards.value = rewards
+						lotteryReward.value = rewards[0]
+						showLotteryResult.value = true
+					}
+					
+					// 刷新抽奖信息（更新免费次数和幸运值）
+					loadLotteryInfo()
+					
+					// 异步检查提现状态
+					checkWithdrawStatus().catch((err: any | null): void => {
+						handleSilentError(err as any, '检查提现状态')
+					})
+					
+					success = true
+				} else {
+					// 未查询到记录，可能是后端还没处理完，等待后重试
+					handleSilentError(new Error('未找到抽奖记录'), '[lottery] 查询抽奖记录')
+					retryCount = retryCount + 1
+					if (retryCount < maxRetries) {
+						await delayMs(retryDelayMs)
+					}
+				}
+			} else {
+				// API 返回错误，等待后重试
+				handleSilentError(new Error('查询失败'), '[lottery] 查询抽奖记录')
+				retryCount = retryCount + 1
+				if (retryCount < maxRetries) {
+					await delayMs(retryDelayMs)
+				}
+			}
+		} catch (error) {
+			handleSilentError(error, '查询订单状态')
+			retryCount = retryCount + 1
+			if (retryCount < maxRetries) {
+				await delayMs(retryDelayMs)
+			}
+		}
+	}
+	
+	uni.hideLoading()
+	
+	// 所有重试都失败
+	if (success == false) {
+		handleSilentError(new Error('查询抽奖记录失败'), '[lottery] 查询抽奖记录')
+		uni.showToast({ title: '加载抽奖结果失败，请稍后查看礼物盒', icon: 'none' })
+	}
+}
+
+// 🔧 新增：初始化页面高度（用于滚动区域）
+const initPageHeight = () => {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+		const windowHeightVal = systemInfoObj.get('windowHeight')
+		if (windowHeightVal != null) {
+			const windowHeight = parseInt(windowHeightVal.toString())
+			if (isNaN(windowHeight) == false && windowHeight > 0) {
+				// 滚动区域高度 = 窗口高度（整个页面都可以滚动）
+				scrollAreaHeight.value = windowHeight
+				console.log('📐 [lottery] 滚动区域高度:', scrollAreaHeight.value)
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '初始化页面高度')
+		scrollAreaHeight.value = 600 // 默认高度
+	}
+}
+
+// 🔧 新增：onLoad 生命周期（接收页面参数）
+onLoad((options: OnLoadOptions) => {
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 获取 autoShowResult 参数
+		const autoShowResultVal = optionsObj.get('autoShowResult')
+		if (autoShowResultVal != null && autoShowResultVal.toString() == 'true') {
+			autoShowResult.value = true
+		}
+		
+		// 获取 orderKid 参数
+		const orderKidVal = optionsObj.get('orderKid')
+		if (orderKidVal != null && orderKidVal.toString() != '') {
+			fromOrderKid.value = orderKidVal.toString()
+		}
+	}
+})
+
+// 登录状态变化回调（必须在 onMounted 之前定义）
+const handleLoginStatusChange = (data: UTSJSONObject) => {
+	const parsedData = parseLoginStatusData(data)
+	const isLogin = getIsLoginFromData(parsedData)
+	const userId = getUserIdFromData(parsedData)
+	console.log('🔄 [lottery] 登录状态变化:', isLogin, userId)
+	
+	if (isLogin == true && userId != '') {
+		// 登录成功，刷新数据
+		loadLotteryInfo()
+	}
+}
+
+// 登录状态监听取消函数
+let loginStatusUnsubscribe: (() => void) | null = null
+
+// 生命周期挂载（函数需先定义）
+onMounted(() => {
+	// 初始化页面高度（用于 H5 端信息区域滚动）
+	initPageHeight()
+	
+	// 等待登录状态初始化完成
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('🔑 [lottery] 登录状态检查结果:', result)
+		if (result == 1) {
+			// 已登录，加载数据
+			loadLotteryInfo()
+			loadGiftAndCashList()
+			
+			// 🔧 新增：如果是从支付页面跳转过来，自动展示抽奖结果
+			if (autoShowResult.value == true && fromOrderKid.value != '') {
+				// 延迟1秒，等待页面渲染完成
+				delay(1000).then(() => {
+					loadAndShowLotteryResult(fromOrderKid.value)
+				})
+			}
+		} else {
+			// 未登录，提示并返回
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			delay(1500).then(() => {
+				uni.navigateBack()
+			})
+		}
+	})
+	
+	// 监听登录状态变化
+	onLoginStatusChange(handleLoginStatusChange)
+	loginStatusUnsubscribe = () => {
+		offLoginStatusChange(handleLoginStatusChange)
+	}
+})
+
+onUnmounted(() => {
+	stopAnimation()
+	clearAllTimers()
+	
+	// 取消登录状态监听
+	const unsub = loginStatusUnsubscribe
+	if (unsub != null) {
+		unsub()
+		loginStatusUnsubscribe = null
+	}
+})
+
+// 查看礼物盒
+const handleViewGiftBox = () => {
+	showGiftBox.value = true
+}
+
+// 查看抽奖规则
+const handleViewRules = () => {
+	uni.navigateTo({
+		url: '/pagesUser/my/agreement/index?type=lottery'
+	})
+}
+
+// 兑换成功回调
+const handleExchangeSuccess = () => {
+	// 如果是礼物兑换，显示礼物盒
+	safeSetTimeout(() => {
+		showGiftBox.value = true
+	}, 1000)
+}
+
+// 提现
+const handleWithdraw = async (recordKid: string, method: number) => {
+	// #ifdef MP-WEIXIN
+	// 微信小程序端不支持提现功能
+	uni.showToast({
+		title: '微信小程序暂不支持提现功能',
+		icon: 'none'
+	})
+	return
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		uni.showLoading({ title: '处理中...' })
+		
+		// 构造参数并调用
+		const params = {
+			userKid: userKidVal,
+			lotteryRecordKid: recordKid,
+			actionType: LOTTERY_ACTION_SELF,
+			withdrawMethod: method
+		} as UTSJSONObject
+		
+		const result = await handleCashReward(params)
+		const resultJson = JSON.stringify(result)
+		const resultObj = (resultJson != null && resultJson != '') ? JSON.parse(resultJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resultObj != null) ? resultObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		
+		if (code == 200 || code == '200') {
+			uni.showToast({ title: '提现成功', icon: 'success' })
+			// 刷新抽奖信息
+			loadLotteryInfo()
+		} else {
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resultObj != null) ? resultObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resultObj != null) ? resultObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '提现失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '提现', null)
+	} finally {
+		uni.hideLoading()
+	}
+	// #endif
+}
+
+// 存入余额
+const handleDeposit = async (recordKid: string) => {
+	// 使用 loginHelper 获取用户ID
+	const userKidVal = getCurrentUserKidSafe()
+	if (userKidVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		uni.showLoading({ title: '存入中...' })
+		
+		// 构造参数并调用
+		const params = {
+			userKid: userKidVal,
+			lotteryRecordKid: recordKid,
+			actionType: LOTTERY_ACTION_GIFT
+		} as UTSJSONObject
+
+		const result = await handleCashReward(params)
+		const resultJson = JSON.stringify(result)
+		const resultObj = (resultJson != null && resultJson != '') ? JSON.parse(resultJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resultObj != null) ? resultObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+
+		if (code == 200 || code == '200') {
+			uni.showToast({ title: '已存入余额', icon: 'success' })
+			// 刷新抽奖信息
+			loadLotteryInfo()
+		} else {
+			let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { msgGetVal = (resultObj != null) ? resultObj.get('msg') : null } catch (e) {}
+			let messageGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { messageGetVal = (resultObj != null) ? resultObj.get('message') : null } catch (e) {}
+			const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((messageGetVal != null && messageGetVal != '') ? messageGetVal.toString() : '存入失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '存入余额', null)
+	} finally {
+		uni.hideLoading()
+	}
+}
+
+// 返回
+const goBack = () => {
+	uni.navigateBack()
+}
+
+// 显示分享弹窗
+const handleShowSharePopup = () => {
+	showSharePopup.value = true
+}
+
+// 分享（导航栏分享按钮）
+const handleShare = () => {
+	showSharePopup.value = true
+}
+
+// 分享完成回调
+const handleShareComplete = async (platform: string) => {
+	console.log('📤 分享完成:', platform)
+	try {
+		const userKidValue = userKidDisplay.value
+		if (userKidValue == null || userKidValue == '') {
+			handleSilentError(new Error('userKid为空'), '[lottery] 完成分享任务')
+			return
+		}
+		
+		// 调用完成分享任务接口
+		const params = {
+			userKid: userKidValue.toString(),
+			taskType: 30
+		} as UTSJSONObject
+
+		const result = await completeTask(params)
+		const resultJson = JSON.stringify(result)
+		const resultObj = (resultJson != null && resultJson != '') ? JSON.parse(resultJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resultObj != null) ? resultObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+
+		if (code == 200 || code == '200') {
+			// 移除 Toast 提示，通过刷新数据让用户看到次数变化
+			// 刷新任务和抽奖信息
+			await loadLotteryInfo()
+		}
+	} catch (error) {
+		handleSilentError(error, '完成分享任务')
+	}
+}
+
+// 微信分享回调
+const handleWechatShare = () => {
+	handleShareComplete('wechat')
+}
+
+// 朋友圈分享回调
+const handleMomentsShare = () => {
+	handleShareComplete('moments')
+}
+
+// 复制链接回调
+const handleCopyLink = () => {
+	uni.showToast({
+		title: '链接已复制',
+		icon: 'none',
+		duration: 1500
+	})
+	handleShareComplete('copy')
+}
+</script>
+
+<style scoped>
+/* 页面外层容器 */
+.lottery-page-wrapper {
+	width: 750rpx;
+	flex: 1;
+	flex-direction: column;
+	background-color: #000000;
+}
+
+/* APP 端滚动容器 */
+/* #ifndef H5 */
+.lottery-info-scroll {
+	flex: 1;
+	width: 750rpx;
+	flex-direction: column;
+}
+/* #endif */
+
+/* H5 端滚动容器 */
+/* #ifdef H5 */
+.lottery-info-scroll-h5 {
+	width: 750rpx;
+	flex-direction: column;
+}
+/* #endif */
+
+/* 视频区域 (可滚动) */
+.video-section {
+	position: relative;
+	width: 750rpx;
+	height: 1000rpx;
+}
+
+.lottery-video {
+	width: 750rpx;
+	height: 1000rpx;
+}
+
+/* 返回按钮 (左上角) */
+.video-back-btn {
+	position: absolute;
+	top: 80rpx;
+	left: 32rpx;
+	width: 80rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+/* 分享按钮 (右上角) */
+.video-share-btn {
+	position: absolute;
+	top: 80rpx;
+	right: 32rpx;
+	width: 80rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+/* 抽奖信息卡片 (视频区域内) */
+.info-card-overlay {
+	position: absolute;
+	top: 180rpx;
+	left: 32rpx;
+	right: 32rpx;
+	padding: 20rpx 32rpx;
+	background-color: rgba(255, 255, 255, 0.9);
+	border-radius: 24rpx;
+	z-index: 10;
+}
+
+/* 抽奖按钮覆盖层 (视频区域内底部) */
+.lottery-actions-overlay {
+	position: absolute;
+	bottom: 80rpx;
+	left: 32rpx;
+	right: 32rpx;
+	z-index: 10;
+}
+
+/* 抽奖信息区域容器 (彩色渐变卡片) */
+.lottery-info-container {
+	position: relative;
+	width: 750rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	background-color: #F5F5F5;
+	border-top-left-radius: 40rpx;
+	border-top-right-radius: 40rpx;
+}
+
+/* 彩色渐变背景图 */
+.lottery-info-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 800rpx;
+	z-index: 0;
+	border-top-left-radius: 40rpx;
+	border-top-right-radius: 40rpx;
+}
+
+.paid-buttons {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.action-btn {
+	height: 96rpx;
+	border-radius: 48rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-btn.disabled {
+	opacity: 0.6;
+}
+
+.paid-btn {
+	flex: 1;
+	height: 96rpx;
+	border-radius: 48rpx;
+	margin-right: 24rpx;
+}
+
+.paid-btn:last-child {
+	margin-right: 0;
+}
+
+.paid-btn.single {
+	background-color: #37B1F2;
+}
+
+.paid-btn.ten {
+	background-color: #E91E63;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+.btn-subtext {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+	margin-top: 4rpx;
+}
+
+.info-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-around;
+}
+
+.info-item {
+	flex-direction: column;
+	align-items: center;
+}
+
+.info-label {
+	font-size: 24rpx;
+	color: #666666;
+	margin-bottom: 8rpx;
+}
+
+.info-value {
+	font-size: 40rpx;
+	font-weight: bold;
+	color: #FF6B35;
+}
+
+.info-value.lucky {
+	color: #9C27B0;
+}
+
+.info-divider {
+	width: 2rpx;
+	height: 60rpx;
+	background-color: #E0E0E0;
+}
+
+/* 底部抽奖规则链接 */
+.rules-link-section {
+	padding: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #F5F5F5;
+}
+
+.rules-link {
+	font-size: 26rpx;
+	color: #999999;
+	/* text-decoration: underline; uvue 不支持此属性 */
+}
+</style>
+

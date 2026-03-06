@@ -1,0 +1,353 @@
+﻿<template>
+	<view class="promotion-landing-page">
+		<!-- 背景渐变 -->
+		<view class="bg-gradient"></view>
+		
+		<!-- 主要内容 -->
+		<view class="content-wrapper">
+			<!-- 头部标题 -->
+			<view class="header-section">
+				<text class="main-title">分享经济时代</text>
+				<view class="sub-title">
+					<text class="highlight">get</text>
+					<text class="sub-title-text">赚钱新技能</text>
+				</view>
+				<text class="description">依托私域流量，分享即可赚钱佣金</text>
+			</view>
+			
+			<!-- 邀请人信息 -->
+			<view v-if="hasInviter == true" class="inviter-section">
+				<Avatar 
+					:url="inviterAvatar"
+					size="large"
+					:customSize="120"
+					clickMode="none"
+				/>
+				<view class="inviter-info">
+					<text class="inviter-name">{{ inviterNickname }}</text>
+					<text class="inviter-desc">邀请您加入网约向导</text>
+					<view class="inviter-stats">
+						<text class="inviter-id">ID: {{ inviterId }}</text>
+						<text class="inviter-count">已邀请 {{ inviterInviteCount }} 人</text>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 特色介绍 -->
+			<view class="features-section">
+				<view class="feature-item">
+					<UniIcons type="star-filled" :size="36" color="#FFB800" />
+					<view class="feature-content">
+						<text class="feature-title">专业向导服务</text>
+						<text class="feature-desc">本地专业向导，提供优质旅游体验</text>
+					</view>
+				</view>
+				
+				<view class="feature-item">
+					<UniIcons type="wallet" :size="36" color="#FFB800" />
+					<view class="feature-content">
+						<text class="feature-title">分享赚佣金</text>
+						<text class="feature-desc">邀请用户下单，即可获得丰厚佣金收益</text>
+					</view>
+				</view>
+				
+				<view class="feature-item">
+					<UniIcons type="auth-filled" :size="36" color="#4CAF50" />
+					<view class="feature-content">
+						<text class="feature-title">安全保障</text>
+						<text class="feature-desc">平台担保交易，资金安全有保障</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 绑定状态 -->
+			<view v-if="bindStatus == 'success'" class="success-section">
+				<text class="success-icon">✓</text>
+				<text class="success-title">绑定成功！</text>
+				<text class="success-desc">您已成功绑定到 {{ inviterNickname }} 的推广链</text>
+			</view>
+			
+			<view v-else-if="bindStatus == 'loading'" class="loading-section">
+				<text class="loading-text">正在绑定...</text>
+			</view>
+			
+			<!-- 底部操作按钮 -->
+			<view class="action-section">
+				<Button v-if="isLogin == false" type="primary" block @click="goToLogin">
+					立即登录
+				</Button>
+				<Button v-else type="primary" block @click="goToHome">
+					进入首页
+				</Button>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { useUserStore } from '@/stores/user'
+import Button from '@/components/base/Button.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { goToHome } from '@/common/utils/utsSafe.uts'
+
+// 邀请人信息（拆分为独立 ref）
+const hasInviter = ref<boolean>(false)
+const inviterId = ref<string>('')
+const inviterNickname = ref<string>('')
+const inviterAvatar = ref<string>('https://jiasu.wyxdapp.com/iconimages/default_avatar.png')
+const inviterInviteCount = ref<number>(0)
+
+// 绑定状态
+const bindStatus = ref<string>('none') // none, loading, success, failed
+const isLogin = ref<boolean>(false)
+
+// 当前邀请码
+const currentInviteCode = ref<string>('')
+
+// 检查登录状态
+const checkLoginStatus = () => {
+	isLogin.value = checkUserLoginReliable()
+}
+
+// 绑定邀请人（必须在 loadInviterInfo 之前定义）
+const bindInviter = (code: string) => {
+	bindStatus.value = 'loading'
+	
+	// 使用 setTimeout 模拟异步操作
+	setTimeout(() => {
+		// TODO: 调用绑定邀请人 API
+		bindStatus.value = 'success'
+	}, 1500)
+}
+
+// 加载邀请人信息
+const loadInviterInfo = (code: string) => {
+	currentInviteCode.value = code
+	
+	// TODO: 调用获取邀请人信息 API
+	// 模拟数据
+	hasInviter.value = true
+	inviterId.value = 'WYXD2024'
+	inviterNickname.value = '张三'
+	inviterAvatar.value = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+	inviterInviteCount.value = 128
+	
+	if (isLogin.value == true) {
+		bindInviter(code)
+	}
+}
+
+// 跳转登录
+const goToLogin = () => {
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+// 跳转首页（使用全局工具函数）
+// goToHome 已从 utsSafe.uts 导入
+
+// 页面加载
+onLoad((options: OnLoadOptions) => {
+	checkLoginStatus()
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const codeVal = optionsObj.get('code')
+		if (codeVal != null && codeVal.toString() != '') {
+			loadInviterInfo(codeVal.toString())
+		}
+	}
+})
+</script>
+
+<style scoped>
+.promotion-landing-page {
+	min-height: 2000rpx;
+	position: relative;
+	overflow: hidden;
+}
+
+.bg-gradient {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #667eea;
+}
+
+.content-wrapper {
+	position: relative;
+	padding-top: 64rpx;
+	padding-bottom: 64rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+}
+
+.header-section {
+	align-items: center;
+	margin-bottom: 64rpx;
+}
+
+.main-title {
+	font-size: 48rpx;
+	color: #ffffff;
+	font-weight: bold;
+	margin-bottom: 24rpx;
+}
+
+.sub-title {
+	flex-direction: row;
+	margin-bottom: 32rpx;
+}
+
+.sub-title .highlight {
+	font-size: 48rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.sub-title-text {
+	font-size: 48rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.description {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.inviter-section {
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	margin-bottom: 48rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.inviter-avatar {
+	width: 120rpx;
+	height: 120rpx;
+	border-radius: 30rpx;
+	margin-right: 24rpx;
+}
+
+.inviter-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.inviter-name {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.inviter-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-bottom: 16rpx;
+}
+
+.inviter-stats {
+	flex-direction: row;
+}
+
+.inviter-id,
+.inviter-count {
+	font-size: 24rpx;
+	color: #37B1F2;
+	margin-right: 16rpx;
+}
+
+.features-section {
+	margin-bottom: 64rpx;
+}
+
+.feature-item {
+	flex-direction: row;
+	align-items: flex-start;
+	background-color: rgba(255, 255, 255, 0.2);
+	border-radius: 20rpx;
+	padding-top: 28rpx;
+	padding-bottom: 28rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	margin-bottom: 24rpx;
+}
+
+.feature-icon {
+	font-size: 48rpx;
+	margin-right: 24rpx;
+}
+
+.feature-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.feature-title {
+	font-size: 30rpx;
+	color: #ffffff;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.feature-desc {
+	font-size: 26rpx;
+	color: rgba(255, 255, 255, 0.8);
+	line-height: 1.6;
+}
+
+.success-section {
+	align-items: center;
+	margin-bottom: 64rpx;
+}
+
+.success-icon {
+	font-size: 120rpx;
+	color: #52C41A;
+	margin-bottom: 32rpx;
+}
+
+.success-title {
+	font-size: 36rpx;
+	color: #ffffff;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.success-desc {
+	font-size: 28rpx;
+	color: rgba(255, 255, 255, 0.8);
+}
+
+.loading-section {
+	align-items: center;
+	margin-bottom: 64rpx;
+}
+
+.loading-text {
+	color: #ffffff;
+	font-size: 32rpx;
+}
+
+.action-section {
+	margin-top: 40rpx;
+}
+</style>

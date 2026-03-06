@@ -1,0 +1,50 @@
+/* ==================== Vue3 Uni-app X 样式统一入口 ==================== */
+/* 创建时间：2025-12-10 */
+/* 更新时间：2025-12-31 */
+/* 说明：导入所有模块化样式文件，统一管理 */
+
+/* 基础样式 */
+@import './base.css';
+
+/* 布局样式 */
+@import './layout.css';
+
+/* 间距样式 */
+@import './spacing.css';
+
+/* 文字样式 */
+@import './typography.css';
+
+/* 颜色样式 */
+@import './colors.css';
+
+/* 组件样式 */
+@import './components.css';
+
+/* 卡片样式 */
+@import './card.css';
+
+/* 弹窗样式 */
+@import './modal.css';
+
+/* 骨架屏样式 */
+@import './skeleton.css';
+
+/* 工具类样式 */
+@import './utilities.css';
+
+/* ==================== 全局样式优先级说明 ==================== */
+/*
+ * 1. base.css - 页面基础重置和全局样式
+ * 2. layout.css - Flex布局、尺寸、圆角
+ * 3. spacing.css - 间距系统（margin/padding）
+ * 4. typography.css - 文字样式（字号、字重、对齐）
+ * 5. colors.css - 颜色样式（文字色、背景色）
+ * 6. components.css - 组件样式（按钮、列表状态等）
+ * 7. card.css - 卡片样式
+ * 8. modal.css - 弹窗样式
+ * 9. skeleton.css - 骨架屏样式
+ * 10. utilities.css - 工具类（圆角、边框、阴影等）
+ *
+ * 页面 scoped 样式会覆盖全局样式
+ */

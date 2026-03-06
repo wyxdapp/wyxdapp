@@ -1,0 +1,129 @@
+import { computed, Ref } from 'vue'
+
+// 表单数据接口
+interface FormData {
+  phone?: string
+  realname?: string
+  serviceHours?: number
+}
+
+// 验证配置接口
+interface ValidationConfig {
+  requirePhone?: boolean
+  requireRealname?: boolean
+  requireDate?: boolean
+  requireCity?: boolean
+  requireServiceHours?: boolean
+  minServiceHours?: number
+  maxServiceHours?: number
+}
+
+/**
+ * 订单表单验证 Composable
+ * 从 composables/useOrderValidation.uts 迁移到 common/composables/
+ */
+export function useOrderValidation(
+  formData: Ref<FormData>,
+  chooseDate: Ref<string>,
+  cityName: Ref<string>,
+  config: ValidationConfig = {}
+) {
+  // 默认配置（使用 as any 再转接口类型，符合 UTS 规范）
+  const defaultConfigRaw = {
+    requirePhone: true,
+    requireRealname: true,
+    requireDate: true,
+    requireCity: true,
+    requireServiceHours: true,
+    minServiceHours: 1,
+    maxServiceHours: 30,
+    ...config
+  } as any
+  const defaultConfig = defaultConfigRaw as ValidationConfig
+
+  // 联系人信息验证
+  const validateContact = (): string | null => {
+    if (defaultConfig.requirePhone == true && (formData.value.phone == null || formData.value.phone == '')) {
+      return '请选择联系人信息'
+    }
+    if (defaultConfig.requireRealname == true && (formData.value.realname == null || formData.value.realname == '')) {
+      return '请选择联系人信息'
+    }
+    return null
+  }
+
+  // 日期验证
+  const validateDate = (): string | null => {
+    if (defaultConfig.requireDate == true && (chooseDate.value == null || chooseDate.value == '')) {
+      return '请选择出发时间'
+    }
+    return null
+  }
+
+  // 城市验证
+  const validateCity = (): string | null => {
+    if (defaultConfig.requireCity == true && (cityName.value == null || cityName.value == '' || cityName.value === '全部')) {
+      return '请选择城市'
+    }
+    return null
+  }
+
+  // 服务时长验证
+  const validateServiceHours = (): string | null => {
+    if (defaultConfig.requireServiceHours == null || defaultConfig.requireServiceHours == false) return null
+    
+    const hours = formData.value.serviceHours
+    if (hours == null || hours <= 0) {
+      return '请选择服务时长'
+    }
+    if (defaultConfig.minServiceHours != null && defaultConfig.minServiceHours != 0 && hours < defaultConfig.minServiceHours) {
+      return `服务时长不能少于${defaultConfig.minServiceHours}小时`
+    }
+    if (defaultConfig.maxServiceHours != null && defaultConfig.maxServiceHours != 0 && hours > defaultConfig.maxServiceHours) {
+      return `服务时长不能超过${defaultConfig.maxServiceHours}小时`
+    }
+    return null
+  }
+
+  // 综合验证
+  const validateForm = (): string | null => {
+    // 按照页面显示顺序验证
+    const contactError = validateContact()
+    if (contactError != null) return contactError
+
+    const dateError = validateDate()
+    if (dateError != null) return dateError
+
+    const cityError = validateCity()
+    if (cityError != null) return cityError
+
+    const serviceHoursError = validateServiceHours()
+    if (serviceHoursError != null) return serviceHoursError
+
+    return null
+  }
+
+  // 是否可以提交
+  const canSubmit = computed(() => {
+    return validateForm() == null
+  })
+
+  // 显示验证错误提示
+  const showValidationError = (error: string) => {
+    uni.showToast({
+      title: error,
+      icon: 'none'
+    })
+  }
+
+  return {
+    validateForm,
+    validateContact,
+    validateDate,
+    validateCity,
+    validateServiceHours,
+    canSubmit,
+    showValidationError
+  }
+}
+

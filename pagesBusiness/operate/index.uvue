@@ -1,0 +1,340 @@
+<template>
+	<view class="operate-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">运营中心</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		<!-- 运营功能列表 -->
+		<view class="operate-list">
+			<view 
+				v-for="(item, index) in operateItems" 
+				:key="index"
+				class="operate-item"
+				@click="handleItemClick(item)"
+			>
+				<view class="item-content">
+					<view class="item-left">
+						<view class="item-icon-wrap">
+							<uni-icons :type="getItemIcon(item)" :size="22" color="#37B1F2"></uni-icons>
+						</view>
+						<text class="item-title">{{ getItemTitle(item) }}</text>
+					</view>
+					<view class="item-right">
+						<text class="item-desc">{{ getItemDesc(item) }}</text>
+						<uni-icons type="right" :size="16" color="#cccccc"></uni-icons>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { initUserInfoAction } from '@/stores/user.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	requireLoginReliable,
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+// 辅助函数 - 获取用户ID（使用 loginHelper 可靠版本）
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 辅助函数 - 检查登录状态（使用 loginHelper 可靠版本）
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// 运营功能列表 - 使用普通对象（避免 class 实例在 Android 端 JSON 序列化问题）
+// 可用图标: contact, personadd, paperplane, wallet, email, chatboxes, shop 等
+const operateItems = ref([
+	{
+		icon: 'contact',
+		title: '向导推荐',
+		desc: '推荐向导赚佣金',
+		path: '/pagesBusiness/operate/signContract'
+	},
+	{
+		icon: 'paperplane',
+		title: '用户推广',
+		desc: '推广用户管理',
+		path: '/pagesBusiness/operate/userPromotionManage'
+	},
+	{
+		icon: 'wallet',
+		title: '佣金明细',
+		desc: '查看佣金收益',
+		path: '/pagesBusiness/operate/commissionDetail'
+	},
+	{
+		icon: 'email',
+		title: '群发消息',
+		desc: '消息通知',
+		path: '/pagesBusiness/operate/massMessage'
+	}
+])
+
+// 辅助函数 - 安全获取列表项图标类型（UTS 安全模式）
+const getItemIcon = (item: UTSJSONObject | null): string => {
+	if (item == null) return 'gear'
+	try {
+		const itemStr = JSON.stringify(item)
+		if (itemStr == null || itemStr == '') return 'gear'
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		if (itemObj == null) return 'gear'
+		const iconVal = itemObj.get('icon')
+		if (iconVal != null && iconVal.toString() != '') {
+			return iconVal.toString()
+		}
+	} catch (e) {}
+	return 'gear'
+}
+
+// 辅助函数 - 安全获取列表项标题
+const getItemTitle = (item: UTSJSONObject | null): string => {
+	if (item == null) return ''
+	try {
+		const itemStr = JSON.stringify(item)
+		if (itemStr == null || itemStr == '') return ''
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		if (itemObj == null) return ''
+		const titleVal = itemObj.get('title')
+		if (titleVal != null && titleVal.toString() != '') {
+			return titleVal.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 辅助函数 - 安全获取列表项描述
+const getItemDesc = (item: UTSJSONObject | null): string => {
+	if (item == null) return ''
+	try {
+		const itemStr = JSON.stringify(item)
+		if (itemStr == null || itemStr == '') return ''
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		if (itemObj == null) return ''
+		const descVal = itemObj.get('desc')
+		if (descVal != null && descVal.toString() != '') {
+			return descVal.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 辅助函数 - 安全获取列表项路径（必须在 handleItemClick 之前定义）
+const getItemPath = (item: UTSJSONObject | null): string => {
+	if (item == null) return ''
+	try {
+		const itemStr = JSON.stringify(item)
+		if (itemStr == null || itemStr == '') return ''
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		if (itemObj == null) return ''
+		const pathVal = itemObj.get('path')
+		if (pathVal != null && pathVal.toString() != '') {
+			return pathVal.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 点击处理函数
+const handleItemClick = (item: UTSJSONObject | null) => {
+	// 再次检查登录状态
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	// 安全获取 path
+	const path = getItemPath(item)
+	if (path != '') {
+		uni.navigateTo({ url: path })
+	}
+}
+
+// 生命周期
+onMounted(() => {
+	console.log('[Operate] 页面加载')
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	initUserInfoAction()
+	
+	// 使用 waitForLoginStatus 等待 Store 初始化完成
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('[Operate] Store 初始化完成，登录状态:', result == 1)
+		if (result == 0) {
+			// 使用 requireLoginReliable 进行登录守卫
+			requireLoginReliable(true, '/pagesBusiness/operate/index')
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '等待登录状态初始化')
+	})
+})
+
+// onShow 生命周期：每次页面显示时检查登录状态
+onShow(() => {
+	const isLogin = checkUserLoginReliable()
+	console.log('[Operate] onShow 登录状态:', isLogin)
+	if (isLogin == false) {
+		requireLoginReliable(true, '/pagesBusiness/operate/index')
+	}
+})
+</script>
+
+<style scoped>
+.operate-page {
+	flex-direction: column;
+	flex: 1;
+	background-color: #f5f5f5;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.operate-list {
+	background-color: #ffffff;
+	margin-bottom: 20rpx;
+	flex-direction: column;
+}
+
+.operate-item {
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.item-content {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.item-left {
+	flex-direction: row;
+	align-items: center;
+}
+
+.item-icon-wrap {
+	width: 48rpx;
+	height: 48rpx;
+	margin-right: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.item-title {
+	font-size: 32rpx;
+	color: #333333;
+}
+
+.item-right {
+	flex-direction: row;
+	align-items: center;
+}
+
+.item-desc {
+	font-size: 28rpx;
+	color: #999999;
+	margin-right: 12rpx;
+}
+
+.arrow {
+	font-size: 40rpx;
+	color: #cccccc;
+}
+
+</style>

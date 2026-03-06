@@ -1,0 +1,530 @@
+<template>
+	<view class="task-panel">
+		<view class="panel-header">
+			<text class="header-title">抽奖任务</text>
+			<text class="header-subtitle">完成任务领取免费抽奖次数</text>
+		</view>
+		
+		<!-- 调试信息：显示任务数量 -->
+		<text class="debug-text" v-if="taskListLength == 0">暂无任务数据 (userKid: {{ watchedUserKid }})</text>
+		
+		<view class="task-list">
+			<view 
+				v-for="(task, index) in taskList" 
+				:key="index"
+				class="task-item"
+				:class="{ 'completed': isTaskCompleted(task) }"
+			>
+				<view class="task-icon-wrapper" :class="getTaskIconBgClass(task)">
+					<UniIcons :type="getTaskIconType(task)" :size="20" :color="getTaskIconColor(task)" />
+				</view>
+				
+				<view class="task-content">
+					<text class="task-name">{{ getTaskName(task) }}</text>
+					<text class="task-desc">{{ getTaskDesc(task) }}</text>
+				</view>
+				
+				<view class="task-action">
+					<view 
+						v-if="isTaskCompleted(task) == false"
+						class="task-btn disabled"
+					>
+						<text class="btn-text">未完成</text>
+					</view>
+					<view 
+						v-else-if="isTaskRewarded(task) == false"
+						class="task-btn active"
+						@click="handleClaimReward(task)"
+					>
+						<text class="btn-text">领取 +{{ getRewardCount(task) }}</text>
+					</view>
+					<view 
+						v-else
+						class="task-btn claimed"
+					>
+						<text class="btn-text">✓ 已领取</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, watch, computed } from 'vue'
+import { getTaskStatus, completeTask } from '@/common/services/lotteryService.uts'
+// 使用 uni_modules 中的 uni-icons 组件（支持字体图标）
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+
+// Props定义
+const props = defineProps({
+	userKid: { type: String, required: true }
+})
+
+// Emits定义
+const emit = defineEmits(['refresh', 'share'])
+
+// 响应式数据
+const taskList = ref<Array<any>>([])
+const loading = ref<boolean>(false)
+const lastLoadedUserKid = ref<string>('')  // 记录上次加载的 userKid，防止重复加载
+
+// ========== 安全属性访问辅助函数（UTS 规范：使用 UTSJSONObject.get() 方法）==========
+
+// 安全获取字符串属性
+const getTaskStringProp = (task: any, key: string): string => {
+	if (task == null) return ''
+	try {
+		const taskJson = JSON.stringify(task)
+		if (taskJson == null || taskJson == '') return ''
+		const taskObj = JSON.parse(taskJson) as UTSJSONObject
+		if (taskObj == null) return ''
+		const val = taskObj.get(key)
+		if (val == null || val == '') return ''
+		return val.toString()
+	} catch (e) {
+		console.error('❌ [LotteryTaskPanel] getTaskStringProp 失败:', key, e)
+	}
+	return ''
+}
+
+// 安全获取数字属性
+const getTaskNumberProp = (task: any, key: string): number => {
+	if (task == null) return 0
+	try {
+		const taskJson = JSON.stringify(task)
+		if (taskJson == null || taskJson == '') return 0
+		const taskObj = JSON.parse(taskJson) as UTSJSONObject
+		if (taskObj == null) return 0
+		const val = taskObj.get(key)
+		if (val == null) return 0
+		const numVal = parseInt(val.toString())
+		if (isNaN(numVal) == true) return 0
+		return numVal
+	} catch (e) {
+		console.error('❌ [LotteryTaskPanel] getTaskNumberProp 失败:', key, e)
+	}
+	return 0
+}
+
+// 安全获取布尔属性
+const getTaskBoolProp = (task: any, key: string): boolean => {
+	if (task == null) return false
+	try {
+		const taskJson = JSON.stringify(task)
+		if (taskJson == null || taskJson == '') return false
+		const taskObj = JSON.parse(taskJson) as UTSJSONObject
+		if (taskObj == null) return false
+		const val = taskObj.get(key)
+		if (val == null) return false
+		// 处理各种布尔值表示
+		if (val == true) return true
+		if (val == 'true') return true
+		if (val == 1) return true
+		if (val == '1') return true
+	} catch (e) {
+		console.error('❌ [LotteryTaskPanel] getTaskBoolProp 失败:', key, e)
+	}
+	return false
+}
+
+// ========== 任务属性获取函数 ==========
+
+// 获取任务类型
+const getTaskTypeFromTask = (task: any): number => {
+	return getTaskNumberProp(task, 'taskType')
+}
+
+// 任务图标类型（使用 uni-icons）
+const getTaskIconType = (task: any): string => {
+	const taskType = getTaskTypeFromTask(task)
+	if (taskType == 10) return 'person-filled'
+	if (taskType == 20) return 'calendar-filled'
+	if (taskType == 30) return 'paperplane-filled'
+	return 'star-filled'
+}
+
+// 任务图标颜色
+const getTaskIconColor = (task: any): string => {
+	const taskType = getTaskTypeFromTask(task)
+	if (taskType == 10) return '#FF6B35'
+	if (taskType == 20) return '#37B1F2'
+	if (taskType == 30) return '#9C27B0'
+	return '#FF6B35'
+}
+
+// 任务图标背景样式类
+const getTaskIconBgClass = (task: any): string => {
+	const taskType = getTaskTypeFromTask(task)
+	if (taskType == 10) return 'icon-bg-orange'
+	if (taskType == 20) return 'icon-bg-teal'
+	if (taskType == 30) return 'icon-bg-purple'
+	return 'icon-bg-orange'
+}
+
+// 任务名称
+const getTaskName = (task: any): string => {
+	return getTaskStringProp(task, 'taskName')
+}
+
+// 任务描述
+const getTaskDesc = (task: any): string => {
+	return getTaskStringProp(task, 'taskDesc')
+}
+
+// 奖励次数
+const getRewardCount = (task: any): number => {
+	return getTaskNumberProp(task, 'rewardCount')
+}
+
+// 是否已完成
+const isTaskCompleted = (task: any): boolean => {
+	return getTaskBoolProp(task, 'completed')
+}
+
+// 是否已领取
+const isTaskRewarded = (task: any): boolean => {
+	return getTaskBoolProp(task, 'rewarded')
+}
+
+// 获取任务类型（用于领取奖励）
+const getTaskType = (task: any): number => {
+	return getTaskNumberProp(task, 'taskType')
+}
+
+// 加载任务状态
+const loadTaskStatus = async () => {
+	if (loading.value == true) return
+	
+	const userKidValue = props.userKid
+	if (userKidValue == null || userKidValue == '') {
+		console.warn('⚠️ [LotteryTaskPanel] userKid 为空，跳过加载')
+		return
+	}
+	
+	loading.value = true
+	console.log('📝 [LotteryTaskPanel] 开始加载任务状态, userKid:', userKidValue)
+	try {
+		// 直接传递 UTSJSONObject 类型参数，API 函数内部会处理
+		const params = { userKid: userKidValue } as UTSJSONObject
+		const result = await getTaskStatus(params)
+		
+		console.log('📝 [LotteryTaskPanel] API 响应:', JSON.stringify(result))
+		
+		// 解析响应
+		if (result != null) {
+			try {
+				const resultJson = JSON.stringify(result)
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						const codeVal = resultObj.get('code')
+						const code = (codeVal != null) ? parseInt(codeVal.toString()) : 0
+						console.log('📝 [LotteryTaskPanel] 响应码:', code)
+						if (code == 200) {
+							const dataVal = resultObj.get('data')
+							console.log('📝 [LotteryTaskPanel] 响应数据:', JSON.stringify(dataVal))
+							console.log('📝 [LotteryTaskPanel] dataVal 类型:', typeof dataVal)
+							console.log('📝 [LotteryTaskPanel] dataVal 是否为数组:', Array.isArray(dataVal))
+							if (dataVal != null && Array.isArray(dataVal) == true) {
+								taskList.value = dataVal as any[]
+								// 打印每个任务的详细信息
+								for (let i = 0; i < taskList.value.length; i = i + 1) {
+									const task = taskList.value[i]
+									console.log('📝 [LotteryTaskPanel] 任务', i, ':', JSON.stringify(task))
+									console.log('📝 [LotteryTaskPanel] 任务', i, '名称:', getTaskName(task))
+									console.log('📝 [LotteryTaskPanel] 任务', i, '完成状态:', isTaskCompleted(task))
+								}
+							} else {
+								console.warn('⚠️ [LotteryTaskPanel] 响应数据不是数组或为空')
+								console.warn('⚠️ [LotteryTaskPanel] dataVal:', dataVal)
+							}
+						} else {
+							console.warn('⚠️ [LotteryTaskPanel] API 返回非 200 状态码:', code)
+						}
+					}
+				}
+			} catch (e) {
+				console.error('❌ [LotteryTaskPanel] 解析响应失败:', e)
+			}
+		} else {
+			console.warn('⚠️ [LotteryTaskPanel] API 响应为空')
+		}
+	} catch (error: any) {
+		console.error('❌ [LotteryTaskPanel] 加载任务状态失败:', error)
+	} finally {
+		loading.value = false
+	}
+}
+
+// 领取奖励
+const handleClaimReward = async (task: any) => {
+	if (loading.value == true) return
+	
+	const taskType = getTaskType(task)
+	if (taskType == 0) {
+		console.error('❌ 任务类型无效')
+		return
+	}
+	
+	// 如果是分享任务且未完成，触发分享
+	if (taskType == 30 && isTaskCompleted(task) == false) {
+		emit('share')
+		return
+	}
+	
+	loading.value = true
+	try {
+		const userKidValue = props.userKid
+		if (userKidValue == null || userKidValue == '') {
+			console.warn('⚠️ [LotteryTaskPanel] userKid 为空，无法领取奖励')
+			loading.value = false
+			return
+		}
+		
+		console.log('🎁 [LotteryTaskPanel] 开始领取任务奖励...')
+		// 直接传递 any 类型参数
+		const params = {
+			userKid: userKidValue,
+			taskType: taskType
+		} as UTSJSONObject
+		const result = await completeTask(params)
+		
+		// 解析响应
+		let resultCode = 0
+		let resultMsg = '领取失败'
+		if (result != null) {
+			try {
+				const resultJson = JSON.stringify(result)
+				if (resultJson != null && resultJson != '') {
+					const resultObj = JSON.parse(resultJson) as UTSJSONObject
+					if (resultObj != null) {
+						const codeVal = resultObj.get('code')
+						resultCode = (codeVal != null) ? parseInt(codeVal.toString()) : 0
+						const msgVal = resultObj.get('msg')
+						if (msgVal != null && msgVal.toString() != '') {
+							resultMsg = msgVal.toString()
+						}
+					}
+				}
+			} catch (e) {
+				console.error('❌ [LotteryTaskPanel] 解析响应失败:', e)
+			}
+		}
+		
+		if (resultCode == 200) {
+			uni.showToast({
+				title: '领取成功',
+				icon: 'success'
+			})
+			
+			// 刷新任务状态和抽奖信息
+			await loadTaskStatus()
+			emit('refresh')
+		} else {
+			uni.showToast({
+				title: resultMsg,
+				icon: 'none'
+			})
+		}
+	} catch (error: any) {
+		console.error('❌ [LotteryTaskPanel] 领取任务奖励失败:', error)
+		uni.showToast({
+			title: '领取失败',
+			icon: 'none'
+		})
+	} finally {
+		loading.value = false
+	}
+}
+
+// 使用 watch 监听 userKid 变化，替代 onMounted
+// UTS 中 watch 第一个参数需要是 ref 或 computed
+const watchedUserKid = computed((): string => {
+	const val = props.userKid
+	console.log('🔍 [LotteryTaskPanel] watchedUserKid computed 执行, props.userKid:', val)
+	return (val != null) ? val : ''
+})
+
+// 计算任务列表长度（用于调试）
+const taskListLength = computed((): number => {
+	try {
+		const arr = taskList.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+watch(watchedUserKid, (newVal: string, oldVal: string) => {
+	console.log('🔄 [LotteryTaskPanel] watch 触发, newVal:', newVal, ', oldVal:', oldVal, ', lastLoaded:', lastLoadedUserKid.value, ', taskListLength:', taskListLength.value)
+	// 当 userKid 有效且与上次加载的不同时，加载任务状态
+	if (newVal != null && newVal != '' && newVal != lastLoadedUserKid.value) {
+		console.log('🔄 [LotteryTaskPanel] userKid 变化，重新加载任务状态')
+		lastLoadedUserKid.value = newVal
+		loadTaskStatus()
+	} else if (newVal == null || newVal == '') {
+		console.warn('⚠️ [LotteryTaskPanel] watch: newVal 为空，跳过加载')
+	} else if (newVal == lastLoadedUserKid.value) {
+		console.log('ℹ️ [LotteryTaskPanel] watch: userKid 未变化，跳过加载')
+	}
+}, { immediate: true })
+
+// 暴露刷新方法供父组件调用
+defineExpose({
+	refresh: loadTaskStatus
+})
+</script>
+
+<style scoped>
+.task-panel {
+	width: 686rpx;
+	margin-left: 32rpx;
+	margin-right: 32rpx;
+	margin-bottom: 32rpx;
+	padding: 32rpx;
+	background-color: #FFFFFF;
+	border-radius: 24rpx;
+	position: relative;
+	z-index: 1;
+}
+
+.panel-header {
+	margin-bottom: 24rpx;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.header-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.header-subtitle {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.debug-text {
+	font-size: 24rpx;
+	color: #FF6B35;
+	margin-bottom: 16rpx;
+}
+
+.task-list {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.task-item {
+	padding: 24rpx;
+	margin-bottom: 16rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #E8E8E8;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.task-item:last-child {
+	margin-bottom: 0;
+}
+
+.task-item.completed {
+	border-color: #37B1F2;
+	background-color: #F0FFFE;
+}
+
+.task-icon-wrapper {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	background-color: #FFE5E5;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 24rpx;
+}
+
+.task-icon-wrapper.icon-bg-orange {
+	background-color: #FFF0EB;
+}
+
+.task-icon-wrapper.icon-bg-teal {
+	background-color: #E0F9F7;
+}
+
+.task-icon-wrapper.icon-bg-purple {
+	background-color: #F3E5F5;
+}
+
+.task-item.completed .task-icon-wrapper {
+	background-color: #E0F9F7;
+}
+
+.task-content {
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+}
+
+.task-name {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.task-desc {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.task-action {
+	margin-left: 16rpx;
+}
+
+.task-btn {
+	padding: 16rpx 32rpx;
+	border-radius: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.task-btn.disabled {
+	background-color: #F5F5F5;
+}
+
+.task-btn.disabled .btn-text {
+	color: #CCCCCC;
+}
+
+.task-btn.active {
+	background-color: #37B1F2;
+}
+
+.task-btn.active .btn-text {
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+.task-btn.claimed {
+	background-color: #E8E8E8;
+}
+
+.task-btn.claimed .btn-text {
+	color: #999999;
+}
+
+.btn-text {
+	font-size: 24rpx;
+}
+</style>
+

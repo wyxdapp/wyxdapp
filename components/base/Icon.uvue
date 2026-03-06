@@ -1,0 +1,184 @@
+<template>
+	<view class="icon-wrapper" :style="wrapperStyle" @click="handleClick">
+		<!-- iconfont 图标 -->
+		<text 
+			v-if="isIconfont == true" 
+			class="iconfont" 
+			:class="iconfontClass"
+		>{{ iconfontText }}</text>
+		<!-- 图片图标 -->
+		<image 
+			v-else
+			:src="iconSrc" 
+			:style="imageStyle"
+			mode="aspectFit"
+			class="icon-image"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	name: { type: String, required: true },
+	type: { type: String, default: '' },  // uni-icons 兼容：type 属性
+	size: { type: [Number, String], default: 32 },
+	color: { type: String, default: '#333333' }
+})
+
+// Emits
+const emit = defineEmits<{
+	click: []
+}>()
+
+// iconfont 图标映射表（类似 uni-icons 的 type 映射）
+const iconfontMap: Map<string, string> = new Map([
+	// 登录相关图标
+	['weixin', 'icon-weixin'],
+	['wechat', 'icon-weixin'],
+	['phone', 'icon-phone'],
+	['mobile', 'icon-phone'],
+	['chat', 'icon-chat'],
+	['lock', 'icon-lock'],
+	['unlock', 'icon-unlock'],
+	['password', 'icon-lock'],
+	['code', 'icon-code'],
+	['message', 'icon-message'],
+	// 常用图标
+	['home', 'icon-home'],
+	['user', 'icon-user'],
+	['search', 'icon-search'],
+	['arrow-left', 'icon-arrow-left'],
+	['arrow-right', 'icon-arrow-right'],
+	['close', 'icon-close'],
+	['check', 'icon-check'],
+	['star', 'icon-star'],
+	['heart', 'icon-heart'],
+	['like', 'icon-like'],
+	['share', 'icon-share'],
+	['more', 'icon-more'],
+	['setting', 'icon-setting'],
+	['edit', 'icon-edit'],
+	['delete', 'icon-delete'],
+	['add', 'icon-add'],
+	['minus', 'icon-minus'],
+])
+
+// 图片图标映射表（仅包含图片URL）
+const iconMap: Map<string, string> = new Map([
+	// 导航图标
+	['back', 'https://jiasu.wyxdapp.com/iconimages/fanhui.png'],
+	['fanhui', 'https://jiasu.wyxdapp.com/iconimages/fanhui.png'],
+	['share', 'https://jiasu.wyxdapp.com/iconimages/fenxiang.png'],
+	['fenxiang', 'https://jiasu.wyxdapp.com/iconimages/fenxiang.png'],
+	// 个人主页图标
+	['n_icon_cost.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_cost.png'],
+	['n_icon_deal.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_deal.png'],
+	['n_icon_Range.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_Range.png'],
+	['n_icon_score.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_score.png'],
+	['n_icon_introduce.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_introduce.png'],
+	['n_icon_comment.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_comment.png'],
+	['n_icon_subscribe.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_subscribe.png'],
+	['n_icon_chat.png', 'https://jiasu.wyxdapp.com/iconimages/n_icon_chat.png'],
+	['persion_publish_icon.png', 'https://jiasu.wyxdapp.com/iconimages/persion_publish_icon.png'],
+	['tags', 'https://jiasu.wyxdapp.com/iconimages/n_icon_tags.png'],
+	['arrow-right', 'https://jiasu.wyxdapp.com/iconimages/n_icon_arrow_right.png'],
+	// 登录相关图标（如果 CDN 有的话）
+	['wechat-icon', 'https://jiasu.wyxdapp.com/iconimages/wechat-icon.png'],
+	['phone-icon', 'https://jiasu.wyxdapp.com/iconimages/phone-icon.png'],
+	// 订单/路线相关图标
+	['order_icon_startTime', 'https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png'],
+	['startTime', 'https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png'],
+	// 点赞相关图标
+	['like', 'https://jiasu.wyxdapp.com/iconimages/n_icon_up.png'],
+	['heart', 'https://jiasu.wyxdapp.com/iconimages/n_icon_upActive.png'],
+	['n_icon_up', 'https://jiasu.wyxdapp.com/iconimages/n_icon_up.png'],
+	['n_icon_upActive', 'https://jiasu.wyxdapp.com/iconimages/n_icon_upActive.png'],
+])
+
+// 判断是否使用 iconfont
+const isIconfont = computed((): boolean => {
+	// 优先使用 type 属性（uni-icons 兼容），props.type 有默认值所以只检查空字符串
+	const iconType = (props.type != '') ? props.type : props.name
+	// 如果图标在图片映射表中，优先使用图片（特别是 like 和 heart）
+	if (iconMap.has(iconType)) {
+		return false
+	}
+	return iconfontMap.has(iconType)
+})
+
+// iconfont 类名
+const iconfontClass = computed((): string => {
+	const iconType = (props.type != '') ? props.type : props.name
+	const className = iconfontMap.get(iconType)
+	return className != null ? className : ''
+})
+
+// iconfont 文本（如果需要显示特定字符）
+const iconfontText = computed((): string => {
+	// 如果 iconfont 使用字符映射，可以在这里返回
+	// 目前返回空，使用 CSS class 来显示图标
+	return ''
+})
+
+// 计算属性
+const iconSrc = computed((): string => {
+	const mappedUrl = iconMap.get(props.name)
+	if (mappedUrl != null) {
+		return mappedUrl
+	}
+	// 检查是否是完整URL
+	const name = props.name
+	if (name != '' && name.length > 0) {
+		if (name.indexOf('http') == 0) return name
+		if (name.indexOf('/') == 0) return name
+	}
+	return ''
+})
+
+const sizeValue = computed((): string => {
+	if (typeof props.size === 'number') {
+		return props.size.toString() + 'rpx'
+	}
+	return props.size as string
+})
+
+const wrapperStyle = computed((): string => {
+	// ✅ 修复：UTS 中 style 属性需要返回字符串
+	const size = sizeValue.value
+	return `display: flex; align-items: center; justify-content: center; width: ${size}; height: ${size};`
+})
+
+const imageStyle = computed((): string => {
+	// ✅ 修复：UTS 中 style 属性需要返回字符串
+	return 'width: 100%; height: 100%;'
+})
+
+// 方法
+const handleClick = () => {
+	emit('click')
+}
+</script>
+
+<style scoped>
+.icon-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.icon-image {
+	display: flex;
+}
+/* iconfont 图标样式 */
+.iconfont {
+	font-family: "iconfont" !important;
+	font-style: normal;
+	display: flex;
+	line-height: 1;
+}
+
+/* 如果项目中没有 iconfont 字体文件，可以使用 iconfont 在线 CDN */
+/* 或者使用图片图标作为 fallback */
+</style>

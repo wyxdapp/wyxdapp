@@ -1,0 +1,285 @@
+/**
+ * Cool Unix 工具函数封装
+ * 
+ * 本文件封装了常用的 Toast 和 Confirm 工具函数
+ * 使用 uni.showToast 替代 cool-unix 的 useUi().showToast
+ * 以避免 UTS 编译时的类型问题
+ * 
+ * @author WYXD Team
+ * @date 2025-12-27
+ */
+
+// ==================== Toast 工具函数 ====================
+
+/**
+ * 显示 Toast 提示
+ * @param message 提示消息
+ */
+export function showToast(message: string): void {
+	uni.showToast({
+		title: message,
+		icon: 'none',
+		duration: 2000
+	})
+}
+
+/**
+ * 显示成功 Toast
+ * @param message 提示消息
+ */
+export function showSuccessToast(message: string): void {
+	uni.showToast({
+		title: message,
+		icon: 'success',
+		duration: 2000
+	})
+}
+
+/**
+ * 显示警告 Toast
+ * @param message 提示消息
+ */
+export function showWarnToast(message: string): void {
+	uni.showToast({
+		title: message,
+		icon: 'none',
+		duration: 2000
+	})
+}
+
+/**
+ * 显示错误 Toast
+ * @param message 提示消息
+ */
+export function showErrorToast(message: string): void {
+	uni.showToast({
+		title: message,
+		icon: 'none',
+		duration: 3000
+	})
+}
+
+/**
+ * 显示自定义 Toast
+ * @param message 提示消息
+ * @param duration 持续时间（毫秒）
+ */
+export function showCustomToast(message: string, duration: number): void {
+	uni.showToast({
+		title: message,
+		icon: 'none',
+		duration: duration
+	})
+}
+
+// ==================== Loading 工具函数 ====================
+
+/**
+ * 显示加载中
+ * @param title 提示文字
+ */
+export function showLoading(title: string): void {
+	uni.showLoading({
+		title: title,
+		mask: true
+	})
+}
+
+/**
+ * 显示加载中（无遮罩）
+ * @param title 提示文字
+ */
+export function showLoadingNoMask(title: string): void {
+	uni.showLoading({
+		title: title,
+		mask: false
+	})
+}
+
+/**
+ * 隐藏加载中
+ */
+export function hideLoading(): void {
+	uni.hideLoading()
+}
+
+// ==================== Confirm 工具函数 ====================
+
+/**
+ * 显示确认弹窗
+ * @param title 标题
+ * @param message 消息内容
+ * @param onConfirm 确认回调
+ * @param onCancel 取消回调
+ */
+export function showConfirm(
+	title: string,
+	message: string,
+	onConfirm: () => void,
+	onCancel: (() => void) | null
+): void {
+	uni.showModal({
+		title: title,
+		content: message,
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				onConfirm()
+			} else if (res.cancel == true) {
+				if (onCancel != null) {
+					onCancel()
+				}
+			}
+		}
+	})
+}
+
+/**
+ * 显示简单确认弹窗（只有确认按钮）
+ * @param title 标题
+ * @param message 消息内容
+ * @param onConfirm 确认回调
+ */
+export function showAlert(
+	title: string,
+	message: string,
+	onConfirm: () => void
+): void {
+	uni.showModal({
+		title: title,
+		content: message,
+		showCancel: false,
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				onConfirm()
+			}
+		}
+	})
+}
+
+/**
+ * 显示自定义确认弹窗
+ * @param title 标题
+ * @param message 消息内容
+ * @param confirmText 确认按钮文字
+ * @param cancelText 取消按钮文字
+ * @param onConfirm 确认回调
+ * @param onCancel 取消回调
+ */
+export function showCustomConfirm(
+	title: string,
+	message: string,
+	confirmText: string,
+	cancelText: string,
+	onConfirm: () => void,
+	onCancel: (() => void) | null
+): void {
+	uni.showModal({
+		title: title,
+		content: message,
+		confirmText: confirmText,
+		cancelText: cancelText,
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				onConfirm()
+			} else if (res.cancel == true) {
+				if (onCancel != null) {
+					onCancel()
+				}
+			}
+		}
+	})
+}
+
+// ==================== 便捷函数 ====================
+
+/**
+ * 显示操作成功提示
+ */
+export function showSuccess(): void {
+	showSuccessToast('操作成功')
+}
+
+/**
+ * 显示保存成功提示
+ */
+export function showSaveSuccess(): void {
+	showSuccessToast('保存成功')
+}
+
+/**
+ * 显示删除成功提示
+ */
+export function showDeleteSuccess(): void {
+	showSuccessToast('删除成功')
+}
+
+/**
+ * 显示提交成功提示
+ */
+export function showSubmitSuccess(): void {
+	showSuccessToast('提交成功')
+}
+
+/**
+ * 显示网络错误提示
+ */
+export function showNetworkError(): void {
+	showErrorToast('网络连接失败，请检查网络')
+}
+
+/**
+ * 显示请求失败提示
+ */
+export function showRequestError(): void {
+	showErrorToast('请求失败，请稍后重试')
+}
+
+/**
+ * 显示参数错误提示
+ * @param field 字段名
+ */
+export function showParamError(field: string): void {
+	showWarnToast('请输入' + field)
+}
+
+/**
+ * 显示删除确认弹窗
+ * @param onConfirm 确认删除回调
+ */
+export function showDeleteConfirm(onConfirm: () => void): void {
+	showCustomConfirm(
+		'确认删除',
+		'删除后无法恢复，确定要删除吗？',
+		'删除',
+		'取消',
+		onConfirm,
+		null
+	)
+}
+
+/**
+ * 显示退出确认弹窗
+ * @param onConfirm 确认退出回调
+ */
+export function showExitConfirm(onConfirm: () => void): void {
+	showConfirm(
+		'确认退出',
+		'确定要退出登录吗？',
+		onConfirm,
+		null
+	)
+}
+
+/**
+ * 显示取消确认弹窗
+ * @param message 提示消息
+ * @param onConfirm 确认取消回调
+ */
+export function showCancelConfirm(message: string, onConfirm: () => void): void {
+	showConfirm(
+		'确认取消',
+		message,
+		onConfirm,
+		null
+	)
+}

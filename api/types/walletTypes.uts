@@ -1,0 +1,145 @@
+/**
+ * 钱包模块类型定义
+ * 对应 API 文件: api/wallet.uts
+ */
+
+// ============ 钱包账户相关 ============
+
+// 添加钱包信息请求参数
+export class AddWalletInfoParams {
+	userKid: string = ''
+	transactionType: number = 0
+	transactionAmount: number = 0
+	transactionDescribe: string = ''
+	orderKid: string = ''
+}
+
+// 查询交易明细列表请求参数
+export class GetWalletListParams {
+	userKid: string = ''
+	transactionType: number = 0
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// ============ 提现相关 ============
+
+// 申请提现请求参数
+export class ApplyWithdrawParams {
+	userKid: string = ''
+	withdrawAmount: number = 0
+	withdrawType: number = 0
+	withdrawAccount: string = ''
+	withdrawName: string = ''
+	payPassword: string = ''
+}
+
+// 修改提现状态请求参数
+export class UpdateWithdrawStatusParams {
+	kid: string = ''
+	withdrawStatus: number = 0
+	refuseReason: string = ''
+}
+
+// 查询提现列表请求参数
+export class GetWithdrawListParams {
+	userKid: string = ''
+	withdrawStatus: number = 0
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// ============ 提现绑定相关 ============
+
+// 查询用户绑定状态请求参数
+export class GetCashoutBindStatusParams {
+	userKid: string = ''
+}
+
+// 绑定或换绑提现账户请求参数
+export class BindCashoutAccountParams {
+	userKid: string = ''
+	cashoutType: number = 0
+	cashoutAccount: string = ''
+	cashoutName: string = ''
+	verificationCode: string = ''
+	wxOpenid: string = ''
+	wxOpenidSource: string = ''
+}
+
+// 验证提现换绑验证码请求参数
+export class CheckBindCodeParams {
+	phone: string = ''
+	verificationCode: string = ''
+}
+
+
+// ============ 提现操作相关 ============
+
+// 用户提现请求参数
+export class UserCashoutParams {
+	userKid: string = ''
+	cashoutType: number = 0
+	cashoutMoney: number = 0
+	actualMoney: number = 0
+	totalDeduction: number = 0
+	serviceFee: number = 0
+	feeDeductMode: string = ''
+	feeRate: number = 2.0
+	payPwd: string = ''
+}
+
+// ============ 支付密码相关 ============
+
+// 校验支付密码请求参数
+export class CheckPayPasswordParams {
+	userKid: string = ''
+	payPassword: string = ''
+}
+
+// ============ 支付相关 ============
+
+// 余额支付请求参数
+export class BalancePayParams {
+	orderKid: string = ''
+	userKid: string = ''
+	payPassword: string = ''
+}
+
+// 小程序微信支付请求参数
+export class MpWechatPayParams {
+	orderKid: string = ''
+	userKid: string = ''
+	openid: string = ''
+}
+
+// H5微信支付请求参数
+export class H5WechatPayParams {
+	orderKid: string = ''
+	userKid: string = ''
+	openid: string = ''
+}
+
+// H5非WX浏览器微信支付请求参数
+export class H5WxpayH5Params {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// APP支付宝支付请求参数
+export class AppAlipayPayParams {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// 网页支付宝支付请求参数
+export class PageAlipayPayParams {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// 手机网页支付宝支付请求参数
+export class WapAlipayPayParams {
+	orderKid: string = ''
+	userKid: string = ''
+}

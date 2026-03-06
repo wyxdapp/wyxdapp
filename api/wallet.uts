@@ -1,0 +1,381 @@
+/**
+ * 钱包相关 API
+ * 对应Vue2: http.api.js 中的钱包模块
+ */
+
+import request from '@/utils/request'
+import {
+	AddWalletInfoParams,
+	GetWalletListParams,
+	ApplyWithdrawParams,
+	UpdateWithdrawStatusParams,
+	GetWithdrawListParams,
+	GetCashoutBindStatusParams,
+	BindCashoutAccountParams,
+	CheckBindCodeParams,
+	UserCashoutParams,
+	CheckPayPasswordParams,
+	BalancePayParams,
+	MpWechatPayParams,
+	H5WechatPayParams,
+	H5WxpayH5Params,
+	AppAlipayPayParams,
+	PageAlipayPayParams,
+	WapAlipayPayParams
+} from './types/walletTypes.uts'
+
+// Re-export types for consumers that import from this file
+export {
+	AddWalletInfoParams,
+	GetWalletListParams,
+	ApplyWithdrawParams,
+	UpdateWithdrawStatusParams,
+	GetWithdrawListParams,
+	GetCashoutBindStatusParams,
+	BindCashoutAccountParams,
+	CheckBindCodeParams,
+	UserCashoutParams,
+	CheckPayPasswordParams,
+	BalancePayParams,
+	MpWechatPayParams,
+	H5WechatPayParams,
+	H5WxpayH5Params,
+	AppAlipayPayParams,
+	PageAlipayPayParams,
+	WapAlipayPayParams
+} from './types/walletTypes.uts'
+
+/**
+ * 添加账户详情
+ * POST /user/userWallet/addUserWalletInfo
+ */
+export const addWalletInfo = (params: AddWalletInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		transactionType: params.transactionType,
+		transactionAmount: params.transactionAmount,
+		transactionDescribe: params.transactionDescribe,
+		orderKid: params.orderKid
+	} as UTSJSONObject
+	return request.post('/user/userWallet/addUserWalletInfo', payload, true)
+}
+
+/**
+ * 查询交易明细列表
+ * GET /user/userWallet/queryWalletInfoList
+ */
+export const getWalletList = (params: GetWalletListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：直接从 params 对象获取属性，避免 JSON 序列化问题
+	const userKid = params.userKid
+	const transactionType = params.transactionType
+	const pageNumber = params.pageNumber
+	const pageSize = params.pageSize
+	
+	let queryParts: Array<string> = []
+	if (userKid != null && userKid != '') {
+		queryParts.push(`userKid=${encodeURIComponent(userKid)}`)
+	}
+	if (transactionType != 0) {
+		queryParts.push(`transactionType=${encodeURIComponent(transactionType.toString())}`)
+	}
+	if (pageNumber != null) {
+		queryParts.push(`pageNumber=${encodeURIComponent(pageNumber.toString())}`)
+	}
+	if (pageSize != null) {
+		queryParts.push(`pageSize=${encodeURIComponent(pageSize.toString())}`)
+	}
+	
+	const query = queryParts.join('&')
+	return request.get(`/user/userWallet/queryWalletInfoList?${query}`, null, false)
+}
+
+/**
+ * 查询交易明细详情
+ * GET /user/userWallet/queryWalletInfo
+ * 注意：后端接口需要 userKid 参数（用户ID），而非交易记录 kid
+ */
+export const getWalletDetail = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get(`/user/userWallet/queryWalletInfo?userKid=${userKid}`, null, false)
+}
+
+/**
+ * 查询账户余额
+ * GET /user/userWallet/queryAccountBalance
+ */
+export const getAccountBalance = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get(`/user/userWallet/queryAccountBalance?userKid=${userKid}`, null, false)
+}
+
+/**
+ * 申请提现
+ * POST /user/userWallet/withdraw
+ */
+export const applyWithdraw = (params: ApplyWithdrawParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		withdrawAmount: params.withdrawAmount,
+		withdrawType: params.withdrawType,
+		withdrawAccount: params.withdrawAccount,
+		withdrawName: params.withdrawName,
+		payPassword: params.payPassword
+	} as UTSJSONObject
+	return request.post('/user/userWallet/withdraw', payload, true)
+}
+
+/**
+ * 修改提现状态
+ * POST /user/userWallet/updateWithdrawStatu
+ */
+export const updateWithdrawStatus = (params: UpdateWithdrawStatusParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		kid: params.kid,
+		withdrawStatus: params.withdrawStatus,
+		refuseReason: params.refuseReason
+	} as UTSJSONObject
+	return request.post('/user/userWallet/updateWithdrawStatu', payload, true)
+}
+
+/**
+ * 查询提现列表
+ * GET /user/userWallet/queryWalletWithdrawList
+ */
+export const getWithdrawList = (params: GetWithdrawListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：直接从 params 对象获取属性，避免 JSON 序列化问题
+	const userKid = params.userKid
+	const withdrawStatus = params.withdrawStatus
+	const pageNumber = params.pageNumber
+	const pageSize = params.pageSize
+	
+	let queryParts: Array<string> = []
+	if (userKid != null && userKid != '') {
+		queryParts.push(`userKid=${encodeURIComponent(userKid)}`)
+	}
+	if (withdrawStatus != 0) {
+		queryParts.push(`withdrawStatus=${encodeURIComponent(withdrawStatus.toString())}`)
+	}
+	if (pageNumber != null) {
+		queryParts.push(`pageNumber=${encodeURIComponent(pageNumber.toString())}`)
+	}
+	if (pageSize != null) {
+		queryParts.push(`pageSize=${encodeURIComponent(pageSize.toString())}`)
+	}
+	
+	const query = queryParts.join('&')
+	return request.get(`/user/userWallet/queryWalletWithdrawList?${query}`, null, false)
+}
+
+/**
+ * 查询提现详情
+ * GET /user/userWallet/queryWithdrawInfo
+ */
+export const getWithdrawDetail = (kid: string): Promise<UTSJSONObject> => {
+	return request.get(`/user/userWallet/queryWithdrawInfo?kid=${kid}`, null, false)
+}
+
+/**
+ * 查询用户绑定状态（微信、支付宝）
+ * POST /support/cashoutBind/userCashBindStatus
+ */
+export const getCashoutBindStatus = (params: GetCashoutBindStatusParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/support/cashoutBind/userCashBindStatus', payload, false)
+}
+
+/**
+ * 绑定或换绑微信/支付宝
+ * POST /support/cashoutBind/userBindAndChangeBind
+ */
+export const bindCashoutAccount = (params: BindCashoutAccountParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		cashoutType: params.cashoutType,
+		cashoutAccount: params.cashoutAccount,
+		cashoutName: params.cashoutName,
+		verificationCode: params.verificationCode,
+		wxOpenid: params.wxOpenid,
+		wxOpenidSource: params.wxOpenidSource
+	} as UTSJSONObject
+	return request.post('/support/cashoutBind/userBindAndChangeBind', payload, true)
+}
+
+/**
+ * 验证提现换绑验证码
+ * POST /support/cashoutBind/checkBindCode
+ */
+export const checkBindCode = (params: CheckBindCodeParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		phone: params.phone,
+		verificationCode: params.verificationCode
+	} as UTSJSONObject
+	return request.post('/support/cashoutBind/checkBindCode', payload, true)
+}
+
+/**
+ * 用户提现（微信/支付宝）
+ * POST /support/cashout/userCashout
+ */
+export const userCashout = (params: UserCashoutParams): Promise<UTSJSONObject> => {
+	let cashoutMoney = params.cashoutMoney
+	
+	// 使用整数运算（分）避免浮点精度问题
+	const cashoutFen = Math.round(cashoutMoney * 100)
+	const serviceFeeFen = Math.round(cashoutFen * 2 / 100)
+	const actualMoneyFen = cashoutFen - serviceFeeFen
+	
+	let actualMoney = actualMoneyFen / 100
+	if (params.actualMoney != 0) {
+		actualMoney = params.actualMoney
+	}
+	
+	let serviceFee = serviceFeeFen / 100
+	if (params.serviceFee != 0) {
+		serviceFee = params.serviceFee
+	}
+	
+	let feeRate = 2.0
+	if (params.feeRate != 2.0) {
+		feeRate = params.feeRate
+	}
+	
+	const payload = {
+		userKid: params.userKid,
+		cashoutType: params.cashoutType,
+		cashoutMoney: cashoutMoney,
+		actualMoney: actualMoney,
+		serviceFee: serviceFee,
+		feeRate: feeRate,
+		payPwd: params.payPwd
+	} as UTSJSONObject
+	
+	return request.post('/support/cashout/userCashout', payload, true)
+}
+
+/**
+ * 支付密码验证
+ * POST /user/userBankCard/validatePayPassword
+ */
+export const checkPayPassword = (params: CheckPayPasswordParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		payPassword: params.payPassword
+	} as UTSJSONObject
+	return request.post('/user/userBankCard/validatePayPassword', payload, true)
+}
+
+/**
+ * 余额支付
+ * POST /order/tourist/balancePay
+ */
+export const balancePay = (params: BalancePayParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid,
+		payPassword: params.payPassword
+	} as UTSJSONObject
+	return request.post('/order/tourist/balancePay', payload, true)
+}
+
+/**
+ * 微信支付（小程序）
+ * POST /pay/wxpay/applyXcxPay
+ */
+export const mpWechatPay = (params: MpWechatPayParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid,
+		openid: params.openid
+	} as UTSJSONObject
+	return request.post('/pay/wxpay/applyXcxPay', payload, true)
+}
+
+/**
+ * 微信支付（H5）
+ * POST /pay/wxpay/jsApiPay
+ */
+export const h5WechatPay = (params: H5WechatPayParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid,
+		openid: params.openid
+	} as UTSJSONObject
+	return request.post('/pay/wxpay/jsApiPay', payload, true)
+}
+
+/**
+ * 微信H5支付（非微信浏览器）
+ * POST /pay/wxpay/h5Pay
+ */
+export const h5WxpayH5 = (params: H5WxpayH5Params): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/pay/wxpay/h5Pay', payload, true)
+}
+
+/**
+ * 支付宝支付（APP）
+ * POST /pay/alipay/applyAppPay
+ */
+export const appAlipayPay = (params: AppAlipayPayParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/pay/alipay/applyAppPay', payload, true)
+}
+
+/**
+ * 支付宝支付（网页）
+ * POST /pay/alipay/applyPagePay
+ */
+export const pageAlipayPay = (params: PageAlipayPayParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/pay/alipay/applyPagePay', payload, true)
+}
+
+/**
+ * 支付宝支付（手机网页）
+ * POST /pay/alipay/applyWapPay
+ */
+export const wapAlipayPay = (params: WapAlipayPayParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/pay/alipay/applyWapPay', payload, true)
+}
+
+
+/**
+ * 查询跨商户佣金列表
+ * POST /support/crossMerchantCommission/queryCrossMerchantCommissions
+ * 根据推荐人userKid查询跨商户佣金明细记录
+ */
+export const queryCrossMerchantCommissions = (userKid: string): Promise<UTSJSONObject> => {
+	return request.post(`/support/crossMerchantCommission/queryCrossMerchantCommissions?userKid=${encodeURIComponent(userKid)}`, null, false)
+}
+
+/**
+ * 跨商户佣金提现
+ * POST /support/crossMerchantCommission/cashout
+ * 使用向导所属商户的支付配置直接出款给推荐人
+ */
+export const crossMerchantCashout = (data: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/crossMerchantCommission/cashout', data, true)
+}

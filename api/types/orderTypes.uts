@@ -1,0 +1,247 @@
+/**
+ * 订单模块类型定义
+ * 对应 API 文件: api/order.uts
+ */
+
+// ============ 联系人相关 ============
+
+// 获取联系信息列表请求参数
+export class GetContactListParams {
+	userKid: string = ''
+}
+
+// 添加联系人请求参数
+export class AddTravelUserParams {
+	userKid: string = ''
+	name: string = ''
+	phone: string = ''
+	idcard: string = ''
+	is_default: number = 0
+}
+
+// 删除联系人请求参数
+export class DelTravelUserParams {
+	userKid: string = ''
+	kid: string = ''
+}
+
+// 编辑联系人请求参数
+export class UpdateTravelUserParams {
+	kid: string = ''
+	name: string = ''
+	phone: string = ''
+	idcard: string = ''
+	is_default: number = 0
+}
+
+// 设置默认联系人请求参数
+export class SetDefaultTravelUserParams {
+	userKid: string = ''
+	kid: string = ''
+}
+
+// ============ 抢单相关 ============
+
+// 创建抢单订单请求参数
+export class CreateGrabOrderParams {
+	userKid: string = ''
+	guideKid: string = ''
+	travelDate: string = ''
+	serviceHours: number = 1
+	realname: string = ''
+	phone: string = ''
+	totalMoney: number = 0
+	orderRemarks: string = ''
+	orderLocation: string = ''
+	orderSource: number = 1
+	merchantKid: string = ''
+	adultNumber: number = 1
+	childrenNumber: number = 0
+	idempotencyKey: string = ''
+	guideComment: number = 10
+}
+
+
+// 修改抢单请求参数
+export class UpdateGrabOrderParams {
+	kid: string = ''
+	orderTitle: string = ''
+	orderDescribe: string = ''
+	startTime: string = ''
+	endTime: string = ''
+	peopleNum: number = 1
+	budget: number = 0
+	destination: string = ''
+	userKid: string = ''
+	travelDate: string = ''
+	serviceHours: number = 1
+	realname: string = ''
+	phone: string = ''
+	totalMoney: number = 0
+	orderRemarks: string = ''
+	orderLocation: string = ''
+	orderSource: number = 1
+}
+
+// 抢单列表请求参数
+export class GetGrabOrderListParams {
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+}
+
+// 抢单请求参数
+export class GuiderGrabOrderParams {
+	guideKid: string = ''
+	orderKid: string = ''
+}
+
+// ============ 订单列表相关 ============
+
+// 获取支出订单列表请求参数
+export class GetExpenditureListParams {
+	userKid: string = ''
+	orderStatus: number = 0
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// 获取收入订单列表请求参数
+export class GetIncomeListParams {
+	guideKid: string = ''
+	orderStatus: number = 0
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// ============ 创建订单相关 ============
+
+// 创建向导订单请求参数
+export class CreateGuiderOrderParams {
+	userKid: string = ''
+	guideKid: string = ''
+	orderTitle: string = ''
+	travelDate: string = ''
+	travelTotalTime: string = ''
+	orderRemarks: string = ''
+	totalMoney: number = 0
+	phone: string = ''
+	realname: string = ''
+	orderSource: number = 20
+	orderAddr: string = ''
+	idempotencyKey: string = ''
+	merchantKid: string = ''
+	adultNumber: number = 1
+	childrenNumber: number = 0
+}
+
+// 创建定制订单请求参数
+export class CreateRouteOrderParams {
+	userKid: string = ''
+	lineKid: string = ''
+	guideKid: string = ''
+	orderTitle: string = ''
+	travelDate: string = ''
+	serviceHours: number = 0
+	orderRemarks: string = ''
+	totalMoney: number = 0
+	phone: string = ''
+	realname: string = ''
+	adultNumber: number = 1
+	childrenNumber: number = 0
+}
+
+// 获取订单详情请求参数
+export class OrderDetailsParams {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// ============ 订单操作相关 ============
+
+// 取消订单请求参数
+export class CancelOrderParams {
+	orderKid: string = ''
+	userKid: string = ''
+	cancelReason: string = ''
+	reason: string = ''
+}
+
+// 删除订单请求参数
+export class RemoveOrderParams {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// 完成订单请求参数
+export class CompleteOrderParams {
+	orderKid: string = ''
+}
+
+// 接受订单请求参数
+export class AcceptOrderParams {
+	orderKid: string = ''
+}
+
+// 拒绝订单请求参数
+export class RejectOrderParams {
+	orderKid: string = ''
+	refuseReason: string = ''
+}
+
+// 修改订单价格请求参数
+export class UpdateOrderPriceParams {
+	orderKid: string = ''
+	orderPrice: number = 0
+	orderAmount: number = 0
+}
+
+// ============ 评价相关 ============
+
+// 评价请求参数
+export class AddEvaluateParams {
+	userKid: string = ''
+	evaluatedKid: string = ''
+	orderKid: string = ''
+	evaluateContent: string = ''
+	evaluateScore: number = 0
+	evaluateImages: Array<string> = []
+}
+
+// 获取导游评价列表请求参数
+export class GetGuideCommentListParams {
+	guideKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// ============ 退款相关 ============
+
+// 申请退款请求参数
+export class ApplyOrderRefundParams {
+	orderKid: string = ''
+	refundReason: string = ''
+	refundAmount: number = 0
+}
+
+// 同意退款请求参数
+export class GuiderAcceptRefundParams {
+	refundKid: string = ''
+}
+
+// 拒绝退款请求参数
+export class GuiderRejectRefundParams {
+	refundKid: string = ''
+	refuseReason: string = ''
+}
+
+// 撤销退款申请请求参数
+export class CancelRefundParams {
+	orderKid: string = ''
+	userKid: string = ''
+}
+
+// 查询退款详情请求参数
+export class QueryRefundDetailParams {
+	orderKid: string = ''
+}

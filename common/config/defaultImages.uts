@@ -1,0 +1,130 @@
+/**
+ * 默认图片配置
+ * 统一管理应用中使用的默认图片路径
+ */
+
+import { CDN_BASE_URL, COS_CONFIG } from '@/utils/config.uts'
+
+// ==================== 本地默认图片 ====================
+
+/**
+ * 默认用户头像（本地）
+ */
+export const DEFAULT_AVATAR_LOCAL = CDN_BASE_URL + '/iconimages/default_avatar.png'
+
+/**
+ * 默认动态图片（本地）
+ */
+export const DEFAULT_DYNAMIC_IMAGE_LOCAL = '/static/images/default_dynamic.png'
+
+/**
+ * 默认定制图片（本地）
+ */
+export const DEFAULT_CUSTOM_IMAGE_LOCAL = '/static/images/default_custom.png'
+
+// ==================== COS 默认图片（备用） ====================
+
+/**
+ * COS 默认用户头像
+ * 注意：如果 COS 上没有这个文件，会返回 404
+ * 建议优先使用本地默认图片
+ */
+export const DEFAULT_AVATAR_COS = COS_CONFIG.domain.toString() + '/default/avatar.png'
+
+/**
+ * COS 默认 Logo
+ * 注意：如果 COS 上没有这个文件，会返回 404
+ * 建议优先使用本地默认图片
+ */
+export const DEFAULT_LOGO_COS = COS_CONFIG.domain.toString() + '/default/logo.png'
+
+// ==================== CDN 默认图片 ====================
+
+/**
+ * 默认分享图片
+ * 用于分享服务、微信分享、DeepLink 分享等场景
+ */
+export const DEFAULT_SHARE_IMAGE = CDN_BASE_URL + '/iconimages/share_default.png'
+
+/**
+ * 默认礼物图片
+ * 用于礼物消息展示的默认图片
+ */
+export const DEFAULT_GIFT_IMAGE = CDN_BASE_URL + '/iconimages/gift.png'
+
+/**
+ * 默认订单图片
+ * 用于订单分享卡片的默认图片
+ */
+export const DEFAULT_ORDER_IMAGE = CDN_BASE_URL + '/iconimages/order_default.png'
+
+// ==================== 工具函数 ====================
+
+/**
+ * 获取用户头像（带默认值）
+ * @param avatar 用户头像 URL
+ * @returns 头像 URL，如果为空则返回默认头像
+ */
+export function getUserAvatar(avatar: string | null): string {
+	if (avatar != null && avatar != '') {
+		return avatar
+	}
+	return DEFAULT_AVATAR_LOCAL
+}
+
+/**
+ * 获取用户头像（从对象中提取）
+ * @param userInfo 用户信息对象
+ * @returns 头像 URL
+ */
+export function getUserAvatarFromObject(userInfo: any): string {
+	if (userInfo == null) {
+		return DEFAULT_AVATAR_LOCAL
+	}
+	
+	try {
+		const userInfoStr = JSON.stringify(userInfo)
+		const userInfoObj = JSON.parse(userInfoStr) as UTSJSONObject
+		
+		// 优先使用 image 字段
+		const imageVal = userInfoObj.get('image')
+		if (imageVal != null && imageVal.toString() != '') {
+			return imageVal.toString()
+		}
+		
+		// 其次使用 avatar 字段
+		const avatarVal = userInfoObj.get('avatar')
+		if (avatarVal != null && avatarVal.toString() != '') {
+			return avatarVal.toString()
+		}
+		
+		// 最后使用 avatarUrl 字段
+		const avatarUrlVal = userInfoObj.get('avatarUrl')
+		if (avatarUrlVal != null && avatarUrlVal.toString() != '') {
+			return avatarUrlVal.toString()
+		}
+	} catch (e) {
+		console.error('[defaultImages] 获取用户头像失败:', e)
+	}
+	
+	return DEFAULT_AVATAR_LOCAL
+}
+
+/**
+ * 检查图片 URL 是否有效
+ * @param url 图片 URL
+ * @returns 是否有效
+ */
+export function isValidImageUrl(url: string | null): boolean {
+	if (url == null || url == '') {
+		return false
+	}
+	
+	// 检查是否是有效的 URL 格式
+	const urlStr = url.toString()
+	if (urlStr.indexOf('http://') == 0 || urlStr.indexOf('https://') == 0 || urlStr.indexOf('/') == 0) {
+		return true
+	}
+	
+	return false
+}

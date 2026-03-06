@@ -1,0 +1,20 @@
+/**
+ * 上传工具统一导出
+ * 适配 uni-app x (uvue) 环境
+ */
+
+// 导出上传工具类和实例
+export { cosUploader, COSUploader, UploadResult, UploadData, CompressionInfo } from './cosUploader.uts'
+export { imageCompressor, ImageCompressor, CompressResult } from './imageCompressor.uts'
+
+// 导出配置
+export { 
+	COS_CONFIG, 
+	UPLOAD_SCENES, 
+	COMPRESS_SCENES,
+	getSceneCompressConfig,
+	getSceneUploadPath
+} from './config.uts'
+
+// 注意：UploadResult、UploadData、CompressionInfo、CompressResult 现在是类（class）而非接口（interface）
+// 这是为了避免 Android 上的 ClassCastException 问题

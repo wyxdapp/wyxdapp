@@ -1,0 +1,201 @@
+/**
+ * 统一错误处理工具模块
+ * 提供标准化的错误处理函数：handleError、handlePageError、handleSilentError
+ * 所有内部操作用 try-catch 包裹，防止错误处理器自身异常
+ */
+
+import { Ref } from 'vue'
+import { mapErrorToFriendlyMessage } from '../config/errorMessages.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 错误处理选项
+ */
+export class ErrorHandleOptions {
+	showToast: boolean = true
+	toastMessage: string = ''
+	rethrow: boolean = false
+}
+
+// ==================== 内部工具函数 ====================
+
+/**
+ * 从错误对象中提取错误消息字符串
+ */
+function extractErrorMessage(error: any): string {
+	try {
+		if (error == null) {
+			return '未知错误'
+		}
+		if (typeof error === 'string') {
+			return error as string
+		}
+		if (error instanceof Error) {
+			return (error as Error).message
+		}
+		if (typeof error === 'object') {
+			try {
+				const errorJson = JSON.stringify(error)
+				if (errorJson != null && errorJson != '') {
+					const errorObj = JSON.parse(errorJson) as UTSJSONObject
+					if (errorObj != null) {
+						const messageVal = errorObj.get('message')
+						if (messageVal != null) {
+							return messageVal.toString()
+						}
+					}
+				}
+			} catch (_e) {}
+			return '未知错误'
+		}
+		return '未知错误'
+	} catch (_e) {
+		return '未知错误'
+	}
+}
+
+// ==================== 公开函数 ====================
+
+/**
+ * 判断是否为登录过期/认证错误
+ * 匹配 401、403、登录已过期 关键词
+ * @param error 错误对象
+ * @returns 是否为认证错误
+ */
+export function isAuthError(error: any): boolean {
+	try {
+		const msg = extractErrorMessage(error)
+		const lowerMsg = msg.toLowerCase()
+		if (msg.indexOf('登录已过期') !== -1) {
+			return true
+		}
+		if (lowerMsg.indexOf('401') !== -1) {
+			return true
+		}
+		if (lowerMsg.indexOf('403') !== -1) {
+			return true
+		}
+		return false
+	} catch (_e) {
+		return false
+	}
+}
+
+/**
+ * 标准错误处理函数
+ * 记录结构化日志（含 errorMessage、context、timestamp）
+ * 条件性显示 Toast 提示（auth 错误或 showToast=false 时不显示）
+ * 条件性重新抛出错误
+ * @param error 错误对象
+ * @param context 调用上下文描述（如 "加载订单列表"）
+ * @param options 可选配置
+ */
+export function handleError(
+	error: any,
+	context: string,
+	options: ErrorHandleOptions | null
+): void {
+	// 提取配置
+	let showToast = true
+	let toastMessage = ''
+	let rethrow = false
+	if (options != null) {
+		showToast = (options as ErrorHandleOptions).showToast
+		toastMessage = (options as ErrorHandleOptions).toastMessage
+		rethrow = (options as ErrorHandleOptions).rethrow
+	}
+
+	// 1. 记录结构化日志
+	try {
+		const errorMessage = extractErrorMessage(error)
+		const timestamp = new Date().toISOString()
+		console.error('🔴 [ErrorHandler]', JSON.stringify({
+			errorMessage: errorMessage,
+			context: context,
+			timestamp: timestamp
+		}))
+	} catch (_e) {
+		// 日志记录失败，静默忽略
+	}
+
+	// 2. 条件性 Toast 显示
+	try {
+		if (showToast == true && isAuthError(error) == false) {
+			let msg = toastMessage
+			if (msg == '') {
+				msg = mapErrorToFriendlyMessage(error)
+			}
+			// mapErrorToFriendlyMessage 对 auth 错误返回空字符串，再次检查
+			if (msg != '') {
+				uni.showToast({
+					title: msg,
+					icon: 'none'
+				})
+			}
+		}
+	} catch (_e) {
+		// Toast 显示失败，静默忽略
+	}
+
+	// 3. 条件性重新抛出
+	if (rethrow == true) {
+		if (error instanceof Error) {
+			throw error as Error
+		} else {
+			throw new Error(extractErrorMessage(error))
+		}
+	}
+}
+
+/**
+ * 页面级错误处理函数
+ * 在标准错误处理基础上，额外重置 Loading 状态为 false
+ * @param error 错误对象
+ * @param context 调用上下文描述
+ * @param loadingRef Ref<boolean> 引用，将被重置为 false
+ */
+export function handlePageError(
+	error: any,
+	context: string,
+	loadingRef: Ref<boolean> | null
+): void {
+	// 1. 调用标准错误处理（showToast=true, rethrow=false）
+	try {
+		handleError(error, context, null)
+	} catch (_e) {
+		// handleError 内部已有 try-catch，此处为额外防护
+	}
+
+	// 2. 重置 Loading 状态
+	try {
+		if (loadingRef != null) {
+			(loadingRef as Ref<boolean>).value = false
+		}
+	} catch (_e) {
+		// Loading 重置失败，静默忽略
+	}
+}
+
+/**
+ * 静默错误处理函数
+ * 仅记录结构化日志，不显示 Toast，不抛出错误
+ * @param error 错误对象
+ * @param context 调用上下文描述
+ */
+export function handleSilentError(
+	error: any,
+	context: string
+): void {
+	try {
+		const errorMessage = extractErrorMessage(error)
+		const timestamp = new Date().toISOString()
+		console.error('🔴 [ErrorHandler:Silent]', JSON.stringify({
+			errorMessage: errorMessage,
+			context: context,
+			timestamp: timestamp
+		}))
+	} catch (_e) {
+		// 日志记录失败，静默忽略
+	}
+}

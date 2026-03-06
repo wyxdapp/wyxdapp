@@ -1,0 +1,536 @@
+<template>
+	<!-- 标准按钮模式（StandardButton 功能） -->
+	<!-- mode 是 string 类型（非空），只需检查空字符串 -->
+	<template v-if="mode != ''">
+		<!-- 单个按钮（带渐变） -->
+		<view
+			v-if="mode === 'single'"
+			class="wy-button-standard wy-button-standard--single"
+			:class="{ 'wy-button-standard--disabled': disabled }"
+			:hover-class="disabled == true ? '' : 'wy-button-standard--active'"
+			@click="handleStandardClick"
+		>
+			<!-- ✅ 修复：uni-app x 不支持 $slots，直接使用 slot -->
+			<slot></slot>
+			<text v-if="text != ''" class="wy-button-standard__text">{{ text }}</text>
+		</view>
+
+		<!-- 两个整行按钮（带渐变） -->
+		<view v-else-if="mode === 'row-full'" class="wy-button-standard-row-full">
+			<view
+				class="wy-button-standard wy-button-standard--secondary"
+				:hover-class="'wy-button-standard--active'"
+				@click="handleSecondaryClick"
+			>
+				<text class="wy-button-standard__text">{{ secondaryText }}</text>
+			</view>
+			<view
+				class="wy-button-standard wy-button-standard--primary"
+				:hover-class="'wy-button-standard--active'"
+				@click="handlePrimaryClick"
+			>
+				<text class="wy-button-standard__text">{{ primaryText }}</text>
+			</view>
+		</view>
+
+		<!-- 两个联排按钮（不带渐变） -->
+		<view v-else-if="mode === 'row-inline'" class="wy-button-standard-row-inline">
+			<view
+				class="wy-button-standard wy-button-standard--gray"
+				:hover-class="'wy-button-standard--active'"
+				@click="handleGrayClick"
+			>
+				<text class="wy-button-standard__text">{{ grayText }}</text>
+			</view>
+			<view
+				class="wy-button-standard wy-button-standard--blue"
+				:hover-class="'wy-button-standard--active'"
+				@click="handleBlueClick"
+			>
+				<text class="wy-button-standard__text">{{ blueText }}</text>
+			</view>
+		</view>
+	</template>
+
+	<!-- 通用按钮模式（原有功能） -->
+	<view 
+		v-else
+		class="wy-button"
+		:class="[
+			`wy-button--${type}`,
+			`wy-button--${size}`,
+			{
+				'wy-button--disabled': disabled,
+				'wy-button--loading': loading,
+				'wy-button--plain': plain,
+				'wy-button--round': round,
+				'wy-button--block': block
+			}
+		]"
+		:hover-class="(disabled == true || loading == true) ? '' : 'wy-button--active'"
+		@click="handleClick"
+	>
+		<view v-if="loading == true" class="wy-button__loading">
+			<text class="loading-icon">⏳</text>
+		</view>
+		<view v-if="icon != '' && loading == false" class="wy-button__icon">
+			<text>{{ icon }}</text>
+		</view>
+		<view class="wy-button__text">
+			<slot></slot>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+// 根据规范，defineProps 和 defineEmits 是编译宏，不需要导入
+
+// Props - 运行时声明
+const props = defineProps({
+	// 标准按钮模式（StandardButton 功能）
+	mode: { type: String, default: '' },
+	text: { type: String, default: '' },
+	secondaryText: { type: String, default: '' },
+	primaryText: { type: String, default: '' },
+	grayText: { type: String, default: '' },
+	blueText: { type: String, default: '' },
+	// 通用按钮模式（原有属性）
+	type: { type: String, default: 'primary' },  // ✅ 修复：避免 'default' 关键字冲突
+	size: { type: String, default: 'normal' },
+	plain: { type: Boolean, default: false },
+	round: { type: Boolean, default: false },
+	block: { type: Boolean, default: false },
+	disabled: { type: Boolean, default: false },
+	loading: { type: Boolean, default: false },
+	icon: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	click: []
+	secondaryClick: []
+	primaryClick: []
+	grayClick: []
+	blueClick: []
+}>()
+
+// Methods
+// 通用按钮点击
+const handleClick = (e: any) => {
+	if (props.disabled || props.loading) return
+	emit('click', e)
+}
+
+// 标准按钮点击
+const handleStandardClick = () => {
+	if (props.disabled) return
+	emit('click')
+}
+
+const handleSecondaryClick = () => {
+	emit('secondaryClick')
+}
+
+const handlePrimaryClick = () => {
+	emit('primaryClick')
+}
+
+const handleGrayClick = () => {
+	emit('grayClick')
+}
+
+const handleBlueClick = () => {
+	emit('blueClick')
+}
+</script>
+
+<style scoped>
+/* ===== 通用按钮样式（原有样式） ===== */
+.wy-button {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-left: 60rpx;
+	padding-right: 60rpx;
+	border-radius: 16rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+	transition: all 0.3s;
+	position: relative;
+}
+
+/* 尺寸 */
+.wy-button--large {
+	height: 88rpx;
+	font-size: 32rpx;
+	padding: 0 80rpx;
+}
+
+.wy-button--normal {
+	height: 72rpx;
+	font-size: 28rpx;
+}
+
+.wy-button--small {
+	height: 60rpx;
+	font-size: 26rpx;
+	padding: 0 48rpx;
+}
+
+.wy-button--mini {
+	height: 48rpx;
+	font-size: 24rpx;
+	padding: 0 40rpx;
+}
+
+/* 类型 - Primary */
+.wy-button--primary {
+	background-color: #37B1F2;
+	color: #ffffff;
+}
+
+.wy-button--primary.wy-button--plain {
+	background-color: #ffffff;
+	color: #37B1F2;
+	border-color: #37B1F2;
+}
+
+.wy-button--primary.wy-button--active {
+	opacity: 0.9;
+	transform: scale(0.98);
+}
+
+.wy-button--primary.wy-button--plain.wy-button--active {
+	background-color: #E6F7FF;
+}
+
+/* 类型 - Success */
+.wy-button--success {
+	background-color: #4CAF50;
+	color: #ffffff;
+}
+
+.wy-button--success.wy-button--plain {
+	background-color: #ffffff;
+	color: #4CAF50;
+	border-color: #4CAF50;
+}
+
+.wy-button--success.wy-button--active {
+	background-color: #388E3C;
+}
+
+/* 类型 - Warning */
+.wy-button--warning {
+	background-color: #FF9800;
+	color: #ffffff;
+}
+
+.wy-button--warning.wy-button--plain {
+	background-color: #ffffff;
+	color: #FF9800;
+	border-color: #FF9800;
+}
+
+.wy-button--warning.wy-button--active {
+	background-color: #F57C00;
+}
+
+/* 类型 - Danger */
+.wy-button--danger {
+	background-color: #F44336;
+	color: #ffffff;
+}
+
+.wy-button--danger.wy-button--plain {
+	background-color: #ffffff;
+	color: #F44336;
+	border-color: #F44336;
+}
+
+.wy-button--danger.wy-button--active {
+	background-color: #D32F2F;
+}
+
+/* 类型 - Info */
+.wy-button--info {
+	background-color: #909399;
+	color: #ffffff;
+}
+
+.wy-button--info.wy-button--plain {
+	background-color: #ffffff;
+	color: #909399;
+	border-color: #909399;
+}
+
+/* 类型 - Default */
+.wy-button--default {
+	background-color: #ffffff;
+	color: #333333;
+	border-color: #DCDFE6;
+}
+
+.wy-button--default.wy-button--active {
+	background-color: #f5f5f5;
+}
+
+/* 圆角 */
+.wy-button--round {
+	border-radius: 56rpx;
+}
+
+/* Primary 类型的 round 按钮使用更小的圆角 */
+.wy-button--primary.wy-button--round {
+	border-radius: 56rpx;
+}
+
+/* 块级 */
+.wy-button--block {
+	flex-direction: row;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+/* 禁用 */
+.wy-button--disabled {
+	opacity: 0.6;
+	
+}
+
+/* 加载中 */
+.wy-button--loading {
+	opacity: 0.8;
+}
+
+.wy-button__loading {
+	margin-right: 16rpx;
+}
+
+.loading-icon {
+	font-size: 28rpx;
+	
+}
+
+.wy-button__icon {
+	margin-right: 16rpx;
+}
+
+.wy-button__icon-text {
+	font-size: 28rpx;
+}
+
+.wy-button__text {
+	flex-direction: row;
+	align-items: center;
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1;
+}
+
+/* 确保文字颜色正确继承 */
+.wy-button--primary .wy-button__text,
+.wy-button--success .wy-button__text,
+.wy-button--warning .wy-button__text,
+.wy-button--danger .wy-button__text,
+.wy-button--info .wy-button__text {
+	color: #ffffff;
+}
+
+.wy-button--default .wy-button__text {
+	color: #333333;
+}
+
+.wy-button--primary.wy-button--plain .wy-button__text {
+	color: #2EAEF2;
+}
+
+.wy-button--success.wy-button--plain .wy-button__text {
+	color: #4CAF50;
+}
+
+.wy-button--warning.wy-button--plain .wy-button__text {
+	color: #FF9800;
+}
+
+.wy-button--danger.wy-button--plain .wy-button__text {
+	color: #F44336;
+}
+
+.wy-button--info.wy-button--plain .wy-button__text {
+	color: #909399;
+}
+
+/* ===== 标准按钮样式（StandardButton 功能） ===== */
+/* 单个按钮（蓝色背景，APP 兼容）*/
+.wy-button-standard--single {
+	width: 100%;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.3s ease;
+	font-size: 32rpx;
+	color: #ffffff;
+}
+
+.wy-button-standard--single.wy-button-standard--active {
+	transform: scale(0.98);
+	opacity: 0.9;
+}
+
+.wy-button-standard--single.wy-button-standard--disabled {
+	background-color: #CCCCCC;
+	box-shadow: none;
+}
+
+.wy-button-standard--single.wy-button-standard--disabled .wy-button-standard__text {
+	color: #FFFFFF;
+}
+
+.wy-button-standard--single .wy-button-standard__text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 两个整行按钮 */
+.wy-button-standard-row-full {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-right: 32rpx;
+	margin-left: 32rpx;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+}
+
+.wy-button-standard--secondary {
+	flex: 1;
+	height: 88rpx;
+	background-color: #E6F4FF;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.3s ease;
+	font-size: 32rpx;
+}
+
+.wy-button-standard--secondary.wy-button-standard--active {
+	transform: scale(0.98);
+	opacity: 0.9;
+}
+
+.wy-button-standard--secondary .wy-button-standard__text {
+	font-size: 32rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.wy-button-standard--primary {
+	flex: 1;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.3s ease;
+	font-size: 32rpx;
+	color: #ffffff;
+}
+
+.wy-button-standard--primary.wy-button-standard--active {
+	transform: scale(0.98);
+	opacity: 0.9;
+}
+
+.wy-button-standard--primary .wy-button-standard__text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 两个联排按钮，不占整行（不带渐变） */
+.wy-button-standard-row-inline {
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+	margin-right: 48rpx;
+	margin-left: 48rpx;
+	flex-wrap: wrap;
+}
+
+.wy-button-standard--gray {
+	min-width: 336rpx;
+	height: 72rpx;
+	border-radius: 36rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #cfcfcf;
+	background-color: #ffffff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	font-size: 28rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	box-sizing: border-box;
+	transition: all 0.3s ease;
+}
+
+.wy-button-standard--gray.wy-button-standard--active {
+	transform: scale(0.98);
+	opacity: 0.9;
+}
+
+.wy-button-standard--gray .wy-button-standard__text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.wy-button-standard--blue {
+	min-width: 336rpx;
+	height: 72rpx;
+	border-radius: 36rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37b1f2;
+	background-color: #37b1f2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	font-size: 28rpx;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	box-sizing: border-box;
+	transition: all 0.3s ease;
+}
+
+.wy-button-standard--blue.wy-button-standard--active {
+	transform: scale(0.98);
+	opacity: 0.9;
+}
+
+.wy-button-standard--blue .wy-button-standard__text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+/* 通用样式 */
+.wy-button-standard {
+	position: relative;
+	overflow: hidden;
+}
+
+.wy-button-standard__text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+	white-space: nowrap;
+}
+</style>

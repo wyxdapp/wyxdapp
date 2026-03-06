@@ -1,0 +1,215 @@
+/**
+ * 用户相关 API
+ * 对应后端: UserApiController.java, UserBaseInfoController.java
+ */
+
+import request from '@/utils/request'
+import {
+	GetUserHomePageParams,
+	UpdateBaseInfoParams,
+	QueryUserByKidParams,
+	UpdateContactInfoParams,
+	UserSearchParams,
+	UpdateUserBasicInfoParams,
+	UpdateUserStatusParams,
+	UpdateUserImagesParams
+} from './types/userTypes.uts'
+
+// Re-export types for backward compatibility
+export { GetUserHomePageParams, UpdateBaseInfoParams, QueryUserByKidParams, UpdateContactInfoParams }
+
+// ============ API 函数 ============
+
+/**
+ * 获取用户主页信息
+ * POST /user/baseInfo/queryUserHomePage
+ * @param params { kid: string, focusUserkid?: string }
+ */
+export const getUserHomePage = (params: GetUserHomePageParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid,
+		focusUserkid: params.focusUserkid
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/queryUserHomePage', payload, true)
+}
+
+/**
+ * 更新用户基本信息（旧接口兼容）
+ * POST /user/baseInfo/updateBaseInfo
+ * @param params { kid: string, nickname?, image?, background?, signature? }
+ */
+export const updateBaseInfo = (params: UpdateBaseInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid,
+		nickname: params.nickname,
+		image: params.image,
+		background: params.background,
+		signature: params.signature
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/updateBaseInfo', payload, true)
+}
+
+/**
+ * 根据kid查询用户详细信息（旧接口兼容）
+ * POST /user/baseInfo/queryByKid
+ * @param params { kid: string }
+ */
+export const queryUserByKid = (params: QueryUserByKidParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/queryByKid', payload, true)
+}
+
+/**
+ * 更新用户联系方式（复用 updateBaseInfo 接口）
+ * POST /user/baseInfo/updateBaseInfo
+ * @param params { kid: string, realname?, contactPhone?, qqNumber?, weixinNumber? }
+ */
+export const updateContactInfo = (params: UpdateContactInfoParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid,
+		realname: params.realname,
+		contactPhone: params.contactPhone,
+		qqNumber: params.qqNumber,
+		weixinNumber: params.weixinNumber
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/updateBaseInfo', payload, true)
+}
+
+
+/**
+ * 搜索用户
+ * POST /api/users/search
+ * @param params { phone?, nickname?, startTime?, endTime?, isSeal?, idAuth?, page?, pageSize? }
+ */
+export const searchUsers = (params: UserSearchParams): Promise<UTSJSONObject> => {
+	const payload = {
+		phone: params.phone,
+		nickname: params.nickname,
+		startTime: params.startTime,
+		endTime: params.endTime,
+		isSeal: params.isSeal,
+		idAuth: params.idAuth,
+		page: params.page,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/api/users/search', payload, true)
+}
+
+/**
+ * 获取用户详细信息
+ * GET /api/user/{kid}/detail
+ */
+export const getUserDetail = (kid: string): Promise<UTSJSONObject> => {
+	return request.get('/api/user/' + kid + '/detail', null, false)
+}
+
+/**
+ * 更新用户基本信息
+ * POST /api/user/{kid}/basic-info
+ * @param params UpdateUserBasicInfoParams
+ */
+export const updateUserBasicInfo = (params: UpdateUserBasicInfoParams): Promise<UTSJSONObject> => {
+	const kid = params.kid
+	
+	// 构建不含 kid 的请求体
+	const body = new UTSJSONObject()
+	body.set('username', params.username)
+	body.set('phone', params.phone)
+	body.set('realname', params.realname)
+	body.set('nickname', params.nickname)
+	body.set('sex', params.sex)
+	body.set('education', params.education)
+	body.set('birthDate', params.birthDate)
+	body.set('occupation', params.occupation)
+	body.set('birthPlace', params.birthPlace)
+	body.set('liveCity', params.liveCity)
+	body.set('idNumber', params.idNumber)
+	body.set('signature', params.signature)
+	body.set('weixinNumber', params.weixinNumber)
+	body.set('qqNumber', params.qqNumber)
+	body.set('contactPhone', params.contactPhone)
+	
+	return request.post('/api/user/' + kid + '/basic-info', body, true)
+}
+
+/**
+ * 更新用户密码
+ * POST /api/user/{kid}/password
+ */
+export const updateUserPassword = (kid: string, password: string): Promise<UTSJSONObject> => {
+	const body = new UTSJSONObject()
+	body.set('password', password)
+	return request.post('/api/user/' + kid + '/password', body, true)
+}
+
+/**
+ * 更新用户状态
+ * POST /api/user/{kid}/status
+ * @param params UpdateUserStatusParams
+ */
+export const updateUserStatus = (params: UpdateUserStatusParams): Promise<UTSJSONObject> => {
+	const kid = params.kid
+	
+	// 构建不含 kid 的请求体
+	const body = new UTSJSONObject()
+	body.set('status', params.status)
+	body.set('isSeal', params.isSeal)
+	body.set('bail', params.bail)
+	body.set('vip', params.vip)
+	body.set('vipExpireTime', params.vipExpireTime)
+	body.set('vipType', params.vipType)
+	
+	return request.post('/api/user/' + kid + '/status', body, true)
+}
+
+/**
+ * 更新用户图片
+ * POST /api/user/{kid}/images
+ * @param params UpdateUserImagesParams
+ */
+export const updateUserImages = (params: UpdateUserImagesParams): Promise<UTSJSONObject> => {
+	const kid = params.kid
+	
+	// 构建不含 kid 的请求体
+	const body = new UTSJSONObject()
+	body.set('image', params.image)
+	body.set('background', params.background)
+	body.set('idcardFrontImage', params.idcardFrontImage)
+	body.set('idcardBackImage', params.idcardBackImage)
+	body.set('guideAuthenticatImage', params.guideAuthenticatImage)
+	body.set('driverAuthenticatImage', params.driverAuthenticatImage)
+	
+	return request.post('/api/user/' + kid + '/images', body, true)
+}
+
+/**
+ * 更新钱包支付密码
+ * POST /api/user/{kid}/pay-password
+ */
+export const updatePayPassword = (kid: string, payPassword: string): Promise<UTSJSONObject> => {
+	const body = new UTSJSONObject()
+	body.set('payPassword', payPassword)
+	return request.post('/api/user/' + kid + '/pay-password', body, true)
+}
+
+/**
+ * 更新封号状态
+ * POST /api/user/{kid}/seal
+ */
+export const updateSealStatus = (kid: string, status: number): Promise<UTSJSONObject> => {
+	const body = new UTSJSONObject()
+	body.set('status', status)
+	return request.post('/api/user/' + kid + '/seal', body, true)
+}
+
+/**
+ * 更新身份认证状态
+ * POST /api/user/{kid}/idauth
+ */
+export const updateIdAuthStatus = (kid: string, status: number): Promise<UTSJSONObject> => {
+	const body = new UTSJSONObject()
+	body.set('status', status)
+	return request.post('/api/user/' + kid + '/idauth', body, true)
+}

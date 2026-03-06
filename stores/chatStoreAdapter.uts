@@ -1,0 +1,187 @@
+/**
+ * 🌟 聊天架构兼容性适配器
+ * 确保与现有chat.uts的平滑迁移
+ */
+
+import { chatService } from './chatService'
+import { MessageType } from './messageStateManager'
+import { handleError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+// 兼容现有chat.uts的接口
+export class ChatStoreAdapter {
+  // 模拟现有的chat.uts接口
+  isConnected: boolean = false
+  // UTS 规范：any 类型不能初始化为 null
+  socketTask: SocketTask | null = null
+  unreadCount: number = 0
+  conversations: Array<UTSJSONObject> = []
+
+  /**
+   * 初始化WebSocket（兼容现有接口）
+   */
+  async connectWebSocket(userId: string): Promise<void> {
+    try {
+      // 这里需要获取实际的WebSocket实例
+      const socketTask = await this.createWebSocket()
+      
+      // 连接到新的聊天服务
+      await chatService.connect(userId, socketTask)
+      
+      this.isConnected = true
+      this.socketTask = socketTask
+      
+      console.log('🔗 [ChatStoreAdapter] WebSocket已连接（兼容模式）')
+    } catch (error: any) {
+      const errorOptions = new ErrorHandleOptions()
+      errorOptions.showToast = false
+      errorOptions.rethrow = false
+      handleError(error, 'WebSocket连接', errorOptions)
+      throw error
+    }
+  }
+
+  /**
+   * 发送聊天消息（兼容现有接口）
+   */
+  async sendChatMessage(
+    toUserKid: string, 
+    content: string, 
+    messageType: number = 1
+  ): Promise<void> {
+    try {
+      const type = this.mapMessageType(messageType)
+      await chatService.sendMessage(content, toUserKid, type)
+      console.log('📤 [ChatStoreAdapter] 消息已发送（兼容模式）')
+    } catch (error: any) {
+      const errorOptions = new ErrorHandleOptions()
+      errorOptions.showToast = false
+      errorOptions.rethrow = false
+      handleError(error, '发送聊天消息', errorOptions)
+      throw error
+    }
+  }
+
+  /**
+   * 处理新消息（兼容现有接口）
+   */
+  handleNewMessage(message: UTSJSONObject): void {
+    // 转发到新的事件处理器
+    chatService.handleWebSocketMessage({
+      type: 'chat',
+      data: message
+    })
+  }
+
+  /**
+   * 获取历史消息（兼容现有接口）
+   */
+  async fetchHistoryMessages(
+    fromUserId: string, 
+    toUserId: string, 
+    page: number, 
+    size: number
+  ): Promise<UTSJSONObject> {
+    try {
+      const conversationId = [fromUserId, toUserId].sort().join('_')
+      const messages = chatService.getConversationMessages(conversationId)
+      
+      // 分页处理
+      const startIndex = (page - 1) * size
+      const endIndex = startIndex + size
+      const pageMessages = messages.slice(startIndex, endIndex)
+      
+      return {
+        messages: pageMessages.map(msg => ({
+          kid: msg.id,
+          content: msg.content,
+          messageType: this.mapMessageTypeToparseFloat(msg.type),
+          fromUserKid: msg.senderId,
+          toUserKid: msg.receiverId,
+          sendTime: msg.sendTime || msg.createTime,
+          mediaUrl: msg.mediaUrl,
+          thumbUrl: msg.thumbUrl,
+          duration: msg.duration
+        })),
+        hasMore: endIndex < messages.length
+      }
+    } catch (error: any) {
+      const errorOptions = new ErrorHandleOptions()
+      errorOptions.showToast = false
+      errorOptions.rethrow = false
+      handleError(error, '获取历史消息', errorOptions)
+      throw error
+    }
+  }
+
+  /**
+   * 标记已读（兼容现有接口）
+   */
+  async markRead(fromUserId: string, toUserId: string): Promise<void> {
+    // 实现标记已读逻辑
+    console.log('📖 [ChatStoreAdapter] 标记已读（兼容模式）')
+  }
+
+  /**
+   * 映射消息类型
+   */
+  private mapMessageType(messageType: number): MessageType {
+    switch (messageType) {
+      case 1: return MessageType.TEXT
+      case 2: return MessageType.IMAGE
+      case 3: return MessageType.VIDEO
+      case 4: return MessageType.VOICE
+      case 6: return MessageType.SHARE
+      case 7: return MessageType.GIFT
+      default: return MessageType.TEXT
+    }
+  }
+
+  private mapMessageTypeToparseFloat(type: MessageType): number {
+    switch (type) {
+      case MessageType.TEXT: return 1
+      case MessageType.IMAGE: return 2
+      case MessageType.VIDEO: return 3
+      case MessageType.VOICE: return 4
+      case MessageType.SHARE: return 6
+      case MessageType.GIFT: return 7
+      default: return 1
+    }
+  }
+
+  /**
+   * 创建WebSocket（需要根据实际实现调整）
+   */
+  private async createWebSocket(): Promise<SocketTask> {
+    // 使用 uni.connectSocket 创建实际的 WebSocket 连接
+    const socketTask = uni.connectSocket({
+      url: '',  // URL 由 chatService.connect 管理
+      success: () => {},
+      fail: () => {}
+    })
+    return socketTask
+  }
+
+  /**
+   * 断开连接（兼容现有接口）
+   */
+  disconnect(): void {
+	if (this.socketTask != null) {
+		const task = this.socketTask as SocketTask
+		task.close({})
+		this.socketTask = null
+	}
+	this.isConnected = false
+	console.log(' [ChatStoreAdapter] 已断开连接（兼容模式）')
+  }
+
+  /**
+   * 清理资源
+   */
+  cleanup(): void {
+	this.disconnect()
+	console.log(' [ChatStoreAdapter] 资源已清理')
+  }
+}
+
+// 创建兼容性适配器实例
+export const chatStoreAdapter = new ChatStoreAdapter()

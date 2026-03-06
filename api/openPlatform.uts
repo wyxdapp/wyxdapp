@@ -1,0 +1,105 @@
+/**
+ * 开放平台支付路由 API
+ * 用于C端适配多商户支付路由
+ * 当订单涉及开放平台合作方资源时，支付请求路由到资源所属Partner的商户账户
+ */
+
+import request from '@/utils/request'
+import {
+	CreateOpenOrderParams,
+	OpenPlatformPayParams,
+	OpenPlatformRefundParams,
+	PartnerPayParams
+} from './types/openPlatformTypes.uts'
+
+// 开放平台基础URL（指向open模块7500端口）
+const OPEN_BASE = '/open'
+
+/**
+ * 查询向导所属Partner信息
+ * 用于下单前判断是否需要走开放平台支付路由
+ */
+export const getGuidePartner = (guideKid: string): Promise<UTSJSONObject> => {
+	return request.get(`${OPEN_BASE}/guide/partner?guideKid=${guideKid}`, null, false)
+}
+
+/**
+ * 通过开放平台创建订单
+ * 当向导属于某个Partner时，通过此接口创建订单以标记资源归属
+ */
+export const createOpenOrder = (params: CreateOpenOrderParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderId: params.orderId,
+		guideKid: params.guideKid,
+		txnAmt: params.txnAmt,
+		goodsName: params.goodsName
+	} as UTSJSONObject
+	return request.post(`${OPEN_BASE}/order/create`, payload, true)
+}
+
+/**
+ * 通过开放平台发起支付
+ * 支付路由到资源所属Partner的商户账户
+ */
+export const openPlatformPay = (params: OpenPlatformPayParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderId: params.orderId,
+		txnAmt: params.txnAmt,
+		goodsName: params.goodsName
+	} as UTSJSONObject
+	return request.post(`${OPEN_BASE}/order/pay`, payload, true)
+}
+
+/**
+ * 通过开放平台申请退款
+ * 退款路由到原订单支付时使用的Partner商户号
+ */
+export const openPlatformRefund = (params: OpenPlatformRefundParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderId: params.orderId,
+		txnAmt: params.txnAmt,
+		reason: params.reason
+	} as UTSJSONObject
+	return request.post(`${OPEN_BASE}/order/refund`, payload, true)
+}
+
+/**
+ * 合作方微信APP支付
+ * 通过 open 模块发起微信支付，使用合作方的商户配置
+ * wyxdkey 通过请求拦截器的 X-Partner-Id 请求头自动注入
+ * @param params { orderId, txnAmt, goodsName }
+ */
+export const partnerWechatAppPay = (params: PartnerPayParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderId: params.orderId,
+		txnAmt: params.txnAmt,
+		goodsName: params.goodsName
+	} as UTSJSONObject
+	return request.post(`${OPEN_BASE}/pay/wechat/appPay`, payload, true)
+}
+
+/**
+ * 合作方支付宝APP支付
+ * 通过 open 模块发起支付宝支付，使用合作方的商户配置
+ * wyxdkey 通过请求拦截器的 X-Partner-Id 请求头自动注入
+ * @param params { orderId, txnAmt, goodsName }
+ */
+export const partnerAlipayAppPay = (params: PartnerPayParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderId: params.orderId,
+		txnAmt: params.txnAmt,
+		goodsName: params.goodsName
+	} as UTSJSONObject
+	return request.post(`${OPEN_BASE}/pay/alipay/appPay`, payload, true)
+}
+
+/**
+ * 检查零钱支付资格
+ * 判断用户与向导的 wyxdkey 是否匹配，匹配则允许使用零钱支付
+ * @param userKid 用户唯一标识
+ * @param guideKid 向导唯一标识
+ * @param orderType 订单类型（10=定制订单，20=自由行，30=会员，40=礼物，50=抽奖）
+ */
+export const checkBalancePay = (userKid: string, guideKid: string, orderType: number): Promise<UTSJSONObject> => {
+	return request.post(`${OPEN_BASE}/pay/checkBalancePay`, { userKid, guideKid, orderType }, true)
+}

@@ -1,0 +1,181 @@
+<template>
+	<view v-if="show == true" class="action-sheet-mask" @click="handleMaskClick">
+		<view class="action-sheet-popup" @click.stop>
+			<!-- 选项列表 -->
+			<view class="action-list">
+				<view 
+					v-for="(item, index) in safeList" 
+					:key="index"
+					class="action-item"
+					@click="handleSelect(index)">
+					<text class="action-text">
+						{{ getItemText(item) }}
+					</text>
+				</view>
+			</view>
+			
+			<!-- 取消按钮 -->
+			<view v-if="cancelBtn == true" class="cancel-section">
+				<view class="cancel-btn" @click="handleCancel">
+					<text class="cancel-text">取消</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+
+// Props
+interface ActionItem {
+	text: string
+	color?: string
+	fontSize?: number
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	list: { type: Array, default: () => [] },
+	cancelBtn: { type: Boolean, default: true }
+})
+
+// Emits
+const emit = defineEmits<{
+	'update:show': [value: boolean]
+	click: [index: number]
+	cancel: []
+}>()
+
+// 安全列表
+const safeList = computed((): Array<any> => {
+	try {
+		const src = props.list
+		// props.list 类型是 Array，只需检查是否为数组
+		if (Array.isArray(src) == true) {
+			return src as Array<any>
+		}
+	} catch (e) {}
+	return []
+})
+
+const getItemText = (item: any): string => {
+	// item 类型是 any（非空），使用 JSON 序列化检查空值
+	const itemStr = JSON.stringify(item)
+	if (itemStr == '' || itemStr == '{}' || itemStr == 'null') return ''
+	try {
+		// 纯字符串直接返回
+		if (typeof item === 'string') {
+			return item
+		}
+		// 其他情况按 ActionItem 结构处理，先强转为接口再点访问，避免 Any 上的下标/点访问问题
+		const obj = item as ActionItem
+		const textValue = obj.text
+		// textValue 是 string 类型（非空），只需检查空字符串
+		if (textValue != '') {
+			return textValue.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 安全获取数组元素
+const getListItem = (list: any, index: number): any => {
+	if (list == null) return {} as any
+	try {
+		if (Array.isArray(list) == true) {
+			const arr = list as Array<any>
+			const len = arr.length
+			if (index >= 0 && index < len) {
+				const item = arr[index]
+				if (item != null) {
+					return item as any
+				}
+			}
+		}
+	} catch (e) {}
+	return {} as any
+}
+
+// 方法
+const handleMaskClick = () => {
+	emit('update:show', false)
+	emit('cancel')
+}
+
+const handleSelect = (index: number) => {
+	emit('click', index)
+	emit('update:show', false)
+}
+
+const handleCancel = () => {
+	emit('update:show', false)
+	emit('cancel')
+}
+</script>
+
+<style scoped>
+.action-sheet-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.action-sheet-popup {
+	width: 750rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+}
+
+.action-list {
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.action-item {
+	height: 100rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.cancel-section {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	flex-direction: column;
+}
+
+.cancel-btn {
+	height: 100rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+	margin-right: 16rpx;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #666666;
+	font-weight: bold;
+}
+</style>

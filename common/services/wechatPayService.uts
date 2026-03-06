@@ -1,0 +1,631 @@
+/**
+ * 微信支付服务
+ * 统一处理小程序、H5、APP的微信支付逻辑
+ * 
+ * @author wyxdapp
+ * @version 1.0.0
+ * @since 2025-12-11
+ */
+
+import { isWechatBrowser } from '@/common/utils/systemInfo'
+import request from '@/utils/request'
+import { WX_MP_APP_ID } from '@/common/config/wechatConfig'
+import { SK_WX_CODE, SK_PENDING_PAYMENT } from '@/common/config/storageKeys.uts'
+import { safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { PAYMENT_STATE_TIMEOUT } from '@/common/config/timeoutConfig.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 支付状态枚举
+ */
+export enum PaymentState {
+	IDLE = 'idle',           // 空闲状态
+	PENDING = 'pending',     // 待支付
+	PROCESSING = 'processing', // 支付处理中
+	SUCCESS = 'success',     // 支付成功
+	FAILED = 'failed',       // 支付失败
+	TIMEOUT = 'timeout'      // 支付超时
+}
+
+/**
+ * 微信支付参数接口
+ */
+export interface WechatPayParams {
+	orderId: string
+	amount: string
+	code?: string
+	goodsName?: string
+}
+
+/**
+ * 支付结果接口
+ */
+export interface PaymentResult {
+	success: boolean
+	state: PaymentState
+	message?: string
+	data?: UTSJSONObject
+}
+
+// 微信支付数据接口（必须在顶层定义）
+interface WechatPayData {
+	timeStamp?: string | null
+	nonceStr?: string | null
+	package?: string | null
+	signType?: string | null
+	paySign?: string | null
+	appId?: string | null
+}
+
+// 支付状态数据接口（必须在顶层定义）
+interface PaymentStateData {
+	state?: PaymentState | null
+	timestamp?: number | null
+}
+
+/**
+ * 微信支付服务类
+ */
+class WechatPayService {
+	private static instance: WechatPayService | null = null
+	private readonly STATE_TIMEOUT = PAYMENT_STATE_TIMEOUT // 5分钟超时
+	
+	private constructor() {}
+	
+	static getInstance(): WechatPayService {
+		if (WechatPayService.instance == null) {
+			WechatPayService.instance = new WechatPayService()
+		}
+		return WechatPayService.instance
+	}
+
+	/**
+	 * 统一微信支付入口
+	 */
+	async wechatPay(params: WechatPayParams): Promise<PaymentResult> {
+		try {
+			console.log('🔍 [PAY] 开始微信支付流程:', params)
+			
+			// 防重复支付检查
+			const currentState = this.getPaymentState(params.orderId)
+			if (currentState === PaymentState.PROCESSING) {
+				console.warn('⚠️ [PAY] 支付正在处理中，防止重复支付')
+				return {
+					success: false,
+					state: currentState,
+					message: '支付正在处理中，请稍候'
+				}
+			}
+			
+			if (currentState === PaymentState.SUCCESS) {
+				console.warn('⚠️ [PAY] 订单已支付成功')
+				return {
+					success: true,
+					state: currentState,
+					message: '订单已支付'
+				}
+			}
+
+			// 设置支付状态为待支付
+			this.setPaymentState(params.orderId, PaymentState.PENDING)
+			
+			// 根据平台调用不同的支付方法
+			// #ifdef MP-WEIXIN
+			console.log('📱 [PAY] 使用小程序支付')
+			return await this.handleMiniProgramPay(params)
+			// #endif
+			
+			// #ifdef H5
+			console.log('🌐 [PAY] 使用H5支付')
+			return await this.handleH5Pay(params)
+			// #endif
+			
+			// #ifdef APP-PLUS
+			console.log('📲 [PAY] 使用APP支付')
+			return await this.handleAppPay(params)
+			// #endif
+			
+			// 其他平台不支持
+			return {
+				success: false,
+				state: PaymentState.FAILED,
+				message: '当前平台不支持微信支付'
+			}
+			
+		} catch (error : any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, '微信支付', errorOptions)
+			this.setPaymentState(params.orderId, PaymentState.FAILED)
+			
+			// 安全访问 error.message，避免 error18，并使用显式判断替代 ||
+			let errorMessage = '支付失败，请重试'
+			const errorObj = toUTSJSON(error)
+			const messageVal = getString(errorObj, 'message')
+			if (messageVal != '') {
+				errorMessage = messageVal
+			}
+			
+			return {
+				success: false,
+				state: PaymentState.FAILED,
+				message: errorMessage
+			}
+		}
+	}
+
+	/**
+	 * 小程序支付处理
+	 */
+	private async handleMiniProgramPay(params: WechatPayParams): Promise<PaymentResult> {
+		try {
+			console.log('💰 [PAY] 开始小程序支付流程')
+			
+			// #ifdef MP-WEIXIN
+			// 获取微信登录code - 仅在微信小程序环境下支持
+			const loginResult : any = await new Promise((resolve, reject) => {
+				uni.login({
+					provider: 'weixin',
+					success: (res: any) => {
+						resolve(res)
+					},
+					fail: (err: any) => {
+						console.error('❌ [PAY] 获取微信code失败:', err)
+						reject(new Error('获取微信授权失败'))
+					}
+				})
+			})
+
+			// 使用 typeConverter 安全类型访问
+			const loginResultObj = toUTSJSON(loginResult)
+			const loginCode = getString(loginResultObj, 'code')
+
+			if (loginCode == '') {
+				throw new Error('获取微信授权code失败')
+			}
+
+			// 调用后端小程序支付接口
+			console.log('📡 [PAY] 调用后端小程序支付接口')
+			const response : UTSJSONObject = await request({
+				url: '/pay/wxpay/applyXcxPay',
+				method: 'POST',
+				data: {
+					code: loginCode,
+					orderId: params.orderId,
+					txnAmt: params.amount
+				}
+			})
+			// #endif
+			
+			// #ifndef MP-WEIXIN
+			// 非微信小程序环境，直接调用后端接口
+			const requestParams = {
+				orderId: params.orderId,
+				txnAmt: params.amount
+			} as UTSJSONObject
+			const response : UTSJSONObject = await request.post('/pay/wxpay/applyXcxPay', requestParams, false)
+			// #endif
+
+			console.log('📥 [PAY] 后端响应:', response)
+
+			// 安全访问 response 的属性，避免 error18
+			const responseObj = toUTSJSON(response)
+			const responseCode = getNumber(responseObj, 'code') as number | null
+			const responseData = responseObj != null ? responseObj.get('data') : null
+			const responseMsgVal = getString(responseObj, 'msg')
+			const responseMsg = responseMsgVal != '' ? responseMsgVal : '获取支付参数失败'
+			
+			// 使用显式判断替代 !response
+			if (response == null || responseCode != 200 || responseData == null || responseData == '') {
+				throw new Error(responseMsg)
+			}
+
+			// 安全访问 payData 的属性，避免 error18
+			const payDataObj = toUTSJSON(responseData)
+			const timeStamp = getString(payDataObj, 'timeStamp')
+			const nonceStr = getString(payDataObj, 'nonceStr')
+			const packageValue = getString(payDataObj, 'package')
+			const signTypeVal = getString(payDataObj, 'signType')
+			const signType = signTypeVal != '' ? signTypeVal : 'MD5'
+			const paySign = getString(payDataObj, 'paySign')
+
+			// 设置支付状态为处理中
+			this.setPaymentState(params.orderId, PaymentState.PROCESSING)
+
+			// 调用微信支付
+			console.log('💳 [PAY] 调用微信支付API')
+			const payResult : any = await new Promise((resolve, reject) => {
+				// 注意：uni.requestPayment 在小程序中使用 orderInfo 参数
+				// 将支付参数打包成 JSON 字符串作为 orderInfo
+				const orderInfoRaw = {
+					timeStamp: timeStamp,
+					nonceStr: nonceStr,
+					package: packageValue,
+					signType: signType,
+					paySign: paySign
+				} as UTSJSONObject
+				const orderInfoJson = JSON.stringify(orderInfoRaw)
+				
+				// uni.requestPayment 使用 success/fail 回调，不支持 Promise
+				uni.requestPayment({
+					provider: 'wxpay',
+					orderInfo: orderInfoJson,
+					success: (res: any) => {
+						resolve(res)
+					},
+					fail: (err: any) => {
+						console.error('❌ [PAY] 微信支付失败:', err)
+						// 安全访问 err.errMsg
+						const errObj = toUTSJSON(err)
+						const errMsgVal = getString(errObj, 'errMsg')
+						const errMsg = errMsgVal != '' ? errMsgVal : '支付失败'
+						reject(new Error(errMsg))
+					}
+				})
+			})
+
+			// 支付成功
+			this.setPaymentState(params.orderId, PaymentState.SUCCESS)
+			console.log('🎉 [PAY] 支付完成')
+			
+			return {
+				success: true,
+				state: PaymentState.SUCCESS,
+				message: '支付成功',
+				data: payResult
+			}
+
+		} catch (error : any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, '小程序支付', errorOptions)
+			this.setPaymentState(params.orderId, PaymentState.FAILED)
+			throw error
+		}
+	}
+
+	/**
+	 * H5支付处理
+	 */
+	private async handleH5Pay(params: WechatPayParams): Promise<PaymentResult> {
+		try {
+			console.log('🌐 [PAY] 开始H5支付流程')
+			
+			// 检查是否在微信浏览器中
+			if (!isWechatBrowser()) {
+				throw new Error('请在微信浏览器中打开')
+			}
+
+			// 🔧 修复：使用登录授权code，与旧项目保持一致
+		const storedCode = safeGetStorageSync(SK_WX_CODE) as string
+		const wxCode = (params.code != null && params.code != '') ? params.code : ((storedCode != null && storedCode != '') ? storedCode : '')
+		// 使用显式判断，避免条件类型不匹配
+		const hasWxCode = (wxCode != null && wxCode != '')
+		console.log('🔍 [PAY] 检查登录授权code:', hasWxCode == true ? '存在' : '不存在')
+		if (wxCode == null || wxCode == '') {
+				// 需要重新获取授权 - 跳转微信登录授权
+				console.log('🔄 [PAY] 登录授权code不存在，开始获取微信授权')
+				return this.handlePaymentAuth(params)
+			}
+
+		console.log('📡 [PAY] 调用后端JSAPI支付接口')
+		// 调用后端JSAPI支付接口
+		const requestParams = {
+			code: wxCode,
+			orderId: params.orderId,
+			txnAmt: params.amount
+		} as UTSJSONObject
+		const response : UTSJSONObject = await request.post('/pay/wxpay/jsApiPay', requestParams, false)
+
+		console.log('📥 [PAY] 后端响应:', response)
+
+		// 安全访问 response 的属性，避免 error18
+		const responseObj = toUTSJSON(response)
+		const responseCode = getNumber(responseObj, 'code') as number | null
+		const responseData = responseObj != null ? responseObj.get('data') : null
+		const responseMsgVal = getString(responseObj, 'msg')
+		const responseMsg = responseMsgVal != '' ? responseMsgVal : '获取支付参数失败'
+		
+		// 使用显式判断替代 !response
+		if (response == null || responseCode != 200 || responseData == null || responseData == '') {
+			throw new Error(responseMsg)
+		}
+
+		// 安全访问 payData 的属性，避免 error18
+		const payDataObj = toUTSJSON(responseData)
+		const appId = getString(payDataObj, 'appId')
+		const timeStamp = getString(payDataObj, 'timeStamp')
+		const nonceStr = getString(payDataObj, 'nonceStr')
+		const packageValue = getString(payDataObj, 'package')
+		const signTypeVal = getString(payDataObj, 'signType')
+		const signType = signTypeVal != '' ? signTypeVal : 'MD5'
+		const paySign = getString(payDataObj, 'paySign')
+
+		// 设置支付状态为处理中
+		this.setPaymentState(params.orderId, PaymentState.PROCESSING)
+
+		// 调用微信JSAPI支付
+		console.log('💳 [PAY] 调用微信JSAPI支付')
+		const payResult : any = await new Promise((resolve, reject) => {
+			// #ifdef H5
+			if (typeof window != 'undefined' && (window as any).WeixinJSBridge) {
+				// 使用 as any 构造支付参数对象，符合 UTS 规范
+				const paymentParamsRaw = {
+					appId: appId,
+					timeStamp: timeStamp,
+					nonceStr: nonceStr,
+					package: packageValue,
+					signType: signType,
+					paySign: paySign
+				} as UTSJSONObject
+				
+				(window as any).WeixinJSBridge.invoke('getBrandWCPayRequest', paymentParamsRaw, (res : any) => {
+					// 安全访问 res.err_msg
+					const resObj = toUTSJSON(res)
+					const errMsg = getString(resObj, 'err_msg')
+					
+					if (errMsg === 'get_brand_wcpay_request:ok') {
+						resolve(res)
+					} else {
+						console.error('❌ [PAY] 微信支付失败:', errMsg)
+						const finalErrMsg = errMsg != '' ? errMsg : '支付失败'
+						reject(new Error(finalErrMsg))
+					}
+				})
+			} else {
+				reject(new Error('微信JSAPI未准备好'))
+			}
+			// #endif
+		})
+
+			// 支付成功
+			this.setPaymentState(params.orderId, PaymentState.SUCCESS)
+			console.log('🎉 [PAY] 支付完成')
+			
+			return {
+				success: true,
+				state: PaymentState.SUCCESS,
+				message: '支付成功',
+				data: payResult
+			}
+
+		} catch (error : any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, 'H5支付', errorOptions)
+			this.setPaymentState(params.orderId, PaymentState.FAILED)
+			throw error
+		}
+	}
+
+	/**
+	 * APP支付处理
+	 */
+	private async handleAppPay(params: WechatPayParams): Promise<PaymentResult> {
+		try {
+			console.log('📲 [PAY] 开始APP支付流程')
+			
+		// 调用后端APP支付接口
+		console.log('📡 [PAY] 调用后端APP支付接口')
+		const requestParams = {
+			orderId: params.orderId,
+			txnAmt: params.amount,
+			goodsName: (params.goodsName != null && params.goodsName != '') ? params.goodsName : '订单支付'
+		} as UTSJSONObject
+		const response : UTSJSONObject = await request.post('/pay/wxpay/applyAppPay', requestParams, false)
+
+		console.log('📥 [PAY] 后端响应:', response)
+
+		// 安全访问 response 的属性，避免 error18
+		const responseObj = toUTSJSON(response)
+		const responseCode = getNumber(responseObj, 'code') as number | null
+		const responseData = responseObj != null ? responseObj.get('data') : null
+		const responseMsgVal = getString(responseObj, 'msg')
+		const responseMsg = responseMsgVal != '' ? responseMsgVal : '获取支付参数失败'
+		
+		// 使用显式判断替代 !response
+		if (response == null || responseCode != 200 || responseData == null || responseData == '') {
+			throw new Error(responseMsg)
+		}
+
+		// 安全访问 payData.orderInfo，避免 error18
+		const payDataObj = toUTSJSON(responseData)
+		const orderInfo = getString(payDataObj, 'orderInfo')
+		
+		if (orderInfo == null || orderInfo == '') {
+			throw new Error('获取支付参数失败：orderInfo为空')
+		}
+
+		// 设置支付状态为处理中
+		this.setPaymentState(params.orderId, PaymentState.PROCESSING)
+
+		// 调用APP微信支付
+		console.log('💳 [PAY] 调用APP微信支付')
+		const payResult : any = await new Promise((resolve, reject) => {
+			uni.requestPayment({
+				provider: 'wxpay',
+				orderInfo: orderInfo, // APP支付使用orderInfo
+				success: (res: any) => {
+					resolve(res)
+				},
+				fail: (err: any) => {
+					console.error('❌ [PAY] 微信支付失败:', err)
+					// 安全访问 err.errMsg，避免 error18
+					const errObj = toUTSJSON(err)
+					const errMsgVal = getString(errObj, 'errMsg')
+					const errMsg = errMsgVal != '' ? errMsgVal : '支付失败'
+					reject(new Error(errMsg))
+				}
+			})
+		})
+
+			// 支付成功
+			this.setPaymentState(params.orderId, PaymentState.SUCCESS)
+			console.log('🎉 [PAY] 支付完成')
+			
+			return {
+				success: true,
+				state: PaymentState.SUCCESS,
+				message: '支付成功',
+				data: payResult
+			}
+
+		} catch (error : any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, 'APP支付', errorOptions)
+			this.setPaymentState(params.orderId, PaymentState.FAILED)
+			throw error
+		}
+	}
+
+	/**
+	 * 获取支付状态
+	 */
+	getPaymentState(orderId: string): PaymentState {
+		try {
+			const stateDataRaw = uni.getStorageSync(`payment:state:${orderId}`)
+			if (stateDataRaw == null) {
+				return PaymentState.IDLE
+			}
+			
+			// 安全访问 stateData 的属性，避免 error18
+			const stateDataObj = toUTSJSON(stateDataRaw)
+			const stateStr = getString(stateDataObj, 'state')
+			const stateValue = stateStr != '' ? stateStr as PaymentState : null as PaymentState | null
+			const timestampRaw = getNumber(stateDataObj, 'timestamp')
+			const timestampValue = timestampRaw != 0 ? timestampRaw : null as number | null
+			
+			// 检查是否超时
+			if (timestampValue != null) {
+				const now = Date.now()
+				if (now - timestampValue > this.STATE_TIMEOUT) {
+					this.clearPaymentState(orderId)
+					return PaymentState.IDLE
+				}
+			}
+			
+			// 返回状态值，如果为空则返回 IDLE
+			if (stateValue != null) {
+				return stateValue
+			}
+			return PaymentState.IDLE
+		} catch (error) {
+			handleSilentError(error, '获取支付状态')
+			return PaymentState.IDLE
+		}
+	}
+
+	/**
+	 * 设置支付状态
+	 */
+	private setPaymentState(orderId: string, state: PaymentState): void {
+		try {
+			uni.setStorageSync(`payment:state:${orderId}`, {
+				state,
+				timestamp: Date.now()
+			})
+			console.log(`📝 [PAY] 设置支付状态: ${state}`)
+		} catch (error) {
+			handleSilentError(error, '设置支付状态')
+		}
+	}
+
+	/**
+	 * 清除支付状态
+	 */
+	clearPaymentState(orderId: string): void {
+		try {
+			uni.removeStorageSync(`payment:state:${orderId}`)
+			console.log('🗑️ [PAY] 清除支付状态')
+		} catch (error) {
+			handleSilentError(error, '清除支付状态')
+		}
+	}
+
+	/**
+	 * 处理微信支付授权
+	 */
+	private handlePaymentAuth(params: WechatPayParams): Promise<PaymentResult> {
+		return new Promise((resolve, reject) => {
+			try {
+				console.log('🔄 [PAY] 开始获取微信登录授权（兼容旧项目）')
+				
+				// #ifdef H5
+				// 🔧 修复：使用与旧项目相同的登录授权方式
+				const appId = WX_MP_APP_ID // 公众号AppId
+				const currentUrl = new URL(window.location.href)
+				
+				// 设置授权回跳参数（简化为登录授权）
+				currentUrl.searchParams.set('codePath', '/pagesTrade/payment/payOrder/index')
+				currentUrl.searchParams.set('orderKid', params.orderId)
+				// 移除 paymentAuth=true，使用标准登录授权
+				
+				const callbackUrl = currentUrl.toString()
+				const redirectUri = encodeURIComponent(callbackUrl)
+				const scope = 'snsapi_base'
+				const state = 'payment_auth_' + Date.now()
+				
+				const authUrl = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}#wechat_redirect`
+				
+				console.log('🔗 [PAY] 跳转微信登录授权:', authUrl.substring(0, 150) + '...')
+				
+				// 保存支付参数，授权回跳后使用
+				uni.setStorageSync(SK_PENDING_PAYMENT, JSON.stringify({
+					orderId: params.orderId,
+					amount: params.amount,
+					goodsName: params.goodsName || '订单支付',
+					timestamp: Date.now() // 添加时间戳用于过期检查
+				}))
+				
+				// 跳转到微信授权页面
+				safeRedirect(authUrl)
+				
+				// 返回一个永远不会resolve的Promise，因为页面会跳转
+				// 授权成功后会由页面自动处理支付
+				// #endif
+				
+			} catch (error) {
+				const errorOptions = new ErrorHandleOptions()
+				errorOptions.showToast = false
+				errorOptions.rethrow = false
+				handleError(error, '支付授权', errorOptions)
+				reject(error)
+			}
+		})
+	}
+
+	/**
+	 * 检查微信支付是否可用
+	 */
+	isPaymentAvailable(): boolean {
+		// #ifdef MP-WEIXIN
+		return true
+		// #endif
+		
+		// #ifdef H5
+		return isWechatBrowser()
+		// #endif
+		
+		// #ifdef APP-PLUS
+		return true
+		// #endif
+		
+		return false
+	}
+}
+
+// 导出单例实例
+export const wechatPayService = WechatPayService.getInstance()
+
+// 导出默认对象
+export default {
+	wechatPayService,
+	PaymentState
+}

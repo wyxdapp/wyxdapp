@@ -1,0 +1,130 @@
+/**
+ * 应用环境配置
+ * 
+ * 安全评估说明：
+ * 本文件中的 wyxdkey、MAP_KEY、AMAP_KEY、COS_CONFIG 等配置值为前端必须持有的标识符，
+ * 不属于需要保密的凭证。这些值的安全性由后端白名单、域名限制、签名验证等机制保障。
+ * 将它们移到 .env 文件不会提升安全性，反而增加二次开发者的配置复杂度。
+ * 
+ * 二次开发说明：
+ * 此文件是二次开发时需要修改的两个核心配置文件之一（另一个是 manifest.json）。
+ * 修改以下配置项即可将应用连接到您自己的后端服务。
+ */
+
+// 环境判断
+const isDev = process.env.NODE_ENV === 'development'
+
+// ============ 🔧 二次开发必改配置 ============
+
+// open用户 wyxdkey - 二次开发时修改为您的 wyxdkey（从开放平台获取）
+// 留空表示使用默认平台（后端自动使用默认演示密钥）
+export const wyxdkey = 'P679252D0RB7IYBR'
+
+// 腾讯地图密钥 - 用于定位和地图展示，前往 https://lbs.qq.com 申请
+export const MAP_KEY = 'URTBZ-N3HKD-CRC4M-P6ET7-5HORV-V3FFU'
+
+// 高德地图密钥 - 用于逆地理编码，前往 https://console.amap.com 申请
+export const AMAP_KEY = 'a71c0507543cc343fb8dc50f2d41312e'
+
+// ============ ⚙️ 通用配置（一般无需修改） ============
+
+// API 基础地址 - 后端 API 域名
+export const API_BASE_URL = isDev ? 'https://api.wyxdapp.com' : 'https://api.wyxdapp.com'
+
+// WebSocket 地址 - 用于聊天实时通信
+export const WS_BASE_URL = 'wss://api.wyxdapp.com'
+
+// 文件上传地址
+export const UPLOAD_URL = `${API_BASE_URL}/upload`
+
+// COS 配置类型
+export type COSConfigType = {
+	bucket: string
+	region: string
+	domain: string
+}
+
+// 腾讯云 COS 配置 - 用于图片和文件存储
+export const COS_CONFIG: COSConfigType = {
+	bucket: 'wyxdapp-131246654',    // COS 存储桶名称
+	region: 'ap-guangzhou',           // COS 所在地域
+	domain: 'https://cos.wyxdapp.com' // COS 自定义域名
+}
+
+// CDN 加速域名 - 用于默认头像、分享图片等静态资源
+export const CDN_BASE_URL = 'https://jiasu.wyxdapp.com'
+
+// H5 分享域名 - 用于生成分享链接
+export const H5_SHARE_BASE_URL = 'https://m.wyxdapp.com'
+
+// 应用下载地址类型
+export type DownloadUrlsType = {
+	android: string
+	ios: string
+	h5: string
+}
+
+// 应用下载地址
+export const DOWNLOAD_URLS: DownloadUrlsType = {
+	android: 'https://cos.wyxdapp.com/down/wyxdapp.apk',
+	ios: 'https://apps.apple.com/cn/app/网约向导/id1470361392',
+	h5: 'https://jiasu.wyxdapp.com/down.html'
+}
+
+// 隐私政策和用户协议 URL 类型
+export type LegalUrlsType = {
+	privacyPolicy: string
+	userAgreement: string
+}
+
+// 隐私政策和用户协议 URL
+export const LEGAL_URLS: LegalUrlsType = {
+	privacyPolicy: 'https://www.wyxdapp.com/doc/secret.html',
+	userAgreement: 'https://www.wyxdapp.com/doc/treaty.html'
+}
+
+// 默认头像 URL（基于 CDN 域名）
+export const DEFAULT_AVATAR_URL = CDN_BASE_URL + '/iconimages/default_avatar.png'
+
+// 请求超时时间（毫秒）
+export const REQUEST_TIMEOUT = 15000
+
+// Token 存储 key
+export const TOKEN_KEY = 'userInfo'
+
+// 刷新 token 的提前时间（秒）
+export const TOKEN_REFRESH_BEFORE = 60 * 60 * 24
+
+// 分页配置 - 每页加载条数
+export const PAGE_SIZE = 20
+
+// 图片压缩配置
+export const IMAGE_COMPRESS = {
+	maxWidth: 1920,
+	maxHeight: 1920,
+	quality: 0.8
+}
+
+// 应用版本号
+export const APP_VERSION = '2.0.0'
+
+// 默认导出配置对象（兼容默认导入）
+export default {
+	base_url: API_BASE_URL,
+	ws_url: WS_BASE_URL,
+	upload_url: UPLOAD_URL,
+	timeout: REQUEST_TIMEOUT,
+	token_key: TOKEN_KEY,
+	page_size: PAGE_SIZE,
+	version: APP_VERSION,
+	cos: COS_CONFIG,
+	image_compress: IMAGE_COMPRESS,
+	map_key: MAP_KEY,
+	amap_key: AMAP_KEY,
+	wyxdkey: wyxdkey,
+	cdn_base_url: CDN_BASE_URL,
+	h5_share_base_url: H5_SHARE_BASE_URL,
+	download_urls: DOWNLOAD_URLS,
+	legal_urls: LEGAL_URLS,
+	default_avatar_url: DEFAULT_AVATAR_URL
+}

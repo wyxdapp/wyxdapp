@@ -1,0 +1,275 @@
+/**
+ * 钱包工具类
+ * 包含钱包相关的常量定义和通用方法
+ */
+
+import { parseTimeString } from '@/common/utils/dateUtils.uts'
+import { MS_PER_DAY } from '@/common/config/dateConstants.uts'
+
+// 提现验证结果类型
+type WithdrawValidationResult = {
+	valid: boolean
+	message: string
+}
+
+// 收入类型（这些类型的交易为收入）
+export const INCOME_TYPES: Array<number> = [30, 40, 50, 70, 90, 100, 130, 140, 170, 180]
+
+// 支出类型（这些类型的交易为支出）
+export const EXPENSE_TYPES: Array<number> = [10, 20, 60, 80, 110, 150, 160]
+
+/**
+ * 钱包工具类
+ */
+export class WalletUtils {
+	/**
+	 * 获取交易类型名称
+	 * @param detailType 交易类型
+	 * @returns 类型名称
+	 */
+	static getTransactionTypeName(detailType: number): string {
+		switch (detailType) {
+			case 10: return '在线支付'
+			case 20: return '余额支付'
+			case 30: return '订单收入'
+			case 40: return '在线支付退款'
+			case 50: return '余额支付退款'
+			case 60: return '提现'
+			case 70: return '提现异常'
+			case 80: return '支付保证金'
+			case 90: return '退还保证金'
+			case 100: return '公司余额入账'
+			case 110: return '公司余额出账'
+			case 130: return '红包入账'
+			case 140: return '佣金收入'
+			case 150: return '微信提现'
+			case 160: return '支付宝提现'
+			case 170: return '微信退款'
+			case 180: return '支付宝退款'
+			default: return '\u5176\u4ed6\u4ea4\u6613'
+		}
+	}
+
+	/**
+	 * 判断是否为收入类型
+	 * @param detailType 交易类型
+	 * @returns 是否为收入
+	 */
+	static isIncomeType(detailType: number): boolean {
+		const incomeTypes = INCOME_TYPES
+		for (let i = 0; i < incomeTypes.length; i = i + 1) {
+			if (incomeTypes[i] == detailType) {
+				return true
+			}
+		}
+		return false
+	}
+
+	/**
+	 * 判断是否为支出类型
+	 * @param detailType 交易类型
+	 * @returns 是否为支出
+	 */
+	static isExpenseType(detailType: number): boolean {
+		const expenseTypes = EXPENSE_TYPES
+		for (let i = 0; i < expenseTypes.length; i = i + 1) {
+			if (expenseTypes[i] == detailType) {
+				return true
+			}
+		}
+		return false
+	}
+
+	/**
+	 * 获取提现状态名称
+	 * @param status 提现状态
+	 * @returns 状态名称
+	 */
+	static getWithdrawStatusName(status: number): string {
+		switch (status) {
+			case 10: return '提现中'
+			case 20: return '提现完成'
+			case 30: return '提现异常'
+			default: return '\u672a\u77e5\u72b6\u6001'
+		}
+	}
+
+	/**
+	 * 格式化金额
+	 * @param amount 金额
+	 * @param decimals 小数位数，默认2位
+	 * @returns 格式化后的金额
+	 */
+	static formatAmount(amount: number | null, decimals: number = 2): string {
+		// UTS 规范：不支持 undefined，使用 null
+		if (amount == null || isNaN(amount)) {
+			return '0.00'
+		}
+		// 使用整数运算避免浮点精度问题
+		const cents = Math.round(amount * 100)
+		const absCents = (cents < 0) ? -cents : cents
+		const yuan = Math.floor(absCents / 100)
+		const fen = absCents % 100
+		const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+		const result = yuan.toString() + '.' + fenStr
+		return (cents < 0) ? ('-' + result) : result
+	}
+
+	/**
+	 * 格式化交易时间
+	 * 使用 dateUtils.parseTimeString 安全解析时间，避免 Android NullPointerException
+	 * @param timeStr 时间字符串
+	 * @returns 格式化后的时间
+	 */
+	static formatTransactionTime(timeStr: string | null): string {
+		// UTS 规范：检查 null 和空字符串
+		if (timeStr == null || timeStr == '') return ''
+		
+		try {
+			// 使用 dateUtils 的安全解析函数
+			const date = parseTimeString(timeStr)
+			if (date == null) return ''
+			
+			// 检查日期是否有效
+			if (isNaN(date.getTime()) == true) return ''
+			
+			const now = new Date()
+			const diff = now.getTime() - date.getTime()
+			const oneDayMs = MS_PER_DAY
+
+			// 今天显示时间，其他显示日期
+			if (diff < oneDayMs && date.getDate() == now.getDate()) {
+				let hours = date.getHours().toString()
+				if (hours.length < 2) {
+					hours = '0' + hours
+				}
+				let minutes = date.getMinutes().toString()
+				if (minutes.length < 2) {
+					minutes = '0' + minutes
+				}
+				return hours + ':' + minutes
+			} else {
+				let month = (date.getMonth() + 1).toString()
+				if (month.length < 2) {
+					month = '0' + month
+				}
+				let day = date.getDate().toString()
+				if (day.length < 2) {
+					day = '0' + day
+				}
+				return month + '-' + day
+			}
+		} catch (e) {
+			console.error('formatTransactionTime 解析时间失败:', e)
+			return ''
+		}
+	}
+
+	/**
+	 * 格式化完整时间
+	 * 使用 dateUtils.parseTimeString 安全解析时间，避免 Android NullPointerException
+	 * @param timeStr 时间字符串
+	 * @returns 格式化后的完整时间
+	 */
+	static formatFullTime(timeStr: string | null): string {
+		// UTS 规范：检查 null 和空字符串
+		if (timeStr == null || timeStr == '') return ''
+		
+		try {
+			// 使用 dateUtils 的安全解析函数
+			const date = parseTimeString(timeStr)
+			if (date == null) return ''
+			
+			// 检查日期是否有效
+			if (isNaN(date.getTime()) == true) return ''
+			
+			const year = date.getFullYear()
+			let month = (date.getMonth() + 1).toString()
+			if (month.length < 2) {
+				month = '0' + month
+			}
+			let day = date.getDate().toString()
+			if (day.length < 2) {
+				day = '0' + day
+			}
+			let hours = date.getHours().toString()
+			if (hours.length < 2) {
+				hours = '0' + hours
+			}
+			let minutes = date.getMinutes().toString()
+			if (minutes.length < 2) {
+				minutes = '0' + minutes
+			}
+			let seconds = date.getSeconds().toString()
+			if (seconds.length < 2) {
+				seconds = '0' + seconds
+			}
+			
+			return year.toString() + '-' + month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds
+		} catch (e) {
+			console.error('formatFullTime 解析时间失败:', e)
+			return ''
+		}
+	}
+
+	/**
+	 * 验证提现金额
+	 * @param amount 提现金额
+	 * @param balance 账户余额
+	 * @param minAmount 最小提现金额，默认1元
+	 * @returns 验证结果
+	 */
+	static validateWithdrawAmount(amount: number, balance: number, minAmount: number = 1): WithdrawValidationResult {
+		const amountVal = amount
+		if (((amountVal == null) || (isNaN(amountVal))) || (amountVal <= 0)) {
+			return { valid: false, message: '请输入有效的提现金额' }
+		}
+
+		if (amount < minAmount) {
+			return { valid: false, message: `最小提现金额为¥${minAmount}` }
+		}
+
+		if (amount > balance) {
+			return { valid: false, message: '提现金额不能超过账户余额' }
+		}
+
+		return { valid: true, message: '' }
+	}
+
+	/**
+	 * 计算提现手续费
+	 * @param amount 提现金额
+	 * @param rate 提现费率
+	 * @returns 手续费
+	 */
+	static calculateWithdrawFee(amount: number, rate: number): number {
+		const amountVal = amount
+		const rateVal = rate
+		if (((amountVal == null) || (isNaN(amountVal))) || ((rateVal == null) || (isNaN(rateVal)))) {
+			return 0
+		}
+		// 使用整数运算避免浮点精度问题
+		const amountCents = Math.round(amount * 100)
+		const resultCents = Math.round(amountCents * rate)
+		return resultCents / 100
+	}
+
+	/**
+	 * 计算实际到账金额
+	 * @param amount 提现金额
+	 * @param fee 手续费
+	 * @returns 实际到账金额
+	 */
+	static calculateActualAmount(amount: number, fee: number): number {
+		const amountVal = amount
+		if ((amountVal == null) || (isNaN(amountVal))) {
+			return 0
+		}
+		// 使用整数运算避免浮点精度问题
+		const amountCents = Math.round(amount * 100)
+		const feeCents = Math.round((((fee != null) && (fee != 0)) ? fee : 0) * 100)
+		return (amountCents - feeCents) / 100
+	}
+}
+
+export default WalletUtils

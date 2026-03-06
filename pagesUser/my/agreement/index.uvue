@@ -1,0 +1,200 @@
+﻿<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端状态栏占位 -->
+		<view class="status-bar-placeholder" :style="{ height: pageStatusBarHeight + 'px' }"></view>
+		
+		<!-- APP端导航栏 -->
+		<view class="nav-bar">
+			<view class="nav-back" @click="handleBack">
+				<uni-icons type="left" size="22" color="#333333"></uni-icons>
+			</view>
+			<text class="nav-title">{{ pageTitle }}</text>
+			<view class="nav-placeholder"></view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- WebView 加载协议内容 -->
+		<web-view 
+			v-if="webviewUrl != ''"
+			:src="webviewUrl" 
+			@load="handleLoad"
+			@error="handleError"
+		></web-view>
+		
+		<!-- 错误提示 -->
+		<view v-if="hasError == true" class="error-box">
+			<text class="error-text">页面加载失败</text>
+			<view class="retry-btn" @click="reloadPage">
+				<text class="retry-text">点击重试</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+
+// 协议类型
+const agreementType = ref<string>('user')
+const hasError = ref<boolean>(false)
+
+// 页面标题
+const pageTitle = computed((): string => {
+	if (agreementType.value == 'privacy') {
+		return '隐私政策'
+	}
+	return '用户协议'
+})
+
+// Webview URL
+const webviewUrl = computed((): string => {
+	if (agreementType.value == 'privacy') {
+		return 'https://www.wyxdapp.com/doc/secret.html'
+	}
+	return 'https://www.wyxdapp.com/doc/treaty.html'
+})
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			// 如果返回失败，尝试跳转到登录页
+			uni.redirectTo({
+				url: '/pagesUser/login/index',
+				fail: () => {
+					// 如果还是失败，跳转到首页
+					uni.switchTab({ url: '/pages/index/index' })
+				}
+			})
+		}
+	})
+}
+
+// WebView 加载成功
+const handleLoad = () => {
+	hasError.value = false
+	console.log('协议页面加载成功')
+}
+
+// WebView 加载失败
+const handleError = (e: UTSJSONObject) => {
+	hasError.value = true
+	handleSilentError(e, '协议页面加载')
+}
+
+// 重新加载
+const reloadPage = () => {
+	hasError.value = false
+	// 触发重新加载
+	const currentType = agreementType.value
+	agreementType.value = ''
+	setTimeout(() => {
+		agreementType.value = currentType
+	}, 100)
+}
+
+// 生命周期
+onLoad((options: OnLoadOptions) => {
+	if (options != null) {
+		const optionsObj = JSON.parse(JSON.stringify(options)) as UTSJSONObject
+		const typeVal = optionsObj.get('type')
+		if (typeVal != null && typeVal.toString() != '') {
+			const typeStr = typeVal.toString()
+			if (typeStr == 'privacy' || typeStr == 'user') {
+				agreementType.value = typeStr
+			}
+		}
+	}
+	console.log('协议页面加载，类型:', agreementType.value, 'URL:', webviewUrl.value)
+})
+
+onMounted(() => {
+	initPageLayout()
+})
+</script>
+
+<style scoped>
+.page {
+	width: 750rpx;
+	height: 100%;
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #ffffff;
+}
+
+.nav-bar {
+	width: 750rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	background-color: #ffffff;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+	text-align: center;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+/* 错误提示 */
+.error-box {
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+}
+
+.error-text {
+	font-size: 32rpx;
+	color: #999999;
+	margin-bottom: 40rpx;
+}
+
+.retry-btn {
+	width: 240rpx;
+	height: 80rpx;
+	background-color: #1890ff;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.retry-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+</style>

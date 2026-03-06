@@ -1,0 +1,325 @@
+<template>
+	<view class="webview-page">
+		<!-- APP端状态栏占位 -->
+		<!-- #ifndef H5 -->
+		<view class="status-bar-placeholder" :style="{ height: statusBarHeight + 'px' }"></view>
+		<!-- #endif -->
+		
+		<!-- 自定义导航栏 -->
+		<view class="nav-bar">
+			<view class="nav-back" @click="handleBack">
+				<uni-icons type="left" :size="22" color="#333333"></uni-icons>
+			</view>
+			<text class="nav-title">{{ pageTitle }}</text>
+			<view class="nav-right" @click="handleShare">
+				<uni-icons type="redo" :size="22" color="#333333"></uni-icons>
+			</view>
+		</view>
+		
+		<!-- 加载进度条 - 位于导航栏下方 -->
+		<view v-if="isLoading == true" class="loading-bar">
+			<view class="loading-progress" :style="{ width: loadingProgress + '%' }"></view>
+		</view>
+		
+		<!-- WebView -->
+		<web-view 
+			v-if="url != ''"
+			:src="url"
+			@load="handleLoad"
+			@error="handleError"
+		></web-view>
+		
+		<!-- 错误提示 -->
+		<view v-if="hasError == true" class="error-box">
+			<text class="error-text">页面加载失败</text>
+			<view class="retry-btn" @click="reloadPage">
+				<text class="retry-text">点击重试</text>
+			</view>
+		</view>
+		
+		<!-- 分享弹窗 -->
+		<SharePopup 
+			v-model:visity="showSharePopup"
+			:shareData="shareData"
+			@share="onShareComplete"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 响应式数据 ====================
+const url = ref<string>('')
+const pageTitle = ref<string>('网页浏览')
+const isLoading = ref<boolean>(true)
+const loadingProgress = ref<number>(0)
+const hasError = ref<boolean>(false)
+const statusBarHeight = ref<number>(0)
+const showSharePopup = ref<boolean>(false)
+
+// 分享数据
+const shareData = ref<UTSJSONObject>({
+	title: '网约向导趣游玩',
+	desc: '发现专业向导，定制专属行程',
+	imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+	url: ''
+} as UTSJSONObject)
+
+// ==================== 辅助函数 ====================
+// 模拟加载进度
+let progressTimer: number = 0
+
+const startLoadingProgress = () => {
+	loadingProgress.value = 0
+	isLoading.value = true
+	hasError.value = false
+	
+	// 清除之前的定时器
+	if (progressTimer != 0) {
+		clearInterval(progressTimer)
+		progressTimer = 0
+	}
+	
+	// 模拟进度增长
+	progressTimer = setInterval(() => {
+		if (loadingProgress.value < 90) {
+			loadingProgress.value = loadingProgress.value + 10
+		}
+	}, 200)
+}
+
+const stopLoadingProgress = (success: boolean) => {
+	if (progressTimer != 0) {
+		clearInterval(progressTimer)
+		progressTimer = 0
+	}
+	
+	if (success == true) {
+		loadingProgress.value = 100
+		safeSetTimeout(() => {
+			isLoading.value = false
+		}, 300)
+	} else {
+		isLoading.value = false
+		hasError.value = true
+	}
+}
+
+// 重新加载页面
+const reloadPage = () => {
+	hasError.value = false
+	const currentUrl = url.value
+	url.value = ''
+	startLoadingProgress()
+	safeSetTimeout(() => {
+		url.value = currentUrl
+	}, 100)
+}
+
+// 返回上一页
+const handleBack = () => {
+	uni.navigateBack({
+		fail: () => {
+			// 如果返回失败，跳转到首页
+			uni.switchTab({
+				url: '/pages/my/index'
+			})
+		}
+	})
+}
+
+// 打开分享弹窗
+const handleShare = () => {
+	// 更新分享数据
+	shareData.value = {
+		title: pageTitle.value,
+		desc: '来自网约向导的推荐',
+		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		url: url.value
+	} as UTSJSONObject
+	showSharePopup.value = true
+}
+
+// 分享完成回调
+const onShareComplete = (platform: string) => {
+	console.log('分享到:', platform)
+}
+
+// ==================== 事件处理 ====================
+const handleLoad = () => {
+	stopLoadingProgress(true)
+}
+
+const handleError = (e: Error) => {
+	handleSilentError(e, 'WebView加载')
+	stopLoadingProgress(false)
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	// 初始化布局
+	initPageLayoutComposable()
+	statusBarHeight.value = pageStatusBarHeight.value
+})
+
+onLoad((options: OnLoadOptions) => {
+	startLoadingProgress()
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 获取 URL
+		const urlVal = optionsObj.get('url')
+		if (urlVal != null && urlVal.toString() != '') {
+			const urlStr = urlVal.toString()
+			const decodedUrl = decodeURIComponent(urlStr)
+			if (decodedUrl != null) {
+				url.value = decodedUrl
+			} else {
+				url.value = urlStr
+			}
+		}
+		
+		// 设置标题
+		const titleVal = optionsObj.get('title')
+		if (titleVal != null && titleVal.toString() != '') {
+			const titleStr = titleVal.toString()
+			const decodedTitle = decodeURIComponent(titleStr)
+			let finalTitle = titleStr
+			if (decodedTitle != null) {
+				finalTitle = decodedTitle
+			}
+			pageTitle.value = finalTitle
+		}
+	}
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+.webview-page {
+	width: 750rpx;
+	flex: 1;
+	flex-direction: column;
+	position: relative;
+	background-color: #ffffff;
+}
+
+/* 状态栏占位 */
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #ffffff;
+}
+
+/* 自定义导航栏 */
+.nav-bar {
+	width: 750rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	background-color: #ffffff;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	text-align: center;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.nav-right {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+/* 加载进度条 - 位于导航栏下方 */
+.loading-bar {
+	width: 750rpx;
+	height: 4rpx;
+	background-color: #eeeeee;
+}
+
+.loading-progress {
+	height: 4rpx;
+	background-color: #37B1F2;
+}
+
+/* 错误提示 */
+.error-box {
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+}
+
+.error-text {
+	font-size: 32rpx;
+	color: #999999;
+	margin-bottom: 40rpx;
+}
+
+.retry-btn {
+	width: 240rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.retry-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+</style>

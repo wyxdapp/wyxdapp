@@ -1,0 +1,528 @@
+/**
+ * 个人主页 - 数据管理 composable
+ * 提取用户信息、动态列表、定制列表的加载逻辑
+ */
+
+import { ref, computed } from 'vue'
+import { 
+	getStringProp, 
+	getNumberProp, 
+	getArrayProp,
+	getResponseData,
+	getCurrentUserKid 
+} from '@/common/utils/utsSafe.uts'
+import { getUserTrends, getUserLines } from '@/api/home.uts'
+import { GetUserTrendsParams } from '@/api/types/homeTypes.uts'
+import { setLikeStatus } from '@/stores/like.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 分页信息类
+ */
+export class PageInfoData {
+	pageNumber: number = 1
+	pageSize: number = 10
+	list: UTSJSONObject[] = []
+	status: string = 'loadmore'  // 'loadmore' | 'loading' | 'nomore'
+	userKid: string = ''
+	
+	constructor() {
+		this.pageNumber = 1
+		this.pageSize = 10
+		this.list = []
+		this.status = 'loadmore'
+		this.userKid = ''
+	}
+	
+	/**
+	 * 重置分页
+	 */
+	reset() {
+		this.pageNumber = 1
+		this.list = []
+		this.status = 'loadmore'
+	}
+	
+	/**
+	 * 下一页
+	 */
+	nextPage() {
+		this.pageNumber = this.pageNumber + 1
+	}
+}
+
+/**
+ * 统计信息项类
+ */
+export class InfoDataItem {
+	label: string = ''
+	value: number = 0
+	
+	constructor(label: string = '', value: number = 0) {
+		this.label = label
+		this.value = value
+	}
+}
+
+// ==================== 用户信息辅助函数 ====================
+
+/**
+ * 创建默认用户信息对象
+ */
+export const createDefaultUserInfo = (): UTSJSONObject => {
+	const info = new UTSJSONObject()
+	info.set('nickname', '')
+	info.set('isFocus', false)
+	info.set('image', '')
+	info.set('idAuth', 10)
+	info.set('starLevel', 1)
+	info.set('sex', '女')
+	info.set('education', '大专')
+	info.set('age', 21)
+	info.set('userLabelOutvos', [] as UTSJSONObject[])
+	info.set('userLanguageOutVos', [] as UTSJSONObject[])
+	info.set('focusCount', 0)
+	info.set('followerCount', 0)
+	info.set('collectionCount', 0)
+	info.set('beLikedCount', 0)
+	info.set('birthPlace', '')
+	info.set('background', '')
+	info.set('signature', '')
+	info.set('liveCity', '')
+	info.set('identifyLevel', 10)
+	info.set('accessiblePlace', '')
+	info.set('servicePrice', '')
+	info.set('acceptOrderNum', 0)
+	info.set('serviceFeature', '')
+	info.set('guideAuthenticatStatu', 10)
+	info.set('officialAuth', 10)
+	info.set('driverAuthenticatStatu', 10)
+	info.set('weixinAuth', 10)
+	info.set('phone', '')
+	info.set('kid', '')
+	info.set('onLineStatu', 10)
+	info.set('beEvaluateCount', 0)
+	info.set('userFortes', [] as UTSJSONObject[])
+	return info
+}
+
+/**
+ * 创建默认统计信息数组
+ */
+export const createDefaultInfoData = (): InfoDataItem[] => {
+	return [
+		new InfoDataItem('关注', 0),
+		new InfoDataItem('粉丝', 0),
+		new InfoDataItem('获赞', 0),
+		new InfoDataItem('喜欢', 0)
+	]
+}
+
+/**
+ * 从用户信息更新统计数据
+ */
+export const updateInfoDataFromUserInfo = (infoData: InfoDataItem[], userInfo: UTSJSONObject) => {
+	if (infoData.length < 4) return
+	
+	const focusCount = getNumberProp(userInfo, 'focusCount')
+	const followerCount = getNumberProp(userInfo, 'followerCount')
+	const beLikedCount = getNumberProp(userInfo, 'beLikedCount')
+	const collectionCount = getNumberProp(userInfo, 'collectionCount')
+	
+	infoData[0].value = focusCount
+	infoData[1].value = followerCount
+	infoData[2].value = beLikedCount
+	infoData[3].value = collectionCount
+}
+
+// ==================== 动态列表加载 ====================
+
+/**
+ * 加载用户动态列表
+ */
+export const loadUserTrends = async (
+	pageInfo: PageInfoData,
+	latitude: number,
+	longitude: number,
+	hasLocation: boolean
+): Promise<boolean> => {
+	pageInfo.status = 'loading'
+	
+	try {
+		const params = new GetUserTrendsParams()
+		params.userKid = pageInfo.userKid
+		params.pageNumber = pageInfo.pageNumber
+		params.pageSize = pageInfo.pageSize
+		
+		// 添加当前用户 ID
+		try {
+			const currentUserKid = getCurrentUserKid()
+			if (currentUserKid != null && currentUserKid != '') {
+				params.currentUserKid = currentUserKid
+			}
+		} catch (e) {}
+		
+		// 添加位置信息
+		if (hasLocation == true) {
+			params.latitude = latitude
+			params.longitude = longitude
+		}
+		
+		const responseRaw = await getUserTrends(params)
+		const response = responseRaw as UTSJSONObject
+		
+		let entities: UTSJSONObject[] = []
+		let hasResponseData = false
+		
+		try {
+			const dataVal = response['data'] as UTSJSONObject | null
+			if (dataVal != null) {
+				hasResponseData = true
+				const dataObj = dataVal as UTSJSONObject
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as UTSJSONObject[]
+				}
+			}
+		} catch (e) {}
+		
+		if (hasResponseData == true) {
+			// 第一页替换，其他页追加
+			if (pageInfo.pageNumber == 1) {
+				pageInfo.list = entities
+			} else {
+				// UTS 规范：使用 for 循环追加
+				for (let i = 0; i < entities.length; i = i + 1) {
+					pageInfo.list.push(entities[i])
+				}
+			}
+			
+			// 同步点赞状态到全局 store
+			for (let i = 0; i < entities.length; i = i + 1) {
+				const entity = entities[i]
+				if (entity != null) {
+					const kidVal = getStringProp(entity, 'kid')
+					if (kidVal != '') {
+						const isLikeVal = getNumberProp(entity, 'isLike')
+						const likeNumVal = getNumberProp(entity, 'likeNum')
+						const isLikedBool = (isLikeVal == 10)
+						setLikeStatus(kidVal, isLikedBool, likeNumVal)
+					}
+				}
+			}
+			
+			// 判断是否还有更多数据
+			if (entities.length == 0 || entities.length < pageInfo.pageSize) {
+				pageInfo.status = 'nomore'
+			} else {
+				pageInfo.status = 'loadmore'
+			}
+			
+			return true
+		} else {
+			pageInfo.status = 'loadmore'
+			return false
+		}
+	} catch (error) {
+		console.error('获取动态列表失败:', error)
+		pageInfo.status = 'loadmore'
+		return false
+	}
+}
+
+// ==================== 定制列表加载 ====================
+
+/**
+ * 加载用户定制列表
+ */
+export const loadUserRoutes = async (pageInfo: PageInfoData): Promise<boolean> => {
+	pageInfo.status = 'loading'
+	
+	try {
+		const routeParams = new UTSJSONObject()
+		routeParams.set('userKid', pageInfo.userKid)
+		routeParams.set('pageNumber', pageInfo.pageNumber)
+		routeParams.set('pageSize', pageInfo.pageSize)
+		
+		const responseRaw = await getUserLines(routeParams as UTSJSONObject)
+		const response = responseRaw as UTSJSONObject
+		
+		let entities: UTSJSONObject[] = []
+		let hasResponseData = false
+		
+		try {
+			const dataVal = response['data'] as UTSJSONObject | null
+			if (dataVal != null) {
+				hasResponseData = true
+				const dataObj = dataVal as UTSJSONObject
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as UTSJSONObject[]
+				}
+			}
+		} catch (e) {
+			// parse error
+		}
+		
+		if (hasResponseData == true) {
+			// 第一页替换，其他页追加
+			if (pageInfo.pageNumber == 1) {
+				pageInfo.list = entities
+			} else {
+				// UTS 规范：使用 for 循环追加
+				for (let i = 0; i < entities.length; i = i + 1) {
+					pageInfo.list.push(entities[i])
+				}
+			}
+			
+			// 判断是否还有更多数据
+			if (entities.length == 0 || entities.length < pageInfo.pageSize) {
+				pageInfo.status = 'nomore'
+			} else {
+				pageInfo.status = 'loadmore'
+			}
+			
+			return true
+		} else {
+			pageInfo.status = 'loadmore'
+			return false
+		}
+	} catch (error) {
+		console.error('获取定制列表失败:', error)
+		pageInfo.status = 'loadmore'
+		return false
+	}
+}
+
+// ==================== 用户信息属性访问 ====================
+
+/**
+ * 从 UTSJSONObject 安全获取属性
+ */
+export const getInfoProperty = (info: UTSJSONObject | null, key: string): string | number | boolean | UTSJSONObject | null => {
+	if (info == null) return null
+	try {
+		return info.get(key)
+	} catch (e) {
+		return null
+	}
+}
+
+/**
+ * 从 UTSJSONObject 安全获取字符串属性
+ */
+export const getInfoStringProperty = (info: UTSJSONObject | null, key: string): string => {
+	const val = getInfoProperty(info, key)
+	return (val != null && val != '') ? val.toString() : ''
+}
+
+/**
+ * 从 UTSJSONObject 安全获取数字属性
+ */
+export const getInfoNumberProperty = (info: UTSJSONObject | null, key: string): number => {
+	const val = getInfoProperty(info, key)
+	if (val != null && val != '') {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) return num
+	}
+	return 0
+}
+
+/**
+ * 安全设置 UTSJSONObject 属性
+ */
+export const setInfoProperty = (info: UTSJSONObject | null, key: string, value: string | number | boolean | UTSJSONObject | null) => {
+	if (info == null) return
+	try {
+		info.set(key, value)
+	} catch (e) {
+		console.error('setInfoProperty error:', e)
+	}
+}
+
+// ==================== 擅长文本格式化 ====================
+
+/**
+ * 格式化擅长标签文本
+ */
+export const formatUserFortesText = (userFortes: string | number | boolean | UTSJSONObject | null): string => {
+	if (userFortes == null) return '暂无'
+	if (Array.isArray(userFortes) == false) return '暂无'
+	
+	const fortesArr = userFortes as Array<UTSJSONObject>
+	if (fortesArr.length == 0) return '暂无'
+	
+	const names: string[] = []
+	for (let i = 0; i < fortesArr.length; i = i + 1) {
+		const it = fortesArr[i]
+		if (it != null) {
+			const labelName = getStringProp(it, 'labelName')
+			if (labelName != '') {
+				names.push(labelName)
+			}
+		}
+	}
+	
+	return names.length > 0 ? names.join('、') : '暂无'
+}
+
+
+// ==================== Computed 属性聚合 ====================
+
+import type { Ref } from 'vue'
+
+/**
+ * 用户信息 Getter 接口
+ * 将分散的 computed 属性聚合为统一的 getter 对象
+ */
+export class UserInfoGetters {
+	private _info: Ref<UTSJSONObject>
+	
+	constructor(info: Ref<UTSJSONObject>) {
+		this._info = info
+	}
+	
+	// 基本信息
+	get background(): string {
+		return getInfoStringProperty(this._info.value, 'background')
+	}
+	
+	get image(): string {
+		return getInfoStringProperty(this._info.value, 'image')
+	}
+	
+	get nickname(): string {
+		return getInfoStringProperty(this._info.value, 'nickname')
+	}
+	
+	get kid(): string {
+		return getInfoStringProperty(this._info.value, 'kid')
+	}
+	
+	get sex(): string {
+		return getInfoStringProperty(this._info.value, 'sex')
+	}
+	
+	get age(): number {
+		return getInfoNumberProperty(this._info.value, 'age')
+	}
+	
+	get birthPlace(): string {
+		return getInfoStringProperty(this._info.value, 'birthPlace')
+	}
+	
+	get onLineStatu(): number {
+		return getInfoNumberProperty(this._info.value, 'onLineStatu')
+	}
+	
+	get signature(): string {
+		return getInfoStringProperty(this._info.value, 'signature')
+	}
+	
+	// 认证信息
+	get officialAuth(): number {
+		return getInfoNumberProperty(this._info.value, 'officialAuth')
+	}
+	
+	get idAuth(): number {
+		return getInfoNumberProperty(this._info.value, 'idAuth')
+	}
+	
+	get phone(): string {
+		return getInfoStringProperty(this._info.value, 'phone')
+	}
+	
+	get weixinAuth(): number {
+		return getInfoNumberProperty(this._info.value, 'weixinAuth')
+	}
+	
+	get guideAuthenticatStatu(): number {
+		return getInfoNumberProperty(this._info.value, 'guideAuthenticatStatu')
+	}
+	
+	get driverAuthenticatStatu(): number {
+		return getInfoNumberProperty(this._info.value, 'driverAuthenticatStatu')
+	}
+	
+	// 服务信息
+	get servicePrice(): string {
+		const val = getInfoProperty(this._info.value, 'servicePrice')
+		return (val != null) ? val.toString() : ''
+	}
+	
+	get accessiblePlace(): string {
+		return getInfoStringProperty(this._info.value, 'accessiblePlace')
+	}
+	
+	get starLevel(): number {
+		return getInfoNumberProperty(this._info.value, 'starLevel')
+	}
+	
+	get serviceFeature(): string {
+		return getInfoStringProperty(this._info.value, 'serviceFeature')
+	}
+	
+	get beEvaluateCount(): number {
+		return getInfoNumberProperty(this._info.value, 'beEvaluateCount')
+	}
+	
+	// VIP 信息
+	get vipType(): string {
+		const vip = getInfoNumberProperty(this._info.value, 'vip')
+		const vipExpireTime = getInfoStringProperty(this._info.value, 'vipExpireTime')
+		const vipTypeNum = getInfoNumberProperty(this._info.value, 'vipType')
+		
+		if (vip == 20) {
+			if (vipExpireTime != '') {
+				const expireDate = new Date(vipExpireTime)
+				const now = new Date()
+				if (expireDate > now) {
+					if (vipTypeNum == 20) return 'year'
+					return 'normal'
+				}
+			} else {
+				if (vipTypeNum == 20) return 'year'
+				return 'normal'
+			}
+		}
+		return ''
+	}
+	
+	get giftLevel(): number {
+		return getInfoNumberProperty(this._info.value, 'giftLevel')
+	}
+	
+	// 擅长文本
+	get userFortesText(): string {
+		const fortesVal = getInfoProperty(this._info.value, 'userFortes')
+		if (fortesVal == null) return '暂无'
+		return formatUserFortesText(fortesVal)
+	}
+	
+	// 统计信息
+	get focusCount(): number {
+		return getInfoNumberProperty(this._info.value, 'focusCount')
+	}
+	
+	get followerCount(): number {
+		return getInfoNumberProperty(this._info.value, 'followerCount')
+	}
+	
+	get beLikedCount(): number {
+		return getInfoNumberProperty(this._info.value, 'beLikedCount')
+	}
+	
+	get collectionCount(): number {
+		return getInfoNumberProperty(this._info.value, 'collectionCount')
+	}
+}
+
+/**
+ * 创建用户信息 Getter 实例
+ * @param info 用户信息 ref
+ * @returns UserInfoGetters 实例
+ */
+export function createUserInfoGetters(info: Ref<UTSJSONObject>): UserInfoGetters {
+	return new UserInfoGetters(info)
+}

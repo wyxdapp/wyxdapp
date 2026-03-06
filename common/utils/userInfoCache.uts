@@ -1,0 +1,170 @@
+import { USER_INFO_CACHE_EXPIRE } from '@/common/config/timeoutConfig.uts'
+
+// 用户信息缓存管理器
+class UserInfoCacheManager {
+	private static instance: UserInfoCacheManager
+	private cacheKey = 'user_info_cache'
+	private cacheExpireKey = 'user_info_cache_expire'
+	private defaultExpireTime = USER_INFO_CACHE_EXPIRE // 30分钟
+
+	static getInstance(): UserInfoCacheManager {
+		if (UserInfoCacheManager.instance == null) {
+			UserInfoCacheManager.instance = new UserInfoCacheManager()
+		}
+		return UserInfoCacheManager.instance
+	}
+
+	// 设置用户信息缓存
+	setCache(userId: string, userInfo: UTSJSONObject, expireTime?: number): void {
+		const cacheData = {
+			userId,
+			userInfo,
+			timestamp: Date.now(),
+			expireTime: expireTime || this.defaultExpireTime
+		}
+		
+		try {
+			const cache = this.getCacheData()
+			cache[userId] = cacheData
+			cache[userId].expireAt = Date.now() + cacheData.expireTime
+			
+			uni.setStorageSync(this.cacheKey, JSON.stringify(cache))
+			console.log('用户信息缓存设置成功:', userId)
+		} catch (error) {
+			console.error('设置用户信息缓存失败:', error)
+		}
+	}
+
+	// 获取用户信息缓存
+	getCache(userId: string): UTSJSONObject | null {
+		try {
+			const cache = this.getCacheData()
+			const userCache = cache[userId]
+			
+			if (userCache == null) {
+				return null
+			}
+			
+			// 检查是否过期
+			if (Date.now() > userCache.expireAt) {
+				this.removeCache(userId)
+				return null
+			}
+			
+			console.log('用户信息缓存命中:', userId)
+			return userCache.userInfo
+		} catch (error) {
+			console.error('获取用户信息缓存失败:', error)
+			return null
+		}
+	}
+
+	// 移除用户信息缓存
+	removeCache(userId: string): void {
+		try {
+			const cache = this.getCacheData()
+			delete cache[userId]
+			uni.setStorageSync(this.cacheKey, JSON.stringify(cache))
+			console.log('用户信息缓存移除成功:', userId)
+		} catch (error) {
+			console.error('移除用户信息缓存失败:', error)
+		}
+	}
+
+	// 清空所有缓存
+	clearCache(): void {
+		try {
+			uni.removeStorageSync(this.cacheKey)
+			console.log('用户信息缓存清空成功')
+		} catch (error) {
+			console.error('清空用户信息缓存失败:', error)
+		}
+	}
+
+	// 获取缓存数据
+	private getCacheData(): UTSJSONObject {
+		try {
+			const cacheStr = uni.getStorageSync(this.cacheKey)
+			return (cacheStr != null && cacheStr != '') ? JSON.parse(cacheStr) as UTSJSONObject : JSON.parse('{}') as UTSJSONObject
+		} catch (error) {
+			console.error('获取缓存数据失败:', error)
+			return JSON.parse('{}') as UTSJSONObject
+		}
+	}
+
+	// 检查缓存是否存在且有效
+	isCacheValid(userId: string): boolean {
+		const userInfo = this.getCache(userId)
+		return userInfo != null
+	}
+
+	// 更新缓存过期时间
+	updateExpireTime(userId: string, expireTime: number): void {
+		try {
+			const cache = this.getCacheData()
+			const userCache = cache[userId]
+			
+			if (userCache != null) {
+				userCache.expireTime = expireTime
+				userCache.expireAt = Date.now() + expireTime
+				uni.setStorageSync(this.cacheKey, JSON.stringify(cache))
+				console.log('缓存过期时间更新成功:', userId)
+			}
+		} catch (error) {
+			console.error('更新缓存过期时间失败:', error)
+		}
+	}
+
+	// 获取缓存统计信息
+	getCacheStats(): UTSJSONObject {
+		try {
+			const cache = this.getCacheData()
+			const userIds = Object.keys(cache)
+			const validCount = userIds.filter(id => this.isCacheValid(id)).length
+			
+			return {
+				total: userIds.length,
+				valid: validCount,
+				expired: userIds.length - validCount,
+				userIds: userIds
+			}
+		} catch (error) {
+			console.error('获取缓存统计失败:', error)
+			return {
+				total: 0,
+				valid: 0,
+				expired: 0,
+				userIds: []
+			}
+		}
+	}
+
+	// 清理过期缓存
+	cleanExpiredCache(): void {
+		try {
+			const cache = this.getCacheData()
+			const userIds = Object.keys(cache)
+			let cleanedCount = 0
+			
+			userIds.forEach(userId => {
+				if (this.isCacheValid(userId) != true) {
+					delete cache[userId]
+					cleanedCount++
+				}
+			})
+			
+			if (cleanedCount > 0) {
+				uni.setStorageSync(this.cacheKey, JSON.stringify(cache))
+				console.log(`清理过期缓存成功，共清理 ${cleanedCount} 个用户`)
+			}
+		} catch (error) {
+			console.error('清理过期缓存失败:', error)
+		}
+	}
+}
+
+// 导出单例实例
+export default UserInfoCacheManager.getInstance()
+
+// 导出类（用于测试）
+export { UserInfoCacheManager }

@@ -1,0 +1,500 @@
+/**
+ * H5 端微信支付服务
+ * 使用 WeixinJSBridge JSAPI 实现微信公众号支付
+ * 
+ * 注意：仅在微信浏览器中可用
+ * 
+ * @author wyxdapp
+ * @version 2.0.0
+ * @since 2025-12-28
+ */
+
+// 从独立的 types.uts 导入，避免循环依赖
+import {
+	PaymentParams,
+	PaymentResult,
+	PaymentSuccessCallback, 
+	PaymentErrorCallback,
+	PAYMENT_STATE_PENDING,
+	PAYMENT_STATE_PROCESSING,
+	PAYMENT_STATE_SUCCESS,
+	PAYMENT_STATE_FAILED,
+	setPaymentState
+} from './types.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import request from '@/utils/request'
+import { WX_MP_APP_ID } from '@/common/config/wechatConfig.uts'
+import { SK_PENDING_ORDER_KID, SK_WX_CODE, SK_WX_CODE_USED } from '@/common/config/storageKeys.uts'
+import { safeRedirect } from '@/common/utils/security/urlValidator.uts'
+
+/**
+ * 检查是否在微信浏览器中
+ */
+export function isWechatBrowser(): boolean {
+	// #ifdef H5
+	try {
+		if (typeof window != 'undefined') {
+			const ua = (window as any).navigator.userAgent.toLowerCase()
+			return ua.indexOf('micromessenger') != -1
+		}
+	} catch (e) {
+		console.error('[WX-PAY-H5] 检查微信浏览器失败:', e)
+	}
+	// #endif
+	return false
+}
+
+/**
+ * 从对象获取字符串属性
+ */
+function getObjString(obj: UTSJSONObject | null, key: string): string {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 从对象获取数字属性
+ */
+function getObjNumber(obj: UTSJSONObject | null, key: string): number {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+/**
+ * 支付参数验证结果类
+ */
+class ValidationResult {
+	isValid: boolean = false
+	missingFields: Array<string> = []
+	errorMessage: string = ''
+	
+	constructor(isValid: boolean, missingFields: Array<string>, errorMessage: string) {
+		this.isValid = isValid
+		this.missingFields = missingFields
+		this.errorMessage = errorMessage
+	}
+}
+
+/**
+ * 验证支付参数完整性
+ * 检查所有必需字段：appId、timeStamp、nonceStr、package、signType、paySign
+ * 
+ * @param payData 支付参数对象
+ * @returns ValidationResult 验证结果
+ */
+function validatePayData(payData: UTSJSONObject | null): ValidationResult {
+	const missingFields: Array<string> = []
+	
+	if (payData == null) {
+		return new ValidationResult(false, ['payData'], '支付参数为空')
+	}
+	
+	// 检查必需字段
+	const requiredFields = ['appId', 'timeStamp', 'nonceStr', 'package', 'signType', 'paySign']
+	
+	for (let i = 0; i < requiredFields.length; i = i + 1) {
+		const field = requiredFields[i]
+		const val = getObjString(payData, field)
+		if (val == '') {
+			missingFields.push(field)
+		}
+	}
+	
+	if (missingFields.length > 0) {
+		let errorMsg = '缺少必需字段: '
+		for (let j = 0; j < missingFields.length; j = j + 1) {
+			if (j > 0) {
+				errorMsg = errorMsg + ', '
+			}
+			errorMsg = errorMsg + missingFields[j]
+		}
+		console.error('❌ [WX-PAY-H5] 支付参数验证失败:', errorMsg)
+		return new ValidationResult(false, missingFields, errorMsg)
+	}
+	
+	return new ValidationResult(true, [], '')
+}
+
+/**
+ * 获取当前时间戳字符串（用于日志）
+ */
+function getTimestamp(): string {
+	const now = new Date()
+	const hours = now.getHours().toString().padStart(2, '0')
+	const minutes = now.getMinutes().toString().padStart(2, '0')
+	const seconds = now.getSeconds().toString().padStart(2, '0')
+	const ms = now.getMilliseconds().toString().padStart(3, '0')
+	return hours + ':' + minutes + ':' + seconds + '.' + ms
+}
+
+/**
+ * 分类错误类型
+ */
+function classifyError(error: string): string {
+	if (error.indexOf('取消') != -1 || error.indexOf('cancel') != -1) {
+		return 'USER_CANCEL'
+	}
+	if (error.indexOf('网络') != -1 || error.indexOf('network') != -1 || error.indexOf('timeout') != -1) {
+		return 'NETWORK_ERROR'
+	}
+	if (error.indexOf('参数') != -1 || error.indexOf('param') != -1 || error.indexOf('缺少') != -1) {
+		return 'PARAM_ERROR'
+	}
+	if (error.indexOf('授权') != -1 || error.indexOf('code') != -1) {
+		return 'AUTH_ERROR'
+	}
+	return 'UNKNOWN_ERROR'
+}
+
+/**
+ * 获取微信授权 code
+ * 跳转到微信授权页面获取 code
+ */
+export function getWechatAuthCode(
+	orderId: string,
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	// #ifdef H5
+	try {
+		// 保存订单ID，授权回跳后使用
+		uni.setStorageSync(SK_PENDING_ORDER_KID, orderId)
+		
+		// 🔧 修复：构造回跳 URL，确保包含订单 ID
+		const baseUrl = window.location.origin + window.location.pathname
+		const redirectUrl = baseUrl + '?orderKid=' + orderId
+		const redirectUri = encodeURIComponent(redirectUrl)
+		const state = 'payment_' + Date.now().toString()
+		
+		const authUrl = 'https://open.weixin.qq.com/connect/oauth2/authorize?appid=' + WX_MP_APP_ID + '&redirect_uri=' + redirectUri + '&response_type=code&scope=snsapi_base&state=' + state + '#wechat_redirect'
+		
+		// 跳转到微信授权页面
+		safeRedirect(authUrl)
+		
+		// 注意：页面会跳转，不会执行到这里
+	} catch (error: Error) {
+		console.error('❌ [WX-PAY-H5] 获取授权code失败:', error)
+		onError('获取微信授权失败')
+	}
+	// #endif
+	
+	// #ifndef H5
+	onError('非H5环境不支持此功能')
+	// #endif
+}
+
+/**
+ * 清理微信授权码
+ */
+export function clearWxCode(): void {
+	try {
+		uni.removeStorageSync(SK_WX_CODE)
+		uni.removeStorageSync(SK_WX_CODE_USED)
+	} catch (e) {
+		console.error('⚠️ [WX-PAY-H5] 清理授权码失败:', e)
+	}
+}
+
+/**
+ * 获取存储的微信授权码
+ */
+export function getStoredWxCode(): string {
+	try {
+		const wxCodeVal = uni.getStorageSync(SK_WX_CODE)
+		if (wxCodeVal != null && wxCodeVal.toString() != '') {
+			return wxCodeVal.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+/**
+ * 检查授权码是否已使用
+ */
+export function isWxCodeUsed(): boolean {
+	try {
+		const usedVal = uni.getStorageSync(SK_WX_CODE_USED)
+		if (usedVal != null && usedVal.toString() == 'true') {
+			return true
+		}
+	} catch (e) {}
+	return false
+}
+
+/**
+ * 标记授权码为已使用
+ */
+export function markWxCodeUsed(): void {
+	try {
+		uni.setStorageSync(SK_WX_CODE_USED, 'true')
+	} catch (e) {
+		console.error('⚠️ [WX-PAY-H5] 标记授权码失败:', e)
+	}
+}
+
+/**
+ * 获取可用的授权码（检查是否已使用）
+ */
+export function getAvailableWxCode(): string {
+	// 检查是否已使用
+	if (isWxCodeUsed() == true) {
+		return ''
+	}
+	
+	return getStoredWxCode()
+}
+
+
+/**
+ * 调用微信 JSAPI 支付
+ */
+function callWeixinJSBridge(
+	payData: UTSJSONObject,
+	orderId: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef H5
+	try {
+		// 🔧 修复：使用 (window as any).WeixinJSBridge 访问
+		const win = window as any
+		
+		// 检查 WeixinJSBridge 是否存在
+		const bridgeExists = typeof win.WeixinJSBridge != 'undefined'
+		
+		if (bridgeExists == false) {
+			// 等待 WeixinJSBridge 准备就绪
+			document.addEventListener('WeixinJSBridgeReady', () => {
+				callWeixinJSBridge(payData, orderId, onSuccess, onError)
+			}, false)
+			return
+		}
+		
+		// 解析支付参数
+		let appId = getObjString(payData, 'appId')
+		if (appId == '') {
+			appId = WX_MP_APP_ID
+		}
+		const timeStamp = getObjString(payData, 'timeStamp')
+		const nonceStr = getObjString(payData, 'nonceStr')
+		const packageVal = getObjString(payData, 'package')
+		let signType = getObjString(payData, 'signType')
+		if (signType == '') {
+			signType = 'RSA'
+		}
+		const paySign = getObjString(payData, 'paySign')
+		
+		// 设置支付状态为处理中
+		setPaymentState(orderId, PAYMENT_STATE_PROCESSING)
+		
+		// 构造支付请求参数
+		const payRequest = {
+			appId: appId,
+			timeStamp: timeStamp,
+			nonceStr: nonceStr,
+			package: packageVal,
+			signType: signType,
+			paySign: paySign
+		}
+		
+		console.log('💳 [WX-PAY-H5] [' + getTimestamp() + '] 准备调用 WeixinJSBridge.invoke("getBrandWCPayRequest")')
+		console.log('💳 [WX-PAY-H5] 请求参数:', JSON.stringify(payRequest))
+		
+		// 🔧 修复：使用 win.WeixinJSBridge 调用
+		win.WeixinJSBridge.invoke('getBrandWCPayRequest', payRequest, (res: UTSJSONObject | null) => {
+			const resObj = toJsonObj(res)
+			const errMsg = getObjString(resObj, 'err_msg')
+			
+			if (errMsg == 'get_brand_wcpay_request:ok') {
+				clearWxCode()
+				setPaymentState(orderId, PAYMENT_STATE_SUCCESS)
+				const payResult = new PaymentResult(true, '支付成功', toJsonObj(res))
+				onSuccess(payResult)
+			} else if (errMsg == 'get_brand_wcpay_request:cancel') {
+				clearWxCode()
+				setPaymentState(orderId, PAYMENT_STATE_FAILED)
+				onError('已取消支付')
+			} else {
+				console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 支付失败')
+				console.error('❌ [WX-PAY-H5] err_msg:', errMsg)
+				clearWxCode()
+				setPaymentState(orderId, PAYMENT_STATE_FAILED)
+				
+				// 提取更详细的错误信息
+				let errorDetail = '支付失败'
+				if (errMsg != '') {
+					errorDetail = '支付失败: ' + errMsg
+				}
+				onError(errorDetail)
+			}
+		})
+		
+	} catch (error: Error) {
+		console.error('========================================')
+		console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 调起微信支付异常')
+		console.error('❌ [WX-PAY-H5] 错误详情:', error)
+		console.error('========================================')
+		setPaymentState(orderId, PAYMENT_STATE_FAILED)
+		onError('支付调起失败')
+	}
+	// #endif
+}
+
+/**
+ * H5 端微信支付（使用已有的授权码）
+ */
+export function doWechatPayWithCode(
+	params: PaymentParams,
+	wxCode: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef H5
+	// 检查是否在微信浏览器中
+	if (isWechatBrowser() == false) {
+		console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 非微信浏览器环境')
+		onError('请在微信浏览器中打开')
+		return
+	}
+	
+	// 设置支付状态为待支付
+	setPaymentState(params.orderId, PAYMENT_STATE_PENDING)
+	
+	// 🔧 修复：移除此处的授权码标记，改为在成功获取支付参数后才标记
+	// 这样如果获取支付参数失败，用户可以重新使用授权码
+	
+	// 调用后端获取支付参数
+	
+	const requestParams = {
+		code: wxCode,
+		orderId: params.orderId,
+		txnAmt: params.amount,
+		description: (params.goodsName != '') ? params.goodsName : '订单支付'
+	} as UTSJSONObject
+	
+	request.post('/pay/wxpay/jsApiPay', requestParams, false).then((res: UTSJSONObject | null) => {
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 响应解析失败，resObj 为 null')
+			clearWxCode()
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('获取支付参数失败')
+			return
+		}
+		
+		const code = getObjNumber(resObj, 'code')
+		
+		if (code != 200) {
+			clearWxCode()
+			const msg = getObjString(resObj, 'msg')
+			console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 后端返回错误:', msg)
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError((msg != '') ? msg : '获取支付参数失败')
+			return
+		}
+		
+		const dataVal = resObj.get('data')
+		
+		if (dataVal == null) {
+			clearWxCode()
+			console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 支付参数为空（data 字段为 null）')
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('支付参数为空')
+			return
+		}
+		
+		const payData = toJsonObj(dataVal)
+		if (payData == null) {
+			clearWxCode()
+			console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 支付参数解析失败')
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('支付参数解析失败')
+			return
+		}
+		
+		// 验证支付参数
+		const validation = validatePayData(payData)
+		if (validation.isValid == false) {
+			clearWxCode()
+			console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 支付参数验证失败:', validation.errorMessage)
+			setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+			onError('支付参数不完整: ' + validation.errorMessage)
+			return
+		}
+		
+		// 🔧 修复：只在成功获取支付参数后才标记授权码为已使用
+		markWxCodeUsed()
+		
+		// 调用微信 JSAPI 支付
+		callWeixinJSBridge(payData, params.orderId, onSuccess, onError)
+	}).catch((err: Error | null) => {
+		console.error('========================================')
+		console.error('❌ [WX-PAY-H5] [' + getTimestamp() + '] 请求后端失败')
+		console.error('❌ [WX-PAY-H5] 错误详情:', err)
+		console.error('========================================')
+		
+		const errorType = classifyError(err != null ? err.toString() : '')
+		console.error('❌ [WX-PAY-H5] 错误类型:', errorType)
+		
+		clearWxCode()
+		setPaymentState(params.orderId, PAYMENT_STATE_FAILED)
+		onError('网络请求失败，请重试')
+	})
+	// #endif
+	
+	// #ifndef H5
+	onError('非H5环境不支持此功能')
+	// #endif
+}
+
+/**
+ * H5 端微信支付
+ * 如果没有授权码，会跳转到微信授权页面
+ */
+export function doWechatPay(
+	params: PaymentParams,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	// #ifdef H5
+	// 检查是否在微信浏览器中
+	if (isWechatBrowser() == false) {
+		console.error('❌ [WX-PAY-H5] 非微信浏览器环境')
+		onError('请在微信浏览器中打开')
+		return
+	}
+	
+	// 检查是否有授权码
+	let wxCode = ''
+	if (params.code != null && params.code != '') {
+		wxCode = params.code
+	} else {
+		wxCode = getStoredWxCode()
+	}
+	
+	if (wxCode != '') {
+		// 有授权码，直接支付
+		doWechatPayWithCode(params, wxCode, onSuccess, onError)
+	} else {
+		// 没有授权码，跳转获取
+		getWechatAuthCode(params.orderId, (code: string) => {
+			// 注意：这个回调不会被执行，因为页面会跳转
+		}, onError)
+	}
+	// #endif
+	
+	// #ifndef H5
+	onError('非H5环境不支持此功能')
+	// #endif
+}

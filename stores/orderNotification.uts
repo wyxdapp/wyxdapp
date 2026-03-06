@@ -1,0 +1,53 @@
+/**
+ * 订单通知 Tab 红点 & 未读数 Store - 使用 Vue 响应式 API
+ * 对应旧 Vue2 中的 orderTabIndicators / unreadOrderNotifications
+ */
+import { ref, computed } from 'vue'
+
+// 使用 ref 创建响应式状态
+const expenditureDotRef = ref<boolean>(false)
+const incomeDotRef = ref<boolean>(false)
+const unreadOrderCountRef = ref<number>(0)
+
+// Getters
+const hasUnreadOrder = computed((): boolean => {
+	return unreadOrderCountRef.value > 0
+})
+
+// Actions - 导出为独立函数
+export const setOrderTabIndicators = (expenditureDot: boolean, incomeDot: boolean) => {
+	expenditureDotRef.value = expenditureDot
+	incomeDotRef.value = incomeDot
+}
+
+export const setOrderUnreadCount = (count: number) => {
+	unreadOrderCountRef.value = (count >= 0) ? count : 0
+}
+
+export const getOrderTabIndicators = (): UTSJSONObject => {
+	const result = {
+		expenditureDot: expenditureDotRef.value,
+		incomeDot: incomeDotRef.value
+	}
+	return result as UTSJSONObject
+}
+
+export const getOrderUnreadCount = (): number => {
+	return unreadOrderCountRef.value
+}
+
+export const getHasUnreadOrder = (): boolean => {
+	return hasUnreadOrder.value
+}
+
+// 导出 useOrderNotificationStore 函数（兼容旧代码）
+export const useOrderNotificationStore = () => {
+	const hasUnreadOrderVal = hasUnreadOrder.value
+	return {
+		tabIndicators: getOrderTabIndicators(),
+		unreadOrderCount: unreadOrderCountRef.value,
+		hasUnreadOrder: hasUnreadOrderVal,
+		setTabIndicators: setOrderTabIndicators,
+		setUnreadCount: setOrderUnreadCount
+	}
+}

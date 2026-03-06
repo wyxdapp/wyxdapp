@@ -1,0 +1,36 @@
+/**
+ * 微信配置模块
+ * 集中管理微信开放平台、公众号配置及 SDK 错误码常量
+ * 
+ * 消费方：
+ * - pagesUser/services/wechatLogin/wechatLoginApp.uts（APP 端微信登录）
+ * - pagesUser/services/wechatLogin/wechatLoginH5.uts（H5 端微信登录）
+ * - pagesTrade/services/wechatPay/wechatPayApp.uts（APP 端微信支付）
+ * - pagesTrade/services/wechatPay/wechatPayH5.uts（H5 端微信支付）
+ * - common/services/wechatPayService.uts（通用微信支付服务）
+ */
+
+// === 微信开放平台配置 ===
+
+/** 微信开放平台 AppID（APP 端登录/支付） */
+export const WX_OPEN_APP_ID = 'wx4a9aa1fbc92e1054'
+
+/** 微信公众号 AppID（H5 端授权/支付） */
+export const WX_MP_APP_ID = 'wx428774d18f12e2b1'
+
+/** iOS Universal Link（APP 端微信 SDK 注册所需） */
+export const WX_UNIVERSAL_LINK = 'https://www.wyxdapp.com/app/'
+
+// === 微信 SDK 错误码 ===
+
+/** 用户取消操作 */
+export const WX_ERR_USER_CANCEL = 901
+
+/** 授权被拒绝 */
+export const WX_ERR_AUTH_DENIED = 902
+
+/** 微信未安装 */
+export const WX_ERR_NOT_INSTALLED = 101
+
+/** SDK 未初始化 */
+export const WX_ERR_SDK_NOT_INIT = 102

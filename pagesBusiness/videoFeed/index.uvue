@@ -1,0 +1,930 @@
+<template>
+	<view 
+		class="video-feed-page"
+		@touchstart="onTouchStart"
+		@touchmove="onTouchMove"
+		@touchend="onTouchEnd"
+	>
+		<!-- 右滑返回指示器 -->
+		<view v-if="swipeBackProgress > 0" class="swipe-back-indicator" :style="{ opacity: swipeBackProgress }">
+			<view class="swipe-back-arrow">
+				<image class="swipe-back-arrow-icon" src="https://jiasu.wyxdapp.com/iconimages/fanhui.png" mode="aspectFit"></image>
+			</view>
+		</view>
+		
+		<!-- 顶部返回按钮 -->
+		<view class="top-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="back-btn" @click="goBack">
+				<image class="back-icon" src="https://jiasu.wyxdapp.com/iconimages/fanhui.png" mode="aspectFit"></image>
+			</view>
+		</view>
+		
+		<!-- 视频 Swiper -->
+		<swiper 
+			class="video-swiper"
+			:style="{ height: pageHeight + 'px' }"
+			:current="currentIndex"
+			:vertical="true"
+			:circular="false"
+			:duration="300"
+			@change="onSwiperChange"
+		>
+			<swiper-item 
+				v-for="(item, index) in videoList" 
+				:key="getVideoKey(item, index)"
+			>
+				<!-- H5 优化：只渲染当前视频前后各2个的完整内容，其余为空占位减少 DOM 复杂度 -->
+				<VideoFeedItem 
+					v-if="index >= currentIndex - 2 && index <= currentIndex + 2"
+					:item="item"
+					:isActive="currentIndex == index"
+					:isNearby="index >= currentIndex - 1 && index <= currentIndex + 1"
+					:index="index"
+					@play="onVideoPlay"
+					@pause="onVideoPause"
+					@like="onLike"
+					@comment="onComment"
+					@share="onShare"
+					@follow="onFollow"
+					@user-click="onUserClick"
+					@double-tap="onDoubleTap"
+				/>
+				<view v-else class="video-placeholder"></view>
+			</swiper-item>
+		</swiper>
+		
+		<!-- 评论面板 -->
+		<VideoCommentPanel 
+			:visible="showCommentPanel"
+			:videoKid="currentVideoKid"
+			:commentCount="currentCommentCount"
+			@close="closeCommentPanel"
+			@comment-sent="onCommentSent"
+		/>
+		
+		<!-- 分享弹窗 -->
+		<SharePopup 
+			v-model:visity="showSharePopup"
+			:shareData="shareData"
+			@share="onShareComplete"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { 
+	getStringProp as safeGetStringProp, 
+	getNumberProp as safeGetNumberProp,
+	getResponseCode,
+	getResponseData,
+	getEntities,
+	getDataCount
+} from '@/common/utils/utsSafe.uts'
+import { 
+	pageStatusBarHeight,
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { toggleLike, isLiked, getLikeCount } from '@/stores/like.uts'
+import { toggleFollow, isProcessing } from '@/stores/follow.uts'
+import { addVisitor } from '@/api/behavior.uts'
+import { AddVisitorParams } from '@/api/types/behaviorTypes.uts'
+import { 
+	getVideoList, 
+	getStartIndex, 
+	setCurrentIndex,
+	clearVideoFeedData,
+	updateVideoAtIndex,
+	getVideoListLength,
+	appendVideoFeedData
+} from '@/stores/videoFeed.uts'
+import { getAllTrends } from '@/api/discover.uts'
+import { GetAllTrendsParams } from '@/api/types/discoverTypes.uts'
+import { isSharedDataDisplayEnabled } from '@/common/composables/useFeatureToggles.uts'
+import VideoFeedItem from '@/components/business/VideoFeedItem.uvue'
+import VideoCommentPanel from '@/components/business/VideoCommentPanel.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import request from '@/utils/request'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { getPageHeight as calcPageHeight, SystemInfo } from './videoFeedUtils.uts'
+const getItemStringProp = (item: UTSJSONObject, key: string): string => {
+	return safeGetStringProp(item, key)
+}
+
+const getItemNumberProp = (item: UTSJSONObject, key: string): number => {
+	return safeGetNumberProp(item, key)
+}
+
+// ==================== 状态 ====================
+const pageHeight = ref<number>(0)
+const videoList = ref<Array<UTSJSONObject>>([])
+const currentIndex = ref<number>(0)
+const showCommentPanel = ref<boolean>(false)
+const currentVideoKid = ref<string>('')
+const currentCommentCount = ref<number>(0)
+
+// 分享弹窗状态
+const showSharePopup = ref<boolean>(false)
+const shareData = ref<UTSJSONObject>({
+	title: '网约向导趣游玩',
+	desc: '发现专业向导，定制专属行程',
+	summary: '发现专业向导，定制专属行程',
+	imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+	url: '',
+	link: '',
+	userId: ''
+} as UTSJSONObject)
+
+// 分页状态
+const pageNumber = ref<number>(1)
+const pageSize = ref<number>(10)
+const totalCount = ref<number>(0)
+const isLoadingMore = ref<boolean>(false)
+const hasMore = ref<boolean>(true)
+
+// 右滑返回相关状态
+const touchStartX = ref<number>(0)
+const touchStartY = ref<number>(0)
+const touchMoveX = ref<number>(0)
+const isSwipingBack = ref<boolean>(false)
+const swipeBackProgress = ref<number>(0)
+const swipeBackThreshold = 100 // 触发返回的阈值（像素）
+const edgeWidth = 50 // 边缘触发区域宽度（像素）
+
+// ==================== 计算属性 ====================
+const videoListLength = computed((): number => {
+	try {
+		const list = videoList.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// ==================== 模板辅助函数 ====================
+const getVideoKey = (item: UTSJSONObject, index: number): string => {
+	const kid = getItemStringProp(item, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+// ==================== 导航（必须在 initPage 之前定义）====================
+const goBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({
+				url: '/pagesBusiness/find/index'
+			})
+		}
+	})
+}
+
+// 更新当前视频信息（必须在 initPage 之前定义）
+const updateCurrentVideoInfo = () => {
+	const index = currentIndex.value
+	if (index >= 0 && index < videoList.value.length) {
+		const item = videoList.value[index]
+		currentVideoKid.value = getItemStringProp(item, 'kid')
+		currentCommentCount.value = getItemNumberProp(item, 'commentNum')
+	}
+}
+
+// 加载更多视频（必须在 checkLoadMore 之前定义）
+const loadMoreVideos = async () => {
+	// 防止重复加载
+	if (isLoadingMore.value == true) {
+		console.log('[VideoFeed] 正在加载中，跳过')
+		return
+	}
+	
+	// 检查是否还有更多数据
+	if (hasMore.value == false) {
+		console.log('[VideoFeed] 没有更多数据')
+		return
+	}
+	
+	isLoadingMore.value = true
+	
+	try {
+		// 获取当前用户ID（用于查询点赞状态）
+		const userKid = getCurrentUserIdReliable()
+		
+		// 构建请求参数
+		const params = new GetAllTrendsParams()
+		params.pageNumber = pageNumber.value
+		params.pageSize = pageSize.value
+		params.mediaType = 20  // 只获取视频类型
+		params.userKid = userKid
+		
+		console.log('[VideoFeed] 加载更多视频, 参数:', JSON.stringify(params))
+		
+		const res = await getAllTrends(params)
+		
+		// 调试：打印完整响应
+		console.log('[VideoFeed] API响应:', JSON.stringify(res))
+		
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		// 调试：打印 dataObj
+		if (dataObj != null) {
+			console.log('[VideoFeed] dataObj:', JSON.stringify(dataObj))
+		} else {
+			console.log('[VideoFeed] dataObj 为 null')
+		}
+		
+		if (code == 200 && dataObj != null) {
+			const items = getEntities(dataObj)
+			const total = getDataCount(dataObj)
+			
+			// 调试：打印 items
+			console.log('[VideoFeed] items长度:', items.length, 'total:', total)
+			
+			totalCount.value = total
+			
+			if (items != null && items.length > 0) {
+				// 获取已有视频的 kid 列表，用于去重
+				const existingKids: Array<string> = []
+				for (let j = 0; j < videoList.value.length; j = j + 1) {
+					const existingKid = getItemStringProp(videoList.value[j], 'kid')
+					if (existingKid != '') {
+						existingKids.push(existingKid)
+					}
+				}
+				
+				// 追加到列表（去重）
+				let addedCount = 0
+				for (let i = 0; i < items.length; i = i + 1) {
+					const itemObj = items[i] as UTSJSONObject
+					const itemKid = getItemStringProp(itemObj, 'kid')
+					// 检查是否已存在
+					let exists = false
+					for (let k = 0; k < existingKids.length; k = k + 1) {
+						if (existingKids[k] == itemKid) {
+							exists = true
+							break
+						}
+					}
+					if (exists == false) {
+						videoList.value.push(itemObj)
+						addedCount = addedCount + 1
+					}
+				}
+				
+				// 同步到 Store
+				appendVideoFeedData(items)
+				
+				// 更新分页
+				pageNumber.value = pageNumber.value + 1
+				
+				// 检查是否还有更多
+				hasMore.value = videoList.value.length < total
+				
+				console.log('[VideoFeed] 加载成功, 新增:', addedCount, '(去重后), 总数:', videoList.value.length, '还有更多:', hasMore.value)
+			} else {
+				hasMore.value = false
+				console.log('[VideoFeed] 没有更多视频数据')
+			}
+		} else {
+			console.error('[VideoFeed] 加载失败, code:', code)
+		}
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载更多视频', null)
+		}
+	} finally {
+		isLoadingMore.value = false
+	}
+}
+
+// 检查是否需要加载更多（必须在 onSwiperChange 之前定义）
+const checkLoadMore = () => {
+	const listLen = videoListLength.value
+	const current = currentIndex.value
+	
+	// 当滑动到倒数第3个时，加载更多
+	if (current >= listLen - 3 && listLen > 0) {
+		loadMoreVideos()
+	}
+}
+
+// ==================== 页面初始化 ====================
+const initPage = () => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	
+	// 获取屏幕高度，使用提取的纯函数计算
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoStr = JSON.stringify(systemInfo)
+		const systemInfoObj = JSON.parse(systemInfoStr) as UTSJSONObject
+		
+		// 解析系统信息字段
+		let screenHeightNum = 0
+		let windowHeightNum = 0
+		
+		const screenHeightVal = systemInfoObj.get('screenHeight')
+		if (screenHeightVal != null) {
+			const parsed = parseInt(screenHeightVal.toString())
+			if (isNaN(parsed) == false) {
+				screenHeightNum = parsed
+			}
+		}
+		
+		const windowHeightVal = systemInfoObj.get('windowHeight')
+		if (windowHeightVal != null) {
+			const parsed = parseInt(windowHeightVal.toString())
+			if (isNaN(parsed) == false) {
+				windowHeightNum = parsed
+			}
+		}
+		
+		// 检测运行平台：从系统信息中获取，用于区分 H5 和 APP 端高度策略
+		let detectedPlatform = 'app'
+		// #ifdef H5
+		detectedPlatform = 'h5'
+		// #endif
+		
+		// 使用提取的纯函数计算页面高度（H5 端使用 windowHeight，APP 端使用 screenHeight）
+		const sysInfo = new SystemInfo(detectedPlatform, screenHeightNum, windowHeightNum)
+		pageHeight.value = calcPageHeight(sysInfo)
+	} catch (e) {
+		handleSilentError(e, '获取系统信息')
+		pageHeight.value = 800
+	}
+	
+	// 从 Store 获取视频数据
+	const storeList = getVideoList()
+	const storeIndex = getStartIndex()
+	
+	if (storeList != null && storeList.length > 0) {
+		videoList.value = storeList as Array<UTSJSONObject>
+		currentIndex.value = storeIndex
+		
+		// 视频流页面独立加载数据，从第 1 页开始
+		// 发现页面传入的只是初始视频，后续需要从 API 加载更多
+		pageNumber.value = 1
+		hasMore.value = true
+		
+		// 设置当前视频信息
+		updateCurrentVideoInfo()
+		
+		console.log('[VideoFeed] 加载视频数据, 数量:', videoList.value.length, '起始索引:', currentIndex.value, '下一页:', pageNumber.value)
+		
+		// 初始化时检查是否需要加载更多（当视频数量较少时）
+		checkLoadMore()
+	} else {
+		console.warn('[VideoFeed] 没有视频数据')
+		uni.showToast({
+			title: '没有视频数据',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			goBack()
+		}, 1500)
+	}
+}
+
+// ==================== Swiper 事件 ====================
+const onSwiperChange = (e: UTSJSONObject) => {
+	if (e != null) {
+		try {
+			// H5 优化：直接访问属性，避免双重 JSON.stringify/parse
+			const detailVal = e.get('detail')
+			if (detailVal != null) {
+				const detailObj = detailVal as UTSJSONObject
+				const currentVal = detailObj.get('current')
+				if (currentVal != null) {
+					const current = parseInt(currentVal.toString())
+					if (isNaN(current) == false) {
+						currentIndex.value = current
+						setCurrentIndex(current)
+						updateCurrentVideoInfo()
+						
+						// 检查是否需要加载更多
+						checkLoadMore()
+					}
+				}
+			}
+		} catch (err) {
+			// 回退到 JSON 解析方式
+			try {
+				const eStr = JSON.stringify(e)
+				const eObj = JSON.parse(eStr) as UTSJSONObject
+				const detailVal = eObj.get('detail')
+				if (detailVal != null) {
+					const detailStr = JSON.stringify(detailVal)
+					const detailObj = JSON.parse(detailStr) as UTSJSONObject
+					const currentVal = detailObj.get('current')
+					if (currentVal != null) {
+						const current = parseInt(currentVal.toString())
+						if (isNaN(current) == false) {
+							currentIndex.value = current
+							setCurrentIndex(current)
+							updateCurrentVideoInfo()
+							checkLoadMore()
+						}
+					}
+				}
+			} catch (innerErr) {}
+		}
+	}
+}
+
+// ==================== 视频事件 ====================
+// 记录已访问的视频作者（避免重复记录）
+const visitedUserKids = ref<Array<string>>([])
+
+// 记录访客（视频播放时触发）
+const recordVideoVisitor = async (item: UTSJSONObject) => {
+	try {
+		// 获取当前用户ID（访问者）
+		let currentUserKid = getCurrentUserIdReliable()
+		
+		// 获取视频作者ID（被访问者）
+		const targetUserKid = getItemStringProp(item, 'userKid')
+		
+		// 获取动态ID
+		const dynamicKid = getItemStringProp(item, 'kid')
+		
+		if (targetUserKid == '' || targetUserKid == null) {
+			console.log('[VideoFeed] 视频作者ID为空，跳过访客记录')
+			return
+		}
+		
+		// 自己访问自己不记录
+		if (currentUserKid != '' && currentUserKid == targetUserKid) {
+			console.log('[VideoFeed] 自己访问自己，跳过访客记录')
+			return
+		}
+		
+		// 检查是否已记录过该作者（同一会话内避免重复记录）
+		let alreadyVisited = false
+		for (let i = 0; i < visitedUserKids.value.length; i = i + 1) {
+			if (visitedUserKids.value[i] == targetUserKid) {
+				alreadyVisited = true
+				break
+			}
+		}
+		if (alreadyVisited == true) {
+			console.log('[VideoFeed] 已记录过该作者，跳过:', targetUserKid)
+			return
+		}
+		
+		// 未登录用户记录为匿名访客（后端会将空值转为 '0'）
+		if (currentUserKid == '') {
+			console.log('[VideoFeed] 未登录用户，将记录为匿名访客')
+		}
+		
+		// 调用访客记录API
+		const params = new AddVisitorParams()
+		params.userKid = targetUserKid
+		params.visitUserKid = currentUserKid
+		params.visitType = 'dynamic'
+		params.targetKid = dynamicKid
+		await addVisitor(params)
+		
+		// 记录已访问的作者
+		visitedUserKids.value.push(targetUserKid)
+		
+		console.log('[VideoFeed] 视频访客记录成功, 作者:', targetUserKid)
+	} catch (error) {
+		handleSilentError(error, '视频访客记录')
+	}
+}
+
+const onVideoPlay = (videoKid: string) => {
+	console.log('[VideoFeed] 视频播放:', videoKid)
+	
+	// 查找当前播放的视频信息并记录访客
+	const list = videoList.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		const itemKid = getItemStringProp(item, 'kid')
+		if (itemKid == videoKid) {
+			recordVideoVisitor(item)
+			break
+		}
+	}
+}
+
+const onVideoPause = (videoKid: string) => {
+	console.log('[VideoFeed] 视频暂停:', videoKid)
+}
+
+// ==================== 互动事件 ====================
+const onLike = async (item: UTSJSONObject) => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getCurrentUserIdReliable()
+	const discoverKid = getItemStringProp(item, 'kid')
+	
+	if (userKid == '' || discoverKid == '') return
+	
+	try {
+		await toggleLike(userKid, discoverKid)
+		
+		// 更新列表中的点赞状态
+		const list = videoList.value
+		for (let i = 0; i < list.length; i = i + 1) {
+			const listItem = list[i]
+			const itemKid = getItemStringProp(listItem, 'kid')
+			if (itemKid == discoverKid) {
+				const isLikedNow = isLiked(discoverKid)
+				const likeCount = getLikeCount(discoverKid)
+				
+				const itemStr = JSON.stringify(listItem)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set('isLike', isLikedNow == true ? 10 : 0)
+				itemObj.set('likeNum', likeCount)
+				list[i] = itemObj as UTSJSONObject
+				
+				// 同步更新 Store
+				updateVideoAtIndex(i, itemObj as UTSJSONObject)
+				break
+			}
+		}
+		videoList.value = list
+	} catch (error) {
+		handleSilentError(error, '点赞')
+	}
+}
+
+const onDoubleTap = (item: UTSJSONObject) => {
+	// 双击点赞已在 onLike 中处理
+}
+
+const onComment = (item: UTSJSONObject) => {
+	const kid = getItemStringProp(item, 'kid')
+	const commentNum = getItemNumberProp(item, 'commentNum')
+	
+	currentVideoKid.value = kid
+	currentCommentCount.value = commentNum
+	showCommentPanel.value = true
+}
+
+const onShare = (item: UTSJSONObject) => {
+	// 获取视频信息用于分享
+	const videoKid = getItemStringProp(item, 'kid')
+	const videoTitle = getItemStringProp(item, 'content')
+	const videoCover = getItemStringProp(item, 'videoPic')
+	const userKid = getItemStringProp(item, 'userKid')
+	const nickname = getItemStringProp(item, 'nickname')
+	
+	// 构建分享链接
+	const shareLink = 'https://m.wyxdapp.com/#/pagesBusiness/videoFeed/index?kid=' + videoKid
+	
+	// 设置分享数据
+	shareData.value = {
+		title: (videoTitle != '') ? videoTitle : (nickname + '的精彩视频'),
+		desc: '来网约向导看精彩视频',
+		summary: '来网约向导看精彩视频',
+		imageUrl: (videoCover != '') ? videoCover : 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		url: shareLink,
+		link: shareLink,
+		userId: userKid
+	}
+	
+	// 显示分享弹窗
+	showSharePopup.value = true
+}
+
+// 分享完成回调
+const onShareComplete = (platform: string) => {
+	console.log('[VideoFeed] 分享完成, 平台:', platform)
+}
+
+const onFollow = async (item: UTSJSONObject) => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.navigateTo({
+			url: '/pagesUser/login/index'
+		})
+		return
+	}
+	
+	const userKid = getCurrentUserIdReliable()
+	const focusUserKid = getItemStringProp(item, 'userKid')
+	
+	if (userKid == '' || focusUserKid == '') return
+	
+	// 不能关注自己
+	if (userKid == focusUserKid) {
+		uni.showToast({
+			title: '不能关注自己',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 检查是否正在处理
+	if (isProcessing(focusUserKid) == true) {
+		return
+	}
+	
+	try {
+		// 使用统一的 toggleFollow 方法
+		const newStatus = await toggleFollow(userKid, focusUserKid)
+		
+		// 更新列表中的关注状态
+		const list = videoList.value
+		for (let i = 0; i < list.length; i = i + 1) {
+			const listItem = list[i]
+			const itemUserKid = getItemStringProp(listItem, 'userKid')
+			if (itemUserKid == focusUserKid) {
+				const itemStr = JSON.stringify(listItem)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set('isFollow', newStatus == true ? 10 : 0)
+				list[i] = itemObj as UTSJSONObject
+				
+				// 同步更新 Store
+				updateVideoAtIndex(i, itemObj as UTSJSONObject)
+			}
+		}
+		videoList.value = list
+		
+		uni.showToast({
+			title: newStatus == true ? '关注成功' : '已取消关注',
+			icon: 'success'
+		})
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '关注操作', null)
+		}
+	}
+}
+
+const onUserClick = (item: UTSJSONObject) => {
+	const userKid = getItemStringProp(item, 'userKid')
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+// ==================== 评论面板 ====================
+const closeCommentPanel = () => {
+	showCommentPanel.value = false
+}
+
+const onCommentSent = (content: string) => {
+	// 更新评论数
+	const list = videoList.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const listItem = list[i]
+		const itemKid = getItemStringProp(listItem, 'kid')
+		if (itemKid == currentVideoKid.value) {
+			const itemStr = JSON.stringify(listItem)
+			const itemObj = JSON.parse(itemStr) as UTSJSONObject
+			const currentCommentNum = getItemNumberProp(listItem, 'commentNum')
+			itemObj.set('commentNum', currentCommentNum + 1)
+			list[i] = itemObj as UTSJSONObject
+			
+			// 同步更新 Store
+			updateVideoAtIndex(i, itemObj as UTSJSONObject)
+			
+			// 更新当前评论数
+			currentCommentCount.value = currentCommentNum + 1
+			break
+		}
+	}
+	videoList.value = list
+}
+
+// ==================== 右滑返回手势 ====================
+function onTouchStart(e: UTSJSONObject): void {
+	if (e == null) return
+	
+	try {
+		// H5 优化：直接访问属性，避免 JSON.stringify/parse
+		const touchesVal = e.get('touches')
+		
+		if (touchesVal != null && Array.isArray(touchesVal) == true) {
+			const touches = touchesVal as Array<UTSJSONObject>
+			if (touches.length > 0) {
+				const touch = touches[0]
+				
+				const clientXVal = touch.get('clientX')
+				const clientYVal = touch.get('clientY')
+				
+				let clientX = 0
+				let clientY = 0
+				
+				if (clientXVal != null) {
+					const x = parseFloat(clientXVal.toString())
+					if (isNaN(x) == false) clientX = x
+				}
+				
+				if (clientYVal != null) {
+					const y = parseFloat(clientYVal.toString())
+					if (isNaN(y) == false) clientY = y
+				}
+				
+				touchStartX.value = clientX
+				touchStartY.value = clientY
+				touchMoveX.value = clientX
+				
+				// 只有从左边缘开始滑动才触发返回
+				if (clientX <= edgeWidth) {
+					isSwipingBack.value = true
+				} else {
+					isSwipingBack.value = false
+				}
+				
+				swipeBackProgress.value = 0
+			}
+		}
+	} catch (err) {
+		handleSilentError(err, 'touchstart')
+	}
+}
+
+function onTouchMove(e: UTSJSONObject): void {
+	if (e == null || isSwipingBack.value == false) return
+	
+	try {
+		// H5 优化：直接访问属性
+		const touchesVal = e.get('touches')
+		
+		if (touchesVal != null && Array.isArray(touchesVal) == true) {
+			const touches = touchesVal as Array<UTSJSONObject>
+			if (touches.length > 0) {
+				const touch = touches[0]
+				
+				const clientXVal = touch.get('clientX')
+				const clientYVal = touch.get('clientY')
+				
+				let clientX = 0
+				let clientY = 0
+				
+				if (clientXVal != null) {
+					const x = parseFloat(clientXVal.toString())
+					if (isNaN(x) == false) clientX = x
+				}
+				
+				if (clientYVal != null) {
+					const y = parseFloat(clientYVal.toString())
+					if (isNaN(y) == false) clientY = y
+				}
+				
+				touchMoveX.value = clientX
+				
+				// 计算水平和垂直移动距离
+				const deltaX = clientX - touchStartX.value
+				const deltaY = clientY - touchStartY.value
+				
+				// 如果垂直移动大于水平移动，取消右滑返回
+				if (deltaY < 0) {
+					const absDeltaY = 0 - deltaY
+					if (absDeltaY > deltaX) {
+						isSwipingBack.value = false
+						swipeBackProgress.value = 0
+						return
+					}
+				} else {
+					if (deltaY > deltaX) {
+						isSwipingBack.value = false
+						swipeBackProgress.value = 0
+						return
+					}
+				}
+				
+				// 计算滑动进度（0-1）
+				if (deltaX > 0) {
+					let progress = deltaX / swipeBackThreshold
+					if (progress > 1) progress = 1
+					swipeBackProgress.value = progress
+				} else {
+					swipeBackProgress.value = 0
+				}
+			}
+		}
+	} catch (err) {
+		handleSilentError(err, 'touchmove')
+	}
+}
+
+function onTouchEnd(e: UTSJSONObject): void {
+	if (isSwipingBack.value == false) return
+	
+	// 如果滑动距离超过阈值，触发返回
+	const deltaX = touchMoveX.value - touchStartX.value
+	if (deltaX >= swipeBackThreshold) {
+		goBack()
+	}
+	
+	// 重置状态
+	isSwipingBack.value = false
+	swipeBackProgress.value = 0
+	touchStartX.value = 0
+	touchStartY.value = 0
+	touchMoveX.value = 0
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	initPage()
+})
+
+onUnmounted(() => {
+	// 页面销毁时清理数据
+	// clearVideoFeedData()
+})
+</script>
+
+<style>
+.video-feed-page {
+	position: relative;
+	width: 750rpx;
+	background-color: #000000;
+}
+
+/* #ifdef H5 */
+/* H5 端高度约束：确保页面容器不超出浏览器可视区域，防止内容溢出被裁切 */
+.video-feed-page {
+	height: 100vh;
+	overflow: hidden;
+}
+/* #endif */
+
+/* 顶部栏 */
+.top-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	z-index: 100;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 20rpx;
+}
+
+.back-btn {
+	width: 72rpx;
+	height: 72rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+/* 视频 Swiper */
+.video-swiper {
+	width: 750rpx;
+}
+
+/* H5 优化：远离当前视频的占位元素，极简 DOM */
+.video-placeholder {
+	width: 750rpx;
+	height: 100%;
+	background-color: #000000;
+}
+
+/* 右滑返回指示器 */
+.swipe-back-indicator {
+	position: fixed;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 80rpx;
+	z-index: 200;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.3);
+}
+
+.swipe-back-arrow {
+	width: 60rpx;
+	height: 60rpx;
+	border-radius: 30rpx;
+	background-color: rgba(255, 255, 255, 0.9);
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.swipe-back-arrow-icon {
+	width: 32rpx;
+	height: 32rpx;
+}
+</style>

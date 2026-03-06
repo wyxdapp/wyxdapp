@@ -1,0 +1,129 @@
+import request from '@/utils/request.uts'
+import {
+	DrawLotteryParams,
+	LotteryRecordsByOrderParams,
+	UseGiftParams,
+	HandleCashRewardParams,
+	SendGiftFromBagParams,
+	SendGiftFromShopParams,
+	CompleteTaskParams
+} from './types/lotteryTypes.uts'
+
+/**
+ * 抽奖相关 API
+ */
+
+/**
+ * 获取抽奖开关状态
+ */
+export const getLotterySwitchStatus = (): Promise<UTSJSONObject> => {
+	return request.get('/lottery/switch/status', {}, false)
+}
+
+/**
+ * 获取抽奖信息
+ */
+export const getLotteryInfo = (): Promise<UTSJSONObject> => {
+	return request.get('/lottery/info', {}, false)
+}
+
+/**
+ * 执行抽奖
+ */
+export const drawLottery = (params: DrawLotteryParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lotteryType: params.lotteryType,
+		drawCount: params.drawCount
+	} as UTSJSONObject
+	return request.post('/lottery/draw', payload, false)
+}
+
+/**
+ * 根据订单ID查询抽奖记录
+ */
+export const getLotteryRecordsByOrder = (params: LotteryRecordsByOrderParams): Promise<UTSJSONObject> => {
+	return request.get('/lottery/records/by-order', params, false)
+}
+
+/**
+ * 查询我的礼物（背包）
+ */
+export const getMyGifts = (): Promise<UTSJSONObject> => {
+	return request.get('/lottery/my-gifts', {}, false)
+}
+
+/**
+ * 查询所有礼物（商店）
+ */
+export const getAllGifts = (): Promise<UTSJSONObject> => {
+	return request.get('/lottery/all-gifts', {}, false)
+}
+
+/**
+ * 使用/赠送虚拟礼物
+ */
+export const useGift = (params: UseGiftParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lotteryRecordKid: params.lotteryRecordKid,
+		actionType: params.actionType,
+		receiveUserKid: params.receiveUserKid
+	} as UTSJSONObject
+	return request.post('/lottery/use-gift', payload, false)
+}
+
+/**
+ * 处理现金奖励
+ */
+export const handleCashReward = (params: HandleCashRewardParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lotteryRecordKid: params.lotteryRecordKid,
+		actionType: params.actionType,
+		withdrawMethod: params.withdrawMethod
+	} as UTSJSONObject
+	return request.post('/lottery/handle-cash', payload, false)
+}
+
+/**
+ * 赠送礼物（从背包）
+ */
+export const sendGiftFromBag = (params: SendGiftFromBagParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		lotteryRecordKid: params.lotteryRecordKid,
+		receiveUserKid: params.receiveUserKid
+	} as UTSJSONObject
+	return request.post('/lottery/send-gift-bag', payload, false)
+}
+
+/**
+ * 付费赠送礼物（从商店）
+ */
+export const sendGiftFromShop = (params: SendGiftFromShopParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		giftKid: params.giftKid,
+		receiveUserKid: params.receiveUserKid
+	} as UTSJSONObject
+	return request.post('/lottery/send-gift-shop', payload, false)
+}
+
+/**
+ * 获取用户今日任务状态
+ */
+export const getTaskStatus = (): Promise<UTSJSONObject> => {
+	return request.get('/lottery/task-status', {}, false)
+}
+
+/**
+ * 完成任务并领取奖励
+ */
+export const completeTask = (params: CompleteTaskParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		taskType: params.taskType
+	} as UTSJSONObject
+	return request.post('/lottery/complete-task', payload, false)
+}

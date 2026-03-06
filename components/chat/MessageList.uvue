@@ -1,0 +1,415 @@
+<template>
+	<scroll-view
+		class="message-list"
+		:style="listStyle"
+		scroll-y
+		:scroll-into-view="scrollIntoView"
+		:scroll-with-animation="true"
+		@scrolltoupper="handleLoadMore"
+	>
+		<!-- 加载更多提示 -->
+		<view v-if="loading == true" class="load-more">
+			<text class="load-text">加载中...</text>
+		</view>
+		<view v-else-if="hasMore == false && Array.isArray(messages) == true && (messages as Array<any>).length > 0" class="load-more">
+			<text class="load-text">— 没有更多消息了 —</text>
+		</view>
+		
+		<!-- 空状态 -->
+		<view v-if="Array.isArray(messages) == true && (messages as Array<any>).length == 0" class="empty-state">
+			<UniIcons type="chatbubble" :size="60" color="#CCCCCC" />
+			<text class="empty-text">暂无聊天记录</text>
+			<text class="empty-hint">开始与对方聊天吧</text>
+		</view>
+		
+		<!-- 消息列表 -->
+		<view
+			v-for="(msg, index) in (messages as Array<any>)"
+			:key="getMessageKey(msg, index)"
+			:id="getMessageId(msg, index)"
+			class="message-item"
+		>
+			<!-- 时间分割线 -->
+			<view v-if="shouldShowTimeDivider(msg, index)" class="time-divider">
+				<text class="time-text">{{ getMessageTimeText(msg) }}</text>
+			</view>
+			
+			<!-- 消息气泡 -->
+			<MessageBubble
+				:message="msg"
+				:is-self="isMessageFromSelf(msg)"
+				:avatar="getAvatar(msg)"
+				:default-avatar="defaultAvatar"
+				:show-time="false"
+				:medal-level="props.targetMedalLevel"
+				:vip-type="props.targetVipType"
+				@preview-image="handlePreviewImage"
+				@play-voice="handlePlayVoice"
+				@play-video="handlePlayVideo"
+				@retry="handleRetry"
+				@order-click="handleOrderClick"
+				@share-card-click="handleShareCardClick"
+				@avatar-click="handleAvatarClick"
+				@add-to-emoji="handleAddToEmoji"
+				@save-to-album="handleSaveToAlbum"
+				@system-notification-click="handleSystemNotificationClick"
+			/>
+		</view>
+	</scroll-view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch, nextTick } from 'vue'
+import MessageBubble from './MessageBubble.uvue'
+import { formatChatTime } from '@/common/utils/dateUtils.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+interface Message {
+	id?: string
+	senderId?: string
+	fromUserKid?: string
+	createTime?: string
+	sendTime?: string
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	messages: { type: Array, required: true },
+	currentUserId: { type: String, required: true },
+	currentUserAvatar: { type: String, default: '' },
+	targetUserAvatar: { type: String, default: '' },
+	defaultAvatar: { type: String, required: true },
+	hasMore: { type: Boolean, default: false },
+	loading: { type: Boolean, default: false },
+	listHeight: { type: Number, default: 0 },
+	autoScrollToBottom: { type: Boolean, default: true },
+	// 🎯 新增：目标用户勋章相关 props
+	targetMedalLevel: { type: Number, default: 0 },
+	targetVipType: { type: String, default: '' }
+})
+
+const emit = defineEmits<{
+	loadMore: []
+	previewImage: [url: string]
+	playVoice: [message: Message]
+	playVideo: [message: Message]
+	retry: [message: Message]
+	orderClick: [orderId: string]
+	shareCardClick: [userKid: string]
+	addToEmoji: [imageUrl: string]
+	saveToAlbum: [imageUrl: string]
+	systemNotificationClick: [linkUrl: string, orderKid: string]
+}>()
+
+const scrollIntoView = ref('')
+
+// 辅助方法：安全访问消息属性（提前定义，供 watch 使用）
+const getMessageProp = (msg: any, key: string): string => {
+	try {
+		const msgStr = JSON.stringify(msg)
+		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+		const val = msgObj.get(key)
+		if (val != null) {
+			return val.toString()
+		}
+		return ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 滚动到底部
+const doScrollToBottom = () => {
+	nextTick(() => {
+		const msgArr = props.messages as Array<any>
+		if (msgArr.length > 0) {
+			const lastMsg = msgArr[msgArr.length - 1] as any
+			const id = getMessageProp(lastMsg, 'id')
+			const finalId = (id != '') ? id : (msgArr.length - 1).toString()
+			
+			// 先清空再设置，确保触发滚动
+			scrollIntoView.value = ''
+			setTimeout(() => {
+				scrollIntoView.value = 'msg-' + finalId
+			}, 50)
+		}
+	})
+}
+
+// 记录上一次最后一条消息的ID
+let prevLastMessageId: string = ''
+// 是否是首次加载
+let isFirstLoad: boolean = true
+
+// 获取最后一条消息的ID
+const getLastMessageId = (msgArr: Array<any>): string => {
+	if (msgArr.length == 0) return ''
+	const lastMsg = msgArr[msgArr.length - 1] as any
+	const id = getMessageProp(lastMsg, 'id')
+	return (id != '') ? id : ''
+}
+
+// 使用 computed 包装 props.messages 来监听
+const messagesValue = computed((): Array<any> => {
+	return props.messages as Array<any>
+})
+
+// 监听消息列表变化，自动滚动到底部
+watch(messagesValue, (newVal: Array<any>, oldVal: Array<any>) => {
+	// 如果禁用了自动滚动，直接返回
+	if (props.autoScrollToBottom == false) return
+	
+	const newArr = newVal
+	const oldArr = oldVal
+	
+	// 消息数量没变化，不处理
+	if (newArr.length == oldArr.length) return
+	
+	const newLastId = getLastMessageId(newArr)
+	
+	// 首次加载（从空到有消息）- 滚动到底部
+	if (isFirstLoad == true && newArr.length > 0) {
+		isFirstLoad = false
+		prevLastMessageId = newLastId
+		doScrollToBottom()
+		return
+	}
+	
+	// 判断是新消息还是历史消息
+	// 如果最后一条消息ID变了，说明是新消息（末尾添加），需要滚动
+	// 如果最后一条消息ID没变，说明是历史消息（头部添加），不滚动
+	if (newLastId != prevLastMessageId && newLastId != '') {
+		// 新消息，滚动到底部
+		prevLastMessageId = newLastId
+		doScrollToBottom()
+	} else {
+		// 历史消息，不滚动，只更新记录
+		prevLastMessageId = newLastId
+	}
+}, { deep: true })
+
+// 计算列表样式
+const listStyle = computed((): any => {
+	const height = props.listHeight
+	// #ifndef H5
+	if (height > 0) {
+		return { height: height.toString() + 'px' }
+	}
+	return { height: '500px' }
+	// #endif
+	// #ifdef H5
+	if (height > 0) {
+		return { height: height.toString() + 'px' }
+	}
+	return { height: '100%' }
+	// #endif
+})
+
+const getMessageKey = (msg: any, index: number): string => {
+	try {
+		const id = getMessageProp(msg, 'id')
+		if (id != '') {
+			return id
+		}
+	} catch (e) {}
+	return index.toString()
+}
+
+const getMessageId = (msg: any, index: number): string => {
+	try {
+		const id = getMessageProp(msg, 'id')
+		if (id != '') {
+			return 'msg-' + id
+		}
+	} catch (e) {}
+	return 'msg-' + index.toString()
+}
+
+const formatTime = (time: any): string => {
+	return formatChatTime(time.toString())
+}
+
+const getMessageTimeText = (msg: any): string => {
+	let time: any = ''
+	try {
+		const msgStr = JSON.stringify(msg)
+		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+		const createTimeVal = msgObj.get('createTime')
+		if (createTimeVal != null && createTimeVal.toString() != '') {
+			time = createTimeVal.toString()
+		} else {
+			const sendTimeVal = msgObj.get('sendTime')
+			if (sendTimeVal != null && sendTimeVal.toString() != '') {
+				time = sendTimeVal.toString()
+			}
+		}
+	} catch (e) {
+		const sendTime = getMessageProp(msg, 'sendTime')
+		if (sendTime != '') {
+			time = sendTime
+		}
+	}
+	return formatTime(time)
+}
+
+const isMessageFromSelf = (msg: any): boolean => {
+	const senderIdStr = getMessageProp(msg, 'senderId')
+	const fromUserKidStr = getMessageProp(msg, 'fromUserKid')
+	const fromUserIdStr = getMessageProp(msg, 'fromUserId')
+	const currentId = props.currentUserId
+	
+	if (senderIdStr != '' && senderIdStr == currentId) {
+		return true
+	}
+	if (fromUserKidStr != '' && fromUserKidStr == currentId) {
+		return true
+	}
+	if (fromUserIdStr != '' && fromUserIdStr == currentId) {
+		return true
+	}
+	
+	return false
+}
+
+const shouldShowTimeDivider = (msg: any, index: number): boolean => {
+	const timeText = getMessageTimeText(msg)
+	return timeText != '' && timeText.length > 0
+}
+
+const getAvatar = (msg: any): string => {
+	const isSelf = isMessageFromSelf(msg)
+	const currentUserAvatarVal = props.currentUserAvatar
+	const targetUserAvatarVal = props.targetUserAvatar
+	const currentAvatarResult = (currentUserAvatarVal != '') ? currentUserAvatarVal : props.defaultAvatar
+	const targetAvatarResult = (targetUserAvatarVal != '') ? targetUserAvatarVal : props.defaultAvatar
+	return isSelf ? currentAvatarResult : targetAvatarResult
+}
+
+const handleLoadMore = () => {
+	if (props.loading == false && props.hasMore == true) {
+		emit('loadMore')
+	}
+}
+
+const handlePreviewImage = (url: string) => {
+	emit('previewImage', url)
+}
+
+const handlePlayVoice = (message: Message) => {
+	emit('playVoice', message)
+}
+
+const handlePlayVideo = (message: Message) => {
+	emit('playVideo', message)
+}
+
+const handleRetry = (message: Message) => {
+	emit('retry', message)
+}
+
+const handleOrderClick = (orderId: string) => {
+	emit('orderClick', orderId)
+}
+
+const handleShareCardClick = (userKid: string) => {
+	emit('shareCardClick', userKid)
+}
+
+const handleAddToEmoji = (imageUrl: string) => {
+	emit('addToEmoji', imageUrl)
+}
+
+const handleSaveToAlbum = (imageUrl: string) => {
+	emit('saveToAlbum', imageUrl)
+}
+
+const handleSystemNotificationClick = (linkUrl: string, orderKid: string) => {
+	emit('systemNotificationClick', linkUrl, orderKid)
+}
+
+const handleAvatarClick = (userId: string) => {
+	emit('avatarClick', userId)
+}
+
+// 暴露方法供父组件调用
+defineExpose({
+	scrollToBottom: () => {
+		doScrollToBottom()
+	}
+})
+</script>
+
+<style>
+/* APP 端 */
+/* #ifndef H5 */
+.message-list {
+	flex-direction: column;
+	padding: 20rpx 28rpx;
+	background-color: #f5f5f5;
+}
+/* #endif */
+
+/* H5 端 */
+/* #ifdef H5 */
+.message-list {
+	flex-direction: column;
+	padding: 20rpx 28rpx;
+	background-color: #f5f5f5;
+	overflow-y: auto;
+}
+/* #endif */
+
+.load-more {
+	padding: 20rpx 0;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.empty-state {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+}
+
+.empty-icon {
+	font-size: 120rpx;
+	margin-bottom: 32rpx;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #999999;
+	margin-bottom: 16rpx;
+}
+
+.empty-hint {
+	font-size: 26rpx;
+	color: #cccccc;
+}
+
+.message-item {
+	margin-bottom: 24rpx;
+}
+
+.time-divider {
+	margin: 24rpx 0;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.time-text {
+	font-size: 22rpx;
+	color: #999999;
+	background-color: transparent;
+	padding: 0;
+	border-radius: 0;
+}
+</style>

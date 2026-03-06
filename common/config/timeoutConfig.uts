@@ -1,0 +1,60 @@
+/**
+ * 超时与延迟配置模块
+ * 统一管理 WebSocket 心跳、重连延迟、授权/支付超时等时间相关常量
+ */
+
+// === WebSocket 相关 ===
+/** 心跳间隔（毫秒）- chat.uts 使用 */
+export const WS_HEARTBEAT_INTERVAL = 20000
+/** 心跳间隔（毫秒）- websocket.uts 使用 */
+export const WS_HEARTBEAT_INTERVAL_ALT = 30000
+/** 重连最大延迟（毫秒） */
+export const WS_RECONNECT_MAX_DELAY = 30000
+/** 连接超时阈值（毫秒） */
+export const WS_CONNECTION_TIMEOUT = 30000
+
+// === 微信授权/支付 ===
+/** 微信授权超时（毫秒） */
+export const WX_AUTH_TIMEOUT = 30000
+/** 支付回调超时（毫秒） */
+export const WX_PAYMENT_CALLBACK_TIMEOUT = 5000
+
+// === 请求重试 ===
+/** 重试基础延迟（毫秒） */
+export const REQUEST_RETRY_BASE_DELAY = 1000
+
+// === 心跳超时检测 ===
+/** WebSocket 心跳超时（毫秒） */
+export const WS_HEARTBEAT_TIMEOUT = 60000
+/** WebSocket 连接经过时间阈值（毫秒） */
+export const WS_CONNECTION_ELAPSED_THRESHOLD = 10000
+
+// === 缓存过期 ===
+/** 在线状态缓存过期时间（毫秒，5 分钟） */
+export const ONLINE_STATUS_CACHE_EXPIRE = 300000
+/** 用户信息缓存过期时间（毫秒，30 分钟） */
+export const USER_INFO_CACHE_EXPIRE = 1800000
+
+// === 授权/登录等待 ===
+/** 授权初始化等待超时（毫秒） */
+export const AUTH_INIT_WAIT_TIMEOUT = 3000
+/** 登录等待超时（毫秒） */
+export const LOGIN_WAIT_TIMEOUT = 2000
+
+// === 深链接/分享 ===
+/** 深链接超时（毫秒） */
+export const DEEP_LINK_TIMEOUT = 2000
+/** 分享重定向超时（毫秒） */
+export const SHARE_REDIRECT_TIMEOUT = 2500
+
+// === 订单/支付 ===
+/** 订单列表缓存有效期（毫秒） */
+export const ORDER_LIST_CACHE_DURATION = 20000
+/** 支付状态超时（毫秒，5 分钟） */
+export const PAYMENT_STATE_TIMEOUT = 300000
+
+// === 媒体录制 ===
+/** 语音最大录制时长（秒） */
+export const VOICE_MAX_DURATION_SECONDS = 60
+/** 视频最大录制时长（秒） */
+export const VIDEO_MAX_DURATION_SECONDS = 60

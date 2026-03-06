@@ -1,0 +1,15 @@
+{
+	"deploymentTarget": "12",
+	"frameworks": [
+		"Security.framework",
+		"CoreGraphics.framework",
+		"WebKit.framework"
+	],
+	"plists": {
+		"LSApplicationQueriesSchemes": [
+			"weixin",
+			"weixinULAPI",
+			"weixinURLParamsAPI"
+		]
+	}
+}

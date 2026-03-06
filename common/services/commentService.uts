@@ -1,0 +1,586 @@
+/**
+ * 评论服务 API
+ * 迁移自旧项目：D:\wyxdapp\wyxdweb\common\services\commentService.js
+ */
+import { request } from '@/utils/request'
+import { toUTSJSON, getString, getNumber, getArray, getObject } from '@/common/utils/typeConverter'
+
+// 参数接口定义
+export interface GetMyReceivedParams {
+  userKid: string
+  page: number
+  size: number
+}
+
+export interface GetMyListParams {
+  userKid: string
+  type?: number | null
+  page: number
+  size: number
+}
+
+export interface MarkAllCommentReadParams {
+  userKid: string
+}
+
+export interface GetUnreadCountParams {
+  userKid: string
+}
+
+export interface GetReplyListParams {
+  commentKid: string
+  pageNumber: number
+  pageSize: number
+}
+
+export interface AddReplyParams {
+  userKid: string
+  commentKid: string
+  replyContent: string
+  idempotencyKey?: string
+}
+
+export interface DeleteCommentParams {
+  commentKid: string
+  userKid?: string
+}
+
+export interface DeleteReplyParams {
+  replyKid: string
+  userKid?: string
+}
+
+// 响应接口定义
+export interface CommentResponse {
+  code: number
+  msg?: string | null
+  message?: string | null
+  data?: UTSJSONObject | null
+}
+
+export interface CommentListData {
+  items?: Array<UTSJSONObject> | null
+  entities?: Array<UTSJSONObject> | null
+  total?: number | null
+  count?: number | null
+  pageNum?: number | null
+  pageNumber?: number | null
+  pageSize?: number | null
+  pages?: number | null
+}
+
+// 统一评论目标接口
+interface UnifiedCommentTarget {
+  type?: string | null
+  kid?: string | null
+  title?: string | null
+}
+
+// 统一评论用户接口
+interface UnifiedCommentUser {
+  kid?: string | null
+  nickname?: string | null
+  avatar?: string | null
+}
+
+// 统一评论数据行接口
+interface UnifiedCommentRowData {
+  commentKid?: string | null
+  content?: string | null
+  time?: string | null
+  type?: number | null
+  target?: UnifiedCommentTarget | null
+  user?: UnifiedCommentUser | null
+  starLevel?: number | null
+  commentContent?: string | null
+  images?: string | null
+}
+
+/**
+ * 安全访问响应属性
+ */
+const getResponseCode = (resp: any): number => {
+  if (resp == null) return 500
+  const obj = toUTSJSON(resp)
+  if (obj == null) return 500
+  const codeVal = getNumber(obj, 'code')
+  return codeVal != 0 ? codeVal : 500
+}
+
+const getResponseData = (resp: any): any => {
+  if (resp == null) return {}
+  const obj = toUTSJSON(resp)
+  if (obj == null) return {}
+  const dataVal = obj.get('data')
+  return dataVal != null ? dataVal : {}
+}
+
+const getResponseMsg = (resp: any): string => {
+  if (resp == null) return ''
+  const obj = toUTSJSON(resp)
+  if (obj == null) return ''
+  const msgVal = getString(obj, 'msg')
+  if (msgVal != '') return msgVal
+  return getString(obj, 'message')
+}
+
+const getListDataItems = (listData: any | null): Array<any> => {
+  if (listData == null) return []
+  const obj = toUTSJSON(listData)
+  if (obj == null) return []
+  const itemsVal = getArray(obj, 'items')
+  if (itemsVal.length > 0) return itemsVal
+  const entitiesVal = getArray(obj, 'entities')
+  if (entitiesVal.length > 0) return entitiesVal
+  return []
+}
+
+const getListDataTotal = (listData: any | null): number => {
+  if (listData == null) return 0
+  const obj = toUTSJSON(listData)
+  if (obj == null) return 0
+  const totalVal = getNumber(obj, 'total')
+  if (totalVal != 0) return totalVal
+  return getNumber(obj, 'count')
+}
+
+const getListDataPageNum = (listData: any | null, defaultPage: number): number => {
+  if (listData == null) return defaultPage
+  const obj = toUTSJSON(listData)
+  if (obj == null) return defaultPage
+  const pageNumVal = obj.get('pageNum')
+  if (pageNumVal != null) return getNumber(obj, 'pageNum')
+  const pageNumberVal = obj.get('pageNumber')
+  if (pageNumberVal != null) return getNumber(obj, 'pageNumber')
+  return defaultPage
+}
+
+const getListDataPageSize = (listData: any | null, defaultSize: number): number => {
+  if (listData == null) return defaultSize
+  const obj = toUTSJSON(listData)
+  if (obj == null) return defaultSize
+  const pageSizeVal = obj.get('pageSize')
+  if (pageSizeVal != null) return getNumber(obj, 'pageSize')
+  return defaultSize
+}
+
+const getListDataPages = (listData: any | null, total: number, pageSize: number): number => {
+  if (listData == null) return Math.ceil(total / pageSize)
+  const obj = toUTSJSON(listData)
+  if (obj == null) return Math.ceil(total / pageSize)
+  const pagesVal = obj.get('pages')
+  if (pagesVal != null) return getNumber(obj, 'pages')
+  return Math.ceil(total / pageSize)
+}
+
+/**
+ * 映射评论数据行
+ */
+function mapCommentRow(row: any): any {
+  if (row == null) {
+    return {
+      commentKid: '',
+      content: '',
+      time: '',
+      module: '',
+      target: { type: '', kid: '', summary: '' },
+      user: { kid: '', nickname: '', avatar: '' }
+    }
+  }
+  
+  const obj = toUTSJSON(row)
+  if (obj == null) {
+    return {
+      commentKid: '',
+      content: '',
+      time: '',
+      module: '',
+      target: { type: '', kid: '', summary: '' },
+      user: { kid: '', nickname: '', avatar: '' }
+    }
+  }
+  
+  const commentKidVal = getString(obj, 'commentKid')
+  const commentKid = commentKidVal != '' ? commentKidVal : getString(obj, 'kid')
+  
+  const contentVal = getString(obj, 'content')
+  const content = contentVal != '' ? contentVal : getString(obj, 'commentContent')
+  
+  const timeVal = getString(obj, 'commentTime')
+  const time = timeVal != '' ? timeVal : (getString(obj, 'time') != '' ? getString(obj, 'time') : getString(obj, 'createTime'))
+  
+  const moduleTypeVal = getString(obj, 'moduleType')
+  const moduleType = moduleTypeVal != '' ? moduleTypeVal : getString(obj, 'commentModule')
+  
+  const targetKidVal = getString(obj, 'targetKid')
+  const targetKid = targetKidVal != '' ? targetKidVal : getString(obj, 'contentKid')
+  
+  const summary = getString(obj, 'summary')
+  
+  const fromUserKidVal = getString(obj, 'fromUserKid')
+  const fromUserKid = fromUserKidVal != '' ? fromUserKidVal : getString(obj, 'userKid')
+  
+  const nicknameVal = getString(obj, 'fromUserNickname')
+  const nickname = nicknameVal != '' ? nicknameVal : (getString(obj, 'userNickName') != '' ? getString(obj, 'userNickName') : getString(obj, 'nickname'))
+  
+  const avatarVal = getString(obj, 'fromUserAvatar')
+  const avatar = avatarVal != '' ? avatarVal : (getString(obj, 'image') != '' ? getString(obj, 'image') : getString(obj, 'avatar'))
+  
+  return {
+    commentKid: commentKid,
+    content: content,
+    time: time,
+    module: moduleType,
+    target: {
+      type: moduleType,
+      kid: targetKid,
+      summary: summary
+    },
+    user: {
+      kid: fromUserKid,
+      nickname: nickname,
+      avatar: avatar
+    }
+  }
+}
+
+/**
+ * 映射统一评论数据行
+ */
+function mapUnifiedCommentRow(row: any): any {
+  if (row == null) {
+    return {
+      commentKid: '',
+      content: '',
+      time: '',
+      type: 2,
+      starLevel: 0,
+      commentContent: '',
+      images: '',
+      target: { type: '', kid: '', title: '' },
+      user: { kid: '', nickname: '', avatar: '' }
+    }
+  }
+  
+  // 一次性转换为 UTSJSONObject，替代原来每个字段各自 JSON.stringify + JSON.parse
+  const obj = toUTSJSON(row)
+  if (obj == null) {
+    return {
+      commentKid: '',
+      content: '',
+      time: '',
+      type: 2,
+      starLevel: 0,
+      commentContent: '',
+      images: '',
+      target: { type: '', kid: '', title: '' },
+      user: { kid: '', nickname: '', avatar: '' }
+    }
+  }
+  
+  const commentKid = getString(obj, 'commentKid')
+  const content = getString(obj, 'content')
+  const time = getString(obj, 'time')
+  
+  // type 默认值为 2
+  const typeRaw = obj.get('type')
+  const type = typeRaw != null ? getNumber(obj, 'type') : 2
+  
+  // 安全访问嵌套 target 对象
+  const targetObj = getObject(obj, 'target')
+  const targetType = getString(targetObj, 'type')
+  const targetKid = getString(targetObj, 'kid')
+  const targetTitle = getString(targetObj, 'title')
+  
+  // 安全访问嵌套 user 对象
+  const userObj = getObject(obj, 'user')
+  const userKid = getString(userObj, 'kid')
+  const userNickname = getString(userObj, 'nickname')
+  const userAvatar = getString(userObj, 'avatar')
+  
+  const starLevel = getNumber(obj, 'starLevel')
+  const commentContentVal = getString(obj, 'commentContent')
+  const imagesVal = getString(obj, 'images')
+  
+  return {
+    commentKid: commentKid,
+    content: content,
+    time: time,
+    type: type,
+    starLevel: starLevel,
+    commentContent: commentContentVal,
+    images: imagesVal,
+    target: {
+      type: targetType,
+      kid: targetKid,
+      title: targetTitle
+    },
+    user: {
+      kid: userKid,
+      nickname: userNickname,
+      avatar: userAvatar
+    }
+  }
+}
+
+/**
+ * 获取我收到的评论
+ * 对应后端接口：POST /behavior/comment/my-received
+ * 注意：如果后端未实现，需要先实现该接口
+ */
+export const getMyReceived = async (params: GetMyReceivedParams) => {
+  const url = `/behavior/comment/my-received?userKid=${encodeURIComponent(params.userKid)}&pageNumber=${params.page}&pageSize=${params.size}`
+  const resp = await request.post(url, {}, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const respData = (ok == true) ? getResponseData(resp) : {}
+  const items = getListDataItems(respData)
+  const mappedItems: Array<any> = []
+  for (let i = 0; i < items.length; i = i + 1) {
+    const item = items[i]
+    if (item != null) {
+      mappedItems.push(mapCommentRow(item))
+    }
+  }
+  const total = getListDataTotal(respData)
+  const pageNum = getListDataPageNum(respData, params.page)
+  const pageSize = getListDataPageSize(respData, params.size)
+  const pages = getListDataPages(respData, total, params.size)
+  
+  return {
+    items: mappedItems,
+    total: total,
+    pageNum: pageNum,
+    pageSize: pageSize,
+    pages: pages
+  }
+}
+
+/**
+ * 安全获取 any 对象的字符串属性
+ */
+const getParamString = (params: any, key: string): string => {
+  if (params == null) return ''
+  const obj = toUTSJSON(params)
+  return getString(obj, key)
+}
+
+/**
+ * 安全获取 any 对象的数字属性
+ */
+const getParamNumber = (params: any, key: string, defaultVal: number): number => {
+  if (params == null) return defaultVal
+  const obj = toUTSJSON(params)
+  if (obj == null) return defaultVal
+  const val = obj.get(key)
+  if (val == null) return defaultVal
+  const num = getNumber(obj, key)
+  return num
+}
+
+/**
+ * 安全获取 any 对象的可空数字属性
+ */
+const getParamNumberOrNull = (params: any, key: string): number | null => {
+  if (params == null) return null
+  const obj = toUTSJSON(params)
+  if (obj == null) return null
+  const val = obj.get(key)
+  if (val == null) return null
+  return getNumber(obj, key)
+}
+
+/**
+ * 🎯 统一获取我的评论列表（支持Tab分类）
+ * 对应后端接口：POST /behavior/comment/myList
+ * type: 1=订单评价, 2=动态评论, 3=点赞记录, null=全部
+ */
+export const getMyList = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const typeVal = getParamNumberOrNull(params, 'type')
+  const pageVal = getParamNumber(params, 'page', 1)
+  const sizeVal = getParamNumber(params, 'size', 10)
+  
+  const postParams = {
+    userKid: userKidVal,
+    type: typeVal,
+    pageNumber: pageVal,
+    pageSize: sizeVal
+  } as UTSJSONObject
+  const resp = await request.post('/behavior/comment/myList', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const respData = (ok == true) ? getResponseData(resp) : {}
+  const items = getListDataItems(respData)
+  const mappedItems: Array<any> = []
+  for (let i = 0; i < items.length; i = i + 1) {
+    const item = items[i]
+    if (item != null) {
+      mappedItems.push(mapUnifiedCommentRow(item))
+    }
+  }
+  const total = getListDataTotal(respData)
+  const pageNum = getListDataPageNum(respData, pageVal)
+  const pageSize = getListDataPageSize(respData, sizeVal)
+  const pages = getListDataPages(respData, total, sizeVal)
+  
+  return {
+    items: mappedItems,
+    total: total,
+    pageNum: pageNum,
+    pageSize: pageSize,
+    pages: pages
+  }
+}
+
+/**
+ * 标记所有评论为已读
+ * 对应后端接口：POST /behavior/comment/markAllRead
+ * 注意：如果后端未实现，需要先实现该接口
+ */
+export const markAllRead = async (params: UTSJSONObject) => {
+  const userKidVal = getParamString(params, 'userKid')
+  const url = `/behavior/comment/markAllRead?userKid=${encodeURIComponent(userKidVal)}`
+  const resp = await request.post(url, {}, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const msg = getResponseMsg(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    msg: msg
+  }
+}
+
+/**
+ * 获取未读评论数量
+ * 对应后端接口：GET /behavior/comment/unread/count
+ */
+export const getUnreadCount = async (params: GetUnreadCountParams) => {
+  const url = `/behavior/comment/unread/count?userKid=${encodeURIComponent(params.userKid)}`
+  const resp = await request.get(url, {}, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const respData = getResponseData(resp)
+  let count = 0
+  if (ok == true && respData != null) {
+    if (typeof respData == 'number') {
+      count = respData as number
+    } else {
+      const obj = toUTSJSON(respData)
+      if (obj != null) {
+        const numVal = getNumber(obj, 'count')
+        if (numVal != 0) count = numVal
+      }
+    }
+  }
+  
+  return {
+    code: ok == true ? 200 : code,
+    count: count
+  }
+}
+
+/**
+ * 获取评论回复列表
+ * 对应后端接口：POST /behavior/reply/replyList
+ */
+export const getReplyList = async (params: GetReplyListParams) => {
+  const url = `/behavior/reply/replyList?commentKid=${encodeURIComponent(params.commentKid)}&pageNumber=${params.pageNumber}&pageSize=${params.pageSize}`
+  const resp = await request.post(url, {}, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const respData = (ok == true) ? getResponseData(resp) : {}
+  const entities = getListDataItems(respData)
+  const total = getListDataTotal(respData)
+  
+  return {
+    code: ok == true ? 200 : code,
+    entities: entities,
+    total: total
+  }
+}
+
+/**
+ * 添加回复
+ * 对应后端接口：POST /behavior/reply/addReply
+ */
+export const addReply = async (params: AddReplyParams) => {
+  const postParams = {
+    userKid: params.userKid,
+    commentKid: params.commentKid,
+    replyContent: params.replyContent,
+    idempotencyKey: params.idempotencyKey
+  } as UTSJSONObject
+  const resp = await request.post('/behavior/reply/addReply', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const respData = getResponseData(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    data: respData
+  }
+}
+
+/**
+ * 删除评论
+ * 对应后端接口：POST /behavior/comment/v1/deleteComment 或 POST /behavior/comment/deleteComment
+ */
+export const deleteComment = async (params: DeleteCommentParams) => {
+  const postParams = {
+    commentKid: params.commentKid,
+    kid: params.commentKid,
+    userKid: params.userKid
+  } as UTSJSONObject
+  const resp = await request.post('/behavior/comment/v1/deleteComment', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const msg = getResponseMsg(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    msg: msg
+  }
+}
+
+/**
+ * 删除回复
+ * 对应后端接口：POST /behavior/comment/v1/deleteComment 或 POST /behavior/reply/deleteReply
+ */
+export const deleteReply = async (params: DeleteReplyParams) => {
+  // 尝试使用 v1 接口（兼容旧项目）
+  const postParams = {
+    replyKid: params.replyKid,
+    kid: params.replyKid,
+    userKid: params.userKid
+  } as UTSJSONObject
+  const resp = await request.post('/behavior/comment/v1/deleteComment', postParams, false)
+  
+  const code = getResponseCode(resp)
+  const ok = (code == 200)
+  const msg = getResponseMsg(resp)
+  
+  return {
+    code: ok == true ? 200 : code,
+    msg: msg
+  }
+}
+
+export default {
+  getMyReceived,
+  getMyList,
+  markAllRead,
+  getUnreadCount,
+  getReplyList,
+  addReply,
+  deleteComment,
+  deleteReply
+}

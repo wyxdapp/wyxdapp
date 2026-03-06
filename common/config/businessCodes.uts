@@ -1,0 +1,102 @@
+/**
+ * 业务状态码常量模块
+ * 集中定义订单状态、VIP 状态、搜索类型等业务枚举值
+ */
+
+// === 订单状态 ===
+/** 待支付 */
+export const ORDER_STATUS_PENDING = 10
+/** 已支付 */
+export const ORDER_STATUS_PAID = 20
+/** 已确认 */
+export const ORDER_STATUS_CONFIRMED = 30
+/** 进行中 */
+export const ORDER_STATUS_IN_PROGRESS = 40
+/** 已完成 */
+export const ORDER_STATUS_COMPLETED = 50
+/** 已取消 */
+export const ORDER_STATUS_CANCELLED = 60
+/** 退款中 */
+export const ORDER_STATUS_REFUNDING = 70
+/** 已退款 */
+export const ORDER_STATUS_REFUNDED = 80
+/** 已关闭 */
+export const ORDER_STATUS_CLOSED = 90
+
+// === VIP 状态 ===
+/** 未开通 */
+export const VIP_NOT_ACTIVATED = 10
+/** 已开通 */
+export const VIP_ACTIVATED = 20
+/** 已过期 */
+export const VIP_EXPIRED = 30
+
+// === VIP 类型 ===
+/** 月卡 */
+export const VIP_TYPE_MONTHLY = 10
+/** 年卡 */
+export const VIP_TYPE_YEARLY = 20
+
+// === 退款状态 ===
+/** 退款中 */
+export const REFUND_STATUS_PENDING = 10
+/** 退款成功 */
+export const REFUND_STATUS_SUCCESS = 20
+/** 退款失败 */
+export const REFUND_STATUS_FAILED = 30
+
+// === 搜索类型 ===
+/** 用户 */
+export const SEARCH_TYPE_USER = 20
+/** 景点 */
+export const SEARCH_TYPE_SCENIC = 30
+/** 定制 */
+export const SEARCH_TYPE_CUSTOM = 40
+/** 动态 */
+export const SEARCH_TYPE_TREND = 50
+
+// === 评论模块类型 ===
+/** 定制评论 */
+export const COMMENT_MODULE_CUSTOM = 20
+/** 动态评论 */
+export const COMMENT_MODULE_TREND = 30
+
+// === 线路类型 ===
+/** 自由行 */
+export const LINE_TYPE_FREE = 20
+/** 跟团游 */
+export const LINE_TYPE_GROUP = 30
+
+// === 投诉类型 ===
+/** 默认投诉类型 */
+export const COMPLAINT_TYPE_DEFAULT = 40
+
+// === 订单类型 ===
+/** 定制订单 */
+export const ORDER_TYPE_CUSTOM = 30
+/** 导游订单 */
+export const ORDER_TYPE_GUIDE = 40
+/** 线路订单 */
+export const ORDER_TYPE_LINE = 50
+
+// === 抽奖类型 ===
+/** 免费抽奖 */
+export const LOTTERY_TYPE_FREE = 10
+/** 付费抽奖 */
+export const LOTTERY_TYPE_PAID = 20
+
+// === 抽奖操作 ===
+/** 自己抽奖 */
+export const LOTTERY_ACTION_SELF = 10
+/** 赠送抽奖 */
+export const LOTTERY_ACTION_GIFT = 20
+
+// === 提现方式 ===
+/** 微信提现 */
+export const WITHDRAW_METHOD_WECHAT = 10
+/** 支付宝提现 */
+export const WITHDRAW_METHOD_ALIPAY = 20
+
+// === WebSocket 消息类型 ===
+/** 已读回执 */
+export const WS_MSG_TYPE_READ_RECEIPT = 102

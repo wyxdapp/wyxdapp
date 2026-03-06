@@ -1,0 +1,134 @@
+﻿﻿/**
+ * H5 端微信登录服务
+ * 使用微信网页授权实现
+ * 
+ * 此文件仅在 H5 端编译和使用
+ * 
+ * 重要说明：
+ * - 微信浏览器内 H5 使用公众号授权（type=20），AppID: wx428774d18f12e2b1
+ * - 非微信浏览器 H5 使用开放平台扫码登录（type=40），AppID: wx4a9aa1fbc92e1054
+ * - code 必须与获取时使用的 AppID 匹配，否则会报 invalid code 错误
+ */
+
+// #ifdef H5
+// 从配置模块导入微信常量
+import { WX_MP_APP_ID } from '@/common/config/wechatConfig'
+import { SK_WX_CODE } from '@/common/config/storageKeys.uts'
+import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+// H5 微信开放平台配置（用于非微信浏览器扫码登录）- 暂不支持
+// const WECHAT_OPEN_APP_ID = 'wx4a9aa1fbc92e1054'
+
+/**
+ * 初始化微信 SDK（H5 端无需初始化原生 SDK）
+ */
+export function initWeChatSDK(): void {
+	console.log('🌐 [WX-SDK-H5] H5 端无需初始化原生微信SDK')
+}
+
+/**
+ * 检查是否在微信浏览器中
+ */
+function isWechatBrowser(): boolean {
+	if (typeof window == 'undefined') {
+		return false
+	}
+	const ua = navigator.userAgent.toLowerCase()
+	return ua.indexOf('micromessenger') != -1
+}
+
+/**
+ * 获取 URL 参数
+ */
+function getUrlParam(name: string): string {
+	// #ifdef H5
+	const urlParams = getUrlParams()
+	const value = urlParams.get(name)
+	if (value != null && value != '') {
+		return value
+	}
+	// #endif
+	return ''
+}
+
+/**
+ * 获取微信授权 code
+ */
+export function getWechatAuthCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	console.log('🌐 [WX-SDK-H5] 开始获取微信授权code')
+	
+	uni.removeStorageSync(SK_WX_CODE)
+	console.log('🧹 [WX-SDK-H5] 已清理旧的微信授权code')
+	
+	if (isWechatBrowser() == false) {
+		console.error('❌ [WX-SDK-H5] 请在微信中打开此页面')
+		onError('请在微信中打开此页面进行登录')
+		return
+	}
+	
+	const codeFromUrl = getUrlParam('code')
+	if (codeFromUrl != null && codeFromUrl != '') {
+		onSuccess(codeFromUrl)
+		return
+	}
+	
+	const cachedCode = safeGetStorageSync(SK_WX_CODE)
+	if (cachedCode != null && cachedCode.toString() != '') {
+		onSuccess(cachedCode.toString())
+		return
+	}
+	
+	console.log('🔗 [WX-SDK-H5] 跳转到微信授权页面')
+	
+	const baseUrl = (typeof window != 'undefined' && window.location != null) 
+		? (window.location.origin + window.location.pathname) 
+		: ''
+	const codePath = '/pagesUser/login/index'
+	const callbackUrl = baseUrl + '?codePath=' + encodeURIComponent(codePath)
+	const redirectUri = encodeURIComponent(callbackUrl)
+	const scope = 'snsapi_userinfo'
+	const state = 'wechat_login_' + Date.now().toString()
+	
+	const authUrl = 'https://open.weixin.qq.com/connect/oauth2/authorize'
+		+ '?appid=' + WX_MP_APP_ID
+		+ '&redirect_uri=' + redirectUri
+		+ '&response_type=code'
+		+ '&scope=' + scope
+		+ '&state=' + state
+		+ '#wechat_redirect'
+	
+	console.log('🔗 [WX-SDK-H5] 授权URL:', authUrl.substring(0, 100) + '...')
+	
+	if (typeof window != 'undefined') {
+		safeRedirect(authUrl)
+	}
+}
+
+/**
+ * 检查微信是否安装（H5 端检查是否在微信浏览器中）
+ */
+export function isWeChatInstalled(): boolean {
+	return isWechatBrowser()
+}
+// #endif
+
+// #ifndef H5
+// 非 H5 端提供空实现
+export function initWeChatSDK(): void {
+	console.log('⚠️ [WX-SDK] 非H5端，跳过H5微信SDK')
+}
+
+export function getWechatAuthCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	onError('当前平台不支持H5端微信登录')
+}
+
+export function isWeChatInstalled(): boolean {
+	return false
+}
+// #endif

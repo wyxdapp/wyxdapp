@@ -1,0 +1,251 @@
+/**
+ * 定位错误处理器
+ * 负责解析定位错误、生成用户友好的提示信息、引导用户解决问题
+ * 
+ * Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 8.1, 8.2, 8.3, 8.4, 8.5
+ */
+
+import { createLogger } from '@/common/utils/logger.uts'
+import { isAndroid, isIOS, getUserAgent } from '@/common/utils/systemInfo.uts'
+import { LOCATION_ERROR_PERMISSION_DENIED, LOCATION_ERROR_UNAVAILABLE, LOCATION_ERROR_TIMEOUT } from '@/common/config/thirdPartyConfig.uts'
+
+// 创建日志记录器
+const logger = createLogger('LocationError')
+
+/**
+ * 定位错误类型枚举
+ */
+export enum LocationErrorType {
+	PERMISSION_DENIED = 'PERMISSION_DENIED',       // 权限被拒绝
+	SERVICE_DISABLED = 'SERVICE_DISABLED',         // 定位服务未开启
+	TIMEOUT = 'TIMEOUT',                           // 定位超时
+	NETWORK_ERROR = 'NETWORK_ERROR',               // 网络错误
+	UNKNOWN = 'UNKNOWN'                            // 未知错误
+}
+
+/**
+ * 错误提示配置类
+ */
+export class ErrorPromptConfig {
+	title: string = ''           // 提示标题
+	content: string = ''         // 提示内容
+	confirmText: string = ''     // 确认按钮文字
+	cancelText: string = ''      // 取消按钮文字
+	showCancel: boolean = false  // 是否显示取消按钮
+	action: string = ''          // 操作类型：'openSetting' | 'retry' | 'none'
+}
+
+/**
+ * 解析定位错误码，返回错误类型
+ * 
+ * @param errorCode uni.getLocation 返回的错误码
+ * @param errorMsg 错误消息
+ * @returns 错误类型
+ */
+export function parseLocationError(errorCode: number, errorMsg: string): LocationErrorType {
+	// 错误码 LOCATION_ERROR_PERMISSION_DENIED: Failed to get provider - 权限被拒绝或定位服务未开启
+	if (errorCode == LOCATION_ERROR_PERMISSION_DENIED) {
+		// 通过错误消息进一步判断
+		const msgLower = errorMsg.toLowerCase()
+		if (msgLower.indexOf('permission') != -1 || msgLower.indexOf('denied') != -1) {
+			return LocationErrorType.PERMISSION_DENIED
+		}
+		if (msgLower.indexOf('provider') != -1 || msgLower.indexOf('disabled') != -1) {
+			return LocationErrorType.SERVICE_DISABLED
+		}
+		// 🔧 修复：明确识别基座问题导致的provider错误
+		if (msgLower.indexOf('failed to get provider') != -1) {
+			return LocationErrorType.SERVICE_DISABLED
+		}
+		// 默认认为是权限问题
+		return LocationErrorType.PERMISSION_DENIED
+	}
+	
+	// 错误码 LOCATION_ERROR_UNAVAILABLE: 定位超时
+	if (errorCode == LOCATION_ERROR_UNAVAILABLE) {
+		return LocationErrorType.TIMEOUT
+	}
+	
+	// 错误码 LOCATION_ERROR_TIMEOUT: 网络错误
+	if (errorCode == LOCATION_ERROR_TIMEOUT) {
+		return LocationErrorType.NETWORK_ERROR
+	}
+	
+	// 其他错误码
+	return LocationErrorType.UNKNOWN
+}
+
+/**
+ * 记录定位错误日志
+ * 包含设备信息、错误码、错误消息等完整信息
+ * 
+ * @param errorType 错误类型
+ * @param errorCode 错误码
+ * @param errorMsg 错误消息
+ * @param context 上下文信息（可选）
+ */
+export function logLocationError(
+	errorType: LocationErrorType,
+	errorCode: number,
+	errorMsg: string,
+	context: string
+): void {
+	const platform = isAndroid() == true ? 'Android' : (isIOS() == true ? 'iOS' : 'H5')
+	const deviceInfo = getUserAgent()
+	
+	const logMsg = '定位失败 [' + errorType + '] - 平台: ' + platform + 
+		', 设备: ' + deviceInfo + 
+		', 错误码: ' + errorCode.toString() + 
+		', 错误信息: ' + errorMsg + 
+		', 上下文: ' + context
+	
+	logger.error(logMsg)
+}
+
+/**
+ * 生成错误提示配置
+ * 根据错误类型生成不同的提示内容和操作按钮
+ * 
+ * @param errorType 错误类型
+ * @returns 错误提示配置
+ */
+export function generateErrorPromptConfig(errorType: LocationErrorType): ErrorPromptConfig {
+	if (errorType == LocationErrorType.PERMISSION_DENIED) {
+		// 权限被拒绝
+		const config = new ErrorPromptConfig()
+		config.title = '需要定位权限'
+		config.content = '为了给您推荐附近的向导和景点，需要获取您的位置信息。请在设置中开启定位权限。'
+		config.confirmText = '去设置'
+		config.cancelText = '取消'
+		config.showCancel = true
+		config.action = 'openSetting'
+		return config
+	}
+	
+	if (errorType == LocationErrorType.SERVICE_DISABLED) {
+		// 定位服务未开启
+		const config = new ErrorPromptConfig()
+		config.title = '定位服务未开启'
+		config.content = '请在系统设置中开启定位服务，以便为您推荐附近的向导和景点。'
+		config.confirmText = '去开启'
+		config.cancelText = '取消'
+		config.showCancel = true
+		config.action = 'openSetting'
+		return config
+	}
+	
+	if (errorType == LocationErrorType.TIMEOUT) {
+		// 定位超时
+		const config = new ErrorPromptConfig()
+		config.title = '定位超时'
+		config.content = '定位时间过长，请检查网络连接或稍后重试。'
+		config.confirmText = '重试'
+		config.cancelText = '取消'
+		config.showCancel = true
+		config.action = 'retry'
+		return config
+	}
+	
+	if (errorType == LocationErrorType.NETWORK_ERROR) {
+		// 网络错误
+		const config = new ErrorPromptConfig()
+		config.title = '网络错误'
+		config.content = '定位需要网络连接，请检查您的网络设置后重试。'
+		config.confirmText = '重试'
+		config.cancelText = '取消'
+		config.showCancel = true
+		config.action = 'retry'
+		return config
+	}
+	
+	// 未知错误
+	const config = new ErrorPromptConfig()
+	config.title = '定位失败'
+	config.content = '获取位置信息失败，将为您展示全国范围的内容。'
+	config.confirmText = '重试'
+	config.cancelText = '知道了'
+	config.showCancel = true
+	config.action = 'retry'
+	return config
+}
+
+/**
+ * 显示定位错误提示
+ * 根据错误类型显示不同的提示，并提供相应的操作按钮
+ * 
+ * @param errorType 错误类型
+ * @param onRetry 重试回调函数（可选）
+ */
+export function showLocationErrorPrompt(
+	errorType: LocationErrorType,
+	onRetry: (() => void) | null
+): void {
+	console.log('📢 [LocationError] showLocationErrorPrompt 被调用，错误类型:', errorType)
+	const config = generateErrorPromptConfig(errorType)
+	console.log('📢 [LocationError] 弹窗配置:', config.title, '-', config.content)
+	
+	uni.showModal({
+		title: config.title,
+		content: config.content,
+		confirmText: config.confirmText,
+		cancelText: config.cancelText,
+		showCancel: config.showCancel,
+		success: (res: UniShowModalResult) => {
+			console.log('📢 [LocationError] 用户响应弹窗，confirm:', res.confirm)
+			if (res.confirm == true) {
+				// 用户点击确认按钮
+				if (config.action == 'openSetting') {
+					openSystemSetting()
+				} else if (config.action == 'retry') {
+					// 执行重试回调
+					if (onRetry != null) {
+						onRetry()
+					}
+				}
+			}
+		}
+	})
+	console.log('📢 [LocationError] uni.showModal 已调用')
+}
+
+/**
+ * 打开系统设置
+ * 小程序使用 uni.openSetting()
+ * APP 端引导用户手动打开系统设置
+ */
+function openSystemSetting(): void {
+	// #ifdef MP-WEIXIN
+	// 微信小程序：打开设置页
+	uni.openSetting({
+		success: (res: any) => {
+			logger.info('用户打开了设置页')
+		},
+		fail: (err: any) => {
+			logger.warn('打开设置页失败')
+		}
+	})
+	// #endif
+	
+	// #ifdef APP-PLUS
+	// APP 端：提示用户手动打开系统设置
+	const platform = isAndroid() == true ? 'Android' : 'iOS'
+	const settingPath = isAndroid() == true ? '设置 > 应用 > 网约向导 > 权限' : '设置 > 隐私 > 定位服务'
+	
+	uni.showModal({
+		title: '如何开启定位权限',
+		content: '请前往系统设置开启定位权限：\n' + settingPath,
+		confirmText: '知道了',
+		showCancel: false
+	})
+	// #endif
+	
+	// #ifdef H5
+	// H5 端：提示用户在浏览器中允许定位
+	uni.showModal({
+		title: '如何开启定位权限',
+		content: '请在浏览器地址栏左侧点击锁图标，允许获取位置信息。',
+		confirmText: '知道了',
+		showCancel: false
+	})
+	// #endif
+}

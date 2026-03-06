@@ -1,0 +1,109 @@
+<template>
+	<view class="recommend-badge" :class="badgeTypeClass">
+		<!-- 图标容器 - 使用固定宽度而非 position absolute -->
+		<view v-if="showIcon == true" class="badge-icon-wrapper">
+			<image 
+				class="badge-icon" 
+				:src="iconSrc" 
+				mode="aspectFill"
+			/>
+		</view>
+		<!-- 文字 -->
+		<text class="badge-text">{{ text }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// Props
+const props = defineProps({
+	// 标签类型: recommend(推荐), bound(已绑定), match(高度匹配)
+	type: { type: String, default: 'recommend' },
+	// 自定义文字
+	text: { type: String, default: '推荐' },
+	// 是否显示图标
+	showIcon: { type: Boolean, default: true }
+})
+
+// 计算属性
+const badgeTypeClass = computed((): string => {
+	let baseClass = ''
+	if (props.type == 'bound') {
+		baseClass = 'badge-bound'
+	} else if (props.type == 'match') {
+		baseClass = 'badge-match'
+	} else {
+		baseClass = 'badge-recommend'
+	}
+	
+	// 无图标时添加额外类
+	if (props.showIcon == false) {
+		baseClass = baseClass + ' no-icon'
+	}
+	
+	return baseClass
+})
+
+const iconSrc = computed((): string => {
+	return 'https://jiasu.wyxdapp.com/iconimages/n_index_officialRecommendation.png'
+})
+</script>
+
+<style scoped>
+/* 推荐标签基础样式 - 使用 flex 布局 */
+.recommend-badge {
+	position: absolute;
+	top: 8rpx;
+	left: 8rpx;
+	height: 44rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	border-radius: 22rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+/* 无图标时的样式 */
+.recommend-badge.no-icon {
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+}
+
+/* 图标容器 - 固定宽高，不使用 position absolute */
+.badge-icon-wrapper {
+	width: 44rpx;
+	height: 44rpx;
+	border-radius: 22rpx;
+	overflow: hidden;
+}
+
+/* 图标 */
+.badge-icon {
+	width: 44rpx;
+	height: 44rpx;
+}
+
+/* 文字 */
+.badge-text {
+	font-size: 20rpx;
+	color: #FFFFFF;
+	line-height: 44rpx;
+	padding-left: 4rpx;
+	padding-right: 12rpx;
+}
+
+/* 推荐类型 - 默认半透明黑色 */
+.badge-recommend {
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* 已绑定类型 - 绿色 */
+.badge-bound {
+	background-color: #52C41A;
+}
+
+/* 高度匹配类型 - 橙色 */
+.badge-match {
+	background-color: #FF9800;
+}
+</style>

@@ -1,0 +1,154 @@
+/**
+ * 推送事件监听器
+ * 监听用户登录/退出事件，自动绑定/解绑 Client_ID
+ * 
+ * Requirements: 1.4, 1.5
+ * 
+ * 🔒 隐私合规：所有敏感 API 调用前需检查隐私协议状态
+ */
+
+import { LOGIN_STATUS_CHANGE_EVENT } from '@/stores/user.uts'
+import { initPushService, bindClientIdToUser, unbindClientIdFromUser } from '@/common/services/pushService.uts'
+import { initPushConfig, clearPushConfig, forceSyncFromServer } from '@/stores/pushConfig.uts'
+import { registerPushMessageListener, unregisterPushMessageListener } from '@/common/services/pushMessageHandler.uts'
+import { createLogger } from '@/common/utils/logger.uts'
+import { checkPrivacyBeforeCall } from '@/common/utils/privacyManager.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 创建日志记录器
+const logger = createLogger('PushEventListener')
+
+// 是否已注册监听器
+let isListenerRegistered = false
+
+/**
+ * 处理登录状态变化
+ * @param data 事件数据 { isLogin: boolean, userId: string }
+ */
+const handleLoginStatusChange = (data: any) => {
+	if (data == null) {
+		console.warn('⚠️ [PushEventListener] 登录状态事件数据为空')
+		return
+	}
+	
+	try {
+		const dataStr = JSON.stringify(data)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		const isLoginVal = dataObj.get('isLogin')
+		const userIdVal = dataObj.get('userId')
+		
+		const isLogin = isLoginVal == true || isLoginVal.toString() == 'true'
+		const userId = (userIdVal != null && userIdVal.toString() != '') ? userIdVal.toString() : ''
+		
+		console.log('📢 [PushEventListener] 收到登录状态变化:', isLogin, userId)
+		
+		if (isLogin == true && userId != '') {
+			// 用户登录 - 绑定 Client_ID
+			console.log('🔐 [PushEventListener] 用户登录，开始绑定推送')
+			
+			// 初始化推送配置
+			initPushConfig()
+			
+			// 绑定 Client_ID
+			bindClientIdToUser(userId)
+			
+			// 从服务器同步推送配置
+			forceSyncFromServer().then((success: boolean) => {
+				if (success == true) {
+				}
+			}).catch((err: any | null): void => {
+				handleSilentError(err as any, '推送配置同步')
+			})
+		} else {
+			// 用户退出 - 解绑 Client_ID
+			console.log('🔓 [PushEventListener] 用户退出，解绑推送')
+			
+			// 解绑 Client_ID
+			unbindClientIdFromUser()
+			
+			// 清除推送配置
+			clearPushConfig()
+		}
+	} catch (e) {
+		handleSilentError(e, '处理登录状态变化')
+	}
+}
+
+/**
+ * 注册推送事件监听器
+ * 在 App.uvue 的 onLaunch 中调用
+ * 
+ * 🔒 系统隐私声明自动处理，无需手动检查
+ */
+export const registerPushEventListener = () => {
+	// 🔒 隐私合规守卫：用户未同意隐私政策前不注册推送监听
+	if (checkPrivacyBeforeCall() == false) {
+		logger.info('🔒 用户未同意隐私政策，跳过推送监听注册')
+		return
+	}
+	
+	if (isListenerRegistered == true) {
+		logger.debug('监听器已注册，跳过')
+		return
+	}
+	
+	logger.info('🎧 注册登录状态监听器')
+	
+	// 监听登录状态变化事件
+	uni.$on(LOGIN_STATUS_CHANGE_EVENT, handleLoginStatusChange)
+	
+	isListenerRegistered = true
+	
+	// 初始化推送服务
+	initPushService()
+	
+	// 注册推送消息监听器
+	registerPushMessageListener()
+	
+	logger.info('✅ 推送事件监听器注册完成')
+}
+
+/**
+ * 注销推送事件监听器
+ */
+export const unregisterPushEventListener = () => {
+	if (isListenerRegistered == false) {
+		console.log('ℹ️ [PushEventListener] 监听器未注册')
+		return
+	}
+	
+	console.log('🔇 [PushEventListener] 注销登录状态监听器')
+	
+	uni.$off(LOGIN_STATUS_CHANGE_EVENT, handleLoginStatusChange)
+	
+	// 注销推送消息监听器
+	unregisterPushMessageListener()
+	
+	isListenerRegistered = false
+	
+}
+
+/**
+ * 检查监听器是否已注册
+ */
+export const isPushEventListenerRegistered = (): boolean => {
+	return isListenerRegistered
+}
+
+/**
+ * 手动触发推送绑定（用于已登录用户首次启动）
+ * @param userId 用户 ID
+ */
+export const manualBindPush = (userId: string) => {
+	if (userId == '') {
+		console.warn('⚠️ [PushEventListener] 用户 ID 为空，跳过手动绑定')
+		return
+	}
+	
+	// 初始化推送配置
+	initPushConfig()
+	
+	// 绑定 Client_ID
+	bindClientIdToUser(userId)
+}

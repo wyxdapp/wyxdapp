@@ -1,0 +1,1281 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">导游认证</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		<!-- 背景图片 -->
+		<image class="hear-bg" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill" />
+		<!-- #ifndef H5 -->
+		<view class="guide-page" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="guide-page">
+		<!-- #endif -->
+			<!-- 已通过认证页面 -->
+			<view v-if="isApproved" class="success-page">
+				<view class="success-content">
+					<view class="success-icon-wrapper">
+						<uni-icons type="checkmarkempty" size="64" color="#ffffff"></uni-icons>
+					</view>
+					<text class="success-title">审核已通过！</text>
+					<view class="auth-result">
+						<view class="result-row">
+							<text class="result-label">导游证号码</text>
+							<text class="result-value">{{ (maskedGuideNum != null && maskedGuideNum != '') ? maskedGuideNum : '--' }}</text>
+						</view>
+						<view class="result-divider"></view>
+						<view class="result-row">
+							<text class="result-label">失效日期</text>
+							<text class="result-value">{{ authExpiryDisplay }}</text>
+						</view>
+					</view>
+				</view>
+				<view v-if="authGuideImage != null && authGuideImage != ''" class="success-image-wrapper">
+					<image :src="authGuideImage" mode="aspectFill" class="success-image" />
+					<text class="image-label">已认证导游证</text>
+				</view>
+			</view>
+			
+			<!-- 审核中页面 -->
+			<view v-else-if="isPending" class="pending-page">
+				<view class="pending-content">
+					<view class="pending-title-row">
+						<uni-icons type="spinner-cycle" size="36" color="#666666"></uni-icons>
+						<text class="pending-title">导游认证审核中</text>
+					</view>
+					<text class="pending-desc">
+						我们将在1-2个工作日内完成审核，请耐心等待。审核结果将通过消息通知您。
+					</text>
+					<view class="auth-result">
+						<view v-if="authGuideNum != null && authGuideNum != ''" class="result-row">
+							<text class="result-label">导游证号码</text>
+							<text class="result-value">{{ (maskedGuideNum != null && maskedGuideNum != '') ? maskedGuideNum : '--' }}</text>
+						</view>
+						<view class="result-row">
+							<text class="result-label">失效日期</text>
+							<text class="result-value">{{ authExpiryDisplay }}</text>
+						</view>
+					</view>
+					<view v-if="authGuideImage != null && authGuideImage != ''" class="pending-image-card">
+						<image :src="authGuideImage" mode="aspectFill" class="pending-image" />
+						<text class="image-label">已提交导游证</text>
+					</view>
+					<view class="pending-tips">
+						<uni-icons type="info" size="16" color="#FF8C00"></uni-icons>
+						<text class="pending-tips-text">审核期间无法修改认证信息，如需重新提交，请等待审核结果。</text>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 未认证 / 未通过表单页面 -->
+			<view v-else class="content">
+				<view v-if="isRejected" class="status-banner status-failed">
+					<uni-icons type="close" size="32" color="#FF4D4F"></uni-icons>
+					<text class="status-text">审核未通过，请核对信息后重新提交认证资料。</text>
+				</view>
+				
+				<!-- 页面标题 -->
+				<view class="page-header">
+					<text class="page-title">导游证认证</text>
+					<text class="page-subtitle">请上传真实、完整、内容清晰可辨的图片</text>
+				</view>
+				
+				<!-- 基本信息表单 -->
+				<view class="form-section">
+					<view class="form-item" @click="openGuideNumInput">
+						<view class="form-row">
+							<text class="form-label">导游证编号</text>
+							<view class="form-value">
+								<text class="value-text" :class="(formGuideNum != null && formGuideNum != '') ? 'value-filled' : 'value-placeholder'">
+									{{ (formGuideNum != null && formGuideNum != '') ? formGuideNum : '请输入导游证编号' }}
+								</text>
+								<text class="arrow">›</text>
+							</view>
+						</view>
+					</view>
+					<view class="form-divider"></view>
+					<view class="form-item" @click="openDatePicker">
+						<view class="form-row">
+							<text class="form-label">证件有效期</text>
+							<view class="form-value">
+								<text class="value-text" :class="(formExpiry != null && formExpiry != '') ? 'value-filled' : 'value-placeholder'">
+									{{ (formExpiry != null && formExpiry != '') ? formExpiry : '请选择证件有效期' }}
+								</text>
+								<text class="arrow">›</text>
+							</view>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 导游证照片上传 -->
+				<view class="form-section">
+					<text class="section-title">导游证照片</text>
+					<text class="section-desc">请确保图片清晰完整，信息可见</text>
+					<view class="upload-item" @click="uploadImage">
+						<image
+							v-if="formGuideImage != null && formGuideImage != ''"
+							class="upload-image"
+							:src="formGuideImage"
+							mode="aspectFill"
+						/>
+						<view v-else class="upload-placeholder">
+							<uni-icons type="camera" size="80" color="#333333"></uni-icons>
+							<text class="upload-text">上传导游证照片</text>
+							<text class="upload-desc">请上传清晰完整的导游证照片</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 底部提交按钮 -->
+			<view v-if="isEditable" class="footer-section">
+				<view class="submit-btn" :class="{ disabled: !canSubmit || submitting }" @click="handleSubmit">
+					<text class="btn-text">{{ submitting ? '提交中...' : (isRejected ? '重新提交' : '提交') }}</text>
+				</view>
+			</view>
+			
+			<!-- 导游证编号输入弹层 -->
+			<view v-if="showGuideInput" class="popup-mask" @click="closeGuideNumInput">
+				<view class="input-popup" @click.stop>
+					<view class="popup-header">
+						<text class="popup-title">输入导游证编号</text>
+						<text class="popup-close" @click="closeGuideNumInput">✕</text>
+					</view>
+					<view class="popup-content">
+						<Input
+							v-model="tempGuideNum"
+							placeholder="请输入导游证编号"
+							:maxlength="20"
+						/>
+						<view class="popup-btn" @click="confirmGuideNum">
+							<text class="btn-text">确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 证件有效期选择弹层 -->
+			<view v-if="showDatePicker" class="popup-mask" @click="closeDatePicker">
+				<view class="input-popup" @click.stop>
+					<view class="popup-header">
+						<text class="popup-title">选择证件有效期</text>
+						<text class="popup-close" @click="closeDatePicker">✕</text>
+					</view>
+					<view class="popup-content">
+						<picker mode="date" :value="tempExpiryDate" @change="onDateChange">
+							<view class="date-display">
+								<text>{{ (tempExpiryDate != null && tempExpiryDate != '') ? tempExpiryDate : '请选择日期' }}</text>
+							</view>
+						</picker>
+						<view class="popup-btn" @click="confirmDate">
+							<text class="btn-text">确定</text>
+						</view>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import Button from '@/components/base/Button.uvue'
+import Input from '@/components/base/Input.uvue'
+import { queryAuthInfo, guideAuth, QueryAuthInfoParams, GuideAuthParams } from '@/api/travel.uts'
+import { getUserId } from '@/stores/user.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData
+} from '@/common/utils/loginHelper.uts'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+// 🎯 导入统一的用户信息缓存刷新函数
+import { refreshCurrentUserProfile, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+
+const authStatus = ref(10) // 10:未认证 20:审核中 30:已通过 40:未通过
+const submitting = ref(false)
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+const formData = ref({
+	guideAuthenticatNum: '',
+	expiryDate: '',
+	guideAuthenticatImage: ''
+})
+
+const authData = ref({
+	guideAuthenticatNum: '',
+	expiryDate: '',
+	guideAuthenticatImage: ''
+})
+
+const showGuideInput = ref(false)
+const showDatePicker = ref(false)
+const tempGuideNum = ref('')
+const tempExpiryDate = ref('')
+
+const getCurrentUserKid = (): string | null => {
+	try {
+		// 使用 loginHelper 的可靠版本获取用户ID
+		const reliableUserId = getCurrentUserIdReliable()
+		if (reliableUserId != null && reliableUserId != '') {
+			return reliableUserId
+		}
+		
+		// 降级使用 storage
+		const storage = safeGetStorageSync('userInfo') as string
+		if (storage == null) {
+			return null
+		}
+		const rawJson = (typeof storage === 'string') ? storage : JSON.stringify(storage)
+		if (rawJson == null || rawJson == '') return null
+		const parsed = JSON.parse(rawJson) as UTSJSONObject
+		if (parsed == null) return null
+		let kidGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { kidGetVal = parsed.get('kid') } catch (e) {}
+		const kidStr = (kidGetVal != null && kidGetVal != '') ? kidGetVal.toString() : ''
+		return (kidStr != null && kidStr.length > 0) ? kidStr : null
+	} catch (e) {
+		handleSilentError(e, '读取用户信息')
+		return null
+	}
+}
+
+const isPending = computed(() => authStatus.value === 20)
+const isApproved = computed(() => authStatus.value === 30)
+const isRejected = computed(() => authStatus.value === 40)
+const isEditable = computed(() => authStatus.value === 10 || authStatus.value === 40)
+
+const canSubmit = computed((): boolean => {
+	try {
+		if (isEditable.value == null || isEditable.value == false) return false
+		const formObj = toUTSJSON(formData.value)
+		if (formObj == null) return false
+		const numStr = getString(formObj, 'guideAuthenticatNum')
+		const expiryStr = getString(formObj, 'expiryDate')
+		const imgStr = getString(formObj, 'guideAuthenticatImage')
+		const hasGuideNum = (numStr != '')
+		const hasExpiry = (expiryStr != '')
+		const hasImage = (imgStr != '')
+		return (hasGuideNum == true && hasExpiry == true && hasImage == true)
+	} catch (e) {}
+	return false
+})
+
+const maskedGuideNum = computed((): string => {
+	try {
+		const authObj = toUTSJSON(authData.value)
+		const authNum = getString(authObj, 'guideAuthenticatNum')
+
+		const formObj = toUTSJSON(formData.value)
+		const formNum = getString(formObj, 'guideAuthenticatNum')
+
+		const guideNum = (authNum != '') ? authNum : formNum
+		if (guideNum == null || guideNum == '') return ''
+	if (guideNum.length <= 6) return guideNum
+	return guideNum.substring(0, 3) + '****' + guideNum.substring(guideNum.length - 3)
+	} catch (e) {}
+	return ''
+})
+
+// UTS-safe accessors for authData and formData fields (used in template)
+const getAuthGuideNum = (): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('guideAuthenticatNum') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getAuthExpiryDate = (): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('expiryDate') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getAuthGuideImage = (): string => {
+	try {
+		const json = JSON.stringify(authData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('guideAuthenticatImage') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormGuideNum = (): string => {
+	try {
+		const json = JSON.stringify(formData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('guideAuthenticatNum') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormExpiry = (): string => {
+	try {
+		const json = JSON.stringify(formData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('expiryDate') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const getFormGuideImage = (): string => {
+	try {
+		const json = JSON.stringify(formData.value)
+		if (json == null || json == '') return ''
+		const parsed = JSON.parse(json) as UTSJSONObject
+		if (parsed == null) return ''
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = parsed.get('guideAuthenticatImage') } catch (e) {}
+		return (v != null && v != '') ? v.toString() : ''
+	} catch (e) {}
+	return ''
+}
+
+const setFormExpiry = (value: string): void => {
+	try {
+		const json = JSON.stringify(formData.value)
+		const parsed = (json != null && json != '') ? JSON.parse(json) as UTSJSONObject : null
+		let prevNum: string | number | boolean | UTSJSONObject | null = null
+		let prevImage: string | number | boolean | UTSJSONObject | null = null
+		try { prevNum = (parsed != null) ? parsed.get('guideAuthenticatNum') : '' } catch (e) {}
+		try { prevImage = (parsed != null) ? parsed.get('guideAuthenticatImage') : '' } catch (e) {}
+		const newObj: UTSJSONObject = {}
+		try {
+			newObj['guideAuthenticatNum'] = (prevNum != null && prevNum != '') ? prevNum.toString() : ''
+			newObj['expiryDate'] = (value != null) ? value : ''
+			newObj['guideAuthenticatImage'] = (prevImage != null && prevImage != '') ? prevImage.toString() : ''
+		} catch (e) {}
+		formData.value = newObj
+	} catch (e) {}
+}
+
+const authGuideNum = computed((): string => {
+	try { return getAuthGuideNum() } catch (e) {}
+	return ''
+})
+
+const authExpiryDisplay = computed((): string => {
+	try {
+		const v = getAuthExpiryDate()
+		return (v != null && v != '') ? v : '--'
+	} catch (e) {}
+	return '--'
+})
+
+const authGuideImage = computed((): string => {
+	try { return getAuthGuideImage() } catch (e) {}
+	return ''
+})
+
+const formGuideNum = computed((): string => {
+	try { return getFormGuideNum() } catch (e) {}
+	return ''
+})
+
+const formExpiry = computed((): string => {
+	try { return getFormExpiry() } catch (e) {}
+	return ''
+})
+
+const formGuideImage = computed((): string => {
+	try { return getFormGuideImage() } catch (e) {}
+	return ''
+})
+
+const loadAuthStatus = async () => {
+	try {
+		const userKid = getCurrentUserKid()
+		if (userKid == null) {
+			handleSilentError(new Error('用户未登录'), '加载导游认证信息')
+			return
+		}
+		const paramsJson = JSON.stringify({ userKid: userKid })
+		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
+		const params = paramsParsed as QueryAuthInfoParams
+
+		const res = await queryAuthInfo(params)
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+		const code = (codeGetVal != null) ? codeGetVal : ''
+		if (!((code === 200) || (code === '200'))) {
+			handleSilentError(new Error('查询认证信息失败'), '加载导游认证信息')
+			return
+		}
+		let dataGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+		if (dataGetVal == null || dataGetVal == '') {
+			return
+		}
+		let data: UTSJSONObject = {} as UTSJSONObject
+		try {
+			const dataJson = JSON.stringify(dataGetVal)
+			data = (dataJson != null && dataJson != '') ? JSON.parse(dataJson) as UTSJSONObject : {} as UTSJSONObject
+		} catch (e) { data = {} as UTSJSONObject }
+		// UTS-safe: access fields via UTSJSONObject.get
+		let dataObjJson = ''
+		try { dataObjJson = JSON.stringify(data) } catch (e) { dataObjJson = '' }
+		const dataObjParsed = (dataObjJson != null && dataObjJson != '') ? JSON.parse(dataObjJson) as UTSJSONObject : null
+		let statuGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { statuGetVal = (dataObjParsed != null) ? dataObjParsed.get('guideAuthenticatStatu') : null } catch (e) {}
+		const statusVal = (statuGetVal != null && statuGetVal != '') ? parseInt(statuGetVal.toString()) : 10
+		authStatus.value = (statusVal === 10 || statusVal === 20 || statusVal === 30 || statusVal === 40) ? statusVal : 10
+		let guideNumGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { guideNumGetVal = (dataObjParsed != null) ? dataObjParsed.get('guideAuthenticatNum') : null } catch (e) {}
+		let expiryGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { expiryGetVal = (dataObjParsed != null) ? dataObjParsed.get('expiryDate') : null } catch (e) {}
+		let guideImageGetVal: string | number | boolean | UTSJSONObject | null = null
+		try { guideImageGetVal = (dataObjParsed != null) ? dataObjParsed.get('guideAuthenticatImage') : null } catch (e) {}
+		const guideNum = (guideNumGetVal != null && guideNumGetVal != '') ? guideNumGetVal.toString() : ''
+		const expiry = (expiryGetVal != null && expiryGetVal != '') ? expiryGetVal.toString() : ''
+		const guideImage = (guideImageGetVal != null && guideImageGetVal != '') ? guideImageGetVal.toString() : ''
+		if (isApproved.value || isPending.value) {
+			authData.value = {
+				guideAuthenticatNum: guideNum,
+				expiryDate: expiry,
+				guideAuthenticatImage: guideImage
+			}
+			formData.value = {
+				guideAuthenticatNum: '',
+				expiryDate: '',
+				guideAuthenticatImage: ''
+			}
+		} else {
+			formData.value = {
+				guideAuthenticatNum: guideNum,
+				expiryDate: expiry,
+				guideAuthenticatImage: guideImage
+			}
+			authData.value = {
+				guideAuthenticatNum: '',
+				expiryDate: '',
+				guideAuthenticatImage: ''
+			}
+		}
+	} catch (error) {
+		handlePageError(error, '加载导游认证信息', null)
+	}
+}
+
+onMounted(() => {
+	initPageLayout()
+	loadAuthStatus()
+})
+
+const openGuideNumInput = () => {
+	if (isEditable.value == null || isEditable.value == false) return
+	tempGuideNum.value = getFormGuideNum()
+	showGuideInput.value = true
+}
+
+const closeGuideNumInput = () => {
+	showGuideInput.value = false
+}
+
+const confirmGuideNum = () => {
+	const value = tempGuideNum.value.trim()
+	if (value == null) {
+		uni.showToast({ title: '请输入导游证编号', icon: 'none' })
+		return
+	}
+	// UTS-safe setter
+	try {
+		const json = JSON.stringify(formData.value)
+		const parsed = (json != null && json != '') ? JSON.parse(json) as UTSJSONObject : null
+		let prevExpiry: string | number | boolean | UTSJSONObject | null = null
+		let prevImage: string | number | boolean | UTSJSONObject | null = null
+		try { prevExpiry = (parsed != null) ? parsed.get('expiryDate') : '' } catch (e) {}
+		try { prevImage = (parsed != null) ? parsed.get('guideAuthenticatImage') : '' } catch (e) {}
+		const newObj: UTSJSONObject = {}
+		try {
+			newObj['guideAuthenticatNum'] = (value != null) ? value : ''
+			newObj['expiryDate'] = (prevExpiry != null && prevExpiry != '') ? prevExpiry.toString() : ''
+			newObj['guideAuthenticatImage'] = (prevImage != null && prevImage != '') ? prevImage.toString() : ''
+		} catch (e) {}
+		formData.value = newObj
+	} catch (e) {}
+	showGuideInput.value = false
+}
+
+const openDatePicker = () => {
+	if (isEditable.value == null || isEditable.value == false) return
+	tempExpiryDate.value = getFormExpiry()
+	showDatePicker.value = true
+}
+
+const closeDatePicker = () => {
+	showDatePicker.value = false
+}
+
+const onDateChange = (e: UTSJSONObject) => {
+	try {
+		let detailValueGetVal: string | number | boolean | UTSJSONObject | null = null
+		try {
+			const eJson = JSON.stringify(e)
+			if (eJson != null && eJson != '') {
+				const eObj = JSON.parse(eJson) as UTSJSONObject
+				if (eObj != null) {
+					let detailGetVal: string | number | boolean | UTSJSONObject | null = null
+					try { detailGetVal = eObj.get('detail') } catch (err) {}
+					if (detailGetVal != null && detailGetVal != '') {
+						try {
+							const detailJson = JSON.stringify(detailGetVal)
+							if (detailJson != null && detailJson != '') {
+								const detailObj = JSON.parse(detailJson) as UTSJSONObject
+								if (detailObj != null) {
+									let valueGetVal: string | number | boolean | UTSJSONObject | null = null
+									try { valueGetVal = detailObj.get('value') } catch (err) {}
+									if (valueGetVal != null && valueGetVal != '') {
+										detailValueGetVal = valueGetVal
+									}
+								}
+							}
+						} catch (err) {}
+					}
+				}
+			}
+		} catch (err) {}
+		const value = (detailValueGetVal != null && detailValueGetVal != '') ? detailValueGetVal.toString() : ''
+	tempExpiryDate.value = value
+	} catch (e) {}
+}
+
+const confirmDate = () => {
+	if (tempExpiryDate.value == null || tempExpiryDate.value == '') {
+		uni.showToast({ title: '请选择证件有效期', icon: 'none' })
+		return
+	}
+	setFormExpiry(tempExpiryDate.value)
+	showDatePicker.value = false
+}
+
+// 使用 cosUploader 上传导游证图片到 COS
+const uploadGuideCardToCOS = async (filePath: string): Promise<string> => {
+	try {
+		const result = await cosUploader.uploadGuideCard(filePath, (progress: number) => {
+			console.log('📈 导游证图片上传进度:', progress.toString() + '%')
+		})
+		
+		// 🔧 关键：使用 UTSJSONObject 的 get 方法访问属性
+		if (result != null) {
+			const successVal = result.get('success')
+			const success = (successVal != null && successVal.toString() == 'true')
+			if (success == true) {
+				const dataVal = result.get('data')
+				if (dataVal != null) {
+					const data = dataVal as UTSJSONObject
+					const compressedUrlVal = data.get('compressedUrl')
+					const originalUrlVal = data.get('originalUrl')
+					if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+						return compressedUrlVal.toString()
+					} else if (originalUrlVal != null && originalUrlVal.toString() != '') {
+						return originalUrlVal.toString()
+					}
+				}
+			}
+			
+			let errorMsg = '上传失败'
+			const errorVal = result.get('error')
+			if (errorVal != null && errorVal.toString() != '') {
+				errorMsg = errorVal.toString()
+			}
+			throw new Error(errorMsg)
+		}
+		
+		throw new Error('上传失败')
+	} catch (error) {
+		handleSilentError(error as any, '导游证图片上传')
+		throw error
+	}
+}
+
+const uploadImage = () => {
+	const userKid = getCurrentUserKid()
+	if (userKid == null) {
+		uni.showToast({ title: '用户未登录，请先登录', icon: 'none' })
+		return
+	}
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+	uni.chooseImage({
+		count: 1,
+		sizeType: ['compressed'],
+		sourceType: ['album', 'camera'],
+		success: (res) => {
+			if ((res.tempFilePaths == null) || (res.tempFilePaths.length === 0)) {
+				return
+			}
+			const filePath = res.tempFilePaths[0]
+			uni.showLoading({ title: '上传中...', mask: true })
+			
+			// 使用 cosUploader 直传到 COS
+			uploadGuideCardToCOS(filePath).then((imageUrl: string) => {
+				uni.hideLoading()
+				if (imageUrl != null && imageUrl != '') {
+					// 使用 UTS-safe setter
+					try {
+						const json = JSON.stringify(formData.value)
+						const parsed = (json != null && json != '') ? JSON.parse(json) as UTSJSONObject : null
+						let prevNum: string | number | boolean | UTSJSONObject | null = null
+						let prevExpiry: string | number | boolean | UTSJSONObject | null = null
+						try { prevNum = (parsed != null) ? parsed.get('guideAuthenticatNum') : '' } catch (e) {}
+						try { prevExpiry = (parsed != null) ? parsed.get('expiryDate') : '' } catch (e) {}
+						const newObj: UTSJSONObject = {}
+						try {
+							newObj['guideAuthenticatNum'] = (prevNum != null && prevNum != '') ? prevNum.toString() : ''
+							newObj['expiryDate'] = (prevExpiry != null && prevExpiry != '') ? prevExpiry.toString() : ''
+							newObj['guideAuthenticatImage'] = imageUrl
+						} catch (e) {}
+						formData.value = newObj
+					} catch (e) {}
+					uni.showToast({ title: '上传成功', icon: 'none' })
+				} else {
+					uni.showToast({ title: '图片上传失败，请重试', icon: 'none' })
+				}
+			}).then((resultIgnore: any | null) => {
+				// 成功处理已在上面完成
+			}, (err: any | null) => {
+				uni.hideLoading()
+				handleSilentError(err as any, '导游证图片上传')
+				let errorMsg = '图片上传失败，请重试'
+				if (err != null) {
+					try {
+						const errStr = JSON.stringify(err)
+						const errObj = JSON.parse(errStr) as UTSJSONObject
+						const msgVal = errObj.get('message')
+						if (msgVal != null && msgVal.toString() != '') {
+							errorMsg = msgVal.toString()
+						}
+					} catch (e) {}
+				}
+				uni.showToast({ title: errorMsg, icon: 'none' })
+			})
+		}
+	})
+	}) // requestPermissionTip
+}
+
+const handleSubmit = async () => {
+	if (submitting.value) {
+		return
+	}
+	if (authStatus.value === 20) {
+		uni.showToast({ title: '导游认证正在审核中，请耐心等待', icon: 'none' })
+		return
+	}
+	if (authStatus.value === 30) {
+		uni.showToast({ title: '导游认证已通过，无需再次提交', icon: 'none' })
+		return
+	}
+	const imgValCheck = getFormGuideImage()
+	if (imgValCheck == null || imgValCheck == '') {
+		uni.showToast({ title: '请上传导游证照片', icon: 'none' })
+		return
+	}
+	const numValCheck = getFormGuideNum()
+	if (numValCheck == null || numValCheck == '') {
+		uni.showToast({ title: '请输入导游证编号', icon: 'none' })
+		return
+	}
+	const expiryValCheck = getFormExpiry()
+	if (expiryValCheck == null || expiryValCheck == '') {
+		uni.showToast({ title: '请选择证件有效期', icon: 'none' })
+		return
+	}
+	const userKid = getCurrentUserKid()
+	if (userKid == null) {
+		uni.showToast({ title: '用户信息不存在，请重新登录', icon: 'none' })
+		return
+	}
+	submitting.value = true
+	try {
+			const guideImage = (getFormGuideImage() != null && getFormGuideImage() != '') ? getFormGuideImage() : ''
+			const guideNum = (getFormGuideNum() != null && getFormGuideNum() != '') ? getFormGuideNum() : ''
+			// GuideAuthParams: userKid, guideAuthenticatImage, guideCertificateNo (optional)
+			const paramsJson = JSON.stringify({
+				userKid: userKid,
+			guideAuthenticatImage: guideImage,
+				guideCertificateNo: guideNum
+			})
+			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
+			const params = paramsParsed as GuideAuthParams
+
+			const res = await guideAuth(params)
+			const resJson = JSON.stringify(res)
+			const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+			let codeGetVal: string | number | boolean | UTSJSONObject | null = null
+			try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
+			const code = (codeGetVal != null) ? codeGetVal : ''
+			if ((code === 200) || (code === '200')) {
+			uni.showToast({ title: '提交成功，请等待审核', icon: 'none' })
+			// 🎯 刷新用户信息缓存（更新认证状态）
+			refreshCurrentUserProfile().then((profile: any | null) => {
+			}).catch((err: any | null): void => {
+				handleSilentError(err as any, '[GuideAuth] 刷新缓存')
+			})
+			await loadAuthStatus()
+		} else {
+				let msgGetVal: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal = (resObj != null) ? resObj.get('msg') : null } catch (e) {}
+				let msgGetVal2: string | number | boolean | UTSJSONObject | null = null
+				try { msgGetVal2 = (resObj != null) ? resObj.get('message') : null } catch (e) {}
+				const msg = (msgGetVal != null && msgGetVal != '') ? msgGetVal.toString() : ((msgGetVal2 != null && msgGetVal2 != '') ? msgGetVal2.toString() : '提交失败')
+			uni.showToast({ title: msg, icon: 'none' })
+		}
+	} catch (error) {
+		handlePageError(error, '提交导游认证', null)
+	} finally {
+		submitting.value = false
+	}
+}
+
+// 🔧 优化：组件卸载时清理 useCurrentUserProfile 事件监听器，防止内存泄漏
+onUnmounted(() => {
+	destroyEventListeners()
+})
+</script>
+
+<style scoped>
+.page {
+	background-color: #FFFFFF;
+	position: relative;
+	padding-bottom: 150rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.hear-bg {
+	width: 100%;
+	height: 392rpx;
+	position: fixed;
+	top: 0;
+	left: 0;
+	z-index: 1;
+}
+
+.guide-page {
+	background-color: transparent;
+	position: relative;
+	z-index: 10;
+}
+
+.success-page {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	padding: 20rpx 28rpx;
+}
+
+.pending-page {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+	justify-content: center;
+	padding: 20rpx 28rpx;
+}
+
+.success-content {
+	width: 100%;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+	padding: 48rpx 40rpx 40rpx;
+	text-align: center;
+}
+
+.success-icon-wrapper {
+	width: 120rpx;
+	height: 120rpx;
+	border-radius: 60rpx;
+	background-color: #37B1F2;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0 auto 32rpx;
+	box-shadow: 0 8rpx 24rpx rgba(45, 202, 194, 0.4);
+}
+
+.success-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 64rpx;
+	color: #ffffff;
+}
+
+.success-title {
+	font-size: 40rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 32rpx;
+	display: flex;
+	justify-content: center;
+	text-align: center;
+}
+
+.auth-result {
+	margin-top: 24rpx;
+}
+
+.result-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8rpx;
+}
+
+.result-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.result-value {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.result-divider {
+	height: 2rpx;
+	background-color: #e0e0e0;
+	margin: 16rpx 0;
+}
+
+.success-image-wrapper {
+	margin-top: 24rpx;
+	margin-right: 0;
+	margin-bottom: 0;
+	margin-left: 0;
+	text-align: center;
+	width: 100%;
+}
+
+.success-image {
+	width: 100%;
+	height: 360rpx;
+	border-radius: 16rpx;
+	overflow: hidden;
+}
+
+.image-label {
+	margin-top: 12rpx;
+	font-size: 26rpx;
+	color: #666666;
+	text-align: center;
+}
+
+.pending-content {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 32rpx 32rpx;
+	text-align: center;
+	width: 100%;
+}
+
+.pending-title-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.pending-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-left: 12rpx;
+}
+
+.pending-desc {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 1.6;
+	margin-bottom: 28rpx;
+	display: flex;
+}
+
+.pending-image-card {
+	margin-top: 24rpx;
+}
+
+.pending-image {
+	width: 100%;
+	height: 360rpx;
+	border-radius: 16rpx;
+	overflow: hidden;
+}
+
+.pending-tips {
+	margin-top: 32rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	background-color: #FFF3E0;
+	border-radius: 8rpx;
+	padding: 16rpx 20rpx;
+}
+
+.pending-tips-text {
+	flex: 1;
+	font-size: 22rpx;
+	color: #FF6B35;
+	line-height: 1.4;
+	margin-left: 8rpx;
+}
+
+.content {
+	padding: 8rpx 0 16rpx;
+}
+
+.status-banner {
+	background-color: #FFEBEE;
+	padding: 20rpx 28rpx;
+	display: flex;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.status-failed {
+	background-color: #FFEBEE;
+}
+
+.status-text {
+	flex: 1;
+	font-size: 26rpx;
+	color: #FF5C5C;
+}
+
+.page-header {
+	padding: 24rpx 28rpx 16rpx;
+	text-align: center;
+}
+
+.page-title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+	display: flex;
+}
+
+.page-subtitle {
+	font-size: 24rpx;
+	color: #999999;
+	display: flex;
+}
+
+.form-section {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-top: 0;
+	margin-right: 28rpx;
+	margin-bottom: 20rpx;
+	margin-left: 28rpx;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+}
+
+.section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 12rpx;
+	display: flex;
+}
+
+.section-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-bottom: 24rpx;
+	display: flex;
+}
+
+.form-item {
+	padding: 12rpx 0;
+}
+
+.form-row {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.form-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.form-value {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.value-text {
+	font-size: 28rpx;
+}
+
+.value-placeholder {
+	color: #C0C4CC;
+}
+
+.value-filled {
+	color: #333333;
+}
+
+.arrow {
+	margin-left: 8rpx;
+	font-size: 28rpx;
+	color: #C8C8C8;
+}
+
+.form-divider {
+	height: 2rpx;
+	background-color: #F2F2F2;
+	margin: 8rpx 0;
+}
+
+.upload-item {
+	width: 100%;
+	height: 300rpx;
+	border-radius: 8rpx;
+	overflow: hidden;
+}
+
+.upload-image {
+	width: 100%;
+	height: 100%;
+}
+
+.upload-placeholder {
+	width: 100%;
+	height: 100%;
+	background-color: #f8f9fa;
+	border: 4rpx dashed #e0e0e0;
+	border-radius: 8rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.upload-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.upload-text {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.upload-desc {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.footer-section {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding: 24rpx 32rpx;
+	background-color: #FFFFFF;
+	border-top: 2rpx solid #F0F0F0;
+	box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.1);
+	z-index: 20;
+}
+
+.submit-btn {
+	width: 100%;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn.disabled {
+	background: #F0F0F0;
+	box-shadow: none;
+}
+
+.submit-btn.disabled .btn-text {
+	color: #CCCCCC;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #FFFFFF;
+}
+
+.popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.45);
+	z-index: 50;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.input-popup {
+	width: 100%;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding: 32rpx;
+}
+
+.popup-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-bottom: 24rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F5F5F5;
+	margin-bottom: 32rpx;
+}
+
+.popup-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.popup-close {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.popup-content {
+}
+
+.popup-btn {
+	width: 100%;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 32rpx;
+}
+
+.date-display {
+	margin-top: 8rpx;
+	padding: 24rpx;
+	border-radius: 12rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #F0F0F0;
+	align-items: center;
+	justify-content: center;
+}
+</style>

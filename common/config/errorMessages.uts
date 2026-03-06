@@ -1,0 +1,127 @@
+/**
+ * 错误消息映射模块
+ * 定义错误类型常量和友好消息常量，提供错误到友好消息的映射函数
+ * 所有友好消息不超过 20 个中文字符，适配 Toast 组件显示限制
+ */
+
+// === 错误类型常量 ===
+
+/** 网络连接错误 */
+export const ERROR_TYPE_NETWORK = 'NETWORK'
+/** 请求超时错误 */
+export const ERROR_TYPE_TIMEOUT = 'TIMEOUT'
+/** 服务器错误 */
+export const ERROR_TYPE_SERVER = 'SERVER'
+/** 数据解析错误 */
+export const ERROR_TYPE_PARSE = 'PARSE'
+/** 认证/授权错误 */
+export const ERROR_TYPE_AUTH = 'AUTH'
+/** 未知错误 */
+export const ERROR_TYPE_UNKNOWN = 'UNKNOWN'
+
+// === 友好消息常量 ===
+
+/** 网络请求超时 */
+export const ERR_MSG_TIMEOUT = '网络请求超时，请检查网络后重试'
+/** 网络连接失败 */
+export const ERR_MSG_NETWORK = '网络连接失败，请检查网络设置'
+/** 服务器繁忙（通用 5xx） */
+export const ERR_MSG_SERVER = '服务器繁忙，请稍后重试'
+/** 服务器维护中（502） */
+export const ERR_MSG_SERVER_502 = '服务器维护中，请稍后重试'
+/** 服务暂时不可用（503） */
+export const ERR_MSG_SERVER_503 = '服务暂时不可用，请稍后重试'
+/** 服务器响应超时（504） */
+export const ERR_MSG_SERVER_504 = '服务器响应超时，请稍后重试'
+/** 数据解析异常 */
+export const ERR_MSG_PARSE = '数据加载异常，请重试'
+/** 上传失败 */
+export const ERR_MSG_UPLOAD = '上传失败，请重试'
+/** 定位失败 */
+export const ERR_MSG_LOCATION = '定位失败，请检查定位权限'
+/** 默认错误消息 */
+export const ERR_MSG_DEFAULT = '操作失败，请稍后重试'
+
+/**
+ * 根据错误对象匹配友好消息
+ * 按优先级匹配关键词：timeout → network/fail/连接 → HTTP 5xx → parse/JSON → 默认消息
+ * 登录过期类错误返回空字符串（由 Request 模块统一处理）
+ * @param error 错误对象（可以是 Error、string 或其他类型）
+ * @returns 友好消息字符串
+ */
+export function mapErrorToFriendlyMessage(error: any): string {
+  let msg = ''
+  if (error == null) {
+    return ERR_MSG_DEFAULT
+  }
+  if (typeof error === 'string') {
+    msg = error
+  } else if (error instanceof Error) {
+    msg = (error as Error).message
+  } else if (typeof error === 'object') {
+    try {
+      const errorJson = JSON.stringify(error)
+      if (errorJson != null && errorJson != '') {
+        const errorObj = JSON.parse(errorJson) as UTSJSONObject
+        if (errorObj != null) {
+          const messageVal = errorObj.get('message')
+          if (messageVal != null) {
+            msg = messageVal.toString()
+          } else {
+            msg = errorJson
+          }
+        } else {
+          msg = errorJson
+        }
+      } else {
+        msg = ERR_MSG_DEFAULT
+      }
+    } catch (_e) {
+      msg = ERR_MSG_DEFAULT
+    }
+  } else {
+    msg = ERR_MSG_DEFAULT
+  }
+
+  const lowerMsg = msg.toLowerCase()
+
+  // 1. 超时
+  if (lowerMsg.indexOf('timeout') !== -1) {
+    return ERR_MSG_TIMEOUT
+  }
+
+  // 2. 网络连接失败
+  if (lowerMsg.indexOf('network') !== -1 || lowerMsg.indexOf('fail') !== -1 || msg.indexOf('连接') !== -1) {
+    return ERR_MSG_NETWORK
+  }
+
+  // 3-7. HTTP 5xx 系列（先匹配具体状态码，再匹配通用前缀）
+  if (lowerMsg.indexOf('http 500') !== -1 || lowerMsg.indexOf('http_500') !== -1) {
+    return ERR_MSG_SERVER
+  }
+  if (lowerMsg.indexOf('http 502') !== -1 || lowerMsg.indexOf('http_502') !== -1) {
+    return ERR_MSG_SERVER_502
+  }
+  if (lowerMsg.indexOf('http 503') !== -1 || lowerMsg.indexOf('http_503') !== -1) {
+    return ERR_MSG_SERVER_503
+  }
+  if (lowerMsg.indexOf('http 504') !== -1 || lowerMsg.indexOf('http_504') !== -1) {
+    return ERR_MSG_SERVER_504
+  }
+  if (lowerMsg.indexOf('http 5') !== -1 || lowerMsg.indexOf('http_5') !== -1) {
+    return ERR_MSG_SERVER
+  }
+
+  // 8. 数据解析错误
+  if (lowerMsg.indexOf('parse') !== -1 || lowerMsg.indexOf('json') !== -1) {
+    return ERR_MSG_PARSE
+  }
+
+  // 9. 登录过期/认证错误 — 返回空字符串，由 Request 模块统一处理
+  if (msg.indexOf('登录已过期') !== -1 || lowerMsg.indexOf('401') !== -1 || lowerMsg.indexOf('403') !== -1) {
+    return ''
+  }
+
+  // 10. 默认消息
+  return ERR_MSG_DEFAULT
+}

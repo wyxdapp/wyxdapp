@@ -1,0 +1,12 @@
+/**
+ * 数据单位常量模块
+ * 定义字节换算常量，消除 1024 重复字面量
+ */
+
+// === 字节换算 ===
+/** 每 KB 字节数 */
+export const BYTES_PER_KB = 1024
+/** 每 MB 字节数 (1024 * 1024) */
+export const BYTES_PER_MB = 1048576
+/** 每 GB 字节数 (1024 * 1024 * 1024) */
+export const BYTES_PER_GB = 1073741824

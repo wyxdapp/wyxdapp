@@ -1,0 +1,121 @@
+/**
+ * 权限申请说明管理器
+ * 
+ * 华为应用市场合规要求：在申请敏感权限前，需同步告知用户权限名称和使用目的。
+ * 本管理器记录用户在本次 APP 运行期间是否已确认过某类权限说明，
+ * 确认过后同类权限不再重复弹窗。
+ * 
+ * 注意：仅使用内存缓存，APP 重启后会重新提示。
+ */
+
+// 已确认的权限类型集合（内存缓存，APP 重启后清空）
+const confirmedPermissions = new Map<string, boolean>()
+
+// 权限类型常量
+export const PERMISSION_CAMERA_ALBUM = 'camera_album'       // 相机 + 相册（拍照/选图）
+export const PERMISSION_MICROPHONE = 'microphone'            // 麦克风（录音）
+export const PERMISSION_LOCATION = 'location'                // 定位
+
+/**
+ * 检查某类权限说明是否已经确认过
+ * @param permissionType 权限类型
+ * @returns true 表示已确认过，不需要再弹窗
+ */
+export function isPermissionTipConfirmed(permissionType: string): boolean {
+	const confirmed = confirmedPermissions.get(permissionType)
+	if (confirmed != null && confirmed == true) {
+		return true
+	}
+	return false
+}
+
+/**
+ * 标记某类权限说明已确认
+ * @param permissionType 权限类型
+ */
+export function setPermissionTipConfirmed(permissionType: string): void {
+	confirmedPermissions.set(permissionType, true)
+}
+
+/**
+ * 重置所有权限说明状态（用于测试）
+ */
+export function resetAllPermissionTips(): void {
+	confirmedPermissions.clear()
+	console.log('🔄 [PermissionTip] 所有权限说明状态已重置')
+}
+
+// 权限配置信息
+class PermissionConfig {
+	title: string = ''
+	description: string = ''
+	permissionName: string = ''
+	purpose: string = ''
+}
+
+/**
+ * 获取权限配置
+ */
+function getPermissionConfig(permissionType: string): PermissionConfig {
+	const config = new PermissionConfig()
+	if (permissionType == PERMISSION_CAMERA_ALBUM) {
+		config.title = '权限申请说明'
+		config.description = '该功能需要访问您的相册或使用相机。'
+		config.permissionName = '相机、存储权限'
+		config.purpose = '用于拍摄或选择图片进行上传'
+	} else if (permissionType == PERMISSION_MICROPHONE) {
+		config.title = '权限申请说明'
+		config.description = '该功能需要使用您的麦克风。'
+		config.permissionName = '麦克风权限'
+		config.purpose = '用于录制和发送语音消息'
+	} else if (permissionType == PERMISSION_LOCATION) {
+		config.title = '权限申请说明'
+		config.description = '该功能需要获取您的位置信息。'
+		config.permissionName = '定位权限'
+		config.purpose = '用于为您推荐附近的向导和服务'
+	} else {
+		config.title = '权限申请说明'
+		config.description = '该功能需要申请设备权限。'
+		config.permissionName = '设备权限'
+		config.purpose = '用于提供相关服务功能'
+	}
+	return config
+}
+
+/**
+ * 请求权限说明确认（核心函数）
+ * 如果用户本次运行已确认过，直接返回 true；否则弹窗询问。
+ * 
+ * @param permissionType 权限类型常量
+ * @returns Promise<boolean> true=用户确认，false=用户取消
+ */
+export function requestPermissionTip(permissionType: string): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// 已确认过，直接放行
+		if (isPermissionTipConfirmed(permissionType) == true) {
+			resolve(true)
+			return
+		}
+		
+		const config = getPermissionConfig(permissionType)
+		const content = config.description + '\n\n权限名称：' + config.permissionName + '\n使用目的：' + config.purpose
+		
+		uni.showModal({
+			title: config.title,
+			content: content,
+			confirmText: '继续',
+			cancelText: '稍后再说',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					setPermissionTipConfirmed(permissionType)
+					resolve(true)
+				} else {
+					resolve(false)
+				}
+			},
+			fail: () => {
+				resolve(false)
+			}
+		})
+	})
+}

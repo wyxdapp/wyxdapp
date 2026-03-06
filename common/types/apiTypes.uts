@@ -1,0 +1,34 @@
+/**
+ * 通用 API 类型定义
+ * 提供 API 响应包装、分页数据、分页请求参数等基础类型
+ */
+
+/**
+ * 通用 API 响应包装类
+ * 对应后端统一响应格式
+ */
+export class ApiResponse<T> {
+	code: number = 0
+	msg: string = ''
+	message: string = ''
+	data: T | null = null
+}
+
+/**
+ * 分页响应数据类
+ */
+export class PaginatedData<T> {
+	entities: Array<T> = []
+	total: number = 0
+	page: number = 1
+	pageSize: number = 20
+	hasMore: boolean = false
+}
+
+/**
+ * 分页请求参数基类
+ */
+export class PaginationParams {
+	page: number = 1
+	pageSize: number = 20
+}

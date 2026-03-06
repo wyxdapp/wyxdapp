@@ -1,0 +1,55 @@
+/**
+ * 用户表情相关 API
+ * 对应后端: UserEmojiController.java
+ */
+
+import request from '@/utils/request'
+import { SaveEmojiParams, GetEmojiListParams, DeleteEmojiParams } from './types/emojiTypes.uts'
+
+// 重新导出类型，保持向后兼容
+export { SaveEmojiParams, GetEmojiListParams, DeleteEmojiParams } from './types/emojiTypes.uts'
+
+/**
+ * 保存自定义表情
+ * POST /chat/user/emoji/save
+ * 
+ * @param params 保存参数
+ * @returns Promise<UTSJSONObject> 返回保存的表情信息
+ */
+export const saveEmojiApi = (params: SaveEmojiParams): Promise<UTSJSONObject> => {
+	const requestParams = {
+		userKid: params.userKid,
+		imageUrl: params.imageUrl,
+		name: params.name
+	} as UTSJSONObject
+	return request.post('/chat/user/emoji/save', requestParams, true)
+}
+
+/**
+ * 获取用户表情列表
+ * POST /chat/user/emoji/list
+ * 
+ * @param params 查询参数
+ * @returns Promise<UTSJSONObject> 返回表情列表
+ */
+export const getEmojiListApi = (params: GetEmojiListParams): Promise<UTSJSONObject> => {
+	const requestParams = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/chat/user/emoji/list', requestParams, false)
+}
+
+/**
+ * 删除自定义表情
+ * POST /chat/user/emoji/delete
+ * 
+ * @param params 删除参数
+ * @returns Promise<UTSJSONObject> 返回删除结果
+ */
+export const deleteEmojiApi = (params: DeleteEmojiParams): Promise<UTSJSONObject> => {
+	const requestParams = {
+		userKid: params.userKid,
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/chat/user/emoji/delete', requestParams, true)
+}

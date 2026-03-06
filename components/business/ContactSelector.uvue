@@ -1,0 +1,392 @@
+<template>
+	<view v-if="show == true" class="contact-selector-mask">
+		<view class="contact-selector-popup" @click.stop>
+			<!-- 头部 -->
+			<view class="popup-header">
+				<text class="popup-title">选择联系人</text>
+				<view class="close-btn" @click="handleClose">
+					<text class="close-icon">×</text>
+				</view>
+			</view>
+			
+			<!-- 联系人列表 -->
+			<scroll-view class="contact-list" :scroll-y="true">
+				<view 
+					v-for="(contact, index) in displayList" 
+					:key="contact.kid"
+					class="contact-item"
+					@click="handleSelectByIndex(index)"
+				>
+					<view class="contact-info-row">
+						<view class="contact-text">
+							<text class="contact-name-text">{{ contact.name }}</text>
+							<text v-if="contact.isDefaultFlag == true" class="default-tag">默认</text>
+						</view>
+						<text class="contact-phone-text">{{ contact.phone }}</text>
+					</view>
+					<view class="contact-check">
+						<uni-icons 
+							v-if="contact.kid == selectedContactId" 
+							type="checkbox-filled" 
+							:size="24" 
+							color="#2EAEF2"
+						/>
+						<uni-icons 
+							v-else 
+							type="circle" 
+							:size="24" 
+							color="#CCCCCC"
+						/>
+					</view>
+				</view>
+				
+				<view v-if="displayListLength == 0" class="empty-state">
+					<text class="empty-text">暂无联系人，请添加</text>
+				</view>
+			</scroll-view>
+			
+			<!-- 底部按钮 -->
+			<view class="popup-footer">
+				<view class="add-contact-btn" @click="handleAdd">
+					<text class="add-btn-text">+ 新增联系人</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch } from 'vue'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+
+// 显示用的联系人数据类
+class DisplayContactItem {
+	kid: string = ''
+	name: string = ''
+	phone: string = ''
+	isDefaultFlag: boolean = false
+	
+	constructor() {}
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	contactList: { type: Array, default: () => [] },
+	selectedContactId: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits(['close', 'select', 'add', 'update', 'delete', 'update:show'])
+
+// 转换后的显示列表
+const displayList = ref<Array<DisplayContactItem>>([])
+
+// 显示列表长度
+const displayListLength = computed((): number => {
+	return displayList.value.length
+})
+
+// 从任意对象中安全获取字符串属性
+const getStringProp = (obj: any, key: string): string => {
+	try {
+		const objStr = JSON.stringify(obj)
+		const objParsed = JSON.parse(objStr) as UTSJSONObject
+		const val = objParsed.get(key)
+		if (val != null && val.toString() != '') {
+			return val.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 从任意对象中安全获取数字属性
+const getNumberProp = (obj: any, key: string): number => {
+	try {
+		const objStr = JSON.stringify(obj)
+		const objParsed = JSON.parse(objStr) as UTSJSONObject
+		const val = objParsed.get(key)
+		if (val != null) {
+			const num = parseInt(val.toString())
+			if (isNaN(num) == false) {
+				return num
+			}
+		}
+	} catch (e) {}
+	return 0
+}
+
+// 转换联系人列表为显示列表
+const convertContactList = () => {
+	const result: Array<DisplayContactItem> = []
+	
+	// contactList 有默认值 []，只需检查是否为数组
+	if (Array.isArray(props.contactList) == false) {
+		displayList.value = result
+		return
+	}
+	
+	const sourceList = props.contactList as Array<any>
+	const listLen = sourceList.length
+	
+	let i = 0
+	while (i < listLen) {
+		const item = sourceList[i]
+		// 直接处理，不做 null 检查（数组元素不会为 null）
+		const displayItem = new DisplayContactItem()
+		
+		// 获取 kid
+		let kidVal = getStringProp(item, 'kid')
+		if (kidVal == '') {
+			kidVal = getStringProp(item, 'id')
+		}
+		displayItem.kid = kidVal
+		
+		// 获取 name
+		let nameVal = getStringProp(item, 'name')
+		if (nameVal == '') {
+			nameVal = getStringProp(item, 'realname')
+		}
+		if (nameVal == '') {
+			nameVal = getStringProp(item, 'realName')
+		}
+		if (nameVal == '') {
+			nameVal = getStringProp(item, 'travellerName')
+		}
+		displayItem.name = nameVal
+		
+		// 获取 phone
+		let phoneVal = getStringProp(item, 'phone')
+		if (phoneVal == '') {
+			phoneVal = getStringProp(item, 'phoneNumber')
+		}
+		if (phoneVal == '') {
+			phoneVal = getStringProp(item, 'travellerPhone')
+		}
+		if (phoneVal == '') {
+			phoneVal = getStringProp(item, 'mobile')
+		}
+		displayItem.phone = phoneVal
+		
+		// 获取默认标志
+		let defaultVal = getNumberProp(item, 'is_default')
+		if (defaultVal == 0) {
+			defaultVal = getNumberProp(item, 'isDefault')
+		}
+		if (defaultVal == 0) {
+			defaultVal = getNumberProp(item, 'defaultFlag')
+		}
+		displayItem.isDefaultFlag = (defaultVal == 10)
+		
+		// 只添加有效数据
+		if (displayItem.kid != '' && displayItem.name != '') {
+			result.push(displayItem)
+		}
+		i = i + 1
+	}
+	
+	displayList.value = result
+}
+
+// 监听 contactList 变化
+watch(
+	(): Array<any> => props.contactList as Array<any>,
+	() => {
+		convertContactList()
+	},
+	{ immediate: true }
+)
+
+// 监听 show 变化，显示时重新转换
+watch(
+	(): boolean => props.show,
+	(newVal: boolean) => {
+		if (newVal == true) {
+			convertContactList()
+		}
+	}
+)
+
+// 关闭弹窗
+const handleClose = () => {
+	emit('close')
+	emit('update:show', false)
+}
+
+// 通过索引选择联系人
+const handleSelectByIndex = (index: number) => {
+	if (index < 0 || index >= displayList.value.length) return
+	
+	// 获取原始数据（props.contactList 有默认值，不会为 null）
+	const sourceList = props.contactList as Array<any>
+	if (index >= sourceList.length) return
+	
+	const originalContact = sourceList[index]
+	emit('select', originalContact)
+}
+
+// 新增联系人
+const handleAdd = () => {
+	emit('add')
+}
+</script>
+
+<style scoped>
+.contact-selector-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.contact-selector-popup {
+	width: 620rpx;
+	max-height: 800rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	display: flex;
+	flex-direction: column;
+}
+
+.popup-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+	position: relative;
+}
+
+.popup-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.close-btn {
+	position: absolute;
+	right: 24rpx;
+	top: 24rpx;
+	width: 48rpx;
+	height: 48rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.contact-list {
+	flex: 1;
+	max-height: 500rpx;
+	padding: 16rpx 24rpx;
+}
+
+.contact-item {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 24rpx 16rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F5F5F5;
+}
+
+.contact-item:last-child {
+	border-bottom-width: 0;
+}
+
+.contact-info-row {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+}
+
+.contact-text {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 8rpx;
+}
+
+.contact-name-text {
+	font-size: 30rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.default-tag {
+	margin-left: 12rpx;
+	padding: 4rpx 12rpx;
+	background-color: #37B1F2;
+	color: #ffffff;
+	font-size: 20rpx;
+	border-radius: 8rpx;
+}
+
+.contact-phone-text {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.contact-check {
+	width: 48rpx;
+	height: 48rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 80rpx 0;
+}
+
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.popup-footer {
+	padding: 24rpx 32rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #EEEEEE;
+}
+
+.add-contact-btn {
+	width: 100%;
+	height: 80rpx;
+	background-color: #2EAEF2;
+	border-radius: 40rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.add-btn-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+</style>

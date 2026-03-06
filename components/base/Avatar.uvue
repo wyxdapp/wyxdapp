@@ -1,0 +1,375 @@
+﻿<!--
+  Avatar 统一头像组件
+  
+  功能特性：
+  - 支持 3 种预设尺寸：small(64rpx)、medium(88rpx)、large(120rpx)
+  - 支持自定义尺寸（customSize）
+  - 统一圆形样式
+  - 智能 URL 提取（支持多种字段名）
+  - COS 图片自动优化
+  - 在线状态角标显示
+  - 4 种点击模式：preview(放大预览)、profile(跳转个人主页)、edit(更换头像)、none(无操作)
+  - 加载失败自动重试
+  
+  使用示例：
+  
+  1. 聊天列表头像（点击跳转个人主页）
+  <Avatar 
+    :url="item.targetUserAvatar"
+    :userId="item.targetUserId"
+    size="medium"
+    clickMode="profile"
+  />
+  
+  2. 个人主页头像（点击放大预览）
+  <Avatar 
+    :url="userInfo.image"
+    size="large"
+    clickMode="preview"
+  />
+  
+  3. 个人资料设置页头像（点击更换头像）
+  <Avatar 
+    :url="formImage"
+    size="large"
+    clickMode="edit"
+    @edit="handleAvatarEdit"
+  />
+  
+  4. 我的页面头像（自定义尺寸，点击跳转个人资料设置）
+  <Avatar 
+    :url="avatarUrl"
+    :customSize="176"
+    clickMode="none"
+    @click="goProfile"
+  />
+  
+  5. 向导列表头像（从 data 对象提取，带在线状态）
+  <Avatar 
+    :data="guideItem"
+    :userId="guideItem.kid"
+    :isOnline="guideItem.isOnline"
+    size="medium"
+    clickMode="profile"
+  />
+  
+  Props 说明：
+  - url: string - 头像 URL（优先级最高）
+  - data: Object - 用户数据对象，自动提取头像字段
+  - avatarKey: string - 自定义头像字段名
+  - defaultUrl: string - 自定义默认头像
+  - userId: string - 用户 ID，用于 profile 模式跳转
+  - size: string - 预设尺寸 'small' | 'medium' | 'large'，默认 'medium'
+  - customSize: number - 自定义尺寸（rpx），优先于 size
+  - isOnline: boolean - 是否在线
+  - clickMode: string - 点击模式 'preview' | 'profile' | 'edit' | 'none'，默认 'profile'
+  - showLoading: boolean - 是否显示加载动画，默认 false
+  - enableRetry: boolean - 是否启用加载失败重试，默认 true
+  - enableOptimize: boolean - 是否启用 COS 图片优化，默认 true
+  - quality: number - 图片质量，默认 80
+  
+  Events：
+  - @click - 点击头像时触发（所有模式都会触发）
+  - @edit - 点击头像时触发（仅 edit 模式）
+-->
+<template>
+  <view class="avatar-container" :style="containerStyle" @click="handleClick">
+    <!-- 加载中占位符 -->
+    <view v-if="isLoading == true && showLoading == true" class="avatar-placeholder" :style="placeholderStyle"></view>
+    
+    <!-- 头像图片 -->
+    <image 
+      v-if="isLoading == false || showLoading == false"
+      :src="finalUrl"
+      :style="imageStyle"
+      class="avatar-image"
+      mode="aspectFill"
+      @load="onImageLoad"
+      @error="onImageError"
+    />
+    
+    <!-- 在线状态角标 -->
+    <view v-if="props.isOnline == true" class="badge-online" :style="onlineBadgeStyle"></view>
+  </view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { getStringProp, getNumberProp, getBoolProp } from '@/common/utils/utsSafe.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+
+// ==================== 常量定义 ====================
+
+// 默认头像路径
+const DEFAULT_AVATAR = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// 尺寸预设映射（rpx）
+const SIZE_SMALL = 64
+const SIZE_MEDIUM = 88
+const SIZE_LARGE = 120
+
+// COS 域名列表
+const COS_DOMAINS: Array<string> = ['cos.', 'myqcloud.com', 'cos.wyxdapp.com', 'qyimage-' + COS_BUCKET_ID + '.cos']
+
+// 头像字段优先级
+const AVATAR_FIELDS: Array<string> = ['image', 'avatar', 'imagePhoto', 'guideImg', 'targetUserAvatar', 'userAvatar']
+
+// ==================== Props 定义 ====================
+
+const props = defineProps({
+  // 基础属性
+  url: { type: String, default: '' },
+  data: { type: Object, default: null },
+  avatarKey: { type: String, default: '' },
+  defaultUrl: { type: String, default: '' },
+  userId: { type: String, default: '' },
+  
+  // 尺寸
+  size: { type: String, default: 'medium' },
+  customSize: { type: Number, default: 0 },
+  
+  // 角标
+  isOnline: { type: Boolean, default: false },
+  
+  // 点击模式
+  clickMode: { type: String, default: 'profile' },
+  
+  // 加载
+  showLoading: { type: Boolean, default: false },
+  enableRetry: { type: Boolean, default: true },
+  
+  // 优化
+  enableOptimize: { type: Boolean, default: true },
+  quality: { type: Number, default: 80 }
+})
+
+// ==================== Emits 定义 ====================
+
+const emit = defineEmits(['click', 'edit'])
+
+// ==================== 响应式状态 ====================
+
+const isLoading = ref<boolean>(true)
+const hasError = ref<boolean>(false)
+const retryCount = ref<number>(0)
+const MAX_RETRY = 2
+
+// ==================== 辅助函数 ====================
+
+// 获取尺寸映射值
+const getSizeValue = (sizeKey: string): number => {
+  if (sizeKey == 'small') return SIZE_SMALL
+  if (sizeKey == 'large') return SIZE_LARGE
+  return SIZE_MEDIUM
+}
+
+// 从 data 对象提取头像 URL
+const extractAvatarUrl = (data: any, avatarKey: string): string => {
+  // 如果指定了自定义字段名
+  if (avatarKey != '') {
+    const val = getStringProp(data, avatarKey)
+    if (val != '') return val
+  }
+  
+  // 按优先级尝试默认字段
+  for (let i = 0; i < AVATAR_FIELDS.length; i = i + 1) {
+    const field = AVATAR_FIELDS[i]
+    const val = getStringProp(data, field)
+    if (val != '') return val
+  }
+  
+  return ''
+}
+
+// 检查是否为 COS 地址
+const isCosUrl = (url: string): boolean => {
+  if (url == '') return false
+  for (let i = 0; i < COS_DOMAINS.length; i = i + 1) {
+    if (url.indexOf(COS_DOMAINS[i]) >= 0) {
+      return true
+    }
+  }
+  return false
+}
+
+// 生成优化后的图片 URL
+const getOptimizedUrl = (url: string, size: number, quality: number): string => {
+  if (url == '') return ''
+  if (isCosUrl(url) == false) return url
+  
+  // 计算实际像素尺寸（rpx 转 px，按 2x 屏幕密度）
+  const pixelSize = Math.floor(size * 2 / 750 * 375)
+  
+  // 添加 COS 图片处理参数
+  return url + '?imageMogr2/thumbnail/' + pixelSize.toString() + 'x' + pixelSize.toString() + '/quality/' + quality.toString()
+}
+
+// ==================== 计算属性 ====================
+
+// 实际尺寸（rpx）
+const actualSize = computed((): number => {
+  if (props.customSize > 0) return props.customSize
+  return getSizeValue(props.size)
+})
+
+// 圆角值（rpx）
+const borderRadius = computed((): number => {
+  return Math.floor(actualSize.value / 2)
+})
+
+// 显示的 URL（优先级：url > data 提取 > 默认头像）
+const displayUrl = computed((): string => {
+  // 优先使用 url 属性
+  if (props.url != '') return props.url
+  
+  // 其次从 data 提取
+  const dataVal = props.data
+  if (dataVal != null) {
+    const extracted = extractAvatarUrl(dataVal, props.avatarKey)
+    if (extracted != '') return extracted
+  }
+  
+  // 最后使用默认头像
+  if (props.defaultUrl != '') return props.defaultUrl
+  return DEFAULT_AVATAR
+})
+
+// 最终显示的 URL（带优化参数）
+const finalUrl = computed((): string => {
+  const url = displayUrl.value
+  
+  // 加载失败时显示默认头像
+  if (hasError.value == true) {
+    if (props.defaultUrl != '') return props.defaultUrl
+    return DEFAULT_AVATAR
+  }
+  
+  // 启用优化时添加 COS 参数
+  if (props.enableOptimize == true) {
+    return getOptimizedUrl(url, actualSize.value, props.quality)
+  }
+  
+  return url
+})
+
+// ==================== 样式计算 ====================
+
+// 容器样式
+const containerStyle = computed((): string => {
+  const size = actualSize.value
+  return 'width: ' + size.toString() + 'rpx; height: ' + size.toString() + 'rpx;'
+})
+
+// 图片样式
+const imageStyle = computed((): string => {
+  const size = actualSize.value
+  const radius = borderRadius.value
+  return 'width: ' + size.toString() + 'rpx; height: ' + size.toString() + 'rpx; border-radius: ' + radius.toString() + 'rpx;'
+})
+
+// 占位符样式
+const placeholderStyle = computed((): string => {
+  const size = actualSize.value
+  const radius = borderRadius.value
+  return 'width: ' + size.toString() + 'rpx; height: ' + size.toString() + 'rpx; border-radius: ' + radius.toString() + 'rpx;'
+})
+
+// 在线状态角标样式
+const onlineBadgeStyle = computed((): string => {
+  const size = actualSize.value
+  let dotSize = 16
+  if (size <= SIZE_SMALL) {
+    dotSize = 12
+  } else if (size >= SIZE_LARGE) {
+    dotSize = 20
+  }
+  const offset = Math.floor(dotSize / 4)
+  return 'width: ' + dotSize.toString() + 'rpx; height: ' + dotSize.toString() + 'rpx; bottom: ' + offset.toString() + 'rpx; right: ' + offset.toString() + 'rpx;'
+})
+
+// ==================== 事件处理 ====================
+
+// 图片加载成功
+const onImageLoad = () => {
+  isLoading.value = false
+  hasError.value = false
+}
+
+// 图片加载失败
+const onImageError = () => {
+  isLoading.value = false
+  
+  // 重试逻辑
+  if (props.enableRetry == true && retryCount.value < MAX_RETRY) {
+    retryCount.value = retryCount.value + 1
+    const delay = retryCount.value * 1000
+    setTimeout(() => {
+      hasError.value = false
+      isLoading.value = true
+    }, delay)
+  } else {
+    hasError.value = true
+  }
+}
+
+// 点击处理
+const handleClick = () => {
+  const mode = props.clickMode
+  
+  if (mode == 'preview') {
+    // 放大预览头像
+    const url = displayUrl.value
+    if (url != '' && url != DEFAULT_AVATAR) {
+      const urls: Array<string> = [url]
+      uni.previewImage({
+        urls: urls,
+        current: url
+      })
+    }
+  } else if (mode == 'profile') {
+    // 跳转到个人主页
+    const userId = props.userId
+    if (userId != '') {
+      uni.navigateTo({
+        url: '/pagesUser/persionInfo/index?id=' + userId
+      })
+    }
+  } else if (mode == 'edit') {
+    // 触发更换头像事件
+    emit('edit')
+  }
+  // mode == 'none' 时不执行任何操作
+  
+  // 始终触发 click 事件
+  emit('click')
+}
+</script>
+
+<style>
+.avatar-container {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.avatar-image {
+  flex-shrink: 0;
+}
+
+.avatar-placeholder {
+  background-color: #F0F0F0;
+  flex-shrink: 0;
+}
+
+/* 在线状态角标 */
+.badge-online {
+  position: absolute;
+  background-color: #52C41A;
+  border-radius: 20rpx;
+  border-width: 2rpx;
+  border-style: solid;
+  border-color: #FFFFFF;
+}
+</style>

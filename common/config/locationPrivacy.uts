@@ -1,0 +1,73 @@
+/**
+ * 定位权限隐私配置
+ * 
+ * 用于管理定位权限的用途说明和隐私政策链接
+ */
+
+import { LEGAL_URLS } from '@/utils/config.uts'
+
+/**
+ * 定位隐私配置类型
+ */
+type LocationPrivacyConfig = {
+	dialogTitle: string
+	dialogContent: string
+	privacyPolicyUrl: string
+	userAgreementUrl: string
+	privacyLinkText: string
+	agreementLinkText: string
+	agreeButtonText: string
+	cancelButtonText: string
+}
+
+// 直接使用字符串常量，避免类型推导问题
+const PRIVACY_POLICY_URL = 'https://www.wyxdapp.com/doc/secret.html'
+const USER_AGREEMENT_URL = 'https://www.wyxdapp.com/doc/treaty.html'
+
+/**
+ * 定位隐私配置常量
+ */
+export const LOCATION_PRIVACY_CONFIG: LocationPrivacyConfig = {
+	// 定位用途说明对话框标题
+	dialogTitle: '定位权限说明',
+	
+	// 定位用途说明内容
+	dialogContent: '我们需要获取您的位置信息用于：\n\n1. 为您推荐附近的优质向导\n2. 显示向导与您的距离\n3. 提供基于位置的个性化服务\n\n您可以随时在系统设置中关闭定位权限，关闭后不影响应用基本功能，我们将使用IP定位为您提供服务。',
+	
+	// 隐私政策URL
+	privacyPolicyUrl: PRIVACY_POLICY_URL,
+	
+	// 用户协议URL
+	userAgreementUrl: USER_AGREEMENT_URL,
+	
+	// 隐私政策链接文本
+	privacyLinkText: '查看《隐私政策》',
+	
+	// 用户协议链接文本
+	agreementLinkText: '查看《用户协议》',
+	
+	// 同意按钮文本（iOS合规：使用中性词汇，避免"同意"）
+	agreeButtonText: '继续',
+	
+	// 取消按钮文本（iOS合规：使用中性词汇，避免"取消"）
+	cancelButtonText: '稍后再说'
+}
+
+/**
+ * 存储键名
+ */
+export const LOCATION_PRIVACY_STORAGE_KEY = 'WYXD_LOCATION_PRIVACY_VIEWED'
+
+/**
+ * 隐私政策版本(用于检测更新)
+ */
+export const LOCATION_PRIVACY_VERSION = '1.0.0'
+
+/**
+ * 默认导出配置对象(兼容默认导入)
+ */
+export default {
+	config: LOCATION_PRIVACY_CONFIG,
+	storageKey: LOCATION_PRIVACY_STORAGE_KEY,
+	version: LOCATION_PRIVACY_VERSION
+}

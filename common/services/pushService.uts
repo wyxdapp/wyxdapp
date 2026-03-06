@@ -1,0 +1,384 @@
+/**
+ * 推送服务模块
+ * 负责 uni-push 2.0 SDK 初始化、Client_ID 获取与上报
+ * 
+ * Requirements: 1.1, 1.2, 1.3
+ * 
+ * 🔒 隐私合规：所有敏感 API 调用前需检查隐私协议状态
+ */
+
+import { ref } from 'vue'
+import { bindPushClient, unbindPushClient, BindPushClientParams } from '@/api/push.uts'
+import { getResponseCode } from '@/common/utils/utsSafe.uts'
+import { createLogger } from '@/common/utils/logger.uts'
+import { checkPrivacyBeforeCall } from '@/common/utils/privacyManager.uts'
+import { SK_PUSH_CLIENT_ID } from '@/common/config/storageKeys.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 创建日志记录器
+const logger = createLogger('PushService')
+
+// ==================== 状态定义 ====================
+
+// 推送客户端 ID
+const clientIdRef = ref<string>('')
+
+// 是否已初始化
+const isInitializedRef = ref<boolean>(false)
+
+// 🔧 修复：添加初始化中标志，防止重复初始化
+let isPushServiceInitializing = false
+
+// 重试次数
+const retryCountRef = ref<number>(0)
+
+// 最大重试次数
+const MAX_RETRY_COUNT = 3
+
+// 重试间隔（毫秒）
+const RETRY_INTERVAL = 30000
+
+// 重试定时器 ID
+let retryTimerId: number = 0
+
+// ==================== 平台检测 ====================
+
+/**
+ * 获取当前平台标识
+ */
+const getPlatform = (): string => {
+	// #ifdef APP-ANDROID
+	return 'android'
+	// #endif
+	// #ifdef APP-IOS
+	return 'ios'
+	// #endif
+	// #ifdef MP-WEIXIN
+	return 'mp-weixin'
+	// #endif
+	// #ifdef H5
+	return 'h5'
+	// #endif
+	// #ifdef APP-HARMONY
+	return 'harmony'
+	// #endif
+	return 'unknown'
+}
+
+/**
+ * 检查是否支持推送
+ * H5 平台和微信小程序不支持离线推送
+ */
+const isPushSupported = (): boolean => {
+	const platform = getPlatform()
+	// H5 平台不支持离线推送
+	if (platform == 'h5') {
+		return false
+	}
+	// 微信小程序暂不支持（需要配置个推域名）
+	if (platform == 'mp-weixin') {
+		return false
+	}
+	return true
+}
+
+// ==================== Client_ID 获取 ====================
+
+/**
+ * 获取推送客户端 ID
+ * 使用 uni.getPushClientId API
+ * 
+ * 🔒 系统隐私声明自动处理，无需手动检查
+ */
+const fetchClientId = (): Promise<string> => {
+	return new Promise<string>((resolve: (value: string) => void, reject: (reason: any) => void) {
+		// 检查平台支持
+		if (isPushSupported() == false) {
+			console.log('📱 [PushService] 当前平台不支持离线推送')
+			resolve('')
+			return
+		}
+		
+		// #ifdef APP-PLUS || MP-WEIXIN
+		try {
+			uni.getPushClientId({
+				success: (res: any) => {
+					if (res != null) {
+						const resStr = JSON.stringify(res)
+						const resObj = JSON.parse(resStr) as UTSJSONObject
+						const cidVal = resObj.get('cid')
+						if (cidVal != null && cidVal.toString() != '') {
+							const cid = cidVal.toString()
+							resolve(cid)
+						} else {
+							console.warn('⚠️ [PushService] Client_ID 为空')
+							resolve('')
+						}
+					} else {
+						console.warn('⚠️ [PushService] getPushClientId 返回空')
+						resolve('')
+					}
+				},
+				fail: (err: any) => {
+					console.error('❌ [PushService] 获取 Client_ID 失败:', err)
+					reject(err)
+				}
+			})
+		} catch (e) {
+			handleSilentError(e, '获取推送Client_ID')
+			reject(e)
+		}
+		// #endif
+		
+		// #ifdef H5
+		// H5 平台不支持推送，直接返回空
+		resolve('')
+		// #endif
+	})
+}
+
+// ==================== Client_ID 上报 ====================
+
+/**
+ * 上报 Client_ID 到服务器
+ * @param clientId 客户端 ID
+ */
+const reportClientIdToServer = (clientId: string): Promise<boolean> => {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		if (clientId == '') {
+			console.warn('⚠️ [PushService] Client_ID 为空，跳过上报')
+			resolve(false)
+			return
+		}
+		
+		const platform = getPlatform()
+		const params = new BindPushClientParams()
+		params.clientId = clientId
+		params.platform = platform
+		
+		console.log('📤 [PushService] 上报 Client_ID:', clientId, '平台:', platform)
+		
+		bindPushClient(params).then((res: any) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+			// 重置重试计数
+				retryCountRef.value = 0
+				resolve(true)
+			} else {
+				console.error('❌ [PushService] Client_ID 上报失败, code:', code)
+				resolve(false)
+			}
+		}).catch((err: any | null): void => {
+			handleSilentError(err as any, '上报推送Client_ID')
+			resolve(false)
+		})
+	})
+}
+
+/**
+ * 带重试的 Client_ID 上报
+ * 失败后 30 秒重试，最多 3 次
+ * 使用 function 声明以支持递归调用
+ */
+function reportClientIdWithRetry(clientId: string): void {
+	reportClientIdToServer(clientId).then((success: boolean) => {
+		if (success == false) {
+			// 检查重试次数
+			if (retryCountRef.value < MAX_RETRY_COUNT) {
+				retryCountRef.value = retryCountRef.value + 1
+				console.log('🔄 [PushService] 将在 30 秒后重试上报，当前重试次数:', retryCountRef.value)
+				
+				// 清除之前的定时器
+				if (retryTimerId != 0) {
+					clearTimeout(retryTimerId)
+				}
+				
+				// 保存 clientId 到临时变量，避免闭包问题
+				const cidToRetry = clientId
+				
+				// 设置重试定时器
+				retryTimerId = setTimeout(() => {
+					retryTimerId = 0
+					reportClientIdWithRetry(cidToRetry)
+				}, RETRY_INTERVAL)
+			} else {
+				console.error('❌ [PushService] Client_ID 上报失败，已达最大重试次数')
+			}
+		}
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '重试上报推送Client_ID')
+	})
+}
+
+// ==================== 公开接口 ====================
+
+/**
+ * 初始化推送服务
+ * 获取 Client_ID 并保存到本地
+ * 
+ * 🔒 系统隐私声明自动处理，无需手动检查
+ */
+export const initPushService = () => {
+	// 🔒 隐私合规守卫：用户未同意隐私政策前不初始化推送
+	if (checkPrivacyBeforeCall() == false) {
+		logger.info('🔒 用户未同意隐私政策，跳过推送初始化')
+		return
+	}
+	
+	// 🔧 修复：检查是否已初始化
+	if (isInitializedRef.value == true) {
+		logger.debug('推送服务已初始化，跳过')
+		return
+	}
+	
+	// 🔧 修复：检查是否正在初始化中
+	if (isPushServiceInitializing == true) {
+		logger.debug('推送服务正在初始化中，跳过')
+		return
+	}
+	
+	isPushServiceInitializing = true
+	logger.info('🚀 开始初始化推送服务')
+	
+	// 检查平台支持
+	if (isPushSupported() == false) {
+		logger.info('📱 当前平台不支持离线推送，跳过初始化')
+		isInitializedRef.value = true
+		isPushServiceInitializing = false
+		return
+	}
+	
+	// 获取 Client_ID
+	fetchClientId().then((cid: string) => {
+		if (cid != '') {
+			clientIdRef.value = cid
+			// 保存到本地存储
+			safeSetStorageSync(SK_PUSH_CLIENT_ID, cid)
+		}
+		isInitializedRef.value = true
+		isPushServiceInitializing = false
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '初始化推送服务')
+		isInitializedRef.value = true
+		isPushServiceInitializing = false
+	})
+}
+
+/**
+ * 获取当前 Client_ID
+ */
+export const getClientId = (): string => {
+	// 优先从内存获取
+	if (clientIdRef.value != '') {
+		return clientIdRef.value
+	}
+	// 从本地存储获取
+	try {
+		const storedCid = uni.getStorageSync(SK_PUSH_CLIENT_ID)
+		if (storedCid != null && storedCid != '') {
+			clientIdRef.value = storedCid.toString()
+			return clientIdRef.value
+		}
+	} catch (e) {
+		handleSilentError(e, '读取推送Client_ID')
+	}
+	return ''
+}
+
+/**
+ * 绑定 Client_ID 到用户账号
+ * 用户登录后调用
+ * @param userKid 用户 ID
+ */
+export const bindClientIdToUser = (userKid: string) => {
+	if (userKid == '') {
+		console.warn('⚠️ [PushService] 用户 ID 为空，跳过绑定')
+		return
+	}
+	
+	const clientId = getClientId()
+	if (clientId == '') {
+		console.log('ℹ️ [PushService] Client_ID 为空，尝试重新获取')
+		// 尝试重新获取 Client_ID
+		fetchClientId().then((cid: string) => {
+			if (cid != '') {
+				clientIdRef.value = cid
+				safeSetStorageSync(SK_PUSH_CLIENT_ID, cid)
+				// 上报到服务器
+				reportClientIdWithRetry(cid)
+			}
+		}).catch((err: any | null): void => {
+			handleSilentError(err as any, '获取推送Client_ID(绑定)')
+		})
+		return
+	}
+	
+	// 上报到服务器
+	reportClientIdWithRetry(clientId)
+}
+
+/**
+ * 解绑 Client_ID
+ * 用户退出登录时调用
+ */
+export const unbindClientIdFromUser = () => {
+	console.log('🔓 [PushService] 解绑 Client_ID')
+	
+	// 清除重试定时器
+	if (retryTimerId != 0) {
+		clearTimeout(retryTimerId)
+		retryTimerId = 0
+	}
+	
+	// 重置重试计数
+	retryCountRef.value = 0
+	
+	// 检查平台支持
+	if (isPushSupported() == false) {
+		console.log('📱 [PushService] 当前平台不支持离线推送，跳过解绑')
+		return
+	}
+	
+	// 检查是否有 Client_ID
+	const clientId = getClientId()
+	if (clientId == '') {
+		console.log('ℹ️ [PushService] 无 Client_ID，跳过解绑')
+		return
+	}
+	
+	// 调用解绑接口（忽略错误，因为用户已登出）
+	unbindPushClient().then((res: any) => {
+		const code = getResponseCode(res)
+		if (code == 200) {
+		} else {
+			// 🔧 修复：解绑失败不影响登出流程，仅记录日志
+			console.warn('⚠️ [PushService] Client_ID 解绑失败, code:', code, '（不影响登出）')
+		}
+	}).catch((err: any | null): void => {
+		// 🔧 修复：解绑异常不影响登出流程，仅记录日志
+		// 常见情况：token 已失效导致 401，这是正常的
+		handleSilentError(err as any, '解绑推送Client_ID')
+	})
+}
+
+/**
+ * 检查推送服务是否已初始化
+ */
+export const isPushServiceInitialized = (): boolean => {
+	return isInitializedRef.value
+}
+
+/**
+ * 检查当前平台是否支持推送
+ */
+export const isPushServiceSupported = (): boolean => {
+	return isPushSupported()
+}
+
+/**
+ * 获取当前平台
+ */
+export const getPushPlatform = (): string => {
+	return getPlatform()
+}

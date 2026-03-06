@@ -1,0 +1,132 @@
+<template>
+	<scroll-view
+		class="list-container"
+		:style="containerStyle"
+		scroll-y="true"
+		:show-scrollbar="false"
+		refresher-enabled="true"
+		:refresher-triggered="refreshing"
+		@refresherrefresh="onRefresh"
+		@scrolltolower="onLoadMore"
+	>
+		<!-- 加载中状态（首次加载） -->
+		<ListStatus 
+			v-if="loading == true && listLength == 0" 
+			status="loading" 
+			:loadingText="loadingText"
+		/>
+		
+		<!-- 空状态 -->
+		<ListStatus 
+			v-else-if="listLength == 0" 
+			status="empty" 
+			:emptyText="emptyText"
+			:showEmptyIcon="showEmptyIcon"
+			:emptyIcon="emptyIcon"
+		/>
+		
+		<!-- 列表内容插槽 -->
+		<slot v-else></slot>
+		
+		<!-- 加载更多状态 -->
+		<ListStatus 
+			v-if="hasMore == true && loading == false && listLength > 0" 
+			status="loadMore" 
+			:loadMoreText="loadMoreText"
+		/>
+		
+		<!-- 没有更多状态 -->
+		<ListStatus 
+			v-if="hasMore == false && listLength > 0" 
+			status="noMore" 
+			:noMoreText="noMoreText"
+		/>
+	</scroll-view>
+</template>
+
+<script setup lang="uts">
+/**
+ * 列表容器组件
+ * 封装 scroll-view、下拉刷新、上拉加载、状态展示等通用逻辑
+ * 
+ * @example
+ * <ListContainer
+ *   :loading="loading"
+ *   :refreshing="refreshing"
+ *   :hasMore="hasMore"
+ *   :listLength="listLength"
+ *   :height="contentHeight + 'px'"
+ *   emptyText="暂无数据"
+ *   @refresh="onRefresh"
+ *   @loadMore="onLoadMore"
+ * >
+ *   <view v-for="(item, index) in list" :key="index">
+ *     {{ item.name }}
+ *   </view>
+ * </ListContainer>
+ */
+
+import { computed } from 'vue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+
+// ==================== Props ====================
+
+const props = defineProps({
+	// 加载状态
+	loading: { type: Boolean, default: false },
+	// 刷新状态
+	refreshing: { type: Boolean, default: false },
+	// 是否还有更多数据
+	hasMore: { type: Boolean, default: true },
+	// 列表长度
+	listLength: { type: Number, default: 0 },
+	// 容器高度（支持 px 或 rpx）
+	height: { type: String, default: '' },
+	// 加载中文本
+	loadingText: { type: String, default: '加载中...' },
+	// 空状态文本
+	emptyText: { type: String, default: '暂无数据' },
+	// 加载更多文本
+	loadMoreText: { type: String, default: '上拉加载更多' },
+	// 没有更多文本
+	noMoreText: { type: String, default: '没有更多了' },
+	// 是否显示空状态图标
+	showEmptyIcon: { type: Boolean, default: false },
+	// 空状态图标
+	emptyIcon: { type: String, default: '/static/images/empty.png' }
+})
+
+// ==================== Emits ====================
+
+const emit = defineEmits(['refresh', 'loadMore'])
+
+// ==================== 计算属性 ====================
+
+const containerStyle = computed((): string => {
+	if (props.height != '') {
+		return 'height: ' + props.height
+	}
+	return ''
+})
+
+// ==================== 事件处理 ====================
+
+const onRefresh = () => {
+	emit('refresh')
+}
+
+const onLoadMore = () => {
+	// 只有在有更多数据且未在加载中时才触发
+	if (props.hasMore == true && props.loading == false) {
+		emit('loadMore')
+	}
+}
+</script>
+
+<style scoped>
+.list-container {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: transparent;
+}
+</style>

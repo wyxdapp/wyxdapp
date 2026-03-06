@@ -1,0 +1,2064 @@
+﻿<template>
+	<view class="share-popup-container" v-if="visity == true">
+		<view class="modal-overlay" @click="handleClose"></view>
+		<view class="share-popup-modal">
+			<!-- 关闭按钮 - 右上角 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+			
+			<view class="modal-header">
+				<text class="modal-title">分享</text>
+			</view>
+			
+			<view class="modal-content">
+				<!-- 聊天会话列表 -->
+				<view class="share-chat-section" v-if="chatListCount > 0 || chatListLoading">
+					<text class="section-title">分享到聊天</text>
+					<!-- 加载状态 -->
+					<view v-if="chatListLoading" class="chat-loading">
+						<text class="loading-text">加载中...</text>
+					</view>
+					<!-- 聊天列表 -->
+					<scroll-view v-if="chatListLoading == false && chatListCount > 0" scroll-x="true" class="share-chat-list" :show-scrollbar="false">
+						<view class="share-chat-list-container">
+							<view
+								class="share-chat-item"
+								v-for="(item, index) in effectiveChatList"
+								:key="'chat_' + index"
+								@click="handleShareToChat(item)">
+								<view class="chat-avatar-box">
+									<Avatar
+										:url="getChatAvatar(item)"
+										:customSize="96"
+										clickMode="none"
+									/>
+								</view>
+								<text class="chat-name u-line-1">{{ getChatName(item) }}</text>
+							</view>
+						</view>
+					</scroll-view>
+				</view>
+				
+				<!-- 分享方式 -->
+				<view class="share-methods-section">
+					<text class="section-title">分享方式</text>
+					<view class="share-options">
+						<!-- 分享选项列表 -->
+						<view
+							v-for="(option, optionIndex) in shareOptions"
+							:key="'share_option_' + optionIndex"
+							class="share-option"
+							@click="handleShareOption(option, optionIndex)"
+						>
+							<view class="option-icon">
+								<!-- uni-icon 类型图标 -->
+								<uni-icons
+									v-if="getOptionIconType(option) == 'uni-icon'"
+									:type="getOptionIconName(option)"
+									:color="getOptionIconColor(option)"
+									:size="getOptionIconSize(option)"
+								/>
+								<!-- 图片类型图标 -->
+								<image
+									v-else
+									class="option-icon-image"
+									:src="getOptionIcon(option, optionIndex)"
+									mode="aspectFit"
+									@error="(e: any) => { console.warn('share icon load failed', e, getOptionIcon(option, optionIndex)) }"
+								/>
+							</view>
+							<text class="option-text">{{ getOptionName(option, optionIndex) }}</text>
+						</view>
+					</view>
+				</view>
+				
+			</view>
+			
+			<view class="modal-footer">
+				<view class="cancel-btn" @click="handleClose">
+					<text class="cancel-text">取消</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 二维码分享弹窗 -->
+		<view class="qrcode-popup-container" v-if="showQrcodePopup == true">
+			<view class="modal-overlay" @click="handleCloseQrcode"></view>
+			<view class="qrcode-popup-modal">
+				<!-- 关闭按钮 -->
+				<view class="close-btn" @click="handleCloseQrcode">
+					<text class="close-icon">✕</text>
+				</view>
+
+				<view class="modal-header">
+					<text class="modal-title">分享二维码</text>
+				</view>
+
+				<view class="modal-content">
+					<!-- 二维码图片 -->
+					<view class="qrcode-container">
+						<image
+							class="qrcode-image"
+							:src="'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(shareUrl)"
+							mode="aspectFit">
+						</image>
+					</view>
+
+					<!-- 分享标题 -->
+					<view class="qrcode-title">
+						<text class="title-text">{{ getShareTitle() }}</text>
+					</view>
+
+					<!-- 分享描述 -->
+					<view class="qrcode-desc">
+						<text class="desc-text">{{ shareDesc }}</text>
+					</view>
+
+					<!-- 链接文本 -->
+					<view class="qrcode-link">
+						<text class="link-text">{{ shareUrl }}</text>
+					</view>
+				</view>
+
+				<view class="modal-footer">
+					<view class="action-btn action-save" @click="handleSaveQrcode">
+						<text class="action-text">保存二维码</text>
+					</view>
+					<view class="action-btn action-copy" @click="handleCopyQrcodeLink">
+						<text class="action-text">复制链接</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 举报弹窗组件 -->
+		<ComplaintPopup
+			:visible="showComplaintPopup"
+			:complaintType="complaintType"
+			:targetKid="complaintTargetKid"
+			@update:visible="(val: boolean) => { showComplaintPopup = val }"
+			@success="handleComplaintSuccess"
+			@close="handleComplaintClose"
+		/>
+
+		<!-- H5 微信分享引导蒙层 -->
+		<view class="wechat-share-guide-overlay" v-if="showWechatGuide == true" @click="showWechatGuide = false">
+			<view class="guide-content" @click.stop="">
+				<!-- 右上角箭头指示 -->
+				<view class="guide-arrow-area">
+					<image 
+						class="guide-arrow-icon" 
+						src="https://jiasu.wyxdapp.com/iconimages/wechat_guide_arrow.png" 
+						mode="aspectFit"
+					></image>
+				</view>
+				<!-- 提示文字 -->
+				<view class="guide-text-area">
+					<text class="guide-text-main">请点击右上角 ··· 进行分享</text>
+				</view>
+				<!-- 关闭按钮 -->
+				<view class="guide-close-btn" @click="showWechatGuide = false">
+					<text class="guide-close-text">我知道了</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import Avatar from '@/components/base/Avatar.uvue'
+import ComplaintPopup from '@/components/common/ComplaintPopup.uvue'
+import * as wxsdk from '@/uni_modules/tt-wechat-pro'
+import { getChatList, getChatListRef } from '@/common/composables/useChatAndShare.uts'
+import { toJsonObj, countArrayItems, isAppPlatform, isH5Platform } from '@/common/utils/utsSafe.uts'
+import { useUserStore, initUserInfoAction } from '@/stores/user.uts'
+import { COMPLAINT_TYPE_DEFAULT } from '@/common/config/businessCodes.uts'
+import { delay } from '@/common/utils/delay.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// Props定义
+interface ShareData {
+	title?: string
+	desc?: string
+	summary?: string
+	imageUrl?: string
+	url?: string
+	link?: string
+	userId?: string
+	// 推广相关字段
+	referrerShortKid?: string  // 推广人短号（8位）
+	guideKid?: string          // 向导KID
+	guideName?: string         // 向导昵称
+	guideAvatar?: string       // 向导头像
+	servicePrice?: number      // 服务价格
+	commissionRate?: number    // 佣金费率
+}
+
+interface ChatListItem {
+	targetUserId?: string
+	targetUserName?: string
+	avatar?: string
+	lastMessage?: string
+	lastMessageTime?: string
+}
+
+// 使用运行时 prop 声明避免编译器问题
+const props = defineProps({
+	visity: { type: Boolean, default: false },
+	shareData: { 
+		type: Object, 
+		default: () => ({
+			title: '网约向导趣游玩',
+			desc: '发现专业向导，定制专属行程',
+			summary: '发现专业向导，定制专属行程',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			url: '',
+			link: '',
+			userId: ''
+		})
+	},
+	chatList: { type: [Array, Object], default: () => [] }
+})
+// Emits定义
+const emit = defineEmits([
+	'update:visity',
+	'share',
+	'share-to-chat',
+	'wechat-share',
+	'moments-share',
+	'copy-link',
+	'show-qrcode'
+])
+
+// 响应式数据
+const weChat = ref<wxsdk.TTWeChatSDK | null>(null)
+const showQrcodePopup = ref<boolean>(false)
+const userStore = useUserStore()
+
+// 聊天列表相关状态
+const chatListLoading = ref<boolean>(false)
+const chatListError = ref<string>('')
+const loadAttemptCount = ref<number>(0) // 防止无限重试
+
+// 举报弹窗相关状态
+const showComplaintPopup = ref<boolean>(false)
+const complaintType = ref<number>(COMPLAINT_TYPE_DEFAULT) // 10=订单, 20=路线, 30=聊天, 40=发现
+const complaintTargetKid = ref<string>('')
+
+// H5 微信分享引导蒙层状态
+const showWechatGuide = ref<boolean>(false)
+
+// 检测是否在微信内置浏览器中（仅 H5 端有效）
+const isWeChatBrowser = (): boolean => {
+	// #ifdef H5
+	try {
+		const ua = navigator.userAgent.toLowerCase()
+		return ua.indexOf('micromessenger') >= 0
+	} catch (e) {
+		console.error('[SharePopup] isWeChatBrowser error:', e)
+	}
+	// #endif
+	return false
+}
+
+// 分享选项 - APP端显示所有分享选项
+const shareOptions = ref<Array<any>>([
+	{
+		key: 'wechat',
+		name: '微信',
+		iconUrl: 'https://jiasu.wyxdapp.com/iconimages/share_wechat.png',
+		iconType: 'image'
+	},
+	{
+		key: 'wechat_moments',
+		name: '朋友圈',
+		iconUrl: 'https://jiasu.wyxdapp.com/iconimages/share_moments.png',
+		iconType: 'image'
+	},
+	{
+		key: 'copy',
+		name: '复制链接',
+		iconUrl: 'https://jiasu.wyxdapp.com/iconimages/share_link.png',
+		iconType: 'image'
+	},
+	{
+		key: 'qrcode',
+		name: '二维码',
+		iconUrl: 'https://jiasu.wyxdapp.com/iconimages/share_qrcode.png',
+		iconType: 'image'
+	},
+	{
+		key: 'complaint',
+		name: '举报',
+		iconType: 'uni-icon',
+		iconName: 'hand-down-filled',
+		iconColor: '#FF6B35',
+		iconSize: 40
+	}
+])
+
+// 投诉原因列表
+const complaintReasons = ref<Array<any>>([
+	{ code: 10, name: '色情低俗' },
+	{ code: 20, name: '暴力血腥' },
+	{ code: 30, name: '诈骗信息' },
+	{ code: 40, name: '侵权内容' },
+	{ code: 50, name: '广告骚扰' },
+	{ code: 60, name: '其他' }
+])
+
+// 检查微信是否安装
+const checkWeChatInstalled = (): boolean => {
+	try {
+		if (weChat.value == null) {
+			console.warn('微信SDK未初始化')
+			return false
+		}
+		const isInstalled = weChat.value.isInstall()
+		if (isInstalled == false) {
+			uni.showToast({
+				title: '请先安装微信客户端',
+				icon: 'none'
+			})
+			return false
+		}
+		return true
+	} catch (e) {
+		console.error('检查微信安装状态失败:', e)
+		return false
+	}
+}
+
+// 微信开放平台 APP 端配置（与 wechatLoginApp.uts 保持一致）
+const WECHAT_APP_ID = 'wx4a9aa1fbc92e1054'
+const WECHAT_UNIVERSAL_LINK = 'https://www.wyxdapp.com/app/'
+
+// 初始化微信SDK
+const initWeChatSDK = () => {
+	// 只在APP平台初始化微信SDK，H5平台不支持微信SDK
+	if (isAppPlatform() == false) {
+		console.log('ℹ️ [SharePopup] H5平台不支持微信SDK，跳过初始化')
+		return
+	}
+
+	try {
+		weChat.value = wxsdk.getTTWeChatSDK()
+		if (weChat.value != null) {
+			console.log('📱 [SharePopup] 开始注册微信SDK，appid:', WECHAT_APP_ID)
+			// 注册微信SDK - 使用正确的微信开放平台配置
+			weChat.value.register({
+				appid: WECHAT_APP_ID,
+				universalLink: WECHAT_UNIVERSAL_LINK,
+				success: () => {
+				},
+				fail: (error: any) => {
+					console.error('❌ [SharePopup] 微信SDK注册失败:', error)
+				}
+			} as wxsdk.TTWeChatRegisterOptions)
+		} else {
+			console.error('❌ [SharePopup] 获取微信SDK实例失败')
+		}
+	} catch (e) {
+		console.error('❌ [SharePopup] 初始化微信SDK失败:', e)
+	}
+}
+
+// 主动加载聊天列表（在组件挂载时调用，不阻塞弹窗显示）
+const loadChatList = async () => {
+	try {
+		chatListLoading.value = true
+		chatListError.value = ''
+
+		console.log('[SharePopup] ===== 开始主动获取聊天列表 =====')
+
+		// 简化逻辑：直接调用getChatList，依赖页面级别的userStore初始化
+		// 如果页面级别初始化失败，这里会重试一次
+		const result = await getChatList(userStore)
+		console.log('[SharePopup] 主动获取聊天列表成功，长度:', countArrayItems(result))
+
+		// 安全检查数组长度并输出样例数据
+		const resultLength = countArrayItems(result)
+		let sampleData = 'empty'
+		if (resultLength > 0) {
+			try {
+				sampleData = JSON.stringify(result[0])
+			} catch (e) {
+				sampleData = 'parse error'
+			}
+		}
+		console.log('[SharePopup] 聊天列表数据样例:', sampleData)
+
+		// 检查内部数据是否正确设置
+		const internalData = getChatListRef()
+		console.log('[SharePopup] 内部chatListRef数据长度:', countArrayItems(internalData))
+		console.log('[SharePopup] ===== 聊天列表获取完成 =====')
+
+		// 结果已经通过 getChatList 函数设置到模块级 chatListRef 中
+		// effectiveChatList 计算属性会自动更新
+	} catch (error) {
+		console.error('[SharePopup] 获取聊天列表失败:', error)
+		chatListError.value = '获取聊天列表失败'
+	} finally {
+		chatListLoading.value = false
+	}
+}
+
+// 在组件挂载时初始化微信SDK和用户数据
+onMounted(() => {
+	console.log('[SharePopup] onMounted called')
+	initWeChatSDK()
+
+	// 🔧 修复：组件挂载时初始化用户数据，确保userStore可用
+	try {
+		console.log('[SharePopup] 初始化用户数据...')
+		initUserInfoAction()
+	} catch (e) {
+		console.error('[SharePopup] 初始化用户数据失败:', e)
+	}
+
+})
+
+// 聊天列表数据源：优先使用 props.chatList，次优先使用内部主动获取的数据
+const chatListArr = computed((): Array<any> => {
+	try {
+		const raw = props.chatList
+		// 尝试解析多种可能的包裹结构（直接数组 / ref 对象 { value: [...] } / 包装对象 { list: [...] } / UTSJSONObject）
+		// 1) 直接是数组
+		try {
+			const parsedRaw = JSON.parse(JSON.stringify(raw))
+			if (Array.isArray(parsedRaw) == true) return parsedRaw as Array<any>
+		} catch (e) {}
+
+		// 2) 如果是对象包装，尝试通过 UTSJSONObject 安全访问 value 或 list
+		const rawObj = toJsonObj(raw)
+		if (rawObj != null) {
+			try {
+				const val = rawObj.get('value')
+				if (val != null) {
+					try {
+						const parsedVal = JSON.parse(JSON.stringify(val))
+						if (Array.isArray(parsedVal) == true) return parsedVal as Array<any>
+					} catch (e) {}
+				}
+			} catch (e) {}
+			try {
+				const listVal = rawObj.get('list')
+				if (listVal != null) {
+					try {
+						const parsedList = JSON.parse(JSON.stringify(listVal))
+						if (Array.isArray(parsedList) == true) return parsedList as Array<any>
+					} catch (e) {}
+				}
+			} catch (e) {}
+		}
+	} catch (e) {}
+	return []
+})
+
+// 从模块级 chatListRef 获取的数据（作为内部主动获取的后备）
+const chatListInternalArr = computed((): Array<any> => {
+	try {
+		const refList = getChatListRef()
+		// 使用 toJsonObj 安全读取 ref 对象或包装对象
+		const refObj = toJsonObj(refList)
+		let raw: any = ''
+		if (refObj != null) {
+			try {
+				const val = refObj.get('value')
+				if (val != null) raw = val as any
+			} catch (e) {}
+			try {
+				if (raw == '') {
+					const listVal = refObj.get('list')
+					if (listVal != null) raw = listVal as any
+				}
+			} catch (e) {}
+		}
+		// fallback to JSON.stringify(refList)
+		if (raw == '') {
+			try {
+				const str = JSON.stringify(refList)
+				if (str != '') raw = JSON.parse(str) as any
+			} catch (e) {}
+		}
+		if (raw == '') return []
+		const parsed = raw as any
+		if (Array.isArray(parsed) == true) return parsed as Array<any>
+	} catch (e) {}
+	return []
+})
+
+// 最终使用的聊天列表：优先级 props.chatList > 内部获取的数据
+const effectiveChatList = computed((): Array<any> => {
+	try {
+		const propsCount = countArrayItems(chatListArr.value)
+		const internalCount = countArrayItems(chatListInternalArr.value)
+
+		console.log('[SharePopup] effectiveChatList计算 - props数据长度:', propsCount, '内部数据长度:', internalCount)
+
+		// 优先使用 props 传递的数据
+		if (propsCount > 0) {
+			console.log('[SharePopup] 使用props传递的数据，第一个项目:', JSON.stringify(chatListArr.value[0]))
+			return chatListArr.value
+		}
+		// 次优先使用内部主动获取的数据
+		if (internalCount > 0) {
+			console.log('[SharePopup] 使用内部获取的数据，第一个项目:', JSON.stringify(chatListInternalArr.value[0]))
+			return chatListInternalArr.value
+		}
+
+		console.log('[SharePopup] 没有可用的聊天列表数据')
+	} catch (e) {
+		console.error('[SharePopup] effectiveChatList计算出错:', e)
+	}
+	return []
+})
+
+const shareOptionsCount = computed((): number => {
+	try {
+		return shareOptions.value.length
+	} catch (e) {}
+	return 0
+})
+
+// 🔧 新增：聊天列表数量计算属性
+const chatListCount = computed((): number => {
+	try {
+		return countArrayItems(effectiveChatList.value)
+	} catch (e) {}
+	return 0
+})
+
+// 调试函数：打印 chatList 状态（放在 computed 之后以避免 UTS 编译 error18）
+const logChatListStatus = (prefix: string) => {
+	try {
+		console.log(prefix + ' props.chatList (raw):', props.chatList)
+		try {
+			console.log(prefix + ' shareOptions length:', shareOptions.value.length)
+		} catch (e) {}
+		try {
+			console.log(prefix + ' shareData:', JSON.stringify(props.shareData))
+		} catch (e) {}
+		// 尝试输出解析后的数组（如果可用），使用安全的 JSON.parse 检查长度
+		try {
+			const arrJson = JSON.stringify(chatListArr.value)
+			const parsed = JSON.parse(arrJson)
+			if (Array.isArray(parsed) == true) {
+				console.log(prefix + ' parsed chatListArr length:', countArrayItems(parsed))
+			}
+		} catch (e) {}
+		try {
+			const efJson = JSON.stringify(effectiveChatList.value)
+			const parsedEf = JSON.parse(efJson)
+			if (Array.isArray(parsedEf) == true) {
+				console.log(prefix + ' effectiveChatList length:', countArrayItems(parsedEf))
+			}
+		} catch (e) {}
+	} catch (e) {}
+}
+
+// 监听 props.chatList 变化（放在 computed 之后，safe JSON 解析长度）
+// 使用 computed wrapper as watch source to satisfy UTS function typing
+const _chatListSource = computed((): any => props.chatList)
+watch(_chatListSource, (newList: any, oldList: any) => {
+	try {
+		let newLen = 0
+		let oldLen = 0
+		try {
+			const nj = JSON.stringify(newList)
+			const parsedNew = JSON.parse(nj)
+			if (Array.isArray(parsedNew) == true) newLen = countArrayItems(parsedNew)
+		} catch (e) {}
+		try {
+			const oj = JSON.stringify(oldList)
+			const parsedOld = JSON.parse(oj)
+			if (Array.isArray(parsedOld) == true) oldLen = countArrayItems(parsedOld)
+		} catch (e) {}
+		console.log('[SharePopup] props.chatList changed, new length:', newLen, 'old length:', oldLen)
+		logChatListStatus('[SharePopup] after chatList change')
+	} catch (e) {}
+}, { immediate: true, deep: true })
+
+// 🔧 修复：监听组件显示状态，当显示时主动加载聊天列表
+const MAX_LOAD_ATTEMPTS = 3
+
+// 使用 computed 包装 props.visity 避免 UTS 编译器类型问题
+const visityComputed = computed((): boolean => {
+	return props.visity
+})
+
+// 🔧 修复：将 tryLoadChatList 提取为独立函数，避免 UTS 函数提升问题
+// 使用 function 声明而非箭头函数，因为需要默认参数
+function doTryLoadChatList(attempt: number): void {
+	console.log('[SharePopup] 尝试加载聊天列表 (第', attempt, '次)')
+
+	loadChatList().then(() => {
+		// 加载完成后检查是否有数据
+		const loadedData = getChatListRef()
+		const dataCount = countArrayItems(loadedData)
+		console.log('[SharePopup] 加载完成，数据长度:', dataCount)
+
+		// 如果没有加载到数据，且还没达到最大尝试次数
+		if (dataCount == 0 && chatListError.value == '' && loadAttemptCount.value < MAX_LOAD_ATTEMPTS) {
+			const delay = attempt * 500 // 递增延迟：500ms, 1000ms, 1500ms...
+			console.log('[SharePopup] 没有加载到数据，', delay, 'ms后重试')
+			safeSetTimeout(() => {
+				if (props.visity == true && chatListLoading.value == false && loadAttemptCount.value < MAX_LOAD_ATTEMPTS) {
+					loadAttemptCount.value = loadAttemptCount.value + 1
+					doTryLoadChatList(attempt + 1)
+				}
+			}, delay)
+		}
+	}).catch((error: any | null): void => {
+		console.error('[SharePopup] 加载聊天列表失败:', error)
+		// 如果是网络错误或其他错误，也尝试重试
+		if (loadAttemptCount.value < MAX_LOAD_ATTEMPTS) {
+			const delay = attempt * 500
+			console.log('[SharePopup] 加载失败，', delay, 'ms后重试')
+			safeSetTimeout(() => {
+				if (props.visity == true && chatListLoading.value == false && loadAttemptCount.value < MAX_LOAD_ATTEMPTS) {
+					loadAttemptCount.value = loadAttemptCount.value + 1
+					doTryLoadChatList(attempt + 1)
+				}
+			}, delay)
+		}
+	})
+}
+
+watch(visityComputed, (newVisity: boolean) => {
+	try {
+		console.log('[SharePopup] visity changed to:', newVisity)
+		if (newVisity == true) {
+			// 🔧 调试：打印分享数据
+			try {
+				const shareDataJson = JSON.stringify(props.shareData)
+				console.log('[SharePopup] 📋 shareData:', shareDataJson)
+			} catch (e) {
+				console.error('[SharePopup] 打印shareData失败:', e)
+			}
+			
+			// 组件显示时，检查是否需要加载聊天列表
+			const hasPropsData = countArrayItems(chatListArr.value) > 0
+			const hasInternalData = countArrayItems(chatListInternalArr.value) > 0
+
+			if (hasPropsData == false && hasInternalData == false && chatListLoading.value == false && loadAttemptCount.value < MAX_LOAD_ATTEMPTS) {
+				console.log('[SharePopup] 组件显示但没有聊天数据，主动加载 (尝试次数:', loadAttemptCount.value + 1, ')')
+				loadAttemptCount.value = loadAttemptCount.value + 1
+
+				// 调用独立函数
+				doTryLoadChatList(1)
+			}
+		} else {
+			// 组件隐藏时重置尝试次数
+			loadAttemptCount.value = 0
+		}
+	} catch (e) {
+		console.error('[SharePopup] watch visity error:', e)
+	}
+}, { immediate: true })
+
+// 监听内部聊天列表变化
+watch(effectiveChatList, (newList: any, oldList: any) => {
+	try {
+		const newLen = countArrayItems(newList)
+		const oldLen = countArrayItems(oldList)
+		console.log('[SharePopup] effectiveChatList changed, new length:', newLen, 'old length:', oldLen)
+		if (newLen > 0 && oldLen == 0) {
+			console.log('[SharePopup] 聊天列表加载完成，可以显示聊天会话列表了')
+		}
+	} catch (e) {}
+}, { immediate: false, deep: true })
+
+// 注意：移除有问题的watch监听器
+// 聊天列表数据通过props.chatList从页面传递，不需要在组件内部主动获取
+
+// 辅助方法：安全获取分享数据属性
+// 定义分享数据接口
+interface ShareDataInfo {
+	link?: string | null
+	url?: string | null
+	userId?: string | null
+	desc?: string | null
+	summary?: string | null
+	title?: string | null
+	imageUrl?: string | null
+	// 推广相关字段
+	referrerShortKid?: string | null
+	guideKid?: string | null
+	guideName?: string | null
+	guideAvatar?: string | null
+	servicePrice?: number | null
+	commissionRate?: number | null
+}
+
+// 定义聊天项接口（与消息列表页保持一致）
+interface ChatItemInfo {
+	targetUserId?: string | null
+	targetUserName?: string | null
+	targetUserAvatar?: string | null
+	avatar?: string | null  // 兼容性字段
+}
+
+// 定义选项接口
+interface ShareOptionInfo {
+	iconUrl?: string | null
+	name?: string | null
+	key?: string | null
+	iconType?: string | null
+	iconName?: string | null
+	iconColor?: string | null
+	iconSize?: number | null
+}
+
+// 获取选项的 iconType
+const getOptionIconType = (option: any): string => {
+	try {
+		// 使用 JSON 序列化方式安全访问
+		const optionStr = JSON.stringify(option)
+		const optionObj = JSON.parse(optionStr) as UTSJSONObject
+		const iconTypeVal = optionObj.get('iconType')
+		if (iconTypeVal != null && iconTypeVal.toString() != '') {
+			return iconTypeVal.toString()
+		}
+	} catch (e) {
+		console.error('[SharePopup] getOptionIconType error:', e)
+	}
+	return 'image'
+}
+
+// 获取选项的 iconName
+const getOptionIconName = (option: any): string => {
+	try {
+		// 使用 JSON 序列化方式安全访问
+		const optionStr = JSON.stringify(option)
+		const optionObj = JSON.parse(optionStr) as UTSJSONObject
+		const iconNameVal = optionObj.get('iconName')
+		if (iconNameVal != null && iconNameVal.toString() != '') {
+			return iconNameVal.toString()
+		}
+	} catch (e) {
+		console.error('[SharePopup] getOptionIconName error:', e)
+	}
+	return ''
+}
+
+// 获取选项的 iconColor
+const getOptionIconColor = (option: any): string => {
+	try {
+		// 使用 JSON 序列化方式安全访问
+		const optionStr = JSON.stringify(option)
+		const optionObj = JSON.parse(optionStr) as UTSJSONObject
+		const iconColorVal = optionObj.get('iconColor')
+		if (iconColorVal != null && iconColorVal.toString() != '') {
+			return iconColorVal.toString()
+		}
+	} catch (e) {
+		console.error('[SharePopup] getOptionIconColor error:', e)
+	}
+	return '#333333'
+}
+
+// 获取选项的 iconSize
+const getOptionIconSize = (option: any): number => {
+	try {
+		// 使用 JSON 序列化方式安全访问
+		const optionStr = JSON.stringify(option)
+		if (optionStr != '') {
+			const optionObj = JSON.parse(optionStr) as UTSJSONObject
+			const iconSizeVal = optionObj.get('iconSize')
+			if (iconSizeVal != null) {
+				const size = parseInt(iconSizeVal.toString())
+				if (isNaN(size) == false && size > 0) {
+					return size
+				}
+			}
+		}
+	} catch (e) {
+		console.error('[SharePopup] getOptionIconSize error:', e)
+	}
+	return 48
+}
+
+// 辅助方法：安全获取分享数据属性（使用JSON序列化方式，兼容Android）
+const getShareDataProp = (key: string): string => {
+	const data = props.shareData
+	try {
+		// 🔧 修复：使用JSON序列化方式安全访问属性，避免Android端ClassCastException
+		const dataJson = JSON.stringify(data)
+		if (dataJson == '' || dataJson == '{}') {
+			console.log('[SharePopup] getShareDataProp: shareData is empty, key:', key)
+			return ''
+		}
+		const dataObj = JSON.parse(dataJson) as UTSJSONObject
+		
+		const val = dataObj.get(key)
+		if (val != null && val.toString() != '') {
+			const result = val.toString()
+			console.log('[SharePopup] getShareDataProp:', key, '=', result)
+			return result
+		}
+		console.log('[SharePopup] getShareDataProp:', key, '= (empty)')
+		return ''
+	} catch (e) {
+		console.error('[SharePopup] getShareDataProp error:', e, 'key:', key)
+	}
+	return ''
+}
+
+// 🔧 修复：头像获取逻辑，使用 UTSJSONObject.get() 安全访问属性（避免 ClassCastException）
+const getChatAvatar = (item: any): string => {
+	console.log('[SharePopup] getChatAvatar called with item:', item)
+	try {
+		// 🔧 修复：item 已经是 UTSJSONObject 类型，直接转换使用，不需要再次序列化
+		const itemObj = item as UTSJSONObject
+		console.log('[SharePopup] getChatAvatar: itemObj keys check')
+
+		// 🔧 优先级：targetUserAvatar > avatar（与消息列表页一致）
+		const targetUserAvatarVal = itemObj.get('targetUserAvatar')
+		console.log('[SharePopup] getChatAvatar: targetUserAvatarVal:', targetUserAvatarVal)
+		if (targetUserAvatarVal != null && targetUserAvatarVal.toString() != '') {
+			console.log('[SharePopup] getChatAvatar: found targetUserAvatar:', targetUserAvatarVal.toString())
+			return targetUserAvatarVal.toString()
+		}
+
+		const avatarVal = itemObj.get('avatar')
+		console.log('[SharePopup] getChatAvatar: avatarVal:', avatarVal)
+		if (avatarVal != null && avatarVal.toString() != '') {
+			console.log('[SharePopup] getChatAvatar: found avatar:', avatarVal.toString())
+			return avatarVal.toString()
+		}
+
+		console.log('[SharePopup] getChatAvatar: no avatar found, using default')
+	} catch (e) {
+		console.error('[SharePopup] getChatAvatar error:', e)
+	}
+	return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+}
+
+// 🔧 修复：昵称获取逻辑，使用 UTSJSONObject.get() 安全访问属性（避免 ClassCastException）
+const getChatName = (item: any): string => {
+	console.log('[SharePopup] getChatName called with item:', item)
+	try {
+		// 🔧 修复：item 已经是普通对象，直接转换为 UTSJSONObject 使用
+		const itemObj = item as UTSJSONObject
+		console.log('[SharePopup] getChatName: itemObj keys check')
+
+		// 🔧 获取用户ID用于默认昵称生成（与消息列表页一致）
+		const targetUserIdVal = itemObj.get('targetUserId')
+		const userIdStr = (targetUserIdVal != null && targetUserIdVal.toString() != '') ? targetUserIdVal.toString() : ''
+		console.log('[SharePopup] getChatName: targetUserId:', targetUserIdVal, 'userIdStr:', userIdStr)
+
+		// 🔧 获取昵称
+		const targetUserNameVal = itemObj.get('targetUserName')
+		if (targetUserNameVal != null && targetUserNameVal.toString() != '' && targetUserNameVal.toString() != '用户') {
+			console.log('[SharePopup] getChatName: found targetUserName:', targetUserNameVal.toString())
+			return targetUserNameVal.toString()
+		}
+
+		// 🔧 默认昵称生成逻辑（与消息列表页一致）
+		if (userIdStr.length >= 6) {
+			const defaultName = '用户' + userIdStr.substring(userIdStr.length - 6)
+			console.log('[SharePopup] getChatName: using default name:', defaultName)
+			return defaultName
+		}
+
+		console.log('[SharePopup] getChatName: using fallback name "用户"')
+	} catch (e) {
+		console.error('[SharePopup] getChatName error:', e)
+	}
+	return '用户'
+}
+
+// 分享选项图标和名称的硬编码映射
+const SHARE_OPTION_ICONS = [
+	'https://jiasu.wyxdapp.com/iconimages/share_wechat.png',
+	'https://jiasu.wyxdapp.com/iconimages/share_moments.png',
+	'https://jiasu.wyxdapp.com/iconimages/share_link.png',
+	'https://jiasu.wyxdapp.com/iconimages/share_qrcode.png',
+	'https://jiasu.wyxdapp.com/iconimages/share_complaint.png'
+]
+
+const SHARE_OPTION_NAMES = [
+	'微信',
+	'朋友圈',
+	'复制链接',
+	'二维码',
+	'举报'
+]
+
+const SHARE_OPTION_KEYS = [
+	'wechat',
+	'wechat_moments',
+	'copy',
+	'qrcode',
+	'complaint'
+]
+
+const getOptionIcon = (option: any, optionIndex: number): string => {
+	try {
+		if (optionIndex >= 0 && optionIndex < SHARE_OPTION_ICONS.length) {
+			return SHARE_OPTION_ICONS[optionIndex]
+		}
+	} catch (e) {}
+	return 'static/iconimages/share_wechat.png'
+}
+
+const getOptionName = (option: any, optionIndex: number): string => {
+	try {
+		if (optionIndex >= 0 && optionIndex < SHARE_OPTION_NAMES.length) {
+			return SHARE_OPTION_NAMES[optionIndex]
+		}
+	} catch (e) {}
+	return '分享'
+}
+
+// 辅助函数：添加推广人短号参数（必须在 shareUrl 之前定义）
+const appendReferrerParam = (url: string): string => {
+	const referrerShortKid = getShareDataProp('referrerShortKid')
+	if (referrerShortKid == '') {
+		return url
+	}
+	// 检查URL是否已包含ref参数（避免重复添加）
+	if (url.indexOf('ref=') >= 0) {
+		return url
+	}
+	// 检查URL是否已有参数
+	if (url.indexOf('?') >= 0) {
+		return url + '&ref=' + referrerShortKid
+	} else {
+		return url + '?ref=' + referrerShortKid
+	}
+}
+
+const shareUrl = computed((): string => {
+	// 优先使用 link，其次使用 url，最后构建
+	const link = getShareDataProp('link')
+	if (link != '') {
+		return appendReferrerParam(link)
+	}
+	const url = getShareDataProp('url')
+	if (url != '') {
+		return appendReferrerParam(url)
+	}
+	
+	// 构建向导详情页链接
+	const guideKid = getShareDataProp('guideKid')
+	if (guideKid != '') {
+		const baseUrl = 'https://m.wyxdapp.com/#/pagesBusiness/guideDetail/index'
+		let fullUrl = `${baseUrl}?kid=${guideKid}`
+		return appendReferrerParam(fullUrl)
+	}
+	
+	// 构建用户主页链接
+	const baseUrl = 'https://m.wyxdapp.com/#/pagesUser/persionInfo/index'
+	const userId = getShareDataProp('userId')
+	if (userId != '') {
+		let fullUrl = `${baseUrl}?id=${userId}`
+		return appendReferrerParam(fullUrl)
+	}
+	return baseUrl
+})
+
+const shareDesc = computed((): string => {
+	const desc = getShareDataProp('desc')
+	const summary = getShareDataProp('summary')
+	if (desc != '') return desc
+	if (summary != '') return summary
+	return '发现专业向导，定制专属行程'
+})
+
+// 统一分享标题和图片的安全获取函数
+const getShareTitle = (): string => {
+	const title = getShareDataProp('title')
+	if (title != '') {
+		return title
+	}
+	return '网约向导趣游玩'
+}
+
+const getShareImage = (): string => {
+	const imageUrl = getShareDataProp('imageUrl')
+	if (imageUrl != '') {
+		return imageUrl
+	}
+	// 🔧 修复：使用确定存在的默认头像作为分享图片
+	return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+}
+
+// 监听器（已移除二维码加载状态监听）
+
+// 🔧 辅助函数：处理分享错误（必须在 doWeChatShare 之前定义）
+const handleShareError = (error: any) => {
+	let errorMsg = '分享失败'
+	try {
+		const errStr = JSON.stringify(error)
+		const errObj = JSON.parse(errStr) as UTSJSONObject
+		const errMsgVal = errObj.get('errMsg')
+		if (errMsgVal != null && errMsgVal.toString() != '') {
+			errorMsg = errMsgVal.toString()
+		}
+	} catch (e) {}
+	uni.showToast({
+		title: errorMsg,
+		icon: 'none'
+	})
+}
+
+// 🔧 辅助函数：压缩图片用于分享（必须在 downloadImageToLocal 之前定义）
+const compressImageForShare = (imagePath: string, callback: (localPath: string) => void) => {
+	// 使用 uni.compressImage 压缩图片（微信缩略图要求不超过32KB）
+	// 🔧 同时限制尺寸为 200x200，确保压缩后不超过 32KB
+	uni.compressImage({
+		src: imagePath,
+		quality: 20, // 压缩质量 20%（微信缩略图要求极小，不超过32KB）
+		compressedWidth: 200,
+		compressedHeight: 200,
+		success: (compressRes: any) => {
+			try {
+				const compressResObj = JSON.parse(JSON.stringify(compressRes)) as UTSJSONObject
+				const tempFilePathVal = compressResObj.get('tempFilePath')
+				
+				if (tempFilePathVal != null && tempFilePathVal.toString() != '') {
+					console.log('[SharePopup] 图片压缩成功:', tempFilePathVal.toString())
+					callback(tempFilePathVal.toString())
+				} else {
+					console.warn('[SharePopup] 图片压缩结果无效，使用原图')
+					callback(imagePath) // 压缩结果无效，使用原图
+				}
+			} catch (e) {
+				console.warn('[SharePopup] 图片压缩解析失败:', e)
+				callback(imagePath) // 解析失败，使用原图
+			}
+		},
+		fail: (err: any) => {
+			console.warn('[SharePopup] 图片压缩失败:', err, '使用原图')
+			callback(imagePath) // 压缩失败，使用原图
+		}
+	})
+}
+
+// 🔧 辅助函数：下载网络图片到本地并压缩（微信SDK要求图片必须是本地路径，缩略图不超过32KB）
+const downloadImageToLocal = (imageUrl: string, callback: (localPath: string) => void) => {
+	// 如果已经是本地路径，直接返回
+	if (imageUrl.indexOf('http') != 0) {
+		callback(imageUrl)
+		return
+	}
+	
+	// 🔧 检查源URL是否为webp格式，如果是则标记需要格式转换
+	const isWebpSource = imageUrl.toLowerCase().indexOf('.webp') >= 0
+	
+	uni.downloadFile({
+		url: imageUrl,
+		success: (res: any) => {
+			try {
+				const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+				const statusCodeVal = resObj.get('statusCode')
+				const tempFilePathVal = resObj.get('tempFilePath')
+				
+				const statusCode = (statusCodeVal != null) ? parseInt(statusCodeVal.toString()) : 0
+				const tempFilePath = (tempFilePathVal != null) ? tempFilePathVal.toString() : ''
+				
+				if (statusCode == 200 && tempFilePath != '') {
+					// 下载成功，压缩图片（同时将webp转换为jpg）
+					console.log('[SharePopup] 图片下载成功, isWebp:', isWebpSource, 'tempPath:', tempFilePath)
+					compressImageForShare(tempFilePath, callback)
+				} else {
+					console.warn('[SharePopup] 图片下载状态异常, statusCode:', statusCode)
+					callback('') // 下载失败，返回空
+				}
+			} catch (e) {
+				console.error('[SharePopup] 图片下载解析失败:', e)
+				callback('')
+			}
+		},
+		fail: (err: any) => {
+			console.error('[SharePopup] 图片下载失败:', err)
+			callback('') // 下载失败，返回空
+		}
+	})
+}
+
+// 🔧 执行微信分享的最终调用（抽取公共逻辑，必须在 doWeChatShare 之前定义）
+const executeWeChatShare = (weChatInstance: wxsdk.TTWeChatSDK, scene: number, shareTitle: string, shareDescValue: string, shareUrlValue: string, imagePath: string) => {
+	console.log('[SharePopup] executeWeChatShare - scene:', scene, 'title:', shareTitle, 'image:', imagePath)
+	console.log('[SharePopup] executeWeChatShare - desc:', shareDescValue, 'href:', shareUrlValue)
+	console.log('[SharePopup] executeWeChatShare - weChatInstance:', weChatInstance)
+	
+	try {
+		if (imagePath != '') {
+			// 有有效图片，使用带缩略图分享
+			console.log('[SharePopup] 调用 weChatInstance.share (有图)...')
+			weChatInstance.share({
+				type: 3, // 网页分享
+				scene: scene,
+				title: shareTitle,
+				desc: shareDescValue,
+				href: shareUrlValue,
+				thumbImageUrl: imagePath, // 缩略图（本地路径，不超过32KB）
+				success: () => {
+					console.log('[SharePopup] ✅ 微信分享成功 scene:', scene)
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+				},
+				fail: (error: any) => {
+					console.error('[SharePopup] ❌ 微信分享失败 scene:', scene, 'error:', error)
+					handleShareError(error)
+				}
+			} as wxsdk.TTWeChatShareOptions)
+			console.log('[SharePopup] weChatInstance.share 调用完成(有图)，等待回调...')
+		} else {
+			// 无有效图片，使用无图分享
+			console.log('[SharePopup] 调用 weChatInstance.share (无图)...')
+			weChatInstance.share({
+				type: 3, // 网页分享
+				scene: scene,
+				title: shareTitle,
+				desc: shareDescValue,
+				href: shareUrlValue,
+				success: () => {
+					console.log('[SharePopup] ✅ 微信分享成功(无图) scene:', scene)
+					uni.showToast({
+						title: '分享成功',
+						icon: 'success'
+					})
+				},
+				fail: (error: any) => {
+					console.error('[SharePopup] ❌ 微信分享失败(无图) scene:', scene, 'error:', error)
+					handleShareError(error)
+				}
+			} as wxsdk.TTWeChatShareOptions)
+			console.log('[SharePopup] weChatInstance.share 调用完成(无图)，等待回调...')
+		}
+	} catch (e) {
+		console.error('[SharePopup] ❌ executeWeChatShare 同步异常:', e)
+		uni.showToast({
+			title: '分享调用失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 🔧 执行微信分享的内部函数（图片已下载到本地）
+const doWeChatShare = (scene: number, localImagePath: string) => {
+	const shareTitle = getShareTitle()
+	const shareDescValue = shareDesc.value
+	const shareUrlValue = shareUrl.value
+	
+	// 使用临时变量避免 smart cast 问题
+	const weChatInstance = weChat.value
+	if (weChatInstance == null) {
+		uni.showToast({
+			title: '微信SDK未初始化',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 检查图片路径是否有效，以及是否是 webp 格式
+	// 微信 SDK 不支持 webp 格式的缩略图，需要转换为 jpg
+	if (localImagePath != '') {
+		const isWebp = localImagePath.toLowerCase().indexOf('.webp') >= 0
+		if (isWebp == true) {
+			// webp 格式：通过 compressImage 转换为 jpg 后再分享
+			console.log('[SharePopup] 检测到 webp 图片，转换为 jpg:', localImagePath)
+			uni.compressImage({
+				src: localImagePath,
+				quality: 20,
+				compressedWidth: 200,
+				compressedHeight: 200,
+				success: (compressRes: any) => {
+					try {
+						const compressResObj = JSON.parse(JSON.stringify(compressRes)) as UTSJSONObject
+						const tempFilePathVal = compressResObj.get('tempFilePath')
+						if (tempFilePathVal != null && tempFilePathVal.toString() != '') {
+							console.log('[SharePopup] webp 转换成功:', tempFilePathVal.toString())
+							executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, tempFilePathVal.toString())
+						} else {
+							console.warn('[SharePopup] webp 转换结果无效，使用无图分享')
+							executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, '')
+						}
+					} catch (e) {
+						console.warn('[SharePopup] webp 转换解析失败，使用无图分享')
+						executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, '')
+					}
+				},
+				fail: (err: any) => {
+					console.warn('[SharePopup] webp 转换失败:', err, '使用无图分享')
+					executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, '')
+				}
+			})
+			return
+		}
+		// 非 webp 格式，直接使用
+		executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, localImagePath)
+	} else {
+		// 无图片
+		executeWeChatShare(weChatInstance, scene, shareTitle, shareDescValue, shareUrlValue, '')
+	}
+}
+
+// 方法 - 按调用顺序定义，被调用的函数先定义
+
+// 关闭弹窗（前置定义，供后续方法调用）
+function handleClose(): void {
+	emit('update:visity', false)
+}
+
+// 🔧 H5 端复制链接并提示（用于微信/朋友圈分享的 fallback）
+// 重构：使用 async/await + delay() 替代嵌套 setTimeout 回调
+const copyLinkWithTip = async () => {
+	const url = shareUrl.value
+	console.log('[SharePopup] copyLinkWithTip called, url:', url)
+	try {
+		uni.setClipboardData({
+			data: url,
+			success: () => {
+				console.log('[SharePopup] copyLinkWithTip success')
+				handleClose()
+				delay(200).then(() => {
+					uni.showToast({
+						title: '链接已复制，请打开微信粘贴分享',
+						icon: 'none',
+						duration: 2500
+					})
+				})
+			},
+			fail: (err: any) => {
+				console.error('[SharePopup] copyLinkWithTip fail:', err)
+				delay(200).then(() => {
+					uni.showToast({
+						title: '复制失败',
+						icon: 'none'
+					})
+				})
+			}
+		})
+	} catch (e) {
+		console.error('[SharePopup] copyLinkWithTip exception:', e)
+		uni.showToast({
+			title: '复制失败',
+			icon: 'none'
+		})
+	}
+}
+
+// 🔧 H5 端尝试调用 Web Share API
+const tryWebShare = () => {
+	// Web Share API 仅在 H5 端可用，通过运行时判断
+	// 由于 UTS 编译限制，navigator 在 APP 端不可用，直接 fallback
+	if (isH5Platform() == false) {
+		copyLinkWithTip()
+		return
+	}
+	// #ifdef H5
+	try {
+		if (typeof navigator !== 'undefined' && navigator.share != null) {
+			const shareTitle = getShareTitle()
+			const shareDescValue = shareDesc.value
+			const shareUrlValue = shareUrl.value
+			navigator.share({
+				title: shareTitle,
+				text: shareDescValue,
+				url: shareUrlValue
+			}).then(() => {
+				console.log('[SharePopup] Web Share API 分享成功')
+			}).catch((_err: any | null): void => {
+				console.log('[SharePopup] Web Share API 失败或取消，fallback 到复制链接')
+				copyLinkWithTip()
+			})
+			return
+		}
+	} catch (e) {
+		console.error('[SharePopup] tryWebShare error:', e)
+	}
+	// #endif
+	// Web Share API 不支持，fallback 到复制链接
+	copyLinkWithTip()
+}
+
+// 🔧 H5 端微信/朋友圈分享统一入口
+const handleH5WechatShare = () => {
+	if (isWeChatBrowser() == true) {
+		// 微信内置浏览器：显示引导蒙层
+		console.log('[SharePopup] 微信浏览器，显示引导蒙层')
+		showWechatGuide.value = true
+	} else {
+		// 非微信浏览器：尝试 Web Share API
+		console.log('[SharePopup] 非微信浏览器，尝试 Web Share API')
+		tryWebShare()
+	}
+}
+
+// 🔧 通用微信分享入口函数（减少代码重复）
+const doShareToWeChat = (scene: number, sceneName: string) => {
+	console.log('[SharePopup] doShareToWeChat - scene:', scene, 'sceneName:', sceneName)
+	// 🔧 H5 平台：使用 H5 专用分享逻辑
+	if (isH5Platform() == true) {
+		handleH5WechatShare()
+		return
+	}
+
+	// 检查是否为APP平台
+	if (isAppPlatform() == false) {
+		uni.showToast({
+			title: '请在APP中使用微信分享功能',
+			icon: 'none'
+		})
+		return
+	}
+
+	// 检查微信SDK是否初始化
+	if (weChat.value == null) {
+		console.error('[SharePopup] ❌ 微信SDK未初始化')
+		uni.showToast({
+			title: '微信SDK未初始化',
+			icon: 'none'
+		})
+		return
+	}
+
+	// 检查微信是否安装
+	if (checkWeChatInstalled() == false) {
+		return
+	}
+
+	// 获取分享图片URL并下载到本地后分享
+	const shareImageUrl = getShareImage()
+	console.log('[SharePopup] 分享图片URL:', shareImageUrl)
+	downloadImageToLocal(shareImageUrl, (localPath: string) => {
+		console.log('[SharePopup] 图片下载完成, localPath:', localPath)
+		doWeChatShare(scene, localPath)
+	})
+}
+
+const shareToWeChat = () => {
+	doShareToWeChat(0, '好友') // scene=0 分享到好友
+}
+
+const shareToWeChatMoments = () => {
+	doShareToWeChat(1, '朋友圈') // scene=1 分享到朋友圈
+}
+
+
+const copyLink = () => {
+	const url = shareUrl.value
+	console.log('[SharePopup] copyLink called, url:', url)
+	try {
+		uni.setClipboardData({
+			data: url,
+			success: () => {
+				console.log('[SharePopup] copyLink success')
+				handleClose()
+			},
+			fail: (err: any) => {
+				console.error('[SharePopup] copyLink uni.setClipboardData fail:', err)
+				uni.showToast({
+					title: '复制失败',
+					icon: 'none'
+				})
+			}
+		})
+	} catch (e) {
+		console.error('[SharePopup] copyLink exception:', e)
+		uni.showToast({
+			title: '复制失败',
+			icon: 'none'
+		})
+	}
+}
+
+const handleShowQrcode = () => {
+	// 显示二维码弹窗
+	showQrcodePopup.value = true
+}
+
+// 举报相关方法
+// 获取投诉类型（根据分享数据判断）
+const getComplaintType = (): number => {
+	const lineKid = getShareDataProp('lineKid')
+	const discoverKid = getShareDataProp('discoverKid')
+	const guideKid = getShareDataProp('guideKid')
+	const orderKid = getShareDataProp('orderKid')
+	
+	console.log('[SharePopup] getComplaintType - lineKid:', lineKid, 'discoverKid:', discoverKid, 'guideKid:', guideKid, 'orderKid:', orderKid)
+	
+	if (lineKid != '') {
+		console.log('[SharePopup] 举报类型: 路线举报 (20)')
+		return 20 // 路线举报
+	} else if (orderKid != '') {
+		console.log('[SharePopup] 举报类型: 订单举报 (10)')
+		return 10 // 订单举报
+	} else if (discoverKid != '') {
+		console.log('[SharePopup] 举报类型: 发现举报 (40)')
+		return 40 // 发现举报
+	} else if (guideKid != '') {
+		console.log('[SharePopup] 举报类型: 向导举报 (40)')
+		return 40 // 向导举报（使用发现举报表）
+	}
+	
+	console.log('[SharePopup] 举报类型: 默认发现举报 (40)')
+	return 40 // 默认使用发现举报
+}
+
+// 获取被举报对象的KID
+const getTargetKid = (): string => {
+	const lineKid = getShareDataProp('lineKid')
+	const discoverKid = getShareDataProp('discoverKid')
+	const guideKid = getShareDataProp('guideKid')
+	const orderKid = getShareDataProp('orderKid')
+	const userId = getShareDataProp('userId')
+	
+	console.log('[SharePopup] getTargetKid - lineKid:', lineKid, 'discoverKid:', discoverKid, 'guideKid:', guideKid, 'orderKid:', orderKid, 'userId:', userId)
+	
+	if (lineKid != '') {
+		console.log('[SharePopup] 使用 lineKid:', lineKid)
+		return lineKid
+	} else if (discoverKid != '') {
+		console.log('[SharePopup] 使用 discoverKid:', discoverKid)
+		return discoverKid
+	} else if (guideKid != '') {
+		console.log('[SharePopup] 使用 guideKid:', guideKid)
+		return guideKid
+	} else if (orderKid != '') {
+		console.log('[SharePopup] 使用 orderKid:', orderKid)
+		return orderKid
+	} else if (userId != '') {
+		console.log('[SharePopup] 使用 userId:', userId)
+		return userId
+	}
+	
+	console.warn('[SharePopup] ⚠️ 无法获取任何有效的KID')
+	return ''
+}
+
+const handleShowComplaint = () => {
+	console.log('[SharePopup] 🚨 handleShowComplaint called')
+	console.log('[SharePopup] 📋 shareData:', JSON.stringify(props.shareData))
+	
+	// 获取举报类型和目标KID
+	complaintType.value = getComplaintType()
+	complaintTargetKid.value = getTargetKid()
+	
+	console.log('[SharePopup] 举报类型:', complaintType.value)
+	console.log('[SharePopup] 举报目标KID:', complaintTargetKid.value)
+	
+	// 验证目标KID
+	if (complaintTargetKid.value == '') {
+		console.warn('[SharePopup] ⚠️ 无法获取举报对象，shareData可能为空或缺少必要字段')
+		uni.showToast({
+			title: '无法获取举报对象，请从详情页进行举报',
+			icon: 'none',
+			duration: 2000
+		})
+		return
+	}
+	
+	showComplaintPopup.value = true
+}
+
+const handleComplaintSuccess = () => {
+	console.log('[SharePopup] ✅ 举报成功')
+	// 举报成功后关闭分享弹窗
+	handleClose()
+}
+
+const handleComplaintClose = () => {
+	console.log('[SharePopup] 关闭举报弹窗')
+	showComplaintPopup.value = false
+}
+
+const handleShare = (platform: string) => {
+	if (platform == '') return
+	switch (platform) {
+		case 'wechat':
+			shareToWeChat()
+			break
+		case 'wechat_moments':
+			shareToWeChatMoments()
+			break
+		case 'copy':
+			copyLink()
+			break
+		case 'qrcode':
+			handleShowQrcode()
+			break
+		case 'complaint':
+			handleShowComplaint()
+			break
+		default:
+			console.warn('不支持的分享平台:', platform)
+	}
+
+	emit('share', platform)
+}
+
+const handleShareToChat = (chatItem: any) => {
+	emit('share-to-chat', {
+		chatItem,
+		shareData: props.shareData
+	})
+	handleClose()
+}
+
+const handleShareOption = (option: any, optionIndex: number) => {
+	console.log('[SharePopup] 点击分享选项:', option, '索引:', optionIndex)
+	try {
+		if (optionIndex >= 0 && optionIndex < SHARE_OPTION_KEYS.length) {
+			const key = SHARE_OPTION_KEYS[optionIndex]
+			console.log('[SharePopup] 执行分享:', key)
+			handleShare(key)
+		}
+	} catch (e) {
+		console.error('[SharePopup] 分享选项处理错误:', e)
+	}
+}
+
+
+// 二维码弹窗相关方法
+const handleCloseQrcode = () => {
+	showQrcodePopup.value = false
+}
+
+const handleSaveQrcode = () => {
+	// 保存二维码图片到相册
+	const qrcodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(shareUrl.value)
+	uni.downloadFile({
+		url: qrcodeUrl,
+		success: (res) => {
+			if (res.statusCode == 200) {
+				uni.saveImageToPhotosAlbum({
+					filePath: res.tempFilePath,
+					success: () => {
+						uni.showToast({
+							title: '二维码已保存到相册',
+							icon: 'success'
+						})
+					},
+					fail: (error) => {
+						console.error('保存二维码失败:', error)
+						uni.showToast({
+							title: '保存失败',
+							icon: 'none'
+						})
+					}
+				})
+			} else {
+				uni.showToast({
+					title: '生成二维码失败',
+					icon: 'none'
+				})
+			}
+		},
+		fail: (error) => {
+			console.error('下载二维码失败:', error)
+			uni.showToast({
+				title: '生成二维码失败',
+				icon: 'none'
+			})
+		}
+	})
+}
+
+const handleCopyQrcodeLink = () => {
+	uni.setClipboardData({
+		data: shareUrl.value,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制',
+				icon: 'success'
+			})
+		},
+		fail: () => {
+			uni.showToast({
+				title: '复制失败',
+				icon: 'none'
+			})
+		}
+	})
+}
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+
+</script>
+
+<style scoped>
+.share-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+}
+
+.modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+}
+
+.share-popup-modal {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	max-height: 800rpx;
+	flex-direction: column;
+}
+
+/* 关闭按钮 - 右上角 */
+.close-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	width: 48rpx;
+	height: 48rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.modal-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 32rpx;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	font-weight: normal;
+	color: #333333;
+}
+
+.close-icon {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.modal-content {
+	max-height: 600rpx;
+	flex-direction: column;
+	width: 686rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	color: #666666;
+	font-weight: normal;
+	margin-bottom: 24rpx;
+}
+
+/* 聊天会话列表样式 */
+.share-chat-section {
+	margin-bottom: 32rpx;
+	flex-direction: column;
+}
+
+.share-chat-list {
+	flex-direction: row;
+	height: 160rpx;
+}
+
+.share-chat-list-container {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.share-chat-item {
+	flex-direction: column;
+	align-items: center;
+	width: 136rpx;
+}
+
+.chat-avatar-box {
+	width: 96rpx;
+	height: 96rpx;
+	margin-bottom: 12rpx;
+}
+
+.chat-name {
+	font-size: 24rpx;
+	color: #333333;
+	width: 136rpx;
+	text-align: center;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+/* 加载状态样式 */
+.chat-loading {
+	padding: 40rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.loading-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+/* 分享方式样式 */
+.share-methods-section {
+	margin-bottom: 24rpx;
+	flex-direction: column;
+}
+
+.share-options {
+	flex-direction: row;
+	justify-content: flex-start;
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+
+.share-option {
+	flex-direction: column;
+	align-items: center;
+	width: 20%;
+	margin-bottom: 24rpx;
+}
+
+.share-option:active {
+	background-color: #f5f5f5;
+}
+
+.option-icon {
+	width: 96rpx;
+	height: 96rpx;
+	margin-bottom: 12rpx;
+}
+
+.option-icon-image {
+	width: 96rpx;
+	height: 96rpx;
+}
+
+.option-text {
+	font-size: 24rpx;
+	color: #333333;
+}
+
+/* 底部样式 */
+.modal-footer {
+	margin-top: 24rpx;
+	width: 686rpx;
+}
+
+.cancel-btn {
+	width: 686rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #EEEEEE;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #FFFFFF;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #333333;
+}
+
+/* 文本截断样式 */
+.u-line-1 {
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+/* 二维码弹窗样式 */
+.qrcode-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+}
+
+.qrcode-popup-modal {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 48rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	max-height: 600rpx;
+	flex-direction: column;
+}
+
+.qrcode-container {
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	padding: 32rpx 0;
+}
+
+.qrcode-image {
+	width: 400rpx;
+	height: 400rpx;
+}
+
+.qrcode-title {
+	text-align: center;
+	margin-bottom: 16rpx;
+}
+
+.title-text {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.qrcode-desc {
+	text-align: center;
+	margin-bottom: 24rpx;
+	padding: 0 32rpx;
+}
+
+.desc-text {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 1.5;
+}
+
+.qrcode-link {
+	background-color: #F5F5F5;
+	border-radius: 12rpx;
+	padding: 24rpx;
+	margin-bottom: 32rpx;
+}
+
+.link-text {
+	font-size: 24rpx;
+	color: #333333;
+	line-height: 1.4;
+}
+
+/* 二维码弹窗底部按钮样式 */
+.qrcode-popup-modal .modal-footer {
+	flex-direction: row;
+	justify-content: space-between;
+	width: 686rpx;
+}
+
+.action-btn {
+	flex: 1;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin: 0 8rpx;
+}
+
+.action-save {
+	background-color: #2EAEF2;
+}
+
+.action-copy {
+	background-color: #07C160;
+}
+
+.action-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+	font-weight: normal;
+}
+
+/* 投诉弹窗样式 */
+.complaint-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+}
+
+.complaint-popup-modal {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #FFFFFF;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	padding-top: 32rpx;
+	padding-bottom: 48rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	max-height: 800rpx;
+	flex-direction: column;
+}
+
+.complaint-section {
+	margin-bottom: 32rpx;
+	flex-direction: column;
+}
+
+.reason-list {
+	flex-direction: column;
+}
+
+.reason-item {
+	flex-direction: row;
+	align-items: center;
+	padding: 24rpx 0;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.reason-radio {
+	width: 40rpx;
+	height: 40rpx;
+	border-radius: 20rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #CCCCCC;
+	margin-right: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.reason-radio-checked {
+	width: 24rpx;
+	height: 24rpx;
+	border-radius: 12rpx;
+	background-color: #2EAEF2;
+}
+
+.reason-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.complaint-textarea {
+	width: 686rpx;
+	min-height: 200rpx;
+	padding: 24rpx;
+	background-color: #F5F5F5;
+	border-radius: 12rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.action-cancel {
+	background-color: #FFFFFF;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #EEEEEE;
+}
+
+.action-cancel .action-text {
+	color: #333333;
+}
+
+.action-submit {
+	background-color: #2EAEF2;
+}
+
+.action-disabled {
+	opacity: 0.5;
+}
+
+/* H5 微信分享引导蒙层样式 */
+.wechat-share-guide-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.75);
+	z-index: 10001;
+	flex-direction: column;
+	align-items: flex-end;
+	padding-top: 20rpx;
+	padding-right: 30rpx;
+}
+
+.wechat-share-guide-overlay .guide-content {
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.guide-arrow-area {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 20rpx;
+}
+
+.guide-arrow-icon {
+	width: 120rpx;
+	height: 120rpx;
+}
+
+.guide-text-area {
+	flex-direction: column;
+	align-items: flex-end;
+	margin-top: 30rpx;
+	margin-right: 20rpx;
+}
+
+.guide-text-main {
+	font-size: 36rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.guide-close-btn {
+	margin-top: 60rpx;
+	margin-right: 20rpx;
+	padding: 20rpx 60rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+}
+
+.guide-close-text {
+	font-size: 30rpx;
+	color: #ffffff;
+}
+</style>

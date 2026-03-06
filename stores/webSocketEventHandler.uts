@@ -1,0 +1,790 @@
+/**
+ * 🌟 WebSocket事件处理器
+ * 专门处理WebSocket事件的分发和转换，确保单一职责
+ */
+
+import { messageStateManager, MessageStatus, MessageType, AddReceivedMessageParams } from './messageStateManager'
+import { updateUnreadCountsDirect, updateMessageUnreadCountDirect } from './unread'
+import { chatLocalStorageManager } from '@/common/services/chatLocalStorage.uts'
+import { WS_MSG_TYPE_READ_RECEIPT } from '@/common/config/businessCodes.uts'
+import { RANDOM_RANGE_MILLION } from '@/common/config/generatorConfig.uts'
+import { toUTSJSON, getString, getNumber, getObject, getArray } from '@/common/utils/typeConverter.uts'
+import { deepCloneArray } from '@/utils/deepClone.uts'
+
+// WebSocket事件类型
+export enum WebSocketEventType {
+  CONNECTED = 'connected',
+  DISCONNECTED = 'disconnected',
+  MESSAGE_SENT = 'sent',
+  MESSAGE_RECEIVED = 'chat',
+  MESSAGE_READ = 'read',
+  UNREAD_UPDATE = 'unread',
+  HEARTBEAT = 'activity',
+  ERROR = 'error',
+  ONLINE_STATUS = 'online_status'
+}
+
+// WebSocket事件类
+export class WebSocketEvent {
+  type: WebSocketEventType = WebSocketEventType.CONNECTED
+  // UTS 规范：data 可以是各种类型（UTSJSONObject、string 等），使用 any | null
+  data: any | null = null
+  timestamp: number = 0
+}
+
+/**
+ * WebSocket事件处理器
+ */
+export class WebSocketEventHandler {
+  // 事件监听器
+  private eventListeners: Map<WebSocketEventType, Set<(event: WebSocketEvent) => void>> = new Map()
+
+  constructor() {
+    // UTS 规范：不支持 Object.values()，手动初始化每个枚举值
+    this.eventListeners.set(WebSocketEventType.CONNECTED, new Set())
+    this.eventListeners.set(WebSocketEventType.DISCONNECTED, new Set())
+    this.eventListeners.set(WebSocketEventType.MESSAGE_SENT, new Set())
+    this.eventListeners.set(WebSocketEventType.MESSAGE_RECEIVED, new Set())
+    this.eventListeners.set(WebSocketEventType.MESSAGE_READ, new Set())
+    this.eventListeners.set(WebSocketEventType.UNREAD_UPDATE, new Set())
+    this.eventListeners.set(WebSocketEventType.HEARTBEAT, new Set())
+    this.eventListeners.set(WebSocketEventType.ERROR, new Set())
+    this.eventListeners.set(WebSocketEventType.ONLINE_STATUS, new Set())
+  }
+
+  /**
+   * 处理WebSocket消息
+   * ⭐ 性能优化：在入口处使用 toUTSJSON 一次性解析消息，
+   * 将解析后的 UTSJSONObject 传递给所有下游处理函数，避免重复 JSON.stringify/JSON.parse
+   */
+  handleWebSocketMessage(rawMessage: any): void {
+    try {
+      console.log('📨 [WebSocketEventHandler] 收到原始消息:', rawMessage)
+
+      // ⭐ 优化：先检查是否是简单字符串消息（如心跳 pong）
+      // 这些消息不需要解析为 UTSJSONObject，直接跳过处理
+      if (typeof rawMessage === 'string') {
+        const msgStr = rawMessage as string
+        if (msgStr == 'pong' || msgStr == 'ping') {
+          console.log('💓 [WebSocketEventHandler] 跳过心跳消息:', msgStr)
+          return
+        }
+      }
+
+      // ⭐ 性能优化：使用 toUTSJSON 一次性解析，替代 JSON.stringify + JSON.parse
+      const msgObj = toUTSJSON(rawMessage)
+      if (msgObj == null) {
+        console.log('⏸️ [WebSocketEventHandler] 跳过非对象消息')
+        return
+      }
+      
+      // 解析事件类型
+      const eventType = this.parseEventType(msgObj)
+      const event = new WebSocketEvent()
+      event.type = eventType
+      
+      // ⭐ 修复：对于 UNREAD_UPDATE 类型，传递已解析的 msgObj（包含 type 字段）
+      // 这样 handleUnreadUpdate 才能正确判断是否是 301 消息
+      if (eventType == WebSocketEventType.UNREAD_UPDATE) {
+        event.data = rawMessage
+      } else {
+        const dataVal = msgObj.get('data')
+        event.data = dataVal != null ? dataVal : rawMessage
+      }
+      event.timestamp = Date.now()
+
+      // ⭐ 性能优化：将已解析的 msgObj 传递给 dispatchMessage，避免下游重复解析
+      this.dispatchMessage(event, msgObj)
+      
+      // 通知外部监听器
+      this.notifyListeners(event)
+
+    } catch (error) {
+      console.error('❌ [WebSocketEventHandler] 消息处理失败:', error)
+      const errorEvent = new WebSocketEvent()
+      errorEvent.type = WebSocketEventType.ERROR
+      errorEvent.data = { error: '消息处理失败' }
+      errorEvent.timestamp = Date.now()
+      this.notifyListeners(errorEvent)
+    }
+  }
+
+  /**
+   * 解析事件类型
+   */
+  private parseEventType(message: UTSJSONObject): WebSocketEventType {
+    // ⭐ 新增：优先处理数字类型 type（兼容后端推送的数字类型消息）
+    const typeNum = message.getNumber('type')
+    if (typeNum == 100) {
+      // TYPE_UNREAD_COUNT_UPDATE - 会话未读数更新消息
+      return WebSocketEventType.UNREAD_UPDATE
+    }
+    
+    // ⭐ 新增：处理单会话未读数更新消息类型 WS_MSG_TYPE_READ_RECEIPT
+    if (typeNum == WS_MSG_TYPE_READ_RECEIPT) {
+      // TYPE_SINGLE_CONVERSATION_UNREAD_UPDATE - 单会话未读数更新
+      return WebSocketEventType.UNREAD_UPDATE
+    }
+    
+    // ⭐ 处理在线状态消息类型 200/201
+    if (typeNum == 200 || typeNum == 201) {
+      // TYPE_ONLINE_STATUS_ONLINE = 200, TYPE_ONLINE_STATUS_OFFLINE = 201
+      return WebSocketEventType.ONLINE_STATUS
+    }
+
+    // 原有字符串处理逻辑
+    const typeStr = message.getString('type')
+    const messageTypeStr = message.getString('messageType')
+    const type = typeStr != null ? typeStr : (messageTypeStr != null ? messageTypeStr : '')
+
+    if (type == 'sent') {
+      return WebSocketEventType.MESSAGE_SENT
+    } else if (type == 'chat') {
+      return WebSocketEventType.MESSAGE_RECEIVED
+    } else if (type == 'read' || type == '101') {
+      return WebSocketEventType.MESSAGE_READ
+    } else if (type == 'unread') {
+      return WebSocketEventType.UNREAD_UPDATE
+    } else if (type == '301') {
+      // 处理消息提醒未读数更新（访客、关注、点赞、评论等）
+      return WebSocketEventType.UNREAD_UPDATE
+    } else if (type == 'activity') {
+      return WebSocketEventType.HEARTBEAT
+    } else if (type == 'error') {
+      return WebSocketEventType.ERROR
+    } else {
+      // 处理裸消息（没有type字段的消息）
+      if (messageTypeStr != null) {
+        return WebSocketEventType.MESSAGE_RECEIVED
+      }
+      return WebSocketEventType.MESSAGE_RECEIVED
+    }
+  }
+
+  /**
+   * 分发消息到状态管理器
+   * ⭐ 性能优化：接收已解析的 msgObj，传递给下游处理函数，避免重复 JSON 解析
+   * @param event WebSocket事件
+   * @param msgObj 入口处已解析的 UTSJSONObject（整个消息对象）
+   */
+  private dispatchMessage(event: WebSocketEvent, msgObj: UTSJSONObject): void {
+    // UTS 规范：Any? 不能直接传给 Any 参数，需先判空
+    const eventData = event.data
+    if (eventData == null) {
+      console.log('⚠️ [WebSocketEventHandler] 事件数据为空:', event.type)
+      return
+    }
+    
+    // ⭐ 性能优化：从 msgObj 中提取 data 字段的 UTSJSONObject，供下游函数使用
+    // 对于 UNREAD_UPDATE，传递完整 msgObj（因为需要根对象的 type 字段）
+    // 对于其他类型，优先使用 data 子对象，fallback 到 msgObj
+    const dataFieldObj = getObject(msgObj, 'data')
+    
+    switch (event.type) {
+      case WebSocketEventType.MESSAGE_SENT:
+        this.handleMessageSent(dataFieldObj != null ? dataFieldObj : msgObj)
+        break
+      case WebSocketEventType.MESSAGE_RECEIVED:
+        this.handleMessageReceived(dataFieldObj != null ? dataFieldObj : msgObj)
+        break
+      case WebSocketEventType.MESSAGE_READ:
+        this.handleMessageRead(dataFieldObj != null ? dataFieldObj : msgObj)
+        break
+      case WebSocketEventType.UNREAD_UPDATE:
+        this.handleUnreadUpdate(msgObj)
+        break
+      case WebSocketEventType.HEARTBEAT:
+        this.handleHeartbeat(msgObj)
+        break
+      case WebSocketEventType.ONLINE_STATUS:
+        this.handleOnlineStatusChange(msgObj)
+        break
+      default:
+        console.log('⏸️ [WebSocketEventHandler] 未处理的事件类型:', event.type)
+    }
+  }
+
+  /**
+   * 处理消息发送确认
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，无需再次 JSON.stringify/JSON.parse
+   */
+  private handleMessageSent(dataObj: UTSJSONObject): void {
+    
+    const content = dataObj.getString('content')
+    const fromUserId = dataObj.getString('fromUserId')
+    
+    // 查找对应的临时消息
+    const contentStr = content != null ? content : ''
+    const fromUserIdStr = fromUserId != null ? fromUserId : ''
+    const tempId = this.findTempMessageByContent(contentStr, fromUserIdStr)
+    
+    // UTS 规范：String? 不能直接用于条件判断
+    const hasTempId = tempId != null && tempId != ''
+    if (hasTempId == true) {
+      const actualTempId = tempId as string
+      // 更新消息状态为已发送
+      const kid = dataObj.getString('kid')
+      const messageId = dataObj.getString('messageId')
+      const realId = kid != null ? kid : (messageId != null ? messageId : '')
+      
+      if (realId == '') {
+        console.warn('⚠️ [WebSocketEventHandler] 发送确认消息缺少消息ID (kid/messageId)')
+      }
+      
+      const success = messageStateManager.updateMessageStatus(
+        actualTempId, 
+        MessageStatus.SENT, 
+        realId
+      )
+      
+      if (success == true) {
+        // 消息状态更新成功
+      } else {
+        console.warn('⚠️ [WebSocketEventHandler] 消息状态更新失败:', actualTempId)
+      }
+    } else {
+      // ⭐ 优化：通过 kid/messageId 在已确认消息中查找匹配
+      const kid = dataObj.getString('kid')
+      const messageId = dataObj.getString('messageId')
+      const searchId = kid != null ? kid : (messageId != null ? messageId : '')
+      
+      if (searchId != '') {
+        const messages = messageStateManager.getAllMessages()
+        let foundConfirmed = false
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i]
+          if (msg.id == searchId && msg.status == MessageStatus.SENT) {
+            foundConfirmed = true
+            break
+          }
+        }
+        
+        if (foundConfirmed == true) {
+          // ⭐ 优化：已确认的消息，静默跳过（不输出任何日志，减少噪音）
+          return
+        } else {
+          // 确实未找到匹配，静默处理（可能是跨设备的确认消息）
+          console.log('ℹ️ [WebSocketEventHandler] 未找到对应的临时消息（可能已处理）:', searchId)
+        }
+      } else {
+        console.log('ℹ️ [WebSocketEventHandler] 发送确认缺少消息ID，跳过')
+      }
+    }
+  }
+
+  /**
+   * 处理接收到的消息
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，无需再次 JSON.stringify/JSON.parse
+   */
+  private handleMessageReceived(dataObj: UTSJSONObject): void {
+    console.log('📨 [WebSocketEventHandler] 处理接收消息')
+
+    // 构造消息对象（UTS 规范：不支持 Omit，使用具体类）
+    const kid = dataObj.getString('kid')
+    const id = dataObj.getString('id')
+    const messageId = dataObj.getString('messageId')
+    // 优先使用 kid，其次 id，最后 messageId
+    let idVal = ''
+    if (kid != null && kid != '') {
+      idVal = kid
+    } else if (id != null && id != '') {
+      idVal = id
+    } else if (messageId != null && messageId != '') {
+      idVal = messageId
+    }
+    
+    // 如果没有有效的消息ID，生成一个临时ID
+    if (idVal == '') {
+      const timestamp = Date.now().toString()
+      const random = Math.floor(Math.random() * RANDOM_RANGE_MILLION).toString()
+      idVal = 'recv_' + timestamp + '_' + random
+      console.warn('⚠️ [WebSocketEventHandler] 消息缺少ID，生成临时ID:', idVal)
+    }
+    
+    const fromUserKid = dataObj.getString('fromUserKid')
+    const fromUserId = dataObj.getString('fromUserId')
+    const senderIdVal = fromUserKid != null ? fromUserKid : (fromUserId != null ? fromUserId : '')
+    
+    if (senderIdVal == '') {
+      console.warn('⚠️ [WebSocketEventHandler] 接收消息缺少发送者ID (fromUserKid/fromUserId)')
+    }
+    
+    const toUserKid = dataObj.getString('toUserKid')
+    const toUserId = dataObj.getString('toUserId')
+    const receiverIdVal = toUserKid != null ? toUserKid : (toUserId != null ? toUserId : '')
+    
+    if (receiverIdVal == '') {
+      console.warn('⚠️ [WebSocketEventHandler] 接收消息缺少接收者ID (toUserKid/toUserId)')
+    }
+    
+    // 检查是否是自己发送的消息（避免重复添加）
+    // 通过检查是否存在相同内容的临时消息来判断
+    const content = dataObj.getString('content')
+    const contentStr = content != null ? content : ''
+    const existingTempId = this.findTempMessageByContent(contentStr, senderIdVal)
+    if (existingTempId != null && existingTempId != '') {
+      console.log('⏸️ [WebSocketEventHandler] 跳过自己发送的消息（已有临时消息）:', existingTempId)
+      return
+    }
+    
+    const sendTime = dataObj.getString('sendTime')
+    const createTime = dataObj.getString('createTime')
+    const createTimeVal = sendTime != null ? sendTime : (createTime != null ? createTime : '')
+    
+    const conversationId = dataObj.getString('conversationId')
+    const conversationIdVal = conversationId != null ? conversationId : this.generateConversationId(senderIdVal, receiverIdVal)
+    
+    const messageType = dataObj.getString('messageType')
+    const mediaUrl = dataObj.getString('mediaUrl')
+    const thumbUrl = dataObj.getString('thumbUrl')
+    
+    // 🔧 修复：duration 可能是字符串或数字，需要兼容处理
+    let durationVal = 0
+    const durationNum = dataObj.getNumber('duration')
+    if (durationNum != null) {
+      durationVal = Math.floor(durationNum as number)
+    } else {
+      // 尝试从字符串解析
+      const durationStr = dataObj.getString('duration')
+      if (durationStr != null && durationStr != '') {
+        const parsed = parseInt(durationStr)
+        if (isNaN(parsed) == false) {
+          durationVal = parsed
+        }
+      }
+    }
+    
+    const message = new AddReceivedMessageParams()
+    message.id = idVal
+    message.content = contentStr
+    message.type = this.mapMessageType(messageType != null ? messageType : '')
+    message.senderId = senderIdVal
+    message.receiverId = receiverIdVal
+    message.mediaUrl = mediaUrl
+    message.thumbUrl = thumbUrl
+    message.duration = durationVal
+    message.createTime = createTimeVal
+    message.sendTime = sendTime
+    message.conversationId = conversationIdVal
+
+    // 添加到状态管理器（自动进行幂等性检查）
+    messageStateManager.addReceivedMessage(message)
+
+    // ⭐ 持久化到本地会话分区存储
+    try {
+      const localMsg = {
+        id: message.id,
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        type: message.type,
+        content: message.content,
+        createTime: message.createTime,
+        status: 'received'
+      } as UTSJSONObject
+      chatLocalStorageManager.appendMessage(message.senderId, message.receiverId, localMsg)
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 持久化实时消息到本地存储失败:', e)
+    }
+  }
+
+  /**
+   * 处理消息已读
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject
+   */
+  private handleMessageRead(dataObj: UTSJSONObject): void {
+    console.log('📖 [WebSocketEventHandler] 处理消息已读')
+    // 可以在这里处理消息已读状态更新
+  }
+
+  /**
+   * 处理未读数更新
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject（完整消息对象），无需再次 JSON.stringify/JSON.parse
+   */
+  private handleUnreadUpdate(dataObj: UTSJSONObject): void {
+    console.log('🔢 [WebSocketEventHandler] 处理未读数更新')
+
+    try {
+      // ⭐ 新增：优先检查数字类型（类型100的会话未读数更新）
+      const typeNum = dataObj.getNumber('type')
+      if (typeNum == 100) {
+        this.handleConversationUnreadUpdate(dataObj)
+        return
+      }
+
+      // ⭐ 新增：处理 WS_MSG_TYPE_READ_RECEIPT 类型单会话未读数更新
+      if (typeNum == WS_MSG_TYPE_READ_RECEIPT) {
+        this.handleSingleConversationUnreadUpdate(dataObj)
+        return
+      }
+
+      // 检查是否是301类型消息提醒更新
+      const typeStr = dataObj.getString('type')
+      console.log('🔍 [WebSocketEventHandler] 检查消息类型:', typeStr)
+
+      if (typeStr == '301') {
+        // 处理301类型消息提醒未读数更新
+        this.handleMessageReminderUpdate(dataObj)
+        return
+      }
+
+      // 处理其他未读数更新消息
+      console.log('🔄 [WebSocketEventHandler] 处理其他未读数更新类型:', typeStr)
+
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 处理未读数更新失败:', e)
+    }
+  }
+
+  /**
+   * 处理100类型会话未读数更新
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，使用 getObject 提取嵌套数据
+   */
+  private handleConversationUnreadUpdate(dataObj: UTSJSONObject): void {
+    console.log('📨 [WebSocketEventHandler] 处理100消息会话未读数更新')
+
+    try {
+      // ⭐ 性能优化：使用 getObject 替代 JSON.stringify + JSON.parse 提取 data 字段
+      const unreadData = getObject(dataObj, 'data')
+      if (unreadData == null) {
+        console.warn('⚠️ [WebSocketEventHandler] 100消息缺少data字段')
+        return
+      }
+
+      // 获取会话未读数数组
+      const conversationUnreadsVal = unreadData.get('conversationUnreads')
+      if (conversationUnreadsVal == null) {
+        console.warn('⚠️ [WebSocketEventHandler] 100消息缺少conversationUnreads字段')
+        return
+      }
+
+      // ⭐ 注意：uni.$emit 需要普通对象，使用 deepCloneArray 确保兼容性
+      const conversationUnreads = deepCloneArray(conversationUnreadsVal as Array<any>)
+
+      // 触发全局事件，让前端页面监听并更新
+      uni.$emit('chat:conversationUnreadUpdate', {
+        conversationUnreads: conversationUnreads,
+        timestamp: (unreadData.getNumber('timestamp') != null) ? unreadData.getNumber('timestamp') : Date.now()
+      })
+
+      // 同时触发WebSocket事件监听器（保持兼容性）
+      const event = new WebSocketEvent()
+      event.type = WebSocketEventType.UNREAD_UPDATE
+      event.data = {
+        conversationUnreads: conversationUnreadsVal,
+        timestamp: (unreadData.getNumber('timestamp') != null) ? unreadData.getNumber('timestamp') : Date.now()
+      }
+      event.timestamp = Date.now()
+
+      // 通知监听器处理会话未读数更新
+      this.notifyListeners(event)
+
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 处理100消息会话未读数更新失败:', e)
+    }
+  }
+
+  /**
+   * ⭐ 处理 WS_MSG_TYPE_READ_RECEIPT 类型单会话未读数更新
+   * 消息格式：{ type: WS_MSG_TYPE_READ_RECEIPT, data: { conversationUserId: string, unreadCount: number, timestamp: number } }
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，使用 getObject 提取嵌套数据
+   */
+  private handleSingleConversationUnreadUpdate(dataObj: UTSJSONObject): void {
+    console.log('📨 [WebSocketEventHandler] 处理102消息单会话未读数更新')
+
+    try {
+      // ⭐ 性能优化：使用 getObject 替代 JSON.stringify + JSON.parse 提取 data 字段
+      const unreadData = getObject(dataObj, 'data')
+      if (unreadData == null) {
+        console.warn('⚠️ [WebSocketEventHandler] 102消息缺少data字段')
+        return
+      }
+
+      // 提取 conversationUserId
+      const conversationUserId = unreadData.getString('conversationUserId')
+      if (conversationUserId == null || conversationUserId == '') {
+        console.warn('⚠️ [WebSocketEventHandler] 102消息缺少conversationUserId字段')
+        return
+      }
+
+      // 提取 unreadCount
+      const unreadCountVal = unreadData.getNumber('unreadCount')
+      const unreadCount = (unreadCountVal != null) ? Math.floor(unreadCountVal as number) : 0
+
+      // 提取 timestamp
+      const timestampVal = unreadData.getNumber('timestamp')
+      const timestamp = (timestampVal != null) ? timestampVal : Date.now()
+
+      console.log('📊 [WebSocketEventHandler] 102消息解析结果 - userId:', conversationUserId, 'unreadCount:', unreadCount)
+
+      // 触发全局事件，让 News 页面监听并更新
+      uni.$emit('chat:singleUnreadUpdate', {
+        conversationUserId: conversationUserId,
+        unreadCount: unreadCount,
+        timestamp: timestamp
+      })
+
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 处理102消息单会话未读数更新失败:', e)
+    }
+  }
+
+  /**
+   * 处理301类型消息提醒未读数更新
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，使用 getObject 提取嵌套数据
+   */
+  private handleMessageReminderUpdate(dataObj: UTSJSONObject): void {
+    console.log('📨 [WebSocketEventHandler] 处理301消息提醒更新')
+
+    try {
+      // ⭐ 性能优化：使用 getObject 替代 JSON.stringify + JSON.parse 提取 data 字段
+      const reminderData = getObject(dataObj, 'data')
+      if (reminderData == null) {
+        console.warn('⚠️ [WebSocketEventHandler] 301消息缺少data字段')
+        return
+      }
+
+      // 安全获取各个未读数
+      const followCount = this.getIntValue(reminderData, 'follower')
+      const commentCount = this.getIntValue(reminderData, 'comment')
+      const visitorCount = this.getIntValue(reminderData, 'visitor')
+      const likeCount = this.getIntValue(reminderData, 'like')
+      const notificationCount = this.getIntValue(reminderData, 'notification')
+      const chatUnread = this.getIntValue(reminderData, 'chatUnread')
+      const orderUnread = this.getIntValue(reminderData, 'orderUnread')
+
+      console.log('📊 [WebSocketEventHandler] 更新未读数 - follower:', followCount,
+                  'comment:', commentCount, 'visitor:', visitorCount,
+                  'like:', likeCount, 'notification:', notificationCount,
+                  'chat:', chatUnread, 'order:', orderUnread)
+
+      // 更新store中的未读数 - UTS 规范：使用导出的独立函数
+      const countsData = new UTSJSONObject()
+      countsData.set('follow', followCount)
+      countsData.set('commentUnreadCount', commentCount)
+      countsData.set('visitorUnreadCount', visitorCount)
+      countsData.set('likeUnreadCount', likeCount)
+      countsData.set('notificationUnreadCount', notificationCount)
+      countsData.set('chatUnreadCount', chatUnread)
+      countsData.set('orderUnreadCount', orderUnread)
+      
+      // 调用导出的独立函数更新未读数
+      updateUnreadCountsDirect(countsData)
+
+      // 计算总消息未读数（消息Tab的badge）- 直接更新消息未读数
+      updateMessageUnreadCountDirect(chatUnread)
+
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 处理301消息提醒更新失败:', e)
+    }
+  }
+
+  /**
+   * 安全获取整数值
+   */
+  private getIntValue(obj: UTSJSONObject, key: string): number {
+    try {
+      const val = obj.get(key)
+      if (val == null) return 0
+
+      if (typeof val === 'number') {
+        return val
+      }
+
+      const strVal = val.toString()
+      if (strVal == '' || strVal == 'null' || strVal == 'undefined') {
+        return 0
+      }
+
+      const parsed = parseInt(strVal)
+      return isNaN(parsed) ? 0 : parsed
+    } catch (e) {
+      return 0
+    }
+  }
+
+  /**
+   * 处理心跳
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject
+   */
+  private handleHeartbeat(dataObj: UTSJSONObject): void {
+    console.log('💓 [WebSocketEventHandler] 收到心跳')
+    // 心跳处理逻辑
+  }
+
+  /**
+   * 处理在线状态变更
+   * 消息类型 200=上线，201=下线
+   * ⭐ 性能优化：接收已解析的 UTSJSONObject，使用 getObject 提取嵌套数据
+   */
+  private handleOnlineStatusChange(dataObj: UTSJSONObject): void {
+    console.log('🟢 [WebSocketEventHandler] 处理在线状态变更')
+    
+    try {
+      // 获取消息类型（可能在根对象或不存在）
+      const typeNum = dataObj.getNumber('type')
+      
+      // ⭐ 优化：支持两种数据格式
+      // 格式1（完整消息）：{ type: 200, data: { userId, isOnline, timestamp } }
+      // 格式2（已解包）：{ userId, isOnline, timestamp }（chat.uts onMessage 已提取 data 字段）
+      // ⭐ 性能优化：使用 getObject 替代 JSON.stringify + JSON.parse 提取 data 字段
+      const nestedData = getObject(dataObj, 'data')
+      let statusData: UTSJSONObject
+      let isOnline = false
+      
+      if (nestedData != null) {
+        // 格式1：有 data 包装层
+        statusData = nestedData
+        isOnline = typeNum == 200  // 200=上线，201=下线
+      } else {
+        // ⭐ 格式2 fallback：数据直接在根对象上（已被 chat.uts 解包）
+        statusData = dataObj
+        // 尝试从根对象获取 isOnline 字段
+        const isOnlineVal = statusData.getBoolean('isOnline')
+        isOnline = isOnlineVal == true
+        // 如果有 type 字段，也用它判断
+        if (typeNum != null) {
+          isOnline = typeNum == 200
+        }
+      }
+      
+      // 获取用户ID
+      const userId = statusData.getString('userId')
+      if (userId == null || userId == '') {
+        console.warn('⚠️ [WebSocketEventHandler] 在线状态消息缺少userId字段')
+        return
+      }
+      
+      console.log('🟢 [WebSocketEventHandler] 用户在线状态变更: userId=' + userId + ', isOnline=' + isOnline.toString())
+      
+      // 触发全局事件，让前端页面监听并更新
+      uni.$emit('online:statusChange', {
+        userId: userId,
+        isOnline: isOnline,
+        timestamp: Date.now()
+      })
+      
+    } catch (e) {
+      console.error('❌ [WebSocketEventHandler] 处理在线状态变更失败:', e)
+    }
+  }
+
+  /**
+   * 根据内容查找临时消息
+   */
+  private findTempMessageByContent(content: string, senderId: string): string | null {
+    const messages = messageStateManager.getAllMessages()
+    // UTS 规范：Boolean? 不能直接用于条件判断，使用 for 循环手动查找
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]
+      const isTempVal = msg.isTemp
+      const isTemp = isTempVal == true
+      const contentMatch = msg.content === content
+      const senderMatch = msg.senderId === senderId
+      // ⭐ 优化：扩展状态匹配条件，增加 SENT 状态
+      // 处理时序竞争：消息可能已被其他路径标记为 SENT，但服务端确认尚未处理
+      const statusMatch = msg.status === MessageStatus.PENDING || msg.status === MessageStatus.SENDING || msg.status === MessageStatus.SENT
+      
+      if (isTemp && contentMatch && senderMatch && statusMatch) {
+        return msg.id
+      }
+    }
+    return null
+  }
+
+  /**
+   * 映射消息类型（接受字符串或数字）
+   */
+  private mapMessageType(messageType: string): MessageType {
+    // 尝试将字符串转换为数字
+    const typeNum = parseInt(messageType)
+    if (isNaN(typeNum) == false) {
+      if (typeNum == 1) {
+        return MessageType.TEXT
+      } else if (typeNum == 2) {
+        return MessageType.IMAGE
+      } else if (typeNum == 3) {
+        return MessageType.VIDEO
+      } else if (typeNum == 4) {
+        return MessageType.VOICE
+      } else if (typeNum == 6) {
+        return MessageType.SHARE
+      } else if (typeNum == 7) {
+        return MessageType.GIFT
+      } else if (typeNum == 10) {
+        return MessageType.SYSTEM_NOTIFICATION
+      }
+    }
+    return MessageType.TEXT
+  }
+
+  /**
+   * 生成会话ID
+   */
+  private generateConversationId(userId1: string, userId2: string): string {
+    return [userId1, userId2].sort().join('_')
+  }
+
+  /**
+   * 添加事件监听器
+   */
+  addEventListener(eventType: WebSocketEventType, listener: (event: WebSocketEvent) => void): () => void {
+    const listeners = this.eventListeners.get(eventType)
+    // UTS 规范：可空类型不能直接用于条件判断
+    const hasListeners = listeners != null
+    if (hasListeners == true) {
+      const actualListeners = listeners as Set<(event: WebSocketEvent) => void>
+      actualListeners.add(listener)
+      
+      // 返回取消监听函数
+      return () => {
+        actualListeners.delete(listener)
+      }
+    }
+    
+    return () => {}
+  }
+
+  /**
+   * 触发事件
+   */
+  dispatchEvent(eventType: WebSocketEventType, data?: UTSJSONObject | null): void {
+    const dataVal = data != null ? data : new UTSJSONObject()
+    const event = new WebSocketEvent()
+    event.type = eventType
+    event.data = dataVal
+    event.timestamp = Date.now()
+    
+    this.notifyListeners(event)
+    console.log('📡 [WebSocketEventHandler] 事件已触发:', eventType, data)
+  }
+
+  /**
+   * 通知事件监听器
+   */
+  private notifyListeners(event: WebSocketEvent): void {
+    const listeners = this.eventListeners.get(event.type)
+    // UTS 规范：可空类型不能直接用于条件判断
+    const hasListeners = listeners != null
+    if (hasListeners == true) {
+      const actualListeners = listeners as Set<(event: WebSocketEvent) => void>
+      actualListeners.forEach((listener: (event: WebSocketEvent) => void) => {
+        try {
+          listener(event)
+        } catch (error) {
+          console.error('❌ [WebSocketEventHandler] 事件监听器错误:', error)
+        }
+      })
+    }
+  }
+
+  /**
+   * 清理资源
+   */
+  cleanup(): void {
+    this.eventListeners.clear()
+    console.log('🧹 [WebSocketEventHandler] 资源已清理')
+  }
+}
+
+// 创建全局单例
+export const webSocketEventHandler = new WebSocketEventHandler()

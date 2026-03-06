@@ -1,0 +1,1650 @@
+<template>
+	<view class="chat-page-container">
+		<!-- 头部组件 -->
+		<ChatHeader
+			:userName="(targetUserNickname != '') ? targetUserNickname : '聊天'"
+			@back="handleBack"
+			@view-profile="handleViewProfile"
+			@more="handleMore"
+			@reserve="handleReserve"
+			@contact="handleContact"
+		/>
+		
+		<!-- 连接状态提示 -->
+		<view v-if="showConnectionStatus == true && connectionStatusText != ''" class="connection-status">
+			<text class="status-text">{{ connectionStatusText }}</text>
+		</view>
+		
+		<!-- ⭐ APP 端：使用 scroll-view -->
+		<!-- #ifndef H5 -->
+		<view class="message-list-wrapper">
+		<scroll-view
+			id="messageScrollView"
+			class="message-scroll-view"
+			scroll-y="true"
+			:scroll-into-view="scrollIntoViewId"
+			:scroll-with-animation="false"
+			@scrolltoupper="loadMoreHistory"
+		>
+			<!-- 加载更多提示 -->
+			<view v-if="loadingHistory == true" class="load-more-box">
+				<text class="load-more-text">加载中...</text>
+			</view>
+			<view v-else-if="hasMoreHistory == false && messageList.length > 0" class="load-more-box">
+				<text class="load-more-text">— 没有更多消息了 —</text>
+			</view>
+			
+			<!-- 空状态 -->
+			<view v-if="messageList.length == 0" class="empty-state-box">
+				<UniIcons type="chatbubble" :size="60" color="#CCCCCC" />
+				<text class="empty-text">暂无聊天记录</text>
+				<text class="empty-hint-text">开始与对方聊天吧</text>
+			</view>
+			
+			<!-- 消息列表 -->
+			<view
+				v-for="(msg, index) in messageList"
+				:key="getMessageKey(msg, index)"
+				:id="getMessageViewId(msg, index)"
+				class="message-item-box"
+			>
+				<!-- 时间分割线 -->
+				<view v-if="shouldShowTime(msg, index) == true" class="time-divider-box">
+					<text class="time-divider-text">{{ getMessageTime(msg) }}</text>
+				</view>
+				
+				<!-- 消息气泡 -->
+				<MessageBubble
+					:message="msg"
+					:is-self="isMessageSelf(msg)"
+					:avatar="getMessageAvatar(msg)"
+					:default-avatar="defaultAvatar"
+					:show-time="false"
+					:is-playing="isVoicePlaying"
+					:playing-message-id="playingVoiceMessageId"
+					:medal-level="targetUserGiftLevel"
+					:vip-type="getVipTypeString(targetUserVip, targetUserVipType)"
+					@preview-image="previewImage"
+					@play-voice="handlePlayVoice"
+					@play-video="handlePlayVideo"
+					@retry="retryMessage"
+					@order-click="goToOrder"
+					@share-card-click="handleShareCardClick"
+					@avatar-click="handleAvatarClick"
+					@add-to-emoji="handleAddToEmoji"
+					@save-to-album="handleSaveToAlbum"
+					@system-notification-click="handleSystemNotificationClick"
+					@longpress="handleMessageLongPress"
+					@delete="handleDeleteMessage"
+					@linkClick="handleMessageLinkClick"
+					@phoneClick="handleMessagePhoneClick"
+				/>
+			</view>
+		</scroll-view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- ⭐ H5 端：使用 MessageList 组件 -->
+		<!-- #ifdef H5 -->
+		<MessageList
+			:messages="messageList"
+			:current-user-id="currentUserId"
+			:current-user-avatar="currentUserAvatar"
+			:target-user-avatar="(targetUserAvatar != '') ? targetUserAvatar : defaultAvatar"
+			:default-avatar="defaultAvatar"
+			:has-more="hasMoreHistory"
+			:loading="loadingHistory"
+			:list-height="messageListHeight"
+			:auto-scroll-to-bottom="autoScrollToBottom"
+			:target-medal-level="targetUserGiftLevel"
+			:target-vip-type="getVipTypeString(targetUserVip, targetUserVipType)"
+			@load-more="handleLoadMoreHistory"
+			@preview-image="previewImage"
+			@play-voice="handlePlayVoice"
+			@play-video="handlePlayVideo"
+			@retry="retryMessage"
+			@order-click="goToOrder"
+			@share-card-click="handleShareCardClick"
+			@avatar-click="handleAvatarClick"
+			@add-to-emoji="handleAddToEmoji"
+			@save-to-album="handleSaveToAlbum"
+			@system-notification-click="handleSystemNotificationClick"
+			ref="messageListRef"
+		/>
+		<!-- #endif -->
+		
+		<!-- 输入组件 -->
+		<ChatInput
+			ref="chatInputRef"
+			:placeholder="chatInputPlaceholder"
+			@send="handleSend"
+			@show-more="showActions = true"
+			@voice="handleVoiceRecord"
+			@emoji="handleEmojiPanel"
+			@voiceStart="handleVoiceStart"
+			@voiceEnd="handleVoiceEnd"
+			@voiceCancel="handleVoiceCancel"
+			@voiceModeChange="handleVoiceModeChange"
+		/>
+		
+		<!-- 操作面板组件 -->
+		<ActionPanel
+			:show="showActions"
+			:showGift="isGiftFeatureEnabled()"
+			@close="showActions = false"
+			@choose-image="handleChooseImage"
+			@choose-video="handleChooseVideo"
+			@voice="handleVoiceRecord"
+			@location="handleShareLocation"
+			@gift="handleShowGiftSelector"
+		/>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			v-if="isGiftFeatureEnabled()"
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="targetUserId"
+			:giftLevel="targetUserGiftLevel"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+		
+		<!-- 表情面板组件 -->
+		<EmojiPanel
+			:show="showEmoji"
+			:input-placeholder="chatInputPlaceholder"
+			@close="showEmoji = false"
+			@select="handleEmojiSelect"
+			@delete="handleEmojiDelete"
+			@send="handleSend"
+			@showMore="handleEmojiShowMore"
+		/>
+		
+		<!-- 联系方式弹窗组件 -->
+		<ContactPopup
+			:show="showContactPopup"
+			:userName="contactPopupData.userName"
+			:contactInfo="contactPopupData.contactInfo"
+			@close="handleContactPopupClose"
+		/>
+		
+		<!-- 语音录制面板 -->
+		<VoiceRecordPanel
+			:show="showVoicePanel"
+			:duration="voiceRecordDuration"
+			:isCancel="isVoiceCancelArea"
+			:volume="voiceRecordVolume"
+			@close="showVoicePanel = false"
+		/>
+		
+		<Loading :show="loading" />
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onUnmounted, computed, nextTick } from 'vue'
+// 注意：在 uni-app x 中，onLoad 是全局可用的，不需要导入
+
+// ========== Store 导入 ==========
+import { forceReconnectAction, getWebSocketConnectedStatus } from '@/stores/chat'
+import { useUserStore } from '@/stores/user'
+import { saveCustomEmojiToServerAction } from '@/stores/emoji.uts'
+import { chatService, ChatServiceStatus } from '@/stores/chatService'
+
+// ========== 工具函数导入 ==========
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { getObjString, getAnyString, mergeMessagesWithoutDuplicates } from '@/common/utils/messageHelper.uts'
+import { getUserProfile, getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
+import { pageStatusBarHeight, pageWindowHeight, initPageLayout as initPageLayoutComposable } from '@/common/composables/usePageLayout.uts'
+import { formatChatTime } from '@/common/utils/dateUtils.uts'
+import { handleContact as handleContactAction } from '@/common/composables/useChatActions.uts'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { parseShareCardContent, handleShareCardNavigation } from '@/common/utils/shareCardHelper.uts'
+import { getSafeAreaBottom } from '@/common/utils/systemInfo.uts'
+import { secureLog } from '@/common/utils/security/secureLogger.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// ========== API 导入 ==========
+import { markConversationRead, MarkReadParams } from '@/api/chat'
+
+// ========== 类型导入 ==========
+import { ContactPopupDataClass, ChatGiftResult, ChatMediaResult } from '@/common/types/chatTypes.uts'
+
+// ========== Composables 导入 ==========
+import { loadFeatureToggles, isGiftFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { useChatMessages, ChatMessagesOptions } from '@/common/composables/chat/useChatMessages.uts'
+import { useChatVoice } from '@/common/composables/chat/useChatVoice.uts'
+import { useChatVoicePlayer } from '@/common/composables/chat/useChatVoicePlayer.uts'
+import { useChatGift } from '@/common/composables/chat/useChatGift.uts'
+import { useChatMedia } from '@/common/composables/chat/useChatMedia.uts'
+
+// ========== 组件导入 ==========
+import ChatHeader from '@/components/chat/ChatHeader.uvue'
+import MessageList from '@/components/chat/MessageList.uvue'
+import MessageBubble from '@/components/chat/MessageBubble.uvue'
+import ChatInput from '@/components/chat/ChatInput.uvue'
+import ActionPanel from '@/components/chat/ActionPanel.uvue'
+import EmojiPanel from '@/components/chat/EmojiPanel.uvue'
+import Loading from '@/components/base/Loading.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import ContactPopup from '@/components/common/ContactPopup.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import VoiceRecordPanel from '@/components/chat/VoiceRecordPanel.uvue'
+
+
+// ========== 基础状态 ==========
+const loading = ref<boolean>(false)
+const targetUserId = ref<string>('')
+const conversationId = ref<string>('')
+const showActions = ref<boolean>(false)
+const showEmoji = ref<boolean>(false)
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+const messageListRef = ref<string>('')
+const chatInputRef = ref<string>('')
+const scrollIntoView = ref<string>('')
+const scrollIntoViewId = ref<string>('')
+const messageListHeight = ref<number>(0)
+const autoScrollToBottom = ref<boolean>(true)
+
+// 目标用户信息
+const targetUserNickname = ref<string>('')
+const targetUserAvatar = ref<string>('')
+const targetUserServicePrice = ref<string>('')
+// 🎯 新增：目标用户勋章相关字段
+const targetUserGiftLevel = ref<number>(0)
+const targetUserVip = ref<number>(10)
+const targetUserVipType = ref<number>(0)
+
+// 联系方式弹窗
+const showContactPopup = ref<boolean>(false)
+const contactPopupData = ref<ContactPopupDataClass>(new ContactPopupDataClass())
+
+// 待发送的分享消息
+const pendingShareMessage = ref<string>('')
+const pendingShareMessageType = ref<number>(6)
+const shareMessageRetryCount = ref<number>(0)
+const MAX_RETRY_COUNT = 10
+
+// 待发送的礼物消息
+const pendingGiftMessage = ref<string>('')
+
+// ========== 辅助函数 ==========
+
+// 🎯 新增：从 UTSJSONObject 获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val == null) return 0
+	const numVal = parseInt(val.toString())
+	return isNaN(numVal) == false ? numVal : 0
+}
+
+// 🎯 新增：VIP 类型转换函数（将后端数值转换为 Avatar 组件需要的字符串）
+const getVipTypeString = (vip: number, vipType: number): string => {
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (vip != 20) return ''
+	// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+	// 映射规则：VIP_TYPE_YEARLY（年卡）→ 'year'，其他 → 'normal'
+	if (vipType == 20) return 'year'
+	return 'normal'
+}
+
+const getCurrentUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+const getUserInfoFromStore = (): UTSJSONObject | null => {
+	try {
+		const store = useUserStore()
+		const storeObj = toJsonObj(store)
+		if (storeObj != null) {
+			const userInfoVal = storeObj.get('userInfo')
+			if (userInfoVal != null) {
+				const userInfoStr = JSON.stringify(userInfoVal)
+				return JSON.parse(userInfoStr) as UTSJSONObject
+			}
+		}
+		return null
+	} catch (e) {
+		return null
+	}
+}
+
+// ========== 计算属性 ==========
+const userInfo = computed((): UTSJSONObject | null => {
+	return getUserInfoFromStore()
+})
+
+const currentUserId = computed((): string => {
+	return getCurrentUserKid()
+})
+
+const currentUserAvatar = computed((): string => {
+	// 优先从 store 获取，备用从 storage 读取
+	try {
+		const info = getUserInfoFromStore()
+		if (info != null) {
+			// 优先使用 image 字段（后端返回的是 image），其次使用 avatar
+			const imageVal = getObjString(info, 'image')
+			if (imageVal != '') {
+				return imageVal
+			}
+			const avatarVal = getObjString(info, 'avatar')
+			if (avatarVal != '') {
+				return avatarVal
+			}
+		}
+		
+		// 备用方案：直接从 storage 读取（UTS 规范：uni.getStorageSync 返回 Any? 类型）
+		const userInfoRaw = safeGetStorageSync('userInfo')
+		if (userInfoRaw != null) {
+			let jsonStr = ''
+			const userInfoStr = userInfoRaw.toString()
+			if (userInfoStr != null && userInfoStr != '') {
+				// 如果已经是字符串，直接使用
+				if (typeof userInfoRaw === 'string') {
+					jsonStr = userInfoStr
+				} else {
+					// 如果是对象，序列化
+					jsonStr = JSON.stringify(userInfoRaw)
+				}
+
+				if (jsonStr != null && jsonStr != '') {
+					try {
+						const userInfoObj = JSON.parse(jsonStr) as UTSJSONObject
+						if (userInfoObj != null) {
+							const imageVal = userInfoObj.get('image')
+							if (imageVal != null) {
+								const imageStr = imageVal.toString()
+								if (imageStr != null && imageStr != '') {
+									return imageStr
+								}
+							}
+							const avatarVal = userInfoObj.get('avatar')
+							if (avatarVal != null) {
+								const avatarStr = avatarVal.toString()
+								if (avatarStr != null && avatarStr != '') {
+									return avatarStr
+								}
+							}
+						}
+					} catch (e) {
+						handleSilentError(e, '解析用户信息')
+					}
+				}
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '获取当前用户头像')
+	}
+	return defaultAvatar
+})
+
+const chatInputPlaceholder = computed((): string => {
+	const nickname = (targetUserNickname.value != '') ? targetUserNickname.value : '对方'
+	return '发送消息给 ' + nickname
+})
+
+// ========== 初始化 Composables ==========
+
+// 消息管理 Composable
+const messagesOptions = new ChatMessagesOptions()
+// 注意：options 的值会在 onLoad 中设置
+
+const chatMessages = useChatMessages(messagesOptions)
+const messageList = chatMessages.messageList
+const loadingHistory = chatMessages.loadingHistory
+const hasMoreHistory = chatMessages.hasMoreHistory
+const loadMessages = chatMessages.loadMessages
+const loadMoreHistory = chatMessages.loadMoreHistory
+const sendTextMessage = chatMessages.sendTextMessage
+const retryMessage = chatMessages.retryMessage
+const scrollToBottom = chatMessages.scrollToBottom
+const deleteLocalMessage = chatMessages.deleteLocalMessage
+const copyMessageContent = chatMessages.copyMessageContent
+
+// 加载更多历史消息（禁用自动滚动）
+const handleLoadMoreHistory = () => {
+	// 加载历史消息时禁用自动滚动
+	autoScrollToBottom.value = false
+	loadMoreHistory()
+	// 加载完成后恢复自动滚动（延迟恢复，等待数据更新完成）
+	setTimeout(() => {
+		autoScrollToBottom.value = true
+	}, 500)
+}
+
+// 连接状态 - 直接使用 store 函数，不使用 Composable
+const connectionStatus = ref<string>('disconnected')
+const connectionStatusText = computed((): string => {
+	if (connectionStatus.value == 'connecting') {
+		return '正在连接服务器...'
+	}
+	if (connectionStatus.value == 'disconnected') {
+		return '连接已断开，正在重连...'
+	}
+	return ''
+})
+const showConnectionStatus = computed((): boolean => {
+	return connectionStatus.value != 'connected'
+})
+
+// 连接状态监听器
+let offStatusChange: (() => void) | null = null
+let offConnectionError: (() => void) | null = null
+
+const setupConnectionListeners = () => {
+	// 清理旧监听器
+	const existingStatusChange = offStatusChange
+	if (existingStatusChange != null) {
+		existingStatusChange()
+		offStatusChange = null
+	}
+	const existingError = offConnectionError
+	if (existingError != null) {
+		existingError()
+		offConnectionError = null
+	}
+	
+	// ⭐ 先检查当前连接状态（解决初始状态不正确的问题）
+	const isCurrentlyConnected = getWebSocketConnectedStatus()
+	if (isCurrentlyConnected == true) {
+		connectionStatus.value = 'connected'
+	}
+	
+	// 监听连接状态变化
+	offStatusChange = chatService.onStatusChange((status) => {
+		if (status == ChatServiceStatus.CONNECTED) {
+			connectionStatus.value = 'connected'
+		} else if (status == ChatServiceStatus.CONNECTING) {
+			connectionStatus.value = 'connecting'
+		} else {
+			connectionStatus.value = 'disconnected'
+		}
+	})
+	
+	// 监听错误事件
+	offConnectionError = chatService.onError((error) => {
+		console.error('❌ 聊天服务错误:', error)
+	})
+}
+
+const cleanupConnectionListeners = () => {
+	const existingStatusChange = offStatusChange
+	if (existingStatusChange != null) {
+		existingStatusChange()
+		offStatusChange = null
+	}
+	const existingError = offConnectionError
+	if (existingError != null) {
+		existingError()
+		offConnectionError = null
+	}
+}
+
+// 语音录制 Composable
+const chatVoice = useChatVoice()
+const showVoicePanel = chatVoice.showVoicePanel
+const voiceRecordDuration = chatVoice.voiceRecordDuration
+const voiceRecordVolume = chatVoice.voiceRecordVolume
+const isVoiceCancelArea = chatVoice.isVoiceCancelArea
+const handleVoiceStart = chatVoice.handleVoiceStart
+const handleVoiceCancel = chatVoice.handleVoiceCancel
+const handleVoiceModeChange = chatVoice.handleVoiceModeChange
+
+// 设置语音录制回调
+chatVoice.onDurationChange((duration: number) => {
+	console.log('🎤 [Detail] 录音时长更新:', duration)
+})
+
+chatVoice.onVolumeChange((volume: number) => {
+	console.log('🎤 [Detail] 录音音量更新:', volume)
+})
+
+// 注意：这些方法现在不返回清理函数，符合类型定义
+
+// 语音播放 Composable
+const chatVoicePlayer = useChatVoicePlayer()
+const isVoicePlaying = chatVoicePlayer.isVoicePlaying
+const playingVoiceMessageId = chatVoicePlayer.playingVoiceMessageId
+const handlePlayVoice = chatVoicePlayer.playVoice
+const setupPlayListeners = chatVoicePlayer.setupPlayListeners
+const cleanupPlayListeners = chatVoicePlayer.cleanupPlayListeners
+
+// 礼物赠送 - 延迟初始化，需要 userId
+const showGiftSelector = ref<boolean>(false)
+const chatGiftInstanceRef = ref<ChatGiftResult | null>(null)
+
+// 媒体上传 - 延迟初始化，需要 userId 和 messageList
+const chatMediaInstanceRef = ref<ChatMediaResult | null>(null)
+
+// ⭐ sendVoice 必须在 handleVoiceEnd 之前定义（UTS 无函数提升）
+const sendVoice = (filePath: string, duration: number) => {
+	console.log('🎤 [Detail] sendVoice 被调用:', filePath, 'duration:', duration)
+	const mediaInstance = chatMediaInstanceRef.value
+	console.log('🎤 [Detail] mediaInstance:', mediaInstance != null ? '存在' : '不存在')
+	if (mediaInstance != null) {
+		console.log('🎤 [Detail] 调用 mediaInstance.sendVoice')
+		mediaInstance.sendVoice(filePath, duration)
+	} else {
+		console.error('🎤 [Detail] mediaInstance 为 null，无法发送语音')
+	}
+}
+
+// ⭐ 语音录制结束处理（需要调用 sendVoice 发送语音消息）
+const handleVoiceEnd = () => {
+	console.log('🎤 [Detail] handleVoiceEnd 开始处理录音结束')
+	chatVoice.handleVoiceEnd().then((result: any | null): void => {
+		console.log('🎤 [Detail] handleVoiceEnd 收到录音结果:', result)
+		// 录音成功，发送语音消息
+		if (result != null) {
+			// 使用 JSON 序列化方式安全访问对象属性（UTS 不支持 Object.keys）
+			let tempFilePath = ''
+			let duration = 0
+
+			try {
+				// 使用 JSON 序列化处理
+				const resultStr = JSON.stringify(result)
+				const resultObj = JSON.parse(resultStr) as UTSJSONObject
+				
+				if (resultObj != null) {
+					// 获取 tempFilePath
+					const tempFilePathVal = resultObj.get('tempFilePath')
+					if (tempFilePathVal != null && tempFilePathVal.toString() != '') {
+						tempFilePath = tempFilePathVal.toString()
+					}
+					
+					// 获取 duration
+					const durationVal = resultObj.get('duration')
+					if (durationVal != null) {
+						const durationNum = parseInt(durationVal.toString())
+						if (isNaN(durationNum) == false) {
+							duration = durationNum
+						}
+					}
+				}
+
+				console.log('🎤 [Detail] 解析结果 - tempFilePath:', tempFilePath, 'duration:', duration)
+			} catch (e) {
+				handleSilentError(e, '解析录音结果')
+			}
+
+			if (tempFilePath != '' && duration > 0) {
+				console.log('🎤 [Detail] 条件满足，调用 sendVoice')
+				sendVoice(tempFilePath, duration)
+			} else {
+				console.log('🎤 [Detail] 条件不满足，不调用 sendVoice')
+			}
+		} else {
+			console.log('🎤 [Detail] result 为 null')
+		}
+	}).catch((err: any | null): void => {
+		// 录音失败或取消，不需要额外处理（Composable 内部已处理）
+		console.log('🎤 [Detail] 录音结束异常:', err)
+	})
+}
+
+const handleShowGiftSelector = () => {
+	console.log('🎁 [Detail] handleShowGiftSelector 被调用')
+	console.log('🎁 [Detail] currentUserId.value:', currentUserId.value)
+	console.log('🎁 [Detail] currentUserId.value 类型:', typeof currentUserId.value)
+	
+	if (currentUserId.value == null || currentUserId.value == '') {
+		console.error('🎁 [Detail] ❌ currentUserId 为空，无法打开礼物选择器')
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	console.log('🎁 [Detail] ✅ currentUserId 有效，打开礼物选择器')
+	// ⭐ 直接设置页面状态，不依赖 Composable 的状态
+	showGiftSelector.value = true
+}
+
+const handleSelectGift = (gift: UTSJSONObject, source: string) => {
+	// ⭐ 关闭礼物选择器
+	showGiftSelector.value = false
+	
+	const giftInstance = chatGiftInstanceRef.value
+	if (giftInstance != null) {
+		giftInstance.handleSelectGift(gift, source)
+	}
+}
+
+const handleChooseImage = () => {
+	const mediaInstance = chatMediaInstanceRef.value
+	if (mediaInstance != null) {
+		mediaInstance.handleChooseImage()
+	}
+}
+
+const handleChooseVideo = () => {
+	const mediaInstance = chatMediaInstanceRef.value
+	if (mediaInstance != null) {
+		mediaInstance.handleChooseVideo()
+	}
+}
+
+// 初始化需要参数的 Composables（在 onLoad 后调用）
+const initDynamicComposables = () => {
+	// 初始化礼物 Composable
+	const giftInstance = useChatGift(currentUserId.value, targetUserId.value)
+	chatGiftInstanceRef.value = giftInstance
+	// 同步礼物选择器状态
+	showGiftSelector.value = giftInstance.showGiftSelector.value
+	
+	// 初始化媒体 Composable
+	const mediaInstance = useChatMedia(
+		currentUserId.value,
+		currentUserAvatar.value,
+		targetUserId.value,
+		messageList,
+		scrollToBottom
+	)
+	chatMediaInstanceRef.value = mediaInstance
+}
+
+
+// ========== 消息列表辅助函数 ==========
+const getMessageKey = (msg: any, index: number): string => {
+	const msgObj = msg as UTSJSONObject
+	const id = getAnyString(msgObj, 'id')
+	if (id != null && id != '') {
+		return id
+	}
+	return index.toString()
+}
+
+const getMessageViewId = (msg: any, index: number): string => {
+	const msgObj = msg as UTSJSONObject
+	const id = getAnyString(msgObj, 'id')
+	if (id != null && id != '') {
+		return 'msg-' + id
+	}
+	return 'msg-' + index.toString()
+}
+
+const getMessageTime = (msg: any): string => {
+	const msgObj = msg as UTSJSONObject
+	let time = getAnyString(msgObj, 'createTime')
+	if (time == '') {
+		time = getAnyString(msgObj, 'sendTime')
+	}
+	if (time == '') return ''
+	return formatChatTime(time)
+}
+
+const shouldShowTime = (msg: any, index: number): boolean => {
+	const timeText = getMessageTime(msg)
+	if (timeText == null || timeText == '') {
+		return false
+	}
+	return timeText.length > 0
+}
+
+const isMessageSelf = (msg: any): boolean => {
+	const msgObj = msg as UTSJSONObject
+	const senderId = getAnyString(msgObj, 'senderId')
+	const fromUserKid = getAnyString(msgObj, 'fromUserKid')
+	const fromUserId = getAnyString(msgObj, 'fromUserId')
+	const currentId = currentUserId.value
+	
+	if (senderId != '' && senderId == currentId) return true
+	if (fromUserKid != '' && fromUserKid == currentId) return true
+	if (fromUserId != '' && fromUserId == currentId) return true
+	return false
+}
+
+const getMessageAvatar = (msg: any): string => {
+	const msgObj = msg as UTSJSONObject
+	const isSelf = isMessageSelf(msg)
+	
+	// 优先使用消息对象中包含的头像（对于本地发送的消息）
+	const msgAvatar = getAnyString(msgObj, 'senderAvatar')
+	if (msgAvatar != '') {
+		return msgAvatar
+	}
+	
+	// 备用方案：动态获取头像
+	if (isSelf == true) {
+		const avatar = currentUserAvatar.value
+		return avatar != '' ? avatar : defaultAvatar
+	}
+	const targetAvatar = targetUserAvatar.value
+	return targetAvatar != '' ? targetAvatar : defaultAvatar
+}
+
+// ========== 用户资料加载 ==========
+const applyTargetProfile = (profile: UTSJSONObject | null) => {
+	if (profile == null) return
+	
+	const profileObj = toJsonObj(profile)
+	if (profileObj == null) return
+	
+	const nicknameVal = getObjString(profileObj, 'nickname')
+	const imageVal = getObjString(profileObj, 'image')
+	const avatarVal = getObjString(profileObj, 'avatar')
+	const servicePriceVal = getObjString(profileObj, 'servicePrice')
+	const priceVal = getObjString(profileObj, 'price')
+	
+	if (nicknameVal != '') {
+		targetUserNickname.value = nicknameVal
+	}
+	// 优先使用 image，其次使用 avatar
+	if (imageVal != '') {
+		targetUserAvatar.value = imageVal
+	} else if (avatarVal != '') {
+		targetUserAvatar.value = avatarVal
+	}
+	if (servicePriceVal != '') {
+		targetUserServicePrice.value = servicePriceVal
+	} else if (priceVal != '') {
+		targetUserServicePrice.value = priceVal
+	}
+	
+	// 🎯 新增：提取勋章相关字段
+	// UserHomePageVO 中的字段名是 vip、vipType
+	const vipVal = getObjNumber(profileObj, 'vip')
+	if (vipVal > 0) {
+		targetUserVip.value = vipVal
+	}
+	const vipTypeVal = getObjNumber(profileObj, 'vipType')
+	if (vipTypeVal > 0) {
+		targetUserVipType.value = vipTypeVal
+	}
+	// 礼物等级可能在 giftLevel 或 memberLevel 字段
+	const giftLevelVal = getObjNumber(profileObj, 'giftLevel')
+	if (giftLevelVal > 0) {
+		targetUserGiftLevel.value = giftLevelVal
+	} else {
+		const memberLevelVal = getObjNumber(profileObj, 'memberLevel')
+		if (memberLevelVal > 0) {
+			targetUserGiftLevel.value = memberLevelVal
+		}
+	}
+	
+	if (targetUserNickname.value != '') {
+		uni.setNavigationBarTitle({
+			title: targetUserNickname.value
+		})
+	}
+}
+
+const loadTargetProfile = () => {
+	const profileKid = targetUserId.value
+	if (profileKid == null || profileKid == '') return
+	
+	const viewerKid = getCurrentUserKid()
+	const cached = getCachedProfile(profileKid, viewerKid)
+	if (cached != null) {
+		applyTargetProfile(cached)
+	}
+	
+	const params = {
+		kid: profileKid,
+		focusUserkid: viewerKid
+	} as UTSJSONObject
+	
+	getUserProfile(params).then((latest: any | null): void => {
+		if (latest != null) {
+			try {
+				const latestStr = JSON.stringify(latest)
+				const latestObj = JSON.parse(latestStr) as UTSJSONObject
+				applyTargetProfile(latestObj)
+			} catch (e) {}
+		}
+	}).catch((err: any | null): void => {
+		handleSilentError(err as any, '加载会话目标用户')
+	})
+}
+
+// ========== 事件处理 ==========
+const handleBack = () => {
+	uni.navigateBack()
+}
+
+const handleViewProfile = () => {
+	if (targetUserId.value == null || targetUserId.value == '') {
+		console.warn('目标用户ID为空，无法跳转')
+		return
+	}
+	uni.navigateTo({
+		url: '/pagesUser/persionInfo/index?id=' + targetUserId.value
+	})
+}
+
+const handleAvatarClick = (userId: string) => {
+	if (userId == null) {
+		console.warn('用户ID为空，无法跳转')
+		return
+	}
+	uni.navigateTo({
+		url: '/pagesUser/persionInfo/index?id=' + userId
+	})
+}
+
+const handleClearHistory = () => {
+	uni.showModal({
+		title: '提示',
+		content: '确定要清空聊天记录吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				loading.value = true
+				chatMessages.clearAllMessages().then((success: boolean): void => {
+					loading.value = false
+					uni.showToast({
+						title: '已清空',
+						icon: 'success'
+					})
+				}).catch((error: any | null): void => {
+					loading.value = false
+					uni.showToast({
+						title: '清空失败，请重试',
+						icon: 'none'
+					})
+				})
+			}
+		}
+	})
+}
+
+const handleReport = () => {
+	uni.showToast({
+		title: '功能开发中',
+		icon: 'none'
+	})
+}
+
+const handleMore = () => {
+	uni.showActionSheet({
+		itemList: ['清空聊天记录', '投诉举报'],
+		success: (res) => {
+			if (res.tapIndex == 0) {
+				handleClearHistory()
+			} else if (res.tapIndex == 1) {
+				handleReport()
+			}
+		}
+	})
+}
+
+const handleReserve = () => {
+	// 提取纯数字部分，避免中文字符在微信小程序URL参数中编解码异常
+	const rawPrice = (targetUserServicePrice.value != '') ? targetUserServicePrice.value : '0'
+	let cleanPrice = ''
+	let pi = 0
+	while (pi < rawPrice.length) {
+		const ch = rawPrice.charAt(pi)
+		if ((ch >= '0' && ch <= '9') || ch == '.') {
+			cleanPrice = cleanPrice + ch
+		}
+		pi = pi + 1
+	}
+	const price = (cleanPrice != '') ? cleanPrice : '0'
+	let url = '/pagesUser/persionInfo/submitOrder?targetId=' + targetUserId.value
+	if (price != '' && price != '0') {
+		url = url + '&price=' + encodeURIComponent(price)
+	}
+	uni.navigateTo({ url: url })
+}
+
+const handleContact = () => {
+	const nickname = (targetUserNickname.value != '') ? targetUserNickname.value : '用户'
+	const userInfoVal = userInfo.value as any
+	handleContactAction(targetUserId.value, nickname, userInfoVal).then((): void => {
+		// 成功
+	}).catch((error: any | null): void => {
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '处理联系方式', null)
+		}
+	})
+}
+
+const handleSend = (content: string, messageType: number) => {
+	sendTextMessage(content, messageType)
+}
+
+const handleVoiceRecord = () => {
+	uni.showToast({
+		title: '请长按"按住说话"按钮录音',
+		icon: 'none'
+	})
+}
+
+const handleEmojiPanel = () => {
+	showEmoji.value = true
+}
+
+// 发送自定义表情消息
+const sendCustomEmojiMessage = (imageUrl: string) => {
+	const mediaInstance = chatMediaInstanceRef.value
+	if (mediaInstance != null) {
+		mediaInstance.sendCustomEmoji(imageUrl)
+	}
+}
+
+const handleEmojiSelect = (emoji: string, type: string, imageUrl: string) => {
+	const imageUrlVal = (imageUrl != null) ? imageUrl : ''
+	
+	if (type == 'custom') {
+		// 自定义表情：直接发送图片消息
+		if (imageUrlVal != '') {
+			sendCustomEmojiMessage(imageUrlVal)
+		}
+	}
+	// Unicode表情已在 EmojiPanel 内部插入到输入框，无需额外处理
+}
+
+const handleEmojiDelete = () => {
+	// 已在EmojiPanel内部处理
+}
+
+// 表情面板中点击+号，显示更多功能面板
+const handleEmojiShowMore = () => {
+	// 关闭表情面板
+	showEmoji.value = false
+	// 显示功能面板（图片、视频、语音、礼物）
+	showActions.value = true
+}
+
+// ⭐ 从聊天图片添加到自定义表情
+const handleAddToEmoji = (imageUrl: string) => {
+	if (imageUrl == null || imageUrl == '') {
+		uni.showToast({ title: '图片地址无效', icon: 'none' })
+		return
+	}
+	
+	// 使用导出的独立函数保存自定义表情
+	uni.showLoading({ title: '添加中...' })
+	saveCustomEmojiToServerAction(imageUrl, '').then((success: boolean) => {
+		uni.hideLoading()
+		// saveCustomEmojiToServerAction 内部已经处理了 toast 提示
+	}).catch((err: any | null): void => {
+		uni.hideLoading()
+		uni.showToast({ title: '添加失败', icon: 'none' })
+	})
+}
+
+// ⭐ 保存图片到相册
+const handleSaveToAlbum = (imageUrl: string) => {
+	if (imageUrl == null || imageUrl == '') {
+		uni.showToast({ title: '图片地址无效', icon: 'none' })
+		return
+	}
+	
+	uni.showLoading({ title: '保存中...' })
+	
+	// 先下载图片
+	uni.downloadFile({
+		url: imageUrl,
+		success: (downloadRes) => {
+			if (downloadRes == null) {
+				uni.hideLoading()
+				uni.showToast({ title: '下载失败', icon: 'none' })
+				return
+			}
+			
+			const tempFilePath = downloadRes.tempFilePath
+			
+			if (tempFilePath == null || tempFilePath == '') {
+				uni.hideLoading()
+				uni.showToast({ title: '下载失败', icon: 'none' })
+				return
+			}
+			
+			// 保存到相册
+			uni.saveImageToPhotosAlbum({
+				filePath: tempFilePath,
+				success: () => {
+					uni.hideLoading()
+					uni.showToast({ title: '已保存到相册', icon: 'success' })
+				},
+				fail: (err) => {
+					uni.hideLoading()
+					handleSilentError(err, '保存到相册')
+					uni.showToast({ title: '保存失败', icon: 'none' })
+				}
+			})
+		},
+		fail: (err) => {
+			uni.hideLoading()
+			handleSilentError(err, '下载图片')
+			uni.showToast({ title: '下载失败', icon: 'none' })
+		}
+	})
+}
+
+const handleShareLocation = () => {
+	uni.showToast({
+		title: '功能开发中',
+		icon: 'none'
+	})
+}
+
+const handleContactPopupClose = () => {
+	showContactPopup.value = false
+}
+
+const previewImage = (url: string) => {
+	const urls: Array<string> = [url]
+	uni.previewImage({
+		urls: urls,
+		current: url
+	})
+}
+
+const handlePlayVideo = (message: UTSJSONObject) => {
+	const msgContent = getAnyString(message, 'content')
+	const msgMediaUrl = getAnyString(message, 'mediaUrl')
+	const msgThumbUrl = getAnyString(message, 'thumbUrl')
+	const videoUrl = (msgContent != '') ? msgContent : msgMediaUrl
+	
+	// 构建跳转参数
+	let navUrl = '/pages/videoPlayer/index?url=' + encodeURIComponent(videoUrl)
+	
+	// 添加封面图参数
+	if (msgThumbUrl != '') {
+		navUrl = navUrl + '&thumb=' + encodeURIComponent(msgThumbUrl)
+	}
+	
+	uni.navigateTo({ url: navUrl })
+}
+
+const goToOrder = (orderId: string) => {
+	if (orderId == null || orderId == '') return
+	uni.navigateTo({
+		url: '/pagesTrade/orderDetails/index?orderKid=' + orderId
+	})
+}
+
+// 处理系统通知消息点击
+const handleSystemNotificationClick = (linkUrl: string, orderKid: string) => {
+	// 优先使用 orderKid 跳转到订单详情
+	if (orderKid != null && orderKid != '') {
+		uni.navigateTo({
+			url: '/pagesTrade/orderDetails/index?orderKid=' + orderKid
+		})
+		return
+	}
+	
+	// 其次使用 linkUrl 跳转
+	if (linkUrl != null && linkUrl != '') {
+		uni.navigateTo({
+			url: linkUrl
+		})
+		return
+	}
+	
+	// 无跳转目标时不执行操作
+	console.log('[Detail] 系统通知消息无跳转目标')
+}
+
+const handleShareCardClick = (targetId: string) => {
+	// 分享卡片点击处理 - MessageBubble 已经处理了跳转逻辑
+	// 这里只需要记录日志或做额外处理
+	if (targetId != null && targetId != '') {
+		console.log('[Detail] 分享卡片点击，目标ID:', targetId)
+	}
+}
+
+// ⭐ 删除消息确认（需要在 handleMessageLongPress 之前定义）
+const handleDeleteMessageConfirm = (messageId: string) => {
+	if (messageId == null || messageId == '') return
+	
+	uni.showModal({
+		title: '提示',
+		content: '确定要删除这条消息吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				const success = deleteLocalMessage(messageId)
+				if (success == true) {
+					uni.showToast({
+						title: '已删除',
+						icon: 'success'
+					})
+				} else {
+					uni.showToast({
+						title: '删除失败',
+						icon: 'none'
+					})
+				}
+			}
+		}
+	})
+}
+
+// ⭐ 消息长按处理 - 显示操作菜单
+const handleMessageLongPress = (message: UTSJSONObject, messageType: number) => {
+	if (message == null) return
+	
+	// 获取消息内容
+	const msgContent = getAnyString(message, 'content')
+	const msgId = getAnyString(message, 'id')
+	
+	// 根据消息类型显示不同菜单
+	// messageType: 1=文本, 2=图片, 3=视频, 4=语音
+	if (messageType == 1) {
+		// 文本消息：复制、删除
+		uni.showActionSheet({
+			itemList: ['复制', '删除'],
+			success: (res) => {
+				if (res == null) return
+				const tapIndex = res.tapIndex
+				
+				if (tapIndex == 0) {
+					// 复制消息内容
+					copyMessageContent(msgContent)
+				} else if (tapIndex == 1) {
+					// 删除消息
+					handleDeleteMessageConfirm(msgId)
+				}
+			}
+		})
+	}
+}
+
+// ⭐ 删除消息（由 MessageBubble 组件直接触发）
+const handleDeleteMessage = (messageId: string) => {
+	handleDeleteMessageConfirm(messageId)
+}
+
+// ⭐ 链接点击处理
+const handleMessageLinkClick = (url: string) => {
+	if (url == null || url == '') return
+	console.log('[Detail] 链接点击:', url)
+	// MessageBubble 组件已经处理了跳转逻辑，这里只记录日志
+}
+
+// ⭐ 电话点击处理
+const handleMessagePhoneClick = (phone: string) => {
+	if (phone == null || phone == '') return
+	secureLog('Detail', '电话点击:', phone)
+	// MessageBubble 组件已经处理了拨号逻辑，这里只记录日志
+}
+
+
+// ========== 消息监听器 ==========
+let offMessageChange: (() => void) | null = null
+
+const setupMessageListeners = () => {
+	// 清理旧监听器
+	const existingMessageChange = offMessageChange
+	if (existingMessageChange != null) {
+		existingMessageChange()
+		offMessageChange = null
+	}
+	
+	// 监听消息变化（保留用于接收其他用户的消息）
+	offMessageChange = chatService.onMessageChange((messages) => {
+		// ⭐ 过滤只属于当前会话的消息（主要是接收到的消息）
+		const currentUserIdVal = currentUserId.value
+		const targetUserIdVal = targetUserId.value
+
+		// 🔧 修复：获取当前会话的所有消息
+		const currentConversationMessages: Array<UTSJSONObject> = []
+		for (let i = 0; i < messages.length; i = i + 1) {
+			const msg = messages[i] as UTSJSONObject
+			if (msg == null) continue
+
+			// 获取消息的发送者和接收者
+			const msgSenderId = getAnyString(msg, 'senderId')
+			const msgReceiverId = getAnyString(msg, 'receiverId')
+			// 兼容 fromUserKid/toUserKid 字段
+			const fromUserKid = getAnyString(msg, 'fromUserKid')
+			const toUserKid = getAnyString(msg, 'toUserKid')
+
+			// 使用多种字段判断发送者和接收者
+			const senderIdFinal = (msgSenderId != '') ? msgSenderId : fromUserKid
+			const receiverIdFinal = (msgReceiverId != '') ? msgReceiverId : toUserKid
+
+			// 检查是否属于当前会话（双向匹配）
+			const isCurrentConversation =
+				(senderIdFinal == currentUserIdVal && receiverIdFinal == targetUserIdVal) ||
+				(senderIdFinal == targetUserIdVal && receiverIdFinal == currentUserIdVal)
+
+			// 只处理接收到的消息（发送的消息已经通过直接添加处理）
+			const isReceivedMessage = senderIdFinal == targetUserIdVal
+
+			if (isCurrentConversation == true && isReceivedMessage == true) {
+				currentConversationMessages.push(msg)
+			}
+		}
+
+		// 🔧 修复：合并接收到的消息
+		if (currentConversationMessages.length > 0) {
+			const mergedMessages = mergeMessagesWithoutDuplicates(currentConversationMessages as Array<any>, messageList.value as Array<any>)
+			messageList.value = mergedMessages
+
+			// 滚动到底部
+			nextTick(() => {
+				scrollToBottom()
+			})
+		}
+	})
+}
+
+const cleanupMessageListeners = () => {
+	const existingMessageChange = offMessageChange
+	if (existingMessageChange != null) {
+		existingMessageChange()
+		offMessageChange = null
+	}
+}
+
+// ========== 页面初始化 ==========
+const initPageHeight = () => {
+	initPageLayoutComposable()
+	
+	if (pageWindowHeight.value > 0) {
+		const navBarPx = 44
+		const actionBarPx = 60
+		const chatHeaderPx = pageStatusBarHeight.value + navBarPx + actionBarPx
+		// 输入框基础高度（padding-top 10px + input-wrapper 40px + padding-bottom 18px ≈ 68px）+ 安全区域高度
+		const safeAreaBottomPx = getSafeAreaBottom()
+		const chatInputPx = 68 + safeAreaBottomPx
+		
+		const listHeight = pageWindowHeight.value - chatHeaderPx - chatInputPx
+		
+		if (listHeight > 200) {
+			messageListHeight.value = listHeight
+		} else {
+			const fallbackHeight = (pageWindowHeight.value * 60) / 100
+			messageListHeight.value = fallbackHeight > 300 ? fallbackHeight : 300
+		}
+	}
+	
+	if (messageListHeight.value <= 0) {
+		messageListHeight.value = 500
+	}
+}
+
+const updateComposableOptions = () => {
+	// 更新消息管理选项
+	messagesOptions.currentUserId = currentUserId.value
+	messagesOptions.targetUserId = targetUserId.value
+	messagesOptions.currentUserAvatar = currentUserAvatar.value
+	messagesOptions.scrollIntoView = scrollIntoView
+	messagesOptions.scrollIntoViewId = scrollIntoViewId
+
+	// 初始化需要参数的 Composables
+	initDynamicComposables()
+}
+
+// 自动发送分享消息（使用 function 声明以支持递归调用）
+function autoSendShareMessage(): void {
+	if (pendingShareMessage.value == null || pendingShareMessage.value == '') {
+		return
+	}
+	
+	// 检查连接状态
+	if (connectionStatus.value != 'connected') {
+		shareMessageRetryCount.value = shareMessageRetryCount.value + 1
+		if (shareMessageRetryCount.value < MAX_RETRY_COUNT) {
+			setTimeout(function() { autoSendShareMessage() }, 500)
+		} else {
+			pendingShareMessage.value = ''
+			shareMessageRetryCount.value = 0
+		}
+		return
+	}
+	
+	// 发送分享消息
+	sendTextMessage(pendingShareMessage.value, pendingShareMessageType.value)
+	pendingShareMessage.value = ''
+	shareMessageRetryCount.value = 0
+}
+
+// ⭐ 新增：标记会话已读方法
+const markConversationAsRead = async () => {
+	if (currentUserId.value == '' || targetUserId.value == '') {
+		return
+	}
+
+	try {
+		// UTS 规范：不能使用对象字面量，需使用类实例
+		const params = new MarkReadParams()
+		params.fromUserId = currentUserId.value
+		params.toUserId = targetUserId.value
+
+		await markConversationRead(params)
+
+		// ⭐ 移除：不要调用 updateUnreadCountsDirect({})
+		// 因为这会错误地将所有未读数（包括订单未读数）设置为0
+		// 订单未读数应该独立管理，不受会话清零影响
+
+		// ⭐ 新增：立即通知消息列表页刷新会话数据
+		// 解决用户返回时会话未读数不清零的问题
+		uni.$emit('chat:conversationUpdate')
+
+	} catch (error) {
+		handleSilentError(error, '标记会话已读')
+	}
+}
+
+const doInitChatPage = () => {
+	// 设置当前用户ID
+	chatService.setCurrentUserId(currentUserId.value)
+
+	// ⭐ 新增：标记会话已读，清零未读数
+	markConversationAsRead()
+
+	// ⭐ 清理 messageStateManager 中属于当前会话的旧消息
+	// 这样可以避免旧的临时消息被合并到消息列表
+	chatService.clearConversationByUsers(currentUserId.value, targetUserId.value)
+	
+	// 检查 WebSocket 连接状态
+	const isConnected = getWebSocketConnectedStatus()
+	
+	if (isConnected == false) {
+		forceReconnectAction(currentUserId.value).then((success: boolean): void => {
+			if (success == true) {
+				let checkCount = 0
+				const maxChecks = 5
+				let intervalId: number = 0
+				intervalId = setInterval(() => {
+					checkCount = checkCount + 1
+					const newStatus = getWebSocketConnectedStatus()
+					if (newStatus == true) {
+						clearInterval(intervalId)
+					} else if (checkCount >= maxChecks) {
+						clearInterval(intervalId)
+					}
+				}, 1000)
+			}
+		}).catch((err: any | null): void => {
+			console.error('强制重连失败:', err)
+		})
+	}
+	
+	// 设置监听器
+	setupConnectionListeners()
+	setupPlayListeners()
+	setupMessageListeners()
+	
+	// 加载历史消息
+	loadMessages()
+	
+	// 处理待发送的分享消息
+	if (pendingShareMessage.value != null && pendingShareMessage.value != '') {
+		setTimeout(() => autoSendShareMessage(), 800)
+	}
+	
+	// 处理待发送的礼物消息
+	if (pendingGiftMessage.value != null && pendingGiftMessage.value != '') {
+		setTimeout(() => {
+			const giftInstance = chatGiftInstanceRef.value
+			if (giftInstance != null) {
+				giftInstance.sendGiftMessageFromPending(pendingGiftMessage.value)
+			}
+			pendingGiftMessage.value = ''
+		}, 1000)
+	}
+}
+
+const initChatPage = () => {
+	initPageHeight()
+	
+	if (currentUserId.value == null || currentUserId.value == '') {
+		setTimeout(() => {
+			if (currentUserId.value != null && currentUserId.value != '') {
+				updateComposableOptions()
+				doInitChatPage()
+			} else {
+				uni.showToast({ title: '用户信息加载失败', icon: 'none' })
+			}
+		}, 500)
+		return
+	}
+	
+	updateComposableOptions()
+	doInitChatPage()
+}
+
+// ========== 联系方式弹窗事件监听 ==========
+// 🔧 修复：监听 show-contact-popup 事件，显示联系方式弹窗
+const setupContactPopupListener = () => {
+	uni.$on('show-contact-popup', (data: UTSJSONObject | null) => {
+		console.log('📞 [Detail] 收到 show-contact-popup 事件:', data)
+		if (data != null) {
+			try {
+				const dataObj = data as UTSJSONObject
+				
+				const userNameVal = dataObj.get('userName')
+				const contactInfoVal = dataObj.get('contactInfo')
+				
+				if (userNameVal != null) {
+					contactPopupData.value.userName = userNameVal.toString()
+				}
+				
+				if (contactInfoVal != null) {
+					const contactInfoObj = JSON.parse(JSON.stringify(contactInfoVal)) as UTSJSONObject
+					
+					const realnameVal = contactInfoObj.get('realname')
+					const contactPhoneVal = contactInfoObj.get('contactPhone')
+					const qqNumberVal = contactInfoObj.get('qqNumber')
+					const weixinNumberVal = contactInfoObj.get('weixinNumber')
+					
+					contactPopupData.value.contactInfo.realname = (realnameVal != null) ? realnameVal.toString() : ''
+					contactPopupData.value.contactInfo.contactPhone = (contactPhoneVal != null) ? contactPhoneVal.toString() : ''
+					contactPopupData.value.contactInfo.qqNumber = (qqNumberVal != null) ? qqNumberVal.toString() : ''
+					contactPopupData.value.contactInfo.weixinNumber = (weixinNumberVal != null) ? weixinNumberVal.toString() : ''
+				}
+				
+				console.log('📞 [Detail] 显示联系方式弹窗, userName:', contactPopupData.value.userName)
+				showContactPopup.value = true
+			} catch (e) {
+				handleSilentError(e, '解析联系方式数据')
+			}
+		}
+	})
+}
+
+const cleanupContactPopupListener = () => {
+	uni.$off('show-contact-popup')
+}
+
+// ========== 生命周期 ==========
+onLoad((options: OnLoadOptions) => {
+	// 加载功能开关配置
+	loadFeatureToggles()
+	// 🔧 修复：设置联系方式弹窗事件监听
+	setupContactPopupListener()
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		const targetUserIdVal = getObjString(optionsObj, 'targetUserId')
+		targetUserId.value = (targetUserIdVal != '') ? targetUserIdVal : ''
+		
+		const conversationIdVal = getObjString(optionsObj, 'conversationId')
+		conversationId.value = (conversationIdVal != '') ? conversationIdVal : ''
+		
+		const targetUserNameVal = getObjString(optionsObj, 'targetUserName')
+		if (targetUserNameVal != '') {
+			const decodedName = decodeURIComponent(targetUserNameVal)
+			if (decodedName != null) {
+				targetUserNickname.value = decodedName
+			}
+		}
+		
+		const targetUserAvatarVal = getObjString(optionsObj, 'targetUserAvatar')
+		if (targetUserAvatarVal != '') {
+			const decodedAvatar = decodeURIComponent(targetUserAvatarVal)
+			if (decodedAvatar != null) {
+				targetUserAvatar.value = decodedAvatar
+			}
+		}
+		
+		const shareMessageVal = getObjString(optionsObj, 'shareMessage')
+		if (shareMessageVal != '') {
+			try {
+				const decodedMsg = decodeURIComponent(shareMessageVal)
+				if (decodedMsg != null) {
+					pendingShareMessage.value = decodedMsg
+				}
+				const messageTypeVal = getObjString(optionsObj, 'messageType')
+				const msgType = (messageTypeVal != '') ? parseInt(messageTypeVal) : 6
+				pendingShareMessageType.value = isNaN(msgType) == false ? msgType : 6
+			} catch (e: Error) {
+				handleSilentError(e, '解析分享消息参数')
+			}
+		}
+	}
+	
+	// 加载目标用户资料
+	loadTargetProfile()
+	
+	// 初始化聊天页面
+	initChatPage()
+})
+
+onUnmounted(() => {
+	// 标记需要刷新会话列表
+	safeSetStorageSync('shouldRefreshConversations', 'true')
+	
+	// 清理监听器
+	cleanupConnectionListeners()
+	cleanupPlayListeners()
+	cleanupMessageListeners()
+	// 🔧 修复：清理联系方式弹窗事件监听
+	cleanupContactPopupListener()
+})
+</script>
+
+
+<style>
+/* APP 端：必须设置 100% 高度和 overflow: hidden */
+/* #ifndef H5 */
+.chat-page-container {
+	flex-direction: column;
+	background-color: #f5f5f5;
+	width: 750rpx;
+	height: 100%;
+	overflow: hidden;
+}
+/* #endif */
+
+/* H5 端：使用 flex: 1 自动填充 */
+/* #ifdef H5 */
+.chat-page-container {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+	height: 100%;
+	overflow: hidden;
+}
+/* #endif */
+
+.connection-status {
+	background-color: #fff3cd;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #ffeaa7;
+}
+
+.status-text {
+	font-size: 24rpx;
+	color: #856404;
+}
+
+/* 消息列表外层容器 - 使用 flex: 1 自动填充剩余空间 */
+.message-list-wrapper {
+	flex: 1;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* 消息滚动容器 */
+.message-scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #f5f5f5;
+}
+
+.message-list-view {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #f5f5f5;
+}
+
+.message-list-item {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+}
+
+.empty-list-item {
+	padding-top: 200rpx;
+}
+
+.load-more-list-item {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+.load-more-box {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.load-more-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.empty-state-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+}
+
+.empty-icon-text {
+	font-size: 120rpx;
+	margin-bottom: 32rpx;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #999999;
+	margin-bottom: 16rpx;
+}
+
+.empty-hint-text {
+	font-size: 26rpx;
+	color: #cccccc;
+}
+
+.message-item-box {
+	margin-bottom: 24rpx;
+}
+
+.time-divider-box {
+	margin-top: 24rpx;
+	margin-bottom: 24rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.time-divider-text {
+	font-size: 22rpx;
+	color: #999999;
+}
+</style>

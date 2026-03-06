@@ -1,0 +1,106 @@
+/**
+ * 功能开关 Composable
+ * 用于管理前端功能开关状态，支持从后端动态获取配置
+ * 
+ * 配置值格式统一：使用 "true"/"false" 字符串
+ */
+
+import { ref } from 'vue'
+import { getSystemSettings } from '@/api/config.uts'
+import { getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+
+const memberFeatureEnabled = ref<boolean>(false)
+const giftFeatureEnabled = ref<boolean>(false)
+const sharedDataDisplayEnabled = ref<boolean>(true)
+const isLoaded = ref<boolean>(false)
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 解析布尔配置值
+ * 支持多种格式：'true'/'false', '10'/'20', '1'/'0'
+ * 统一返回布尔值
+ */
+export const parseBooleanConfig = (value: string): boolean => {
+	if (value == 'true' || value == '10' || value == '1') {
+		return true
+	}
+	return false
+}
+
+/**
+ * 加载功能开关配置
+ * 从后端获取系统配置并更新本地状态
+ */
+export const loadFeatureToggles = () => {
+	getSystemSettings().then((res: any) => {
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const memberVal = getObjString(dataObj, 'member_feature_enabled')
+			if (memberVal != '') {
+				memberFeatureEnabled.value = parseBooleanConfig(memberVal)
+			}
+			
+			const giftVal = getObjString(dataObj, 'gift_feature_enabled')
+			if (giftVal != '') {
+				giftFeatureEnabled.value = parseBooleanConfig(giftVal)
+			}
+			
+			const sharedDataVal = getObjString(dataObj, 'shared_data_display_enabled')
+			if (sharedDataVal != '') {
+				sharedDataDisplayEnabled.value = parseBooleanConfig(sharedDataVal)
+			}
+			isLoaded.value = true
+			console.log('[FeatureToggles] 会员功能状态:', memberFeatureEnabled.value)
+			console.log('[FeatureToggles] 礼物功能状态:', giftFeatureEnabled.value)
+			console.log('[FeatureToggles] 共享数据显示状态:', sharedDataDisplayEnabled.value)
+		}
+	}).catch((error: any | null): void => {
+		console.error('[FeatureToggles] 加载配置失败:', error)
+		memberFeatureEnabled.value = false
+		giftFeatureEnabled.value = false
+		sharedDataDisplayEnabled.value = true
+		isLoaded.value = true
+	})
+}
+
+/**
+ * 检查会员功能是否开启
+ * @returns true=开启，false=关闭
+ */
+export const isMemberFeatureEnabled = (): boolean => {
+	return memberFeatureEnabled.value
+}
+
+/**
+ * 检查礼物功能是否开启
+ * @returns true=开启，false=关闭
+ */
+export const isGiftFeatureEnabled = (): boolean => {
+	return giftFeatureEnabled.value
+}
+
+/**
+ * 检查功能开关是否已加载
+ * @returns true=已加载，false=未加载
+ */
+export const isFeatureTogglesLoaded = (): boolean => {
+	return isLoaded.value
+}
+
+/**
+ * 获取共享数据显示开关状态
+ * @returns true=显示共享数据，false=仅显示本商户数据
+ */
+export const isSharedDataDisplayEnabled = (): boolean => {
+	return sharedDataDisplayEnabled.value
+}

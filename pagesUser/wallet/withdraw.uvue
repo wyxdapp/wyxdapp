@@ -1,0 +1,2200 @@
+<template>
+	<!-- #ifndef MP-WEIXIN -->
+	<view class="withdraw-page" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+		<!-- 提现方式选择 -->
+		<view class="withdraw-method">
+			<view class="section-title">选择提现方式</view>
+			<view class="method-list">
+				<view 
+					class="method-item" 
+					:class="{ 'method-item-active': selectedMethod == WITHDRAW_METHOD_WECHAT }" 
+					@click="selectMethod(WITHDRAW_METHOD_WECHAT)"
+				>
+					<view class="method-info">
+						<image 
+							src="https://jiasu.wyxdapp.com/iconimages/pay_order_wechat.png" 
+							class="method-icon"
+							mode="aspectFit"
+						/>
+						<text class="method-name">微信</text>
+					</view>
+					<view class="method-status" @click.stop="showBindPopup(WITHDRAW_METHOD_WECHAT)">
+						<text class="status-text" :class="{ 'status-bound': wechatBound }">
+							{{ wechatBoundText }}
+						</text>
+						<text class="arrow-icon">›</text>
+					</view>
+				</view>
+				
+				<view 
+					class="method-item" 
+					:class="{ 'method-item-active': selectedMethod == WITHDRAW_METHOD_ALIPAY }" 
+					@click="selectMethod(WITHDRAW_METHOD_ALIPAY)"
+				>
+					<view class="method-info">
+						<image 
+							src="https://jiasu.wyxdapp.com/iconimages/pay_order_zfb.png" 
+							class="method-icon"
+							mode="aspectFit"
+						/>
+						<text class="method-name">支付宝</text>
+					</view>
+					<view class="method-status" @click.stop="showBindPopup(WITHDRAW_METHOD_ALIPAY)">
+						<text class="status-text" :class="{ 'status-bound': alipayBound }">
+							{{ alipayBoundText }}
+						</text>
+						<text class="arrow-icon">›</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 跨商户佣金提现信息（跨商户模式） -->
+		<view v-if="isCrossMerchantMode" class="cross-merchant-section">
+			<view class="section-title">跨商户佣金提现</view>
+			<view class="cross-merchant-info">
+				<view class="detail-row">
+					<text class="detail-label">佣金金额</text>
+					<text class="detail-value detail-highlight">¥{{ crossMerchantAmount }}</text>
+				</view>
+				<view class="detail-row">
+					<text class="detail-label">来源商户</text>
+					<text class="detail-value">{{ crossMerchantSourceMerchant }}</text>
+				</view>
+			</view>
+			<view class="cross-merchant-notice">
+				<text class="tip-text">• 该佣金来自跨商户订单，将由来源商户直接出款</text>
+				<text class="tip-text">• 请选择提现方式并确认提现</text>
+			</view>
+		</view>
+
+		<!-- 提现金额输入（普通模式） -->
+		<view v-if="!isCrossMerchantMode" class="amount-section">
+			<view class="section-title">提现金额</view>
+			<view class="amount-input">
+				<text class="currency-symbol">¥</text>
+				<input 
+					type="digit" 
+					v-model="withdrawAmount" 
+					placeholder="请输入提现金额" 
+					class="amount-field"
+					@input="onAmountChange"
+				/>
+			</view>
+			<view class="amount-tips">
+				<text class="tip-item">最低提现金额：¥1.00</text>
+				<text class="tip-item">手续费：{{ feeRate }}%</text>
+			</view>
+			<view class="amount-grid">
+				<text class="quick-btn" @click="selectQuickAmount(100)">¥100</text>
+				<text class="quick-btn" @click="selectQuickAmount(200)">¥200</text>
+				<text class="quick-btn" @click="selectQuickAmount(500)">¥500</text>
+				<text class="quick-btn" @click="selectAllAmount">全部</text>
+			</view>
+		</view>
+
+		<!-- 提现详情（普通模式） -->
+		<view class="withdraw-detail" v-if="!isCrossMerchantMode && showDetail">
+			<view class="detail-row">
+				<text class="detail-label">提现金额</text>
+				<text class="detail-value">¥{{ withdrawAmount }}</text>
+			</view>
+			<view class="detail-row">
+				<text class="detail-label">手续费</text>
+				<text class="detail-value detail-fee">-¥{{ calculatedFee }}</text>
+			</view>
+			<view class="detail-row" v-if="feeDeductModeText != ''">
+				<text class="detail-label">扣费方式</text>
+				<text class="detail-value detail-mode">{{ feeDeductModeText }}</text>
+			</view>
+			<view class="detail-row">
+				<text class="detail-label">总扣款</text>
+				<text class="detail-value">¥{{ totalDeduction }}</text>
+			</view>
+			<view class="detail-row detail-total">
+				<text class="detail-label">实际到账</text>
+				<text class="detail-value detail-highlight">¥{{ actualAmount }}</text>
+			</view>
+		</view>
+
+		<!-- 安全提示（普通模式） -->
+		<view v-if="!isCrossMerchantMode" class="security-tips">
+			<view class="tips-title">
+				<UniIcons type="info" :size="32" color="#999999" />
+				<text class="tips-title-text">温馨提示</text>
+			</view>
+			<view class="tips-content">
+				<text class="tip-text">• 提现将收取{{ feeRate }}%的手续费</text>
+				<text class="tip-text">• 资金将实时到账</text>
+				<text class="tip-text">• 请确保绑定账户信息准确无误</text>
+				<text class="tip-text">• 提现申请提交后无法撤销</text>
+				<text class="tip-text">• 如遇问题请及时联系客服</text>
+			</view>
+		</view>
+
+		<!-- 底部提现按钮（普通模式） -->
+		<view v-if="!isCrossMerchantMode" class="footer-box">
+			<view class="balance-info">
+				<text class="balance-label">余额: </text>
+				<text class="balance-value">¥{{ balance }}</text>
+			</view>
+			<view 
+				class="submit-btn" 
+				:class="{ 'submit-btn-disabled': canWithdrawDisabled }" 
+				@click="handleWithdraw"
+			>
+				<text class="btn-text">{{ buttonText }}</text>
+			</view>
+		</view>
+
+		<!-- 底部提现按钮（跨商户模式） -->
+		<view v-if="isCrossMerchantMode" class="footer-box">
+			<view 
+				class="submit-btn" 
+				:class="{ 'submit-btn-disabled': selectedMethod == 0 || !checkIsMethodBound() || isCrossMerchantSubmitting }" 
+				@click="handleCrossMerchantCashout"
+			>
+				<text class="btn-text">{{ isCrossMerchantSubmitting ? '处理中...' : '确认提现 ¥' + crossMerchantAmount }}</text>
+			</view>
+		</view>
+
+		<!-- 绑定账户弹窗 -->
+		<view v-if="showBindDialog" class="modal-mask" @click="closeBindDialog">
+			<view class="modal-content" @click.stop>
+				<view class="modal-header">
+					<text class="modal-title">{{ bindDialogTitle }}</text>
+					<text class="modal-close" @click="closeBindDialog">✕</text>
+				</view>
+				
+				<view class="bind-form">
+					<view v-if="selectedMethod == WITHDRAW_METHOD_ALIPAY" class="form-item">
+						<text class="form-label">支付宝账号</text>
+						<input 
+							v-model="bindAlipayAccount" 
+							placeholder="请输入支付宝账号" 
+							class="form-input"
+						/>
+					</view>
+					<view v-if="selectedMethod == WITHDRAW_METHOD_ALIPAY" class="form-item">
+						<text class="form-label">真实姓名</text>
+						<input 
+							v-model="bindAlipayName" 
+							placeholder="请输入支付宝认证的真实姓名" 
+							class="form-input"
+						/>
+					</view>
+					<view v-if="selectedMethod == WITHDRAW_METHOD_WECHAT" class="wechat-bind-section">
+						<view class="wechat-auth-status">
+							<text class="wechat-status-text">{{ wechatAuthorized ? '已选择微信账号' : '请选择要绑定的微信账号' }}</text>
+							<view v-if="wechatAuthorized" class="auth-success-icon">✓</view>
+						</view>
+						<view class="wechat-auth-btn" @click="handleWechatAuthorize">
+							<text class="auth-btn-text">{{ isAuthorizingWechat ? '授权中...' : (wechatAuthorized ? '重新选择' : '获取微信授权') }}</text>
+						</view>
+					</view>
+				</view>
+				
+				<view class="modal-actions">
+					<view class="modal-btn modal-btn-cancel" @click="closeBindDialog">
+						<text class="modal-btn-cancel-text">取消</text>
+					</view>
+					<view class="modal-btn modal-btn-confirm" :class="{ 'modal-btn-disabled': !canBindAccount }" @click="canBindAccount ? handleBind() : null">
+						<text class="modal-btn-confirm-text">确认</text>
+					</view>
+				</view>
+			</view>
+		</view>
+
+		<!-- 支付密码输入弹窗 -->
+		<keyboardPay 
+			:show="showPasswordDialog" 
+			:money="parseFloat(withdrawAmount)"
+			:payType="'withdraw'"
+			@confirm="handlePasswordConfirm"
+			@cancel="closePasswordDialog"
+			@update:show="updatePasswordDialogShow"
+		/>
+	</view>
+	<!-- #endif -->
+	
+	<!-- #ifdef MP-WEIXIN -->
+	<view class="empty-page">
+		<text class="empty-text">该功能暂不支持微信小程序</text>
+	</view>
+	<!-- #endif -->
+</template>
+
+<script setup lang="uts">
+// #ifndef MP-WEIXIN
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad, onUnload } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { getUserId } from '@/stores/user.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+// 🔧 使用 usePageLayout 统一布局管理
+import { 
+	pageStatusBarHeight,
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { WalletUtils } from '@/pagesUser/utils/wallet.uts'
+import { formatMoney, multiplyMoneyByRate, subtractMoney, addMoney } from '@/utils/money.uts'
+import { getAccountBalance, getCashoutBindStatus, bindCashoutAccount, checkPayPassword, userCashout, GetCashoutBindStatusParams, BindCashoutAccountParams, UserCashoutParams } from '@/api/wallet.uts'
+import keyboardPay from '@/components/keyboardPay/index.uvue'
+import request from '@/utils/request.uts'
+import { isAppPlatform, isH5Platform } from '@/common/utils/utsSafe.uts'
+import { getWechatAuthCode, isWeChatInstalled } from '@/pagesUser/services/wechatLogin/wechatLoginApp.uts'
+import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { WITHDRAW_METHOD_WECHAT, WITHDRAW_METHOD_ALIPAY } from '@/common/config/businessCodes.uts'
+
+// 获取基础URL的辅助函数 - 必须在使用前定义
+const getBaseUrl = (): string => {
+	// 这里需要根据实际环境配置
+	// #ifdef H5
+	// H5 环境使用相对路径或配置的域名
+	return 'https://api.wyxdapp.com'
+	// #endif
+	// #ifndef H5
+	// APP 环境
+	return 'https://api.wyxdapp.com'
+	// #endif
+}
+
+// 响应式数据
+const balance = ref<string>('0.00')
+const selectedMethod = ref<number>(0) // 0: 未选择, WITHDRAW_METHOD_WECHAT: 微信, WITHDRAW_METHOD_ALIPAY: 支付宝
+const withdrawAmount = ref<string>('')
+const feeRate = ref<number>(2)
+const wechatBound = ref<boolean>(false)
+const alipayBound = ref<boolean>(false)
+const wechatAccount = ref<string>('') // 脱敏的微信账号
+const alipayAccount = ref<string>('') // 脱敏的支付宝账号
+const alipayName = ref<string>('') // 脱敏的支付宝姓名
+const isLoading = ref<boolean>(false)
+const isLoadingBindStatus = ref<boolean>(false)
+const showBindDialog = ref<boolean>(false)
+
+// 微信授权相关
+const selectedWxOpenid = ref<string>('') // 用户选择的微信OpenID
+const wechatAuthorized = ref<boolean>(false) // 是否已授权微信
+const isAuthorizingWechat = ref<boolean>(false) // 是否正在授权微信
+const isRebinding = ref<boolean>(false)
+const bindAlipayAccount = ref<string>('')
+const bindAlipayName = ref<string>('')
+const showPasswordDialog = ref<boolean>(false)
+const userKid = ref<string>('')
+const isBindPasswordMode = ref<boolean>(false) // 区分是绑定还是提现的密码输入
+
+const DEFAULT_WITHDRAW_METHOD_KEY = 'defaultWithdrawMethod'
+
+// 跨商户佣金提现模式相关
+const isCrossMerchantMode = ref<boolean>(false)
+const crossMerchantCommissionKid = ref<string>('')
+const crossMerchantAmount = ref<string>('')
+const crossMerchantSourceMerchant = ref<string>('')
+const isCrossMerchantSubmitting = ref<boolean>(false)
+
+// 辅助函数 - 从 Store 获取用户ID（使用统一的导出函数）
+const getUserKidFromStore = (): string => {
+	return getUserId()
+}
+
+// 辅助函数 - 将字符串金额转为数字
+const parseAmountToNumber = (amountStr: string): number => {
+	if (amountStr == null || amountStr == '') return 0
+	const num = parseFloat(amountStr)
+	if (isNaN(num) == true) return 0
+	return num
+}
+
+// 辅助函数 - 检查选择的方式是否已绑定（必须在 computed 之前定义）
+const checkIsMethodBound = (): boolean => {
+	if (selectedMethod.value == WITHDRAW_METHOD_WECHAT) {
+		return wechatBound.value == true
+	} else if (selectedMethod.value == WITHDRAW_METHOD_ALIPAY) {
+		return alipayBound.value == true
+	}
+	return false
+}
+
+// 保存默认提现方式
+const saveDefaultWithdrawMethod = (userKidValue: string, method: number) => {
+	if (userKidValue == null || userKidValue == '') {
+		return
+	}
+	try {
+		const data = {
+			userKid: userKidValue,
+			method: method
+		} as UTSJSONObject
+		uni.setStorageSync(DEFAULT_WITHDRAW_METHOD_KEY, data)
+		console.log('默认提现方式已保存:', data)
+	} catch (error) {
+		handleSilentError(error, '保存默认提现方式')
+	}
+}
+
+// 计算属性 - 微信绑定状态文本
+const wechatBoundText = computed((): string => {
+	if (wechatBound.value == true) {
+		if (wechatAccount.value != null && wechatAccount.value != '') {
+			return '已绑定 ' + wechatAccount.value
+		}
+		return '已绑定'
+	}
+	return '未绑定'
+})
+
+// 计算属性 - 支付宝绑定状态文本
+const alipayBoundText = computed((): string => {
+	if (alipayBound.value == true) {
+		if (alipayAccount.value != null && alipayAccount.value != '') {
+			return '已绑定 ' + alipayAccount.value
+		}
+		return '已绑定'
+	}
+	return '未绑定'
+})
+
+// 计算属性 - 绑定弹窗标题
+const bindDialogTitle = computed((): string => {
+	try {
+		const methodName = (selectedMethod.value == WITHDRAW_METHOD_WECHAT) ? '微信' : '支付宝'
+		const actionName = (isRebinding.value == true) ? '换绑' : '绑定'
+		return methodName + actionName
+	} catch (e) {
+		return '绑定'
+	}
+})
+
+// 计算属性 - 绑定按钮是否可点击
+const canBindAccount = computed((): boolean => {
+	try {
+		if (selectedMethod.value == WITHDRAW_METHOD_ALIPAY) {
+			// 支付宝绑定：需要账号和姓名都不为空
+			return (bindAlipayAccount.value != null && bindAlipayAccount.value != '' &&
+					bindAlipayName.value != null && bindAlipayName.value != '')
+		} else if (selectedMethod.value == WITHDRAW_METHOD_WECHAT) {
+			// 微信绑定：需要已授权
+			return wechatAuthorized.value == true
+		}
+		return false
+	} catch (e) {
+		return false
+	}
+})
+
+// 计算属性 - 是否显示提现详情
+const showDetail = computed((): boolean => {
+	try {
+		if (withdrawAmount.value == null || withdrawAmount.value == '') {
+			return false
+		}
+		const amountNumber = parseFloat(withdrawAmount.value)
+		if (isNaN(amountNumber) == true || amountNumber <= 0) {
+			return false
+		}
+		return true
+	} catch (e) {
+		return false
+	}
+})
+
+// 计算属性 - 计算手续费
+const calculatedFee = computed((): string => {
+	try {
+		if (withdrawAmount.value == null || withdrawAmount.value == '') {
+			return '0.00'
+		}
+		const amountNumber = parseFloat(withdrawAmount.value)
+		if (isNaN(amountNumber) == true || amountNumber <= 0) {
+			return '0.00'
+		}
+		const fee = amountNumber * (feeRate.value / 100)
+		return formatMoney(fee)
+	} catch (e) {
+		return '0.00'
+	}
+})
+
+// 计算属性 - 扣费模式（微信提现标准模式）
+// 'balance' = 余额充足，从余额扣除手续费
+// 'withdraw' = 余额不足支付手续费，从提现金额扣除
+// 'insufficient' = 余额不足
+const feeDeductMode = computed((): string => {
+	try {
+		if (withdrawAmount.value == null || withdrawAmount.value == '') {
+			return 'insufficient'
+		}
+		const amount = parseFloat(withdrawAmount.value)
+		const fee = parseFloat(calculatedFee.value)
+		const bal = parseFloat(balance.value)
+		
+		if (isNaN(amount) == true || isNaN(fee) == true || isNaN(bal) == true) {
+			return 'insufficient'
+		}
+		
+		if (bal >= amount + fee) {
+			return 'balance'  // 余额充足，从余额扣除手续费
+		} else if (bal >= amount) {
+			return 'withdraw'  // 余额不足支付手续费，从提现金额扣除
+		}
+		return 'insufficient'  // 余额不足
+	} catch (e) {
+		return 'insufficient'
+	}
+})
+
+// 计算属性 - 实际到账金额（根据扣费模式计算）
+const actualAmount = computed((): string => {
+	try {
+		if (withdrawAmount.value == null || withdrawAmount.value == '') {
+			return '0.00'
+		}
+		const amountNumber = parseFloat(withdrawAmount.value)
+		if (isNaN(amountNumber) == true || amountNumber <= 0) {
+			return '0.00'
+		}
+		const feeNumber = parseFloat(calculatedFee.value)
+		const mode = feeDeductMode.value
+		
+		if (mode == 'balance') {
+			// 余额充足：提现金额全额到账
+			return formatMoney(amountNumber)
+		} else if (mode == 'withdraw') {
+			// 余额不足支付手续费：从提现金额扣除手续费
+			const actual = amountNumber - feeNumber
+			const result = (actual > 0) ? actual : 0
+			return formatMoney(result)
+		}
+		return '0.00'
+	} catch (e) {
+		return '0.00'
+	}
+})
+
+// 计算属性 - 总扣款金额（从余额扣除的总金额）
+const totalDeduction = computed((): string => {
+	try {
+		if (withdrawAmount.value == null || withdrawAmount.value == '') {
+			return '0.00'
+		}
+		const amountNumber = parseFloat(withdrawAmount.value)
+		if (isNaN(amountNumber) == true || amountNumber <= 0) {
+			return '0.00'
+		}
+		const feeNumber = parseFloat(calculatedFee.value)
+		const mode = feeDeductMode.value
+		
+		if (mode == 'balance') {
+			// 余额充足：总扣款 = 提现金额 + 手续费
+			return addMoney(amountNumber, feeNumber)
+		} else if (mode == 'withdraw') {
+			// 余额不足支付手续费：总扣款 = 提现金额
+			return formatMoney(amountNumber)
+		}
+		return '0.00'
+	} catch (e) {
+		return '0.00'
+	}
+})
+
+// 计算属性 - 扣费模式提示文字
+const feeDeductModeText = computed((): string => {
+	const mode = feeDeductMode.value
+	if (mode == 'balance') {
+		return '手续费从余额扣除'
+	} else if (mode == 'withdraw') {
+		return '手续费从提现金额扣除'
+	}
+	return ''
+})
+
+// 计算属性 - 是否可以提现
+const canWithdraw = computed((): boolean => {
+	try {
+		if (isLoading.value == true) return false
+		if (selectedMethod.value == 0) return false
+		
+		const amount = parseFloat(withdrawAmount.value)
+		if (isNaN(amount) == true) return false
+		if (amount < 1) return false
+		if (amount > parseFloat(balance.value)) return false
+		if (checkIsMethodBound() == false) return false
+		
+		return true
+	} catch (e) {
+		return false
+	}
+})
+
+// 计算属性 - 提现按钮是否禁用
+const canWithdrawDisabled = computed((): boolean => {
+	return canWithdraw.value == false
+})
+
+// 计算属性 - 按钮文本
+const buttonText = computed((): string => {
+	try {
+		if (isLoading.value == true) return '处理中...'
+		if (selectedMethod.value == 0) return '请选择提现方式'
+		if (checkIsMethodBound() == false) return '请先绑定账户'
+		if (withdrawAmount.value == null || withdrawAmount.value == '') return '请输入提现金额'
+		
+		const amount = parseFloat(withdrawAmount.value)
+		if (isNaN(amount) == true || amount <= 0) return '请输入有效金额'
+		if (amount < 1) return '最低提现金额为1元'
+		if (amount > parseFloat(balance.value)) return '余额不足'
+		
+		return '确认提现'
+	} catch (e) {
+		return '确认提现'
+	}
+})
+
+// 加载账户余额 - 必须在 loadBindStatus 和 initUserInfo 之前定义
+const loadAccountBalance = async () => {
+	if (userKid.value == null || userKid.value == '') return
+	
+	try {
+		console.log('开始加载账户余额，用户ID:', userKid.value)
+		const res = await getAccountBalance(userKid.value)
+		console.log('账户余额API响应:', res)
+		
+		// 安全解析响应
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		const dataVal = resObj.get('data')
+		
+		if (codeVal != null && codeVal.toString() == '200' && dataVal != null) {
+			const dataStr = JSON.stringify(dataVal)
+			const dataObj = JSON.parse(dataStr) as UTSJSONObject
+			const accountBalanceVal = dataObj.get('accountBalance')
+			if (accountBalanceVal != null) {
+				const balanceNum = parseAmountToNumber(accountBalanceVal.toString())
+				balance.value = WalletUtils.formatAmount(balanceNum)
+			}
+			// 如果API返回了提现费率，使用API的费率
+			const withdrawRateVal = dataObj.get('withdrawRate')
+			if (withdrawRateVal != null) {
+				const rateNum = parseFloat(withdrawRateVal.toString())
+				if (isNaN(rateNum) == false) {
+					feeRate.value = Math.round(rateNum * 10000) / 100
+				}
+			}
+			console.log('账户余额加载成功:', balance.value, '费率:', feeRate.value)
+		} else {
+			console.error('获取余额失败')
+			balance.value = '0.00'
+		}
+	} catch (error) {
+		handlePageError(error, '加载账户余额', null)
+		balance.value = '0.00'
+	}
+}
+
+// 加载绑定状态 - 必须在 initUserInfo 之前定义
+const loadBindStatus = async () => {
+	if (userKid.value == '' || isLoadingBindStatus.value == true) return
+	
+	isLoadingBindStatus.value = true
+	let loadingShowed = false
+	
+	try {
+		console.log('开始加载绑定状态，用户ID:', userKid.value)
+		
+		uni.showLoading({
+			title: '加载中...',
+			mask: true
+		})
+		loadingShowed = true
+		
+		const params = new GetCashoutBindStatusParams()
+		params.userKid = userKid.value
+		const res = await getCashoutBindStatus(params)
+		console.log('绑定状态API响应:', res)
+		
+		uni.hideLoading()
+		loadingShowed = false
+		
+		// 安全解析响应
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		const dataVal = resObj.get('data')
+		
+		if (codeVal != null && codeVal.toString() == '200' && dataVal != null) {
+			const dataStr = JSON.stringify(dataVal)
+			const dataObj = JSON.parse(dataStr) as UTSJSONObject
+			
+			const wechatVal = dataObj.get('wechat')
+			wechatBound.value = (wechatVal != null && wechatVal.toString() == 'true')
+			
+			const alipayVal = dataObj.get('alipay')
+			alipayBound.value = (alipayVal != null && alipayVal.toString() == 'true')
+			
+			// 解析脱敏的账户信息
+			const wechatAccountVal = dataObj.get('wechatAccount')
+			if (wechatAccountVal != null && wechatAccountVal.toString() != '') {
+				wechatAccount.value = wechatAccountVal.toString()
+			} else {
+				wechatAccount.value = ''
+			}
+			
+			const alipayAccountVal = dataObj.get('alipayAccount')
+			if (alipayAccountVal != null && alipayAccountVal.toString() != '') {
+				alipayAccount.value = alipayAccountVal.toString()
+			} else {
+				alipayAccount.value = ''
+			}
+			
+			const alipayNameVal = dataObj.get('alipayName')
+			if (alipayNameVal != null && alipayNameVal.toString() != '') {
+				alipayName.value = alipayNameVal.toString()
+			} else {
+				alipayName.value = ''
+			}
+
+			// 解析后端返回的默认提现方式
+			const defaultMethodVal = dataObj.get('defaultMethod')
+			let backendDefaultMethod = 0
+			if (defaultMethodVal != null) {
+				const methodNum = parseInt(defaultMethodVal.toString())
+				if (isNaN(methodNum) == false) {
+					backendDefaultMethod = methodNum
+				}
+			}
+
+			console.log('绑定状态加载成功: wechat=', wechatBound.value, 'alipay=', alipayBound.value, 'wechatAccount=', wechatAccount.value, 'alipayAccount=', alipayAccount.value, 'backendDefaultMethod=', backendDefaultMethod)
+
+			// 优先使用后端返回的默认提现方式
+			if (backendDefaultMethod > 0) {
+				if (backendDefaultMethod == WITHDRAW_METHOD_WECHAT && wechatBound.value == true) {
+					selectedMethod.value = WITHDRAW_METHOD_WECHAT
+					console.log('已设置后端默认提现方式: 微信')
+				} else if (backendDefaultMethod == WITHDRAW_METHOD_ALIPAY && alipayBound.value == true) {
+					selectedMethod.value = WITHDRAW_METHOD_ALIPAY
+					console.log('已设置后端默认提现方式: 支付宝')
+				}
+			} else {
+				// 后端没有默认方式，使用本地存储的默认方式
+				try {
+					const stored = uni.getStorageSync(DEFAULT_WITHDRAW_METHOD_KEY)
+					if (stored != null && stored != '') {
+						// 安全解析存储的数据（兼容 H5 和 APP 端）
+						let storedUserKidStr = ''
+						let storedMethodNum = 0
+
+						// 先序列化再解析，确保得到 UTSJSONObject
+						const storedStr = JSON.stringify(stored)
+						if (storedStr != null && storedStr != '' && storedStr != 'null') {
+							const storedObj = JSON.parse(storedStr) as UTSJSONObject
+							if (storedObj != null) {
+								const storedUserKidVal = storedObj.get('userKid')
+								if (storedUserKidVal != null) {
+									storedUserKidStr = storedUserKidVal.toString()
+								}
+								const storedMethodVal = storedObj.get('method')
+								if (storedMethodVal != null) {
+									const num = parseInt(storedMethodVal.toString())
+									if (isNaN(num) == false) {
+										storedMethodNum = num
+									}
+								}
+							}
+						}
+
+						// 应用默认提现方式
+						if (storedUserKidStr != '' && storedUserKidStr == userKid.value && storedMethodNum > 0) {
+							if (storedMethodNum == WITHDRAW_METHOD_WECHAT && wechatBound.value == true) {
+								selectedMethod.value = WITHDRAW_METHOD_WECHAT
+								console.log('已恢复默认提现方式: 微信')
+							} else if (storedMethodNum == WITHDRAW_METHOD_ALIPAY && alipayBound.value == true) {
+								selectedMethod.value = WITHDRAW_METHOD_ALIPAY
+								console.log('已恢复默认提现方式: 支付宝')
+							}
+						}
+					}
+				} catch (e) {
+					handleSilentError(e, '加载默认提现方式')
+				}
+			}
+
+			// 如果没有从本地记录恢复默认方式，则根据当前绑定情况选择一个默认方式
+			if (selectedMethod.value == 0) {
+				if (wechatBound.value == true && alipayBound.value == false) {
+					selectedMethod.value = WITHDRAW_METHOD_WECHAT
+				} else if (alipayBound.value == true && wechatBound.value == false) {
+					selectedMethod.value = WITHDRAW_METHOD_ALIPAY
+				}
+			}
+		} else {
+			console.error('API响应码不是200')
+			wechatBound.value = false
+			alipayBound.value = false
+		}
+	} catch (error) {
+		handlePageError(error, '加载绑定状态', null)
+		wechatBound.value = false
+		alipayBound.value = false
+	} finally {
+		if (loadingShowed == true) {
+			uni.hideLoading()
+		}
+		isLoadingBindStatus.value = false
+	}
+}
+
+// 登录状态变化回调（必须在 onMounted 之前定义）
+const handleLoginStatusChange = (data: UTSJSONObject | null) => {
+	const parsedData = parseLoginStatusData(data)
+	const isLogin = getIsLoginFromData(parsedData)
+	const userId = getUserIdFromData(parsedData)
+	console.log('🔄 [withdraw] 登录状态变化:', isLogin, userId)
+	
+	if (isLogin == true && userId != '') {
+		// 登录成功，更新用户ID并刷新数据
+		userKid.value = userId
+		loadAccountBalance()
+		loadBindStatus()
+	}
+}
+
+// 登录状态监听取消函数
+let loginStatusUnsubscribe: (() => void) | null = null
+
+// 检查 URL 中是否有微信授权回调的 code 参数（H5 端）
+const checkWechatAuthCallback = () => {
+	// #ifdef H5
+	console.log('🔍 [withdraw] 检查微信授权回调...')
+	
+	try {
+		const urlParams = getUrlParams()
+		if (urlParams.size === 0) {
+			console.log('🔍 [withdraw] URL 无参数')
+			return
+		}
+		
+		// 获取 URL 参数
+		const code = urlParams.get('code') ?? ''
+		const callback = urlParams.get('callback') ?? ''
+		const state = urlParams.get('state') ?? ''
+		
+		console.log('🔍 [withdraw] URL参数: code=', code != '' ? code.substring(0, 10) + '***' : '', 'callback=', callback, 'state=', state)
+		
+		// 检查是否是微信授权回调
+		if (callback == 'wechat_auth' && code != '') {
+			
+			// 先恢复授权前保存的绑定状态
+			restoreBindStateAfterAuth()
+			
+			// 显示绑定弹窗
+			selectedMethod.value = WITHDRAW_METHOD_WECHAT
+			showBindDialog.value = true
+			isAuthorizingWechat.value = true
+			
+			// 调用后端获取 OpenID，code 作为请求体参数传递（后端使用 @RequestParam）
+			const params = { code: code, source: 'h5' } as UTSJSONObject
+			request.post('/third/thirdLogin/getWechatOpenIdForWithdraw', params, true).then((res: UTSJSONObject) => {
+				console.log('获取OpenID响应:', res)
+				
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const codeVal = resObj.get('code')
+					
+					if (codeVal != null && codeVal.toString() == '200') {
+						const dataVal = resObj.get('data')
+						const openid = (dataVal != null) ? dataVal.toString() : ''
+						
+						if (openid != '') {
+							selectedWxOpenid.value = openid
+							wechatAuthorized.value = true
+							uni.showToast({
+								title: '微信授权成功',
+								icon: 'success'
+							})
+						} else {
+							uni.showToast({
+								title: '获取OpenID失败',
+								icon: 'none'
+							})
+						}
+					} else {
+						const msgVal = resObj.get('msg')
+						let errorMsg = '获取OpenID失败'
+						if (msgVal != null && msgVal.toString() != '') {
+							errorMsg = msgVal.toString()
+						}
+						uni.showToast({
+							title: errorMsg,
+							icon: 'none'
+						})
+					}
+				}
+			}).catch((error: any | null): void => {
+				handlePageError(error as any, '获取OpenID', null)
+				isAuthorizingWechat.value = false
+				
+				// 清理 URL 参数，避免刷新页面重复处理
+				const cleanUrl = window.location.origin + window.location.pathname
+				window.history.replaceState({}, document.title, cleanUrl)
+			})
+		}
+	} catch (e) {
+		handleSilentError(e, '检查微信授权回调')
+	}
+	// #endif
+}
+
+// 初始化用户信息 - 必须在 onMounted 之前定义
+const initUserInfo = () => {
+	console.log('初始化用户信息')
+	
+	// 优先使用 loginHelper 获取用户ID
+	const reliableUserId = getCurrentUserIdReliable()
+	if (reliableUserId != '') {
+		userKid.value = reliableUserId
+		console.log('从 loginHelper 获取用户ID:', userKid.value)
+		loadAccountBalance()
+		loadBindStatus()
+		return
+	}
+	
+	// 降级使用 store 函数获取用户ID
+	const storeUserKid = getUserKidFromStore()
+	if (storeUserKid != '') {
+		userKid.value = storeUserKid
+		console.log('从store获取用户ID:', userKid.value)
+		loadAccountBalance()
+		loadBindStatus()
+		return
+	}
+	
+	// 用户未登录，提示并返回
+	console.log('用户未登录，跳转到登录页面')
+	uni.showToast({
+		title: '请先登录',
+		icon: 'none'
+	})
+	setTimeout(() => {
+		uni.navigateBack()
+	}, 1500)
+}
+
+// ========== 微信授权相关函数（必须在 onMounted 之前定义）==========
+
+// 通过授权 code 获取 OpenID
+const fetchOpenIdFromCode = (code: string) => {
+	console.log('🔄 [withdraw] 通过code获取OpenID...')
+
+	// APP 端传递 source=app 参数，code 作为请求体参数传递（后端使用 @RequestParam）
+	const params = { code: code, source: 'app' } as UTSJSONObject
+	request.post('/third/thirdLogin/getWechatOpenIdForWithdraw', params, true).then((res: UTSJSONObject) => {
+		console.log('获取OpenID响应:', res)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const codeVal = resObj.get('code')
+			
+			if (codeVal != null && codeVal.toString() == '200') {
+				const dataVal = resObj.get('data')
+				const openid = (dataVal != null) ? dataVal.toString() : ''
+				
+				if (openid != '') {
+					selectedWxOpenid.value = openid
+					wechatAuthorized.value = true
+					uni.showToast({
+						title: '微信授权成功',
+						icon: 'success'
+					})
+				} else {
+					uni.showToast({
+						title: '获取OpenID失败',
+						icon: 'none'
+					})
+				}
+			} else {
+				const msgVal = resObj.get('msg')
+				let errorMsg = '获取OpenID失败'
+				if (msgVal != null && msgVal.toString() != '') {
+					errorMsg = msgVal.toString()
+				}
+				uni.showToast({
+					title: errorMsg,
+					icon: 'none'
+				})
+			}
+		} else {
+			uni.showToast({
+				title: '获取OpenID失败',
+				icon: 'none'
+			})
+		}
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '获取OpenID', null)
+		isAuthorizingWechat.value = false
+	})
+}
+
+// APP 端微信授权 - 使用微信 SDK
+const handleWechatAuthorizeApp = () => {
+	console.log('📱 [withdraw] APP端微信授权开始')
+	
+	// 检查微信是否安装
+	if (isWeChatInstalled() == false) {
+		uni.showToast({
+			title: '请先安装微信客户端',
+			icon: 'none'
+		})
+		isAuthorizingWechat.value = false
+		return
+	}
+	
+	// 调用微信 SDK 获取授权 code
+	getWechatAuthCode(
+		(code: string) => {
+			// 使用 code 调用后端获取 OpenID
+			fetchOpenIdFromCode(code)
+		},
+		(error: string) => {
+			console.error('❌ [withdraw] APP端微信授权失败:', error)
+			uni.showToast({
+				title: error,
+				icon: 'none'
+			})
+			isAuthorizingWechat.value = false
+		}
+	)
+}
+
+// ========== H5端微信授权状态保存/恢复 ==========
+const WECHAT_AUTH_BIND_STATE_KEY = 'wechat_auth_bind_state'
+const WECHAT_AUTH_STATE_EXPIRE_MS = 300000 // 5分钟过期
+
+// 保存绑定状态到 sessionStorage（H5端授权跳转前调用）
+const saveBindStateBeforeAuth = () => {
+	// #ifdef H5
+	try {
+		const stateData = JSON.stringify({
+			selectedMethod: selectedMethod.value,
+			isRebinding: isRebinding.value,
+			timestamp: Date.now()
+		})
+		sessionStorage.setItem(WECHAT_AUTH_BIND_STATE_KEY, stateData)
+		console.log('💾 [withdraw] 已保存绑定状态到sessionStorage')
+	} catch (e) {
+		handleSilentError(e, '保存绑定状态')
+	}
+	// #endif
+}
+
+// 从 sessionStorage 恢复绑定状态（H5端授权回调后调用）
+const restoreBindStateAfterAuth = () => {
+	// #ifdef H5
+	try {
+		const stateStr = sessionStorage.getItem(WECHAT_AUTH_BIND_STATE_KEY)
+		if (stateStr == null || stateStr == '') return
+
+		const stateObj = JSON.parse(stateStr) as UTSJSONObject
+		const timestampVal = stateObj.get('timestamp')
+		if (timestampVal != null) {
+			const savedTime = parseInt(timestampVal.toString())
+			if (isNaN(savedTime) == false && (Date.now() - savedTime) > WECHAT_AUTH_STATE_EXPIRE_MS) {
+				console.log('⏰ [withdraw] 绑定状态已过期，忽略')
+				sessionStorage.removeItem(WECHAT_AUTH_BIND_STATE_KEY)
+				return
+			}
+		}
+
+		const methodVal = stateObj.get('selectedMethod')
+		if (methodVal != null) {
+			const methodNum = parseInt(methodVal.toString())
+			if (isNaN(methodNum) == false) {
+				selectedMethod.value = methodNum
+			}
+		}
+
+		const rebindVal = stateObj.get('isRebinding')
+		if (rebindVal != null) {
+			isRebinding.value = (rebindVal.toString() == 'true')
+		}
+
+		console.log('🔄 [withdraw] 已恢复绑定状态: method=', selectedMethod.value, 'rebinding=', isRebinding.value)
+		sessionStorage.removeItem(WECHAT_AUTH_BIND_STATE_KEY)
+	} catch (e) {
+		handleSilentError(e, '恢复绑定状态')
+	}
+	// #endif
+}
+
+// H5 端微信授权 - 使用网页授权
+const handleWechatAuthorizeH5 = async () => {
+	console.log('🌐 [withdraw] H5端微信授权开始')
+	
+	try {
+		// 保存绑定状态，授权回调后恢复
+		saveBindStateBeforeAuth()
+		
+		// 获取微信授权URL - 使用当前页面地址作为回调（与微信登录保持一致）
+		// #ifdef H5
+		const baseUrl = window.location.origin + window.location.pathname
+		const callbackUrl = baseUrl + '?callback=wechat_auth'
+		const redirectUri = encodeURIComponent(callbackUrl)
+		console.log('🔗 [withdraw] 回调地址:', callbackUrl)
+		// #endif
+		// #ifndef H5
+		const redirectUri = encodeURIComponent('https://m.wyxdapp.com/pagesUser/wallet/withdraw?callback=wechat_auth')
+		// #endif
+		const state = Date.now().toString() // 使用时间戳作为state防止CSRF
+
+		// 后端接口是 GET 请求，需要通过 URL 参数传递
+		const apiUrl = '/third/thirdLogin/getWechatAuthorizeUrl?redirectUri=' + redirectUri + '&state=' + state
+		const authUrlResponse = await request.get(apiUrl, null, true)
+
+		// UTS 规范：不能直接访问 any 类型的属性，需转换为 UTSJSONObject
+		if (authUrlResponse != null) {
+			const resStr = JSON.stringify(authUrlResponse)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const codeVal = resObj.get('code')
+			
+			if (codeVal != null && codeVal.toString() == '200') {
+				const dataVal = resObj.get('data')
+				const authUrl = (dataVal != null) ? dataVal.toString() : ''
+				if (authUrl != '') {
+					// H5 端直接跳转到微信授权页面（需要在微信浏览器内）
+					// #ifdef H5
+					safeRedirect(authUrl)
+					// #endif
+					// #ifndef H5
+					// 非 H5 环境使用 webview（但这种情况不应该发生）
+					uni.navigateTo({
+						url: '/pages/webview/index?url=' + encodeURIComponent(authUrl) + '&callback=wechat_auth'
+					})
+					// #endif
+				} else {
+					uni.showToast({
+						title: '获取授权URL失败',
+						icon: 'none'
+					})
+				}
+			} else {
+				uni.showToast({
+					title: '获取授权URL失败',
+					icon: 'none'
+				})
+			}
+		} else {
+			uni.showToast({
+				title: '获取授权URL失败',
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		handlePageError(error, '获取微信授权URL', null)
+	} finally {
+		isAuthorizingWechat.value = false
+	}
+}
+
+// 处理微信授权成功回调
+const handleWechatAuthSuccess = (data: UTSJSONObject | null) => {
+	try {
+		console.log('收到微信授权成功事件:', data)
+		// UTS 规范：不能直接访问 any 类型的属性，需转换为 UTSJSONObject
+		const dataStr = JSON.stringify(data)
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		const openidVal = dataObj.get('openid')
+		const stateVal = dataObj.get('state')
+		
+		const openid = (openidVal != null) ? openidVal.toString() : ''
+		const state = (stateVal != null) ? stateVal.toString() : ''
+
+		if (openid != '') {
+			selectedWxOpenid.value = openid
+			wechatAuthorized.value = true
+			uni.showToast({
+				title: '微信授权成功',
+				icon: 'success'
+			})
+		} else {
+			uni.showToast({
+				title: '微信授权失败：未获取到OpenID',
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		handleSilentError(error, '处理微信授权成功事件')
+	}
+}
+
+// 处理微信授权
+const handleWechatAuthorize = async () => {
+	if (isAuthorizingWechat.value == true) return
+
+	isAuthorizingWechat.value = true
+	
+	// 根据平台选择不同的授权方式
+	if (isAppPlatform() == true) {
+		// APP 端：使用微信 SDK 直接授权
+		handleWechatAuthorizeApp()
+	} else if (isH5Platform() == true) {
+		// H5 端：使用网页授权
+		handleWechatAuthorizeH5()
+	} else {
+		// 其他平台暂不支持
+		uni.showToast({
+			title: '当前平台暂不支持微信绑定',
+			icon: 'none'
+		})
+		isAuthorizingWechat.value = false
+	}
+}
+
+// 解析页面参数（跨商户佣金提现模式）
+onLoad((options: UTSJSONObject | null) => {
+	if (options == null) return
+	const optStr = JSON.stringify(options)
+	const optObj = JSON.parse(optStr) as UTSJSONObject
+	const crossMerchantVal = optObj.get('crossMerchant')
+	if (crossMerchantVal != null && crossMerchantVal.toString() == 'true') {
+		isCrossMerchantMode.value = true
+		const kidVal = optObj.get('commissionKid')
+		if (kidVal != null) crossMerchantCommissionKid.value = kidVal.toString()
+		const amountVal = optObj.get('amount')
+		if (amountVal != null) crossMerchantAmount.value = amountVal.toString()
+		const merchantVal = optObj.get('sourceMerchant')
+		if (merchantVal != null) crossMerchantSourceMerchant.value = decodeURIComponent(merchantVal.toString()) ?? ''
+		console.log('📦 [withdraw] 跨商户佣金提现模式: kid=', crossMerchantCommissionKid.value, 'amount=', crossMerchantAmount.value, 'merchant=', crossMerchantSourceMerchant.value)
+	}
+})
+
+// 生命周期
+onMounted(() => {
+	// 🔧 初始化页面布局（状态栏高度等）
+	initPageLayout()
+	
+	// 检查微信授权回调（H5 端）
+	checkWechatAuthCallback()
+	
+	// 在页面加载时监听微信授权成功事件
+	uni.$on('wechatAuthSuccess', handleWechatAuthSuccess)
+	
+	// 等待登录状态初始化完成
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('🔑 [withdraw] 登录状态检查结果:', result)
+		if (result == 1) {
+			// 已登录，初始化用户信息
+			initUserInfo()
+		} else {
+			// 未登录，提示并返回
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 1500)
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '[withdraw] 等待登录状态')
+	})
+	
+	// 监听登录状态变化
+	onLoginStatusChange(handleLoginStatusChange)
+	loginStatusUnsubscribe = () => {
+		offLoginStatusChange(handleLoginStatusChange)
+	}
+})
+
+// 清理生命周期
+onUnmounted(() => {
+	// 取消登录状态监听
+	const unsub = loginStatusUnsubscribe
+	if (unsub != null) {
+		unsub()
+		loginStatusUnsubscribe = null
+	}
+	
+	// 移除微信授权成功事件监听
+	uni.$off('wechatAuthSuccess', handleWechatAuthSuccess)
+})
+
+// 选择提现方式
+const selectMethod = (method: number) => {
+	selectedMethod.value = method
+	
+	if (checkIsMethodBound() == false) {
+		uni.showToast({
+			title: '请先绑定账户',
+			icon: 'none'
+		})
+	}
+}
+
+// 金额输入变化
+const onAmountChange = (e: UTSJSONObject | null) => {
+	if (e == null) return
+	
+	const eStr = JSON.stringify(e)
+	const eObj = JSON.parse(eStr) as UTSJSONObject
+	const detailVal = eObj.get('detail')
+	if (detailVal == null) return
+	
+	const detailStr = JSON.stringify(detailVal)
+	const detailObj = JSON.parse(detailStr) as UTSJSONObject
+	const valueVal = detailObj.get('value')
+	if (valueVal == null) return
+	
+	let value = valueVal.toString()
+	
+	// 移除非数字和小数点字符
+	let cleanValue = ''
+	let hasDot = false
+	let dotIndex = -1
+	let i = 0
+	while (i < value.length) {
+		const char = value.charAt(i)
+		if (char == '.') {
+			if (hasDot == false) {
+				hasDot = true
+				dotIndex = cleanValue.length
+				cleanValue = cleanValue + char
+			}
+		} else if (char >= '0' && char <= '9') {
+			cleanValue = cleanValue + char
+		}
+		i = i + 1
+	}
+	value = cleanValue
+	
+	// 限制小数点后两位
+	if (hasDot == true && dotIndex >= 0) {
+		const afterDot = value.length - dotIndex - 1
+		if (afterDot > 2) {
+			value = value.substring(0, dotIndex + 3)
+		}
+	}
+	
+	// 限制最大金额
+	const numValue = parseFloat(value)
+	const maxAmount = parseFloat(balance.value)
+	if (isNaN(numValue) == false && numValue > maxAmount) {
+		value = maxAmount.toString()
+		uni.showToast({
+			title: '提现金额不能超过余额',
+			icon: 'none',
+			duration: 1500
+		})
+	}
+	
+	withdrawAmount.value = value
+}
+
+
+// 选择快捷金额
+const selectQuickAmount = (amount: number) => {
+	const maxAmount = parseFloat(balance.value)
+	if (amount > maxAmount) {
+		withdrawAmount.value = maxAmount.toString()
+		uni.showToast({
+			title: '已调整为最大可提现金额',
+			icon: 'none'
+		})
+	} else {
+		withdrawAmount.value = amount.toString()
+	}
+}
+
+// 选择全部金额
+const selectAllAmount = () => {
+	withdrawAmount.value = balance.value
+}
+
+// 显示绑定弹窗
+const showBindPopup = (method: number) => {
+	selectedMethod.value = method
+	
+	// 判断是绑定还是换绑
+	const isRebind = (method == WITHDRAW_METHOD_WECHAT && wechatBound.value == true) || 
+	                 (method == WITHDRAW_METHOD_ALIPAY && alipayBound.value == true)
+	
+	if (isRebind == true) {
+		// 换绑需要二次确认
+		const methodName = method == WITHDRAW_METHOD_WECHAT ? '微信' : '支付宝'
+		uni.showModal({
+			title: '确认换绑',
+			content: '换绑' + methodName + '账户后，新的账户将用于提现。确定要继续吗？',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					isRebinding.value = true
+					// 清空表单
+					bindAlipayAccount.value = ''
+					bindAlipayName.value = ''
+					showBindDialog.value = true
+				}
+			}
+		})
+	} else {
+		// 首次绑定直接显示弹窗
+		isRebinding.value = false
+		// 清空表单
+		bindAlipayAccount.value = ''
+		bindAlipayName.value = ''
+		showBindDialog.value = true
+	}
+}
+
+// 关闭绑定弹窗
+const closeBindDialog = () => {
+	showBindDialog.value = false
+	bindAlipayAccount.value = ''
+	bindAlipayName.value = ''
+	// 重置微信授权状态
+	selectedWxOpenid.value = ''
+	wechatAuthorized.value = false
+	isAuthorizingWechat.value = false
+}
+
+// 关闭密码弹窗
+const closePasswordDialog = () => {
+	showPasswordDialog.value = false
+	isBindPasswordMode.value = false
+}
+
+// 更新密码弹窗显示状态
+const updatePasswordDialogShow = (val: boolean) => {
+	showPasswordDialog.value = val
+}
+
+// 执行绑定操作 - 必须在 handlePasswordConfirm 之前定义
+const doBindAccount = async (payPassword: string) => {
+	if (userKid.value == '') {
+		uni.showToast({
+			title: '用户信息异常',
+			icon: 'none'
+		})
+		return
+	}
+	
+	isLoading.value = true
+	uni.showLoading({
+		title: '绑定中...',
+		mask: true
+	})
+	
+	try {
+		// UTS 规范：根据条件构造不同的参数对象
+		let wxOpenidVal = ''
+		if (selectedMethod.value == WITHDRAW_METHOD_WECHAT && selectedWxOpenid.value != '') {
+			wxOpenidVal = selectedWxOpenid.value
+		}
+		
+		// 根据平台设置 wxOpenidSource
+		let wxOpenidSourceVal = ''
+		if (selectedMethod.value == WITHDRAW_METHOD_WECHAT) {
+			if (isH5Platform() == true) {
+				wxOpenidSourceVal = 'gzh'
+			} else if (isAppPlatform() == true) {
+				wxOpenidSourceVal = 'app'
+			}
+		}
+		
+		const params = new BindCashoutAccountParams()
+		params.userKid = userKid.value
+		params.cashoutType = selectedMethod.value
+		params.cashoutAccount = (selectedMethod.value == WITHDRAW_METHOD_ALIPAY) ? bindAlipayAccount.value : ''
+		params.cashoutName = (selectedMethod.value == WITHDRAW_METHOD_ALIPAY) ? bindAlipayName.value : ''
+		params.verificationCode = payPassword
+		params.wxOpenid = wxOpenidVal
+		params.wxOpenidSource = wxOpenidSourceVal
+		
+		const res = await bindCashoutAccount(params)
+		console.log('绑定账户API响应:', res)
+		
+		uni.hideLoading()
+		
+		// 安全解析响应
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		
+		if (codeVal != null && codeVal.toString() == '200') {
+			closeBindDialog()
+			closePasswordDialog()
+			
+			// 根据是否为换绑显示不同提示
+			const successMsg = isRebinding.value == true ? '换绑成功' : '绑定成功'
+			uni.showToast({
+				title: successMsg,
+				icon: 'success'
+			})
+
+			// 刷新绑定状态和账户信息（后端已自动设置默认账户）
+			loadBindStatus()
+		} else {
+			const msgVal = resObj.get('msg')
+			let errorMsg = '绑定失败'
+			if (msgVal != null && msgVal.toString() != '') {
+				errorMsg = msgVal.toString()
+			}
+			uni.showToast({
+				title: errorMsg,
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '绑定账户', null)
+	} finally {
+		isLoading.value = false
+	}
+}
+
+// 执行提现操作 - 必须在 handlePasswordConfirm 之前定义
+const doWithdraw = async (payPassword: string) => {
+	if (userKid.value == '') {
+		uni.showToast({
+			title: '用户信息异常',
+			icon: 'none'
+		})
+		return
+	}
+	
+	isLoading.value = true
+	uni.showLoading({
+		title: '提现中...',
+		mask: true
+	})
+	
+	try {
+		const cashoutMoney = parseFloat(withdrawAmount.value)
+		const feeNumber = parseFloat(calculatedFee.value)
+		const actualMoneyNumber = parseFloat(actualAmount.value)
+		const totalDeductionNumber = parseFloat(totalDeduction.value)
+		const mode = feeDeductMode.value
+		
+		const params = new UserCashoutParams()
+		params.userKid = userKid.value
+		params.cashoutType = selectedMethod.value
+		params.cashoutMoney = cashoutMoney
+		params.actualMoney = actualMoneyNumber
+		params.totalDeduction = totalDeductionNumber
+		params.serviceFee = feeNumber
+		params.feeDeductMode = mode
+		params.feeRate = feeRate.value
+		params.payPwd = payPassword
+		
+		const res = await userCashout(params)
+		console.log('提现API响应:', res)
+		
+		uni.hideLoading()
+		
+		// 安全解析响应
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		
+		if (codeVal != null && codeVal.toString() == '200') {
+			closePasswordDialog()
+			
+			uni.showModal({
+				title: '提现成功',
+				content: '提现申请已提交，预计实时到账',
+				showCancel: false,
+				success: (modalRes: UniShowModalResult) => {
+					if (modalRes.confirm == true) {
+						uni.navigateBack()
+					}
+				}
+			})
+		} else {
+			const msgVal = resObj.get('msg')
+			let errorMsg = '提现失败'
+			if (msgVal != null && msgVal.toString() != '') {
+				errorMsg = msgVal.toString()
+			}
+			uni.showToast({
+				title: errorMsg,
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '提现操作', null)
+	} finally {
+		isLoading.value = false
+	}
+}
+
+// 密码确认回调
+const handlePasswordConfirm = (password: string) => {
+	if (isBindPasswordMode.value == true) {
+		// 绑定账户
+		doBindAccount(password)
+	} else {
+		// 提现
+		doWithdraw(password)
+	}
+}
+
+// 处理绑定
+const handleBind = () => {
+	// 支付宝需要验证表单
+	if (selectedMethod.value == WITHDRAW_METHOD_ALIPAY) {
+		if (bindAlipayAccount.value == null || bindAlipayAccount.value == '') {
+			uni.showToast({
+				title: '请输入支付宝账号',
+				icon: 'none'
+			})
+			return
+		}
+		if (bindAlipayName.value == null || bindAlipayName.value == '') {
+			uni.showToast({
+				title: '请输入真实姓名',
+				icon: 'none'
+			})
+			return
+		}
+	}
+	
+	// 显示密码输入弹窗
+	isBindPasswordMode.value = true
+	showBindDialog.value = false
+	showPasswordDialog.value = true
+}
+
+// 跨商户佣金提现
+const handleCrossMerchantCashout = async () => {
+	if (isCrossMerchantSubmitting.value == true) return
+	if (selectedMethod.value == 0) {
+		uni.showToast({ title: '请选择提现方式', icon: 'none' })
+		return
+	}
+	if (checkIsMethodBound() == false) {
+		uni.showToast({ title: '请先绑定账户', icon: 'none' })
+		return
+	}
+	if (crossMerchantCommissionKid.value == '' || userKid.value == '') {
+		uni.showToast({ title: '参数异常', icon: 'none' })
+		return
+	}
+
+	isCrossMerchantSubmitting.value = true
+	uni.showLoading({ title: '提现中...', mask: true })
+
+	try {
+		const payload = {
+			commissionDetailKid: crossMerchantCommissionKid.value,
+			userKid: userKid.value,
+			cashoutType: selectedMethod.value
+		} as UTSJSONObject
+		const res = await request.post('/support/crossMerchantCommission/cashout', payload, true)
+		uni.hideLoading()
+
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+
+		if (codeVal != null && codeVal.toString() == '200') {
+			uni.showModal({
+				title: '提现成功',
+				content: '跨商户佣金提现申请已提交，预计实时到账',
+				showCancel: false,
+				success: (modalRes: UniShowModalResult) => {
+					if (modalRes.confirm == true) {
+						uni.navigateBack()
+					}
+				}
+			})
+		} else {
+			const msgVal = resObj.get('msg')
+			let errorMsg = '提现失败'
+			if (msgVal != null && msgVal.toString() != '') {
+				errorMsg = msgVal.toString()
+			}
+			uni.showToast({ title: errorMsg, icon: 'none' })
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '跨商户佣金提现', null)
+	} finally {
+		isCrossMerchantSubmitting.value = false
+	}
+}
+
+// 处理提现按钮点击
+const handleWithdraw = () => {
+	if (canWithdraw.value == false) {
+		return
+	}
+	
+	// 显示密码输入弹窗
+	isBindPasswordMode.value = false
+	showPasswordDialog.value = true
+}
+// #endif
+</script>
+
+<style scoped>
+/* #ifndef MP-WEIXIN */
+.withdraw-page {
+	background-color: #f5f5f5;
+	min-height: 2000rpx;
+	padding: 20rpx;
+	padding-bottom: 200rpx;
+	/* padding-top 通过 :style 动态设置，使用 pageStatusBarHeight */
+}
+
+.withdraw-method {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 30rpx;
+	margin-bottom: 20rpx;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 20rpx;
+}
+
+.method-list {
+	flex-direction: column;
+}
+
+.method-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 25rpx 20rpx;
+	border-radius: 16rpx;
+	background-color: #f8f8f8;
+	margin-bottom: 15rpx;
+}
+
+.method-item-active {
+	background-color: rgba(46, 174, 242, 0.1);
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
+}
+
+.method-info {
+	flex-direction: row;
+	align-items: center;
+}
+
+.method-icon {
+	width: 60rpx;
+	height: 60rpx;
+	margin-right: 20rpx;
+}
+
+.method-name {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.method-status {
+	flex-direction: row;
+	align-items: center;
+}
+
+.status-text {
+	font-size: 26rpx;
+	color: #999999;
+	margin-right: 10rpx;
+}
+
+.status-bound {
+	color: #52c41a;
+}
+
+.arrow-icon {
+	font-size: 30rpx;
+	color: #cccccc;
+}
+
+.amount-section {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 30rpx;
+	margin-bottom: 20rpx;
+}
+
+.amount-input {
+	flex-direction: row;
+	align-items: center;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+	padding-bottom: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.currency-symbol {
+	font-size: 48rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-right: 10rpx;
+}
+
+.amount-field {
+	flex: 1;
+	font-size: 48rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.amount-tips {
+	flex-direction: row;
+	justify-content: space-between;
+	margin-bottom: 20rpx;
+}
+
+.tip-item {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.amount-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: space-between;
+}
+
+.quick-btn {
+	width: 160rpx;
+	height: 70rpx;
+	line-height: 70rpx;
+	text-align: center;
+	background-color: #f5f5f5;
+	border-radius: 10rpx;
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 15rpx;
+}
+
+.withdraw-detail {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 30rpx;
+	margin-bottom: 20rpx;
+}
+
+.detail-row {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 15rpx 0;
+}
+
+.detail-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.detail-value {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.detail-fee {
+	color: #ff4d4f;
+}
+
+.detail-mode {
+	color: #999999;
+	font-size: 26rpx;
+}
+
+.detail-total {
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+	margin-top: 10rpx;
+	padding-top: 20rpx;
+}
+
+.detail-highlight {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #37B1F2;
+}
+
+/* 跨商户佣金提现模式 */
+.cross-merchant-section {
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	padding: 30rpx;
+	margin-bottom: 20rpx;
+}
+
+.cross-merchant-info {
+	background-color: #f0f9ff;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-bottom: 20rpx;
+}
+
+.cross-merchant-notice {
+	flex-direction: column;
+	background-color: #fffbe6;
+	border-radius: 12rpx;
+	padding: 20rpx;
+}
+
+.security-tips {
+	background-color: #fffbe6;
+	border-radius: 20rpx;
+	padding: 30rpx;
+	margin-bottom: 20rpx;
+}
+
+.tips-title {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 15rpx;
+}
+
+.tips-icon {
+	font-size: 28rpx;
+	margin-right: 10rpx;
+}
+
+.tips-title-text {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #faad14;
+}
+
+.tips-content {
+	flex-direction: column;
+}
+
+.tip-text {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 40rpx;
+}
+
+.footer-box {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #ffffff;
+	padding: 20rpx 30rpx;
+	padding-bottom: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.balance-info {
+	flex-direction: row;
+	align-items: center;
+}
+
+.balance-label {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+.balance-value {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.submit-btn {
+	background-color: #37B1F2;
+	border-radius: 50rpx;
+	padding: 25rpx 80rpx;
+}
+
+.submit-btn-disabled {
+	background-color: #cccccc;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.modal-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	align-items: center;
+	justify-content: center;
+}
+
+.modal-content {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	overflow: hidden;
+}
+
+.modal-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 30rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.modal-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.modal-close {
+	font-size: 36rpx;
+	color: #999999;
+}
+
+.bind-form {
+	padding: 30rpx;
+}
+
+.form-item {
+	margin-bottom: 25rpx;
+}
+
+.form-label {
+	font-size: 28rpx;
+	color: #666666;
+	margin-bottom: 10rpx;
+}
+
+.form-input {
+	width: 540rpx;
+	height: 80rpx;
+	background-color: #f5f5f5;
+	border-radius: 10rpx;
+	padding: 0 20rpx;
+	font-size: 28rpx;
+}
+
+.wechat-bind-tip {
+	padding: 40rpx 0;
+	align-items: center;
+	justify-content: center;
+}
+
+.wechat-tip-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.modal-actions {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 48rpx;
+}
+
+.modal-btn {
+	flex: 1;
+	height: 80rpx;
+	align-items: center;
+	justify-content: center;
+	border-radius: 40rpx;
+}
+
+.modal-btn-cancel {
+	background-color: #f5f5f5;
+	margin-right: 20rpx;
+}
+
+.modal-btn-cancel-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.modal-btn-confirm {
+	background-color: #37B1F2;
+}
+
+.modal-btn-confirm-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.modal-btn-disabled {
+	background-color: #cccccc;
+	opacity: 0.5;
+}
+
+.password-modal {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	overflow: hidden;
+}
+
+.password-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 30rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.password-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.password-close {
+	font-size: 36rpx;
+	color: #999999;
+}
+
+.password-input-box {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	padding: 40rpx 30rpx;
+}
+
+.password-dot {
+	width: 80rpx;
+	height: 80rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 10rpx;
+	margin: 0 8rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.password-dot-filled {
+	border-color: #37B1F2;
+}
+
+.dot {
+	font-size: 40rpx;
+	color: #333333;
+}
+
+.keyboard {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	background-color: #f5f5f5;
+	padding: 10rpx;
+}
+
+.key {
+	width: 193rpx;
+	height: 100rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: #ffffff;
+	margin: 5rpx;
+	border-radius: 10rpx;
+}
+
+.key-text {
+	font-size: 40rpx;
+	color: #333333;
+}
+
+.key-empty {
+	background-color: transparent;
+}
+
+.key-delete {
+	background-color: #e0e0e0;
+}
+
+/* 微信授权相关样式 */
+.wechat-bind-section {
+	padding: 20rpx 0;
+}
+
+.wechat-auth-status {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20rpx;
+	background-color: #f8f9fa;
+	border-radius: 10rpx;
+	margin-bottom: 20rpx;
+}
+
+.wechat-status-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.auth-success-icon {
+	font-size: 32rpx;
+	color: #52c41a;
+	font-weight: bold;
+}
+
+.wechat-auth-btn {
+	background-color: #07c160;
+	border-radius: 10rpx;
+	padding: 25rpx 40rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.auth-btn-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* #endif */
+
+/* #ifdef MP-WEIXIN */
+.empty-page {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	min-height: 100vh;
+	background-color: #f5f5f5;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #999999;
+	text-align: center;
+}
+/* #endif */
+</style>

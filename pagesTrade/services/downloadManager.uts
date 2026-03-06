@@ -1,0 +1,296 @@
+/**
+ * APK 下载管理器
+ * 
+ * 负责 Android APK 文件的下载、进度管理和安装
+ * 
+ * @author WYXD Team
+ * @date 2025-01-15
+ */
+
+import { ANDROID_DOWNLOAD_URL } from '@/common/config/versionConfig.uts'
+
+// ==================== 数据类型定义 ====================
+
+/**
+ * 下载进度信息
+ */
+export class DownloadProgress {
+	progress: number = 0           // 进度百分比 0-100
+	downloadedSize: number = 0     // 已下载大小（字节）
+	totalSize: number = 0          // 总大小（字节）
+	
+	constructor() {}
+}
+
+/**
+ * 下载任务状态
+ */
+export class DownloadTask {
+	status: string = 'idle'        // idle | downloading | paused | completed | failed
+	progress: number = 0
+	downloadedSize: number = 0
+	totalSize: number = 0
+	filePath: string = ''
+	errorMsg: string = ''
+	
+	constructor() {}
+}
+
+// ==================== 下载管理器 ====================
+
+// 当前下载任务引用
+let currentTaskRef: string = ''
+let taskInfo: DownloadTask = new DownloadTask()
+
+/**
+ * 获取当前下载任务状态
+ * @returns 下载任务信息
+ */
+export function getDownloadTaskInfo(): DownloadTask {
+	return taskInfo
+}
+
+/**
+ * 下载 APK 文件
+ * 
+ * @param url APK 下载地址
+ * @param onProgress 进度回调
+ * @param onSuccess 成功回调，返回文件路径
+ * @param onFail 失败回调
+ */
+export function downloadApk(
+	url: string,
+	onProgress: (progress: DownloadProgress) => void,
+	onSuccess: (filePath: string) => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-ANDROID
+	// 如果已有下载任务，先取消
+	if (currentTaskRef != '') {
+		cancelDownload()
+	}
+	
+	const downloadUrl = (url != '') ? url : ANDROID_DOWNLOAD_URL
+	
+	console.log('[DownloadManager] 开始下载:', downloadUrl)
+	
+	// 更新任务状态
+	taskInfo = new DownloadTask()
+	taskInfo.status = 'downloading'
+	currentTaskRef = 'downloading'
+	
+	// 创建下载任务
+	const task = uni.downloadFile({
+		url: downloadUrl,
+		success: (res: UTSJSONObject | null) => {
+			console.log('[DownloadManager] 下载响应:', res)
+			
+			if (res != null) {
+				const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
+				const statusCodeVal = resObj.get('statusCode')
+				const tempFilePathVal = resObj.get('tempFilePath')
+				
+				let statusCode = 0
+				if (statusCodeVal != null) {
+					const parsed = parseInt(statusCodeVal.toString())
+					if (isNaN(parsed) == false) {
+						statusCode = parsed
+					}
+				}
+				
+				const tempFilePath = (tempFilePathVal != null) ? tempFilePathVal.toString() : ''
+				
+				if (statusCode == 200 && tempFilePath != '') {
+					// 下载成功
+					taskInfo.status = 'completed'
+					taskInfo.progress = 100
+					taskInfo.filePath = tempFilePath
+					
+					console.log('[DownloadManager] 下载成功:', tempFilePath)
+					onSuccess(tempFilePath)
+				} else {
+					// 下载失败
+					taskInfo.status = 'failed'
+					taskInfo.errorMsg = '下载失败，状态码: ' + statusCode.toString()
+					
+					onFail(taskInfo.errorMsg)
+				}
+			} else {
+				taskInfo.status = 'failed'
+				taskInfo.errorMsg = '下载失败，响应为空'
+				onFail(taskInfo.errorMsg)
+			}
+			
+			currentTaskRef = ''
+		},
+		fail: (err: UniError | null) => {
+			console.error('[DownloadManager] 下载失败:', err)
+			
+			taskInfo.status = 'failed'
+			
+			let errorMsg = '下载失败'
+			if (err != null) {
+				const errObj = JSON.parse(JSON.stringify(err)) as UTSJSONObject
+				const errMsgVal = errObj.get('errMsg')
+				if (errMsgVal != null && errMsgVal.toString() != '') {
+					errorMsg = errMsgVal.toString()
+				}
+			}
+			
+			taskInfo.errorMsg = errorMsg
+			onFail(errorMsg)
+			
+			currentTaskRef = ''
+		}
+	})
+	
+	// 监听下载进度
+	task.onProgressUpdate((progressRes: OnProgressDownloadResult) => {
+		const progressInfo = new DownloadProgress()
+		
+		progressInfo.progress = progressRes.progress
+		taskInfo.progress = progressRes.progress
+		
+		progressInfo.downloadedSize = progressRes.totalBytesWritten
+		taskInfo.downloadedSize = progressRes.totalBytesWritten
+		
+		progressInfo.totalSize = progressRes.totalBytesExpectedToWrite
+		taskInfo.totalSize = progressRes.totalBytesExpectedToWrite
+		
+		onProgress(progressInfo)
+	})
+	// #endif
+	
+	// #ifndef APP-ANDROID
+	onFail('当前平台不支持 APK 下载')
+	// #endif
+}
+
+/**
+ * 取消下载
+ */
+export function cancelDownload(): void {
+	// 注意：由于 UTS 类型限制，无法保存 task 引用来调用 abort
+	// 这里只重置状态，实际取消需要在 downloadApk 中处理
+	currentTaskRef = ''
+	
+	// 重置任务状态
+	taskInfo = new DownloadTask()
+	taskInfo.status = 'idle'
+	
+	console.log('[DownloadManager] 下载状态已重置')
+}
+
+/**
+ * 暂停下载（注意：uni.downloadFile 不支持暂停，此方法等同于取消）
+ */
+export function pauseDownload(): void {
+	cancelDownload()
+	taskInfo.status = 'paused'
+}
+
+/**
+ * 安装 APK
+ * 
+ * @param filePath APK 文件路径
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function installApk(
+	filePath: string,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	// #ifdef APP-ANDROID
+	if (filePath == '') {
+		onFail('APK 文件路径为空')
+		return
+	}
+	
+	console.log('[DownloadManager] 开始安装 APK:', filePath)
+	
+	try {
+		// 使用 uni.installApk 安装 APK (uni-app x 方式)
+		uni.installApk({
+			filePath: filePath,
+			success: () => {
+				console.log('[DownloadManager] 安装成功')
+				onSuccess()
+			},
+			fail: (err: UniError | null) => {
+				console.error('[DownloadManager] 安装失败:', err)
+				let errorMsg = '安装失败'
+				if (err != null) {
+					const errObj = JSON.parse(JSON.stringify(err)) as UTSJSONObject
+					const errMsgVal = errObj.get('errMsg')
+					if (errMsgVal != null && errMsgVal.toString() != '') {
+						errorMsg = errMsgVal.toString()
+					}
+				}
+				onFail(errorMsg)
+			}
+		})
+	} catch (e: Error) {
+		console.error('[DownloadManager] 安装异常:', e)
+		onFail('安装失败，请手动安装')
+	}
+	// #endif
+	
+	// #ifndef APP-ANDROID
+	onFail('当前平台不支持 APK 安装')
+	// #endif
+}
+
+/**
+ * 下载并安装 APK（组合操作）
+ * 
+ * @param url APK 下载地址
+ * @param onProgress 进度回调
+ * @param onSuccess 成功回调
+ * @param onFail 失败回调
+ */
+export function downloadAndInstall(
+	url: string,
+	onProgress: (progress: DownloadProgress) => void,
+	onSuccess: () => void,
+	onFail: (error: string) => void
+): void {
+	downloadApk(
+		url,
+		onProgress,
+		(filePath: string) => {
+			// 下载成功，开始安装
+			installApk(filePath, onSuccess, onFail)
+		},
+		onFail
+	)
+}
+
+/**
+ * 格式化文件大小
+ * 
+ * @param bytes 字节数
+ * @returns 格式化后的大小字符串，如 "12.5 MB"
+ */
+export function formatFileSize(bytes: number): string {
+	if (bytes <= 0) {
+		return '0 B'
+	}
+	
+	if (bytes < 1024) {
+		return bytes.toString() + ' B'
+	}
+	
+	if (bytes < 1024 * 1024) {
+		const kb = bytes / 1024
+		return kb.toFixed(1) + ' KB'
+	}
+	
+	if (bytes < 1024 * 1024 * 1024) {
+		const mb = bytes / (1024 * 1024)
+		return mb.toFixed(1) + ' MB'
+	}
+	
+	const gb = bytes / (1024 * 1024 * 1024)
+	return gb.toFixed(2) + ' GB'
+}

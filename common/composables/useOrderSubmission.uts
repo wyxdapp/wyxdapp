@@ -1,0 +1,303 @@
+﻿import { ref } from 'vue'
+import { extractOrderKid } from '@/common/utils/orderBuilder.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+
+// 提交配置接口
+export interface SubmissionConfig {
+  successMessage?: string
+  navigationDelay?: number
+  shouldNavigateBack?: boolean
+  shouldNavigateToPayment?: boolean
+  paymentUrl?: string
+  onSuccess?: (result: any) => void
+  onError?: (error: any) => void
+}
+
+// API函数类型
+type OrderApiFunction = (params: any) => Promise<any>
+
+// 提交选项接口
+export interface SubmitOrderOptions {
+  validateContact?: boolean
+  phone?: string | null
+  realname?: string | null
+  additionalValidation?: () => boolean
+}
+
+// 错误信息接口（必须在顶层定义）
+interface SubmissionErrorData {
+  message?: string | null
+}
+
+interface SubmissionErrorInfo {
+  message?: string | null
+  data?: SubmissionErrorData | null
+  errMsg?: string | null
+}
+
+// 提交结果接口
+interface SubmissionResult {
+  data?: any | null
+  code?: number | null
+  msg?: string | null
+}
+
+/**
+ * 订单提交 Composable
+ * 统一处理订单提交逻辑，支持向导订单、抢单订单等
+ */
+export function useOrderSubmission(
+  apiFunction: OrderApiFunction,
+  userStore: any,
+  config?: SubmissionConfig
+) {
+  // 提取配置值
+  const configVal = (config != null) ? config : null
+  
+  // 默认配置（使用 as any 再转接口类型，符合 UTS 规范）
+  // 手动合并配置，UTS 不支持展开运算符
+  const successMessageVal = (configVal != null && configVal.successMessage != null && configVal.successMessage != '') 
+    ? configVal.successMessage 
+    : '订单发布成功'
+  const navigationDelayVal = (configVal != null && configVal.navigationDelay != null) 
+    ? configVal.navigationDelay 
+    : 1500
+  const shouldNavigateBackVal = (configVal != null && configVal.shouldNavigateBack != null) 
+    ? configVal.shouldNavigateBack 
+    : true
+  const shouldNavigateToPaymentVal = (configVal != null && configVal.shouldNavigateToPayment != null) 
+    ? configVal.shouldNavigateToPayment 
+    : false
+  const paymentUrlVal = (configVal != null && configVal.paymentUrl != null && configVal.paymentUrl != '') 
+    ? configVal.paymentUrl 
+    : '/pagesTrade/payment/payOrder/index'
+  const onSuccessVal = (configVal != null) ? configVal.onSuccess : null
+  const onErrorVal = (configVal != null) ? configVal.onError : null
+  
+  const defaultConfigRaw = {
+    successMessage: successMessageVal,
+    navigationDelay: navigationDelayVal,
+    shouldNavigateBack: shouldNavigateBackVal,
+    shouldNavigateToPayment: shouldNavigateToPaymentVal,
+    paymentUrl: paymentUrlVal,
+    onSuccess: onSuccessVal,
+    onError: onErrorVal
+  } as any
+  const defaultConfig = defaultConfigRaw as SubmissionConfig
+
+  // 提交状态
+  const isSubmitting = ref(false)
+
+  // 验证登录状态
+  const validateLogin = (): boolean => {
+    // 使用 typeConverter 安全访问 Store 返回对象的属性
+    try {
+      const userStoreObj = toUTSJSON(userStore)
+      if (userStoreObj != null) {
+        const userInfoVal = userStoreObj.get('userInfo')
+        if (userInfoVal != null) {
+          const userInfoObj = toUTSJSON(userInfoVal)
+          const kidVal = getString(userInfoObj, 'kid')
+          if (kidVal != null && kidVal != '') {
+            return true
+          }
+        }
+      }
+    } catch (e) {}
+    
+    uni.showToast({
+      title: '请先登录',
+      icon: 'none'
+    })
+    setTimeout(() => {
+      uni.navigateTo({
+        url: '/pagesUser/login/index'
+      })
+    }, 1500)
+    return false
+  }
+
+  // 验证联系人信息
+  const validateContact = (phone: string | null, realname: string | null): boolean => {
+    if ((phone == null || phone == '') || (realname == null || realname == '')) {
+      uni.showToast({
+        title: '请选择联系人信息',
+        icon: 'none'
+      })
+      return false
+    }
+    return true
+  }
+
+  // 处理提交错误
+  const handleSubmissionError = (error: any) => {
+    console.error('提交订单失败:', error)
+    
+    let errorMsg = '提交失败，请重试'
+    if (error != null) {
+      try {
+        const errorObj = toUTSJSON(error)
+        if (errorObj != null) {
+          const messageVal = getString(errorObj, 'message')
+          if (messageVal != null && messageVal != '') {
+            errorMsg = messageVal
+          } else {
+            const dataObj = toUTSJSON(errorObj.get('data'))
+            if (dataObj != null) {
+              const dataMessageVal = getString(dataObj, 'message')
+              if (dataMessageVal != null && dataMessageVal != '') {
+                errorMsg = dataMessageVal
+              }
+            } else {
+              const errMsgVal = getString(errorObj, 'errMsg')
+              if (errMsgVal != null && errMsgVal != '') {
+                errorMsg = errMsgVal
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    
+    uni.showToast({
+      title: errorMsg,
+      icon: 'none',
+      duration: 3000
+    })
+    
+    // 调用自定义错误处理
+    if (defaultConfig.onError != null) {
+      defaultConfig.onError(error)
+    }
+  }
+
+  // 处理提交成功
+  const handleSubmissionSuccess = (result: any) => {
+    const successMessageVal = (defaultConfig.successMessage != null && defaultConfig.successMessage != '') 
+      ? defaultConfig.successMessage 
+      : '订单发布成功'
+    uni.showToast({
+      title: successMessageVal,
+      icon: 'success'
+    })
+
+    // 发送事件通知
+    // 安全访问 result.data
+    let resultData: any = ''
+    try {
+      const resultObj = toUTSJSON(result)
+      if (resultObj != null) {
+        const dataVal = resultObj.get('data')
+        if (dataVal != null) {
+          resultData = dataVal
+        }
+      }
+    } catch (e) {}
+    
+    if (resultData != null && resultData != '') {
+      uni.$emit('orderUpdated', resultData)
+    }
+
+    // 跳转到支付页面
+    if (defaultConfig.shouldNavigateToPayment == true) {
+      const orderKid = extractOrderKid(result as UTSJSONObject | null)
+      if (orderKid != null && orderKid != '') {
+        const navigationDelayVal = (defaultConfig.navigationDelay != null && defaultConfig.navigationDelay > 0)
+          ? defaultConfig.navigationDelay
+          : 500
+        setTimeout(() => {
+          const paymentUrl = (defaultConfig.paymentUrl != null && defaultConfig.paymentUrl != '') 
+            ? defaultConfig.paymentUrl 
+            : '/pagesTrade/payment/payOrder/index'
+          uni.navigateTo({
+            url: `${paymentUrl}?orderKid=${orderKid}`
+          })
+        }, navigationDelayVal)
+        return
+      }
+    }
+
+    // 延迟导航返回
+    if (defaultConfig.shouldNavigateBack == true) {
+      const navigationDelayVal = (defaultConfig.navigationDelay != null && defaultConfig.navigationDelay > 0)
+        ? defaultConfig.navigationDelay
+        : 500
+      setTimeout(() => {
+        uni.navigateBack()
+      }, navigationDelayVal)
+    }
+
+    // 调用自定义成功处理
+    if (defaultConfig.onSuccess != null) {
+      defaultConfig.onSuccess(result)
+    }
+  }
+
+  // 提交订单
+  const submitOrder = async (
+    orderData: any, 
+    options?: SubmitOrderOptions
+  ): Promise<any> => {
+    // 防止重复提交
+    if (isSubmitting.value) {
+      return Promise.resolve(null)
+    }
+
+    // 验证登录
+    if (validateLogin() == false) {
+      return Promise.resolve(null)
+    }
+
+    // 验证联系人信息
+    if (options != null && options.validateContact == true) {
+      const phoneVal = (options.phone != null) ? options.phone : null
+      const realnameVal = (options.realname != null) ? options.realname : null
+      if (validateContact(phoneVal, realnameVal) == false) {
+        return Promise.resolve(null)
+      }
+    }
+
+    // 额外验证（如城市选择等）
+    if (options != null && options.additionalValidation != null) {
+      const validationResult = options.additionalValidation()
+      if (validationResult == false) {
+        return Promise.resolve(null)
+      }
+    }
+
+    // 开始提交
+    isSubmitting.value = true
+
+    try {
+      // 调用API
+      const result = await apiFunction(orderData)
+      
+      // 处理成功
+      handleSubmissionSuccess(result)
+      
+      // 返回结果（确保返回 Promise）
+      return Promise.resolve(result)
+    } catch (error) {
+      // 处理错误
+      handleSubmissionError(error)
+      throw error
+    } finally {
+      // 重置状态
+      isSubmitting.value = false
+    }
+  }
+
+  // 重置提交状态
+  const resetSubmission = () => {
+    isSubmitting.value = false
+  }
+
+  return {
+    isSubmitting,
+    submitOrder,
+    resetSubmission,
+    validateLogin,
+    validateContact
+  }
+}
+

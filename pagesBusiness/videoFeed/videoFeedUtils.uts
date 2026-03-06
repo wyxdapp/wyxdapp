@@ -1,0 +1,68 @@
+/**
+ * 视频流页面工具函数
+ *
+ * 从 initPage() 中提取的纯函数，便于单元测试和属性基测试验证。
+ */
+
+/**
+ * 系统信息接口，模拟 uni.getSystemInfoSync() 返回的关键字段
+ */
+export class SystemInfo {
+  /** 运行平台：'h5' | 'app' | 'mp-weixin' 等 */
+  platform: string
+  /** 设备物理屏幕高度（包含系统状态栏、导航栏等） */
+  screenHeight: number
+  /** 浏览器可视窗口高度（不包含浏览器 UI 占用的空间） */
+  windowHeight: number
+
+  constructor(platform: string, screenHeight: number, windowHeight: number) {
+    this.platform = platform
+    this.screenHeight = screenHeight
+    this.windowHeight = windowHeight
+  }
+}
+
+/**
+ * 计算页面高度（已修复版本）。
+ *
+ * 修复逻辑：根据平台区分高度获取策略
+ * - H5 端：优先使用 windowHeight（浏览器可视区域高度），回退到 screenHeight
+ *   原因：H5 端 screenHeight 是设备物理屏幕高度，包含浏览器导航栏/工具栏占用的空间，
+ *   大于实际可视区域，会导致 swiper 容器底部溢出，底部信息被裁切。
+ * - APP 端：优先使用 screenHeight（设备屏幕高度），回退到 windowHeight
+ *   原因：APP 端 screenHeight 等于整个可用显示区域，保持全屏沉浸式体验。
+ * - 兜底：都无效时使用默认值 800
+ *
+ * @param systemInfo - 系统信息对象
+ * @returns 计算后的页面高度值
+ */
+export function getPageHeight(systemInfo: SystemInfo): number {
+  let pageHeight = 0
+
+  const screenHeight = systemInfo.screenHeight
+  const windowHeight = systemInfo.windowHeight
+  const isH5 = systemInfo.platform === 'h5'
+
+  if (isH5) {
+    // H5 端：优先使用 windowHeight（浏览器可视区域），回退到 screenHeight
+    if (!isNaN(windowHeight) && windowHeight > 0) {
+      pageHeight = windowHeight
+    } else if (!isNaN(screenHeight) && screenHeight > 0) {
+      pageHeight = screenHeight
+    }
+  } else {
+    // APP 端：优先使用 screenHeight（全屏高度），回退到 windowHeight
+    if (!isNaN(screenHeight) && screenHeight > 0) {
+      pageHeight = screenHeight
+    } else if (!isNaN(windowHeight) && windowHeight > 0) {
+      pageHeight = windowHeight
+    }
+  }
+
+  // 兜底默认值
+  if (pageHeight <= 0) {
+    pageHeight = 800
+  }
+
+  return pageHeight
+}

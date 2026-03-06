@@ -1,0 +1,60 @@
+/**
+ * 定制路线服务 API
+ */
+import request from '@/utils/request'
+
+/**
+ * 获取我的定制路线列表
+ */
+export const getMyRoutes = (params: UTSJSONObject) => {
+	return request.get('/line/newLine/queryMyLine', params, false)
+}
+
+/**
+ * 置顶定制路线
+ */
+export const setRouteTop = (params: UTSJSONObject) => {
+	return request.post('/line/v1/setTop', params, false)
+}
+
+/**
+ * 设置路线私密状态
+ */
+export const setRoutePrivate = (params: UTSJSONObject) => {
+	return request.post('/line/v1/setPrivate', params, false)
+}
+
+/**
+ * 创建定制路线（获取lineKid）
+ */
+export const createRoute = (params: UTSJSONObject) => {
+	return request.post('/route/create', params, false)
+}
+
+/**
+ * 发布定制路线
+ */
+export const publishRoute = (params: UTSJSONObject) => {
+	return request.post('/route/publish', params, false)
+}
+
+/**
+ * 删除定制路线
+ */
+export const deleteRoute = (params: UTSJSONObject) => {
+	return request.post('/route/delete', params, false)
+}
+
+/**
+ * 获取定制路线详情
+ */
+export const getRouteDetail = (params: UTSJSONObject) => {
+	return request.get('/line/newLine/querySchedule', params, false)
+}
+
+/**
+ * 更新定制路线详情（富文本编辑）
+ */
+export const updateRouteDetail = (params: UTSJSONObject) => {
+	return request.post('/route/update-detail', params, false)
+}

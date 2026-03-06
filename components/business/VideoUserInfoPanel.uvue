@@ -1,0 +1,270 @@
+<template>
+	<view class="user-info-panel">
+		<!-- 用户信息行：头像 + 昵称 + 关注按钮 -->
+		<view class="user-row">
+			<Avatar
+				:url="avatarUrl"
+				:userId="userKidValue"
+				:customSize="64"
+				clickMode="none"
+				@click="onUserClick"
+			/>
+			<NicknameWithBadges
+				:nickname="'@' + nicknameValue"
+				:vipType="vipTypeValue"
+				:giftLevel="giftLevelValue"
+				size="small"
+				@click="onUserClick"
+			/>
+			<FollowButton 
+				v-if="showFollowBtn == true"
+				:targetUserKid="userKidValue"
+				:isFollow="props.isFollowed"
+				@change="onFollowChange"
+			/>
+		</view>
+		
+		<!-- 视频描述 -->
+		<view class="description-box" @click="toggleExpand">
+			<text class="description" :class="{ 'description-expanded': isExpanded == true }">{{ descriptionValue }}</text>
+			<text v-if="showExpandBtn == true" class="expand-btn">{{ isExpanded == true ? '收起' : '展开' }}</text>
+		</view>
+		
+		<!-- 位置信息 -->
+		<view v-if="hasLocation == true" class="location-row" @click="onLocationClick">
+			<image class="location-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_location.png" mode="aspectFit"></image>
+			<text class="location-text">{{ locationValue }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+import FollowButton from '@/components/base/FollowButton.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+
+// ==================== Props ====================
+const props = defineProps({
+	item: {
+		type: Object,
+		required: true
+	},
+	isFollowed: {
+		type: Boolean,
+		default: false
+	}
+})
+
+// ==================== Emits ====================
+const emit = defineEmits(['user-click', 'follow', 'location-click'])
+
+// ==================== 状态 ====================
+const isExpanded = ref<boolean>(false)
+
+// ==================== 辅助函数 ====================
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.item, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return safeGetNumberProp(props.item, key)
+}
+
+// ==================== 计算属性 ====================
+
+// 头像 URL
+const avatarUrl = computed((): string => {
+	let avatar = getDataProp('userImage')
+	if (avatar == '') {
+		avatar = getDataProp('avatar')
+	}
+	return avatar
+})
+
+// 昵称
+const nicknameValue = computed((): string => {
+	let nickname = getDataProp('nickName')
+	if (nickname == '') {
+		nickname = getDataProp('nickname')
+	}
+	if (nickname == '') {
+		nickname = '用户'
+	}
+	return nickname
+})
+
+// VIP 类型（用于 NicknameWithBadges 组件）
+const vipTypeValue = computed((): string => {
+	const vip = getDataNumberProp('vip')
+	const vipExpireTime = getDataProp('vipExpireTime')
+	
+	// vip=VIP_ACTIVATED 表示已开通
+	if (vip == 20) {
+		if (vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate > now) {
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				const vipTypeNum = getDataNumberProp('vipType')
+				if (vipTypeNum == 20) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+			const vipTypeNum = getDataNumberProp('vipType')
+			if (vipTypeNum == 20) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+})
+
+// 礼物等级（用于 NicknameWithBadges 组件）
+const giftLevelValue = computed((): number => {
+	return getDataNumberProp('giftLevel')
+})
+
+// 是否显示关注按钮（未关注时显示）
+const showFollowBtn = computed((): boolean => {
+	// 如果已关注，不显示按钮
+	if (props.isFollowed == true) return false
+	
+	// 检查 item 中的 isFollow 字段
+	const isFollowVal = getDataNumberProp('isFollow')
+	// isFollow: 10=已关注, 0=未关注
+	return isFollowVal != 10
+})
+
+// 用户 KID
+const userKidValue = computed((): string => {
+	return getDataProp('userKid')
+})
+
+// 视频描述
+const descriptionValue = computed((): string => {
+	let desc = getDataProp('discoverContent')
+	if (desc == '') {
+		desc = getDataProp('content')
+	}
+	if (desc == '') {
+		desc = getDataProp('description')
+	}
+	return desc
+})
+
+// 是否显示展开按钮（描述超过2行时显示）
+const showExpandBtn = computed((): boolean => {
+	const desc = descriptionValue.value
+	// 简单判断：超过60个字符认为需要展开
+	return desc.length > 60
+})
+
+// 位置信息
+const locationValue = computed((): string => {
+	let location = getDataProp('discoverAddress')
+	if (location == '') {
+		location = getDataProp('location')
+	}
+	if (location == '') {
+		location = getDataProp('address')
+	}
+	return location
+})
+
+// 是否有位置信息
+const hasLocation = computed((): boolean => {
+	return locationValue.value != ''
+})
+
+// ==================== 事件处理 ====================
+const onUserClick = () => {
+	emit('user-click')
+}
+
+const onFollow = () => {
+	emit('follow')
+}
+
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	// 触发父组件的 follow 事件
+	emit('follow')
+}
+
+const onLocationClick = () => {
+	emit('location-click')
+}
+
+const toggleExpand = () => {
+	if (showExpandBtn.value == true) {
+		isExpanded.value = isExpanded.value == false
+	}
+}
+</script>
+
+<style scoped>
+.user-info-panel {
+	flex-direction: column;
+	width: 550rpx;
+	padding-right: 20rpx;
+}
+
+/* 用户信息行：头像 + 昵称 + 关注按钮 */
+.user-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 16rpx;
+}
+
+.nickname {
+	font-size: 30rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+	margin-left: 12rpx;
+	margin-right: 16rpx;
+}
+
+/* 描述区域 */
+.description-box {
+	flex-direction: column;
+	margin-bottom: 16rpx;
+}
+
+.description {
+	font-size: 28rpx;
+	color: #FFFFFF;
+	line-height: 1.5;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.description-expanded {
+	lines: 0;
+}
+
+.expand-btn {
+	font-size: 24rpx;
+	color: #CCCCCC;
+	margin-top: 8rpx;
+}
+
+/* 位置信息 */
+.location-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.location-icon {
+	width: 24rpx;
+	height: 24rpx;
+	margin-right: 8rpx;
+}
+
+.location-text {
+	font-size: 24rpx;
+	color: #CCCCCC;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+</style>

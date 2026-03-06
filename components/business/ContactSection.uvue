@@ -1,0 +1,182 @@
+<template>
+	<view class="section-card bg-white">
+		<view class="section-header">
+			<text class="fs-lg color-title font-bold">{{ title }}</text>
+			<view class="more-btn" @click="handleMoreClick">
+				<text class="more-btn-text">{{ moreButtonText }}</text>
+				<text class="arrow-icon">›</text>
+			</view>
+		</view>
+		
+		<!-- 联系人卡片列表 -->
+		<view class="contact-cards">
+			<view 
+				v-for="(contact, index) in displayContacts" 
+				:key="contact.kid"
+				class="contact-card"
+				:class="{ 'contact-card--active': isContactSelected(contact) }"
+				@click="handleContactClick(contact)"
+			>
+				<text class="contact-name">{{ contact.name }}</text>
+			</view>
+		</view>
+		
+		<!-- 已选联系人信息 -->
+		<view v-if="selectedContact" class="selected-contact-info">
+			<view class="contact-detail">
+				<text class="label">{{ selectedLabel }}</text>
+				<text class="info">{{ selectedContact.name }} {{ selectedContact.phone }}</text>
+			</view>
+			<text class="delete-btn" @click="handleDeleteClick(selectedContact)">删除</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+// 联系人类型
+interface Contact {
+	kid: string
+	name: string
+	phone: string
+	is_default?: number
+	isDefault?: number
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	title: { type: String, default: '电话' },
+	moreButtonText: { type: String, default: '新增' },
+	selectedLabel: { type: String, default: '游客' },
+	contacts: { type: Array as () => Contact[], default: () => [] },
+	selectedContact: { type: Object as () => Contact | null, default: null },
+	maxDisplay: { type: Number, default: 3 }
+})
+
+// Emits
+const emit = defineEmits<{
+	'more': []
+	'contactClick': [contact: Contact]
+	'deleteClick': [contact: Contact]
+}>()
+
+// 显示的联系人列表
+const displayContacts = computed(() => {
+	return props.contacts.slice(0, props.maxDisplay)
+})
+
+// 判断是否选中
+const isContactSelected = (contact: Contact): boolean => {
+	const selKid = (props.selectedContact != null && (props.selectedContact as any).kid != null) ? (props.selectedContact as any).kid : ''
+	return (selKid != null && selKid != '') ? selKid === contact.kid : false
+}
+
+// 联系人点击
+const handleContactClick = (contact: Contact) => {
+	emit('contactClick', contact)
+}
+
+// 更多按钮点击
+const handleMoreClick = () => {
+	emit('more')
+}
+
+// 删除按钮点击
+const handleDeleteClick = (contact: Contact) => {
+	emit('deleteClick', contact)
+}
+</script>
+
+<style scoped>
+.section-card {
+	margin: 24rpx;
+	border-radius: 16rpx;
+	padding: 32rpx;
+}
+
+.section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 24rpx;
+}
+
+.more-btn {
+	display: flex;
+	align-items: center;
+	gap: 8rpx;
+}
+
+.more-btn-text {
+	font-size: 28rpx;
+	color: #666;
+}
+
+.arrow-icon {
+	font-size: 32rpx;
+	color: #666;
+}
+
+.contact-cards {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	gap: 16rpx;
+	margin-bottom: 24rpx;
+}
+
+.contact-card {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #f5f5f5;
+	border-radius: 32rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+}
+
+.contact-card--active {
+	background-color: #e6f7ff;
+	border-color: #1890ff;
+}
+
+.contact-name {
+	font-size: 28rpx;
+	color: #333;
+}
+
+.contact-card--active .contact-name {
+	color: #1890ff;
+}
+
+.selected-contact-info {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16rpx;
+	background-color: #f9f9f9;
+	border-radius: 12rpx;
+}
+
+.contact-detail {
+	display: flex;
+	flex-direction: column;
+	gap: 8rpx;
+}
+
+.label {
+	font-size: 24rpx;
+	color: #666;
+}
+
+.info {
+	font-size: 28rpx;
+	color: #333;
+}
+
+.delete-btn {
+	font-size: 28rpx;
+	color: #ff4d4f;
+}
+</style>

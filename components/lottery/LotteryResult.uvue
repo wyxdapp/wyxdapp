@@ -1,0 +1,480 @@
+﻿<template>
+	<view class="lottery-result-container" v-if="show == true">
+		<view class="modal-overlay" @click="handleClose"></view>
+		<view class="lottery-result-modal">
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+			
+			<!-- 中奖结果 -->
+			<view class="result-content">
+				<view class="result-title">
+					<text class="title-text"><UniIcons type="medal-filled" :size="48" color="#FFB800" /> 恭喜中奖！</text>
+				</view>
+				
+				<!-- 虚拟礼物 -->
+				<view v-if="hasReward == true && rewardType == 10" class="gift-result">
+					<image 
+						v-if="rewardImage != null && rewardImage != ''"
+						class="gift-image" 
+						:src="rewardImage" 
+						mode="aspectFit"
+					/>
+					<text class="gift-name">{{ rewardName }}</text>
+					<text class="gift-value">价值 ¥{{ rewardValue }}</text>
+					<text class="gift-tip">礼物已存入礼物盒</text>
+					
+					<!-- 操作按钮 -->
+					<view class="action-buttons">
+						<view class="action-btn gift-box-btn" @click="handleViewGiftBox">
+							<text class="btn-text">礼物盒查看</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 现金红包 -->
+				<view v-else-if="hasReward == true && rewardType == 20" class="cash-result">
+					<UniIcons type="wallet-filled" :size="48" color="#FFB800" />
+					<text class="cash-amount">¥{{ rewardValue }}</text>
+					<text class="cash-title">现金红包</text>
+					
+					<!-- 操作按钮 -->
+					<view class="action-buttons">
+						<view 
+							v-if="canDirectWithdraw == true"
+							class="action-btn withdraw-btn" 
+							@click="handleDirectWithdraw"
+						>
+							<text class="btn-text">立即提现</text>
+						</view>
+						<view 
+							v-else
+							class="action-btn bind-btn" 
+							@click="handleBindAccount"
+						>
+							<text class="btn-text">绑定账户</text>
+						</view>
+						<view class="action-btn deposit-btn" @click="handleDepositBalance">
+							<text class="btn-text">存入余额</text>
+						</view>
+					</view>
+				</view>
+				
+				<!-- 调试信息：当没有匹配到任何奖励类型时显示 -->
+				<view v-else-if="hasReward == true" class="debug-info">
+					<text class="debug-text">奖励类型: {{ rewardType }}</text>
+					<text class="debug-text">奖励名称: {{ rewardName }}</text>
+					<text class="debug-text">奖励价值: {{ rewardValue }}</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { useGift, handleCashReward } from '@/common/services/lotteryService.uts'
+import { getCashoutBindStatus } from '@/common/services/withdrawService.uts'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// UTS 规范：接口名称必须全局唯一
+interface LotteryResultGiftItem {
+	rewardType?: number | null
+	rewardImage?: string | null
+	rewardName?: string | null
+	rewardValue?: string | number | null
+	lotteryTime?: string | null
+	lotteryRecordKid?: string | null
+}
+
+// API响应接口定义
+interface LotteryResultData {
+	code?: any
+	data?: any
+}
+
+// 绑定状态数据接口
+interface BindStatusData {
+	wechat?: boolean | null
+	alipay?: boolean | null
+}
+
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	userKid: { type: String, default: '' },
+	reward: { type: Object, default: null },
+	canDirectWithdraw: { type: Boolean, default: false }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+	useGift: [recordKid: string, actionType: number, receiveKid?: string]
+	withdraw: [recordKid: string, method: number]
+	deposit: [recordKid: string]
+	viewGiftBox: []
+}>()
+
+// 安全访问 reward 字段
+// 使用 UTSJSONObject.get() 模式，避免接口可选属性的 error18 问题
+const getRewardProp = (key: string): any => {
+	const reward = props.reward
+	if (reward == null) {
+		console.log('🔍 [LotteryResult] getRewardProp - reward is null')
+		return ''
+	}
+	try {
+		// 使用 JSON.stringify + JSON.parse + UTSJSONObject.get() 模式
+		const rewardJson = JSON.stringify(reward)
+		console.log('🔍 [LotteryResult] getRewardProp - rewardJson:', rewardJson)
+		if (rewardJson != null && rewardJson != '' && rewardJson != '{}' && rewardJson != 'null') {
+			const rewardObj = JSON.parse(rewardJson) as UTSJSONObject
+			if (rewardObj != null) {
+				const val = rewardObj.get(key)
+				console.log('🔍 [LotteryResult] getRewardProp - key:', key, 'val:', val)
+				if (val != null) {
+					return val
+				}
+			}
+		}
+	} catch (e) {
+		console.error('❌ [LotteryResult] getRewardProp error:', e)
+	}
+	return ''
+}
+
+const rewardType = computed((): number => {
+	const value = getRewardProp('rewardType')
+	if (value == null) return 0
+	try {
+		const num = parseInt(value.toString())
+		if (isNaN(num) == false) return num as number
+	} catch (e) {}
+	return 0
+})
+
+const rewardImage = computed((): string => {
+	const value = getRewardProp('rewardImage')
+	if (value == null) return ''
+	const str = value.toString()
+	return str
+})
+
+const rewardName = computed((): string => {
+	const value = getRewardProp('rewardName')
+	if (value == null) return ''
+	const str = value.toString()
+	return str
+})
+
+const rewardValue = computed((): string => {
+	const value = getRewardProp('rewardValue')
+	if (value == null) return ''
+	const str = value.toString()
+	return str
+})
+
+const lotteryRecordKid = computed((): string => {
+	const value = getRewardProp('lotteryRecordKid')
+	if (value == null) return ''
+	const str = value.toString()
+	return str
+})
+
+// 判断是否有奖励数据
+const hasReward = computed((): boolean => {
+	const reward = props.reward
+	if (reward == null) return false
+	try {
+		const rewardJson = JSON.stringify(reward)
+		if (rewardJson == null || rewardJson == '' || rewardJson == '{}' || rewardJson == 'null') {
+			return false
+		}
+		return true
+	} catch (e) {
+		return false
+	}
+})
+
+// 关闭弹窗（必须在最前面定义，因为其他函数会调用它，UTS没有函数提升）
+const handleClose = () => {
+	emit('close')
+}
+
+// 查看礼物盒
+const handleViewGiftBox = () => {
+	emit('viewGiftBox')
+	handleClose()
+}
+
+// 绑定账户（必须在 handleDirectWithdraw 之前定义，UTS没有函数提升）
+const handleBindAccount = () => {
+	// 检查 redirect 参数是否包含 VIP 页面路径
+	const redirectUrl = '/pagesUser/my/proveDetails/vip'
+	let finalRedirect = redirectUrl
+	
+	// 如果 redirect 包含 VIP 页面且会员功能关闭，则修改 redirect
+	if (redirectUrl.indexOf('/pagesUser/my/proveDetails/vip') >= 0) {
+		if (isMemberFeatureEnabled() == false) {
+			// 会员功能关闭，跳转到钱包页面
+			finalRedirect = '/pagesUser/wallet/index'
+		}
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/wallet/bindAccount?redirect=' + finalRedirect
+	})
+	handleClose()
+}
+
+// 立即提现
+const handleDirectWithdraw = async () => {
+	const recordKid = lotteryRecordKid.value
+	if (recordKid == null || recordKid == '') return
+	
+	// 检查绑定状态
+	try {
+		const params = { userKid: props.userKid } as UTSJSONObject
+		const bindStatus = await getCashoutBindStatus(params)
+		let code: any = ''
+		let data: any = ''
+
+		if (bindStatus != null) {
+			try {
+				const resultJson = JSON.stringify(bindStatus)
+				if (resultJson != null && resultJson != '') {
+					const resultParsed = JSON.parse(resultJson) as any
+					if (resultParsed != null) {
+						const resultData = resultParsed as LotteryResultData
+						const codeVal = resultData.code
+						code = (codeVal != null) ? (codeVal as any) : ''
+						const dataVal = resultData.data
+						data = (dataVal != null) ? (dataVal as any) : ''
+					}
+				}
+			} catch (e) {}
+		}
+
+		const success =
+			(code != null && code.toString() == '200')
+
+		if (success == true && data != null) {
+			let hasWechat = false
+			let hasAlipay = false
+			try {
+				const dataJson = JSON.stringify(data)
+				if (dataJson != null && dataJson != '') {
+					const dataParsed = JSON.parse(dataJson) as any
+					if (dataParsed != null) {
+						const bindData = dataParsed as BindStatusData
+						hasWechat = bindData.wechat == true
+						hasAlipay = bindData.alipay == true
+					}
+				}
+			} catch (e) {}
+
+			if (hasWechat == true || hasAlipay == true) {
+				// 已绑定，选择提现方式
+				const method = hasWechat == true ? 10 : 20
+				emit('withdraw', recordKid, method)
+			} else {
+				// 未绑定，跳转绑定页面
+				handleBindAccount()
+			}
+		}
+	} catch (error) {
+		console.error('检查绑定状态失败:', error)
+		handleBindAccount()
+	}
+	
+	handleClose()
+}
+
+// 存入余额
+const handleDepositBalance = () => {
+	const recordKid = lotteryRecordKid.value
+	if (recordKid == null || recordKid == '') return
+	
+	emit('deposit', recordKid)
+	handleClose()
+}
+</script>
+
+<style scoped>
+.lottery-result-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 10000;
+	flex-direction: column;
+}
+
+.modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.6);
+}
+
+.lottery-result-modal {
+	position: absolute;
+	top: 200rpx;
+	left: 75rpx;
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 32rpx;
+	padding: 48rpx;
+	flex-direction: column;
+}
+
+.close-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.close-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.result-content {
+	flex-direction: column;
+	align-items: center;
+}
+
+.result-title {
+	margin-bottom: 32rpx;
+}
+
+.title-text {
+	font-size: 40rpx;
+	font-weight: bold;
+	color: #FF6B35;
+}
+
+.gift-result {
+	flex-direction: column;
+	align-items: center;
+	width: 504rpx;
+}
+
+.gift-image {
+	width: 200rpx;
+	height: 200rpx;
+	margin-bottom: 24rpx;
+}
+
+.gift-name {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 16rpx;
+}
+
+.gift-value {
+	font-size: 28rpx;
+	color: #FF6B35;
+	margin-bottom: 16rpx;
+}
+
+.gift-tip {
+	font-size: 24rpx;
+	color: #999999;
+	margin-bottom: 32rpx;
+}
+
+.cash-result {
+	flex-direction: column;
+	align-items: center;
+	width: 504rpx;
+}
+
+.cash-icon {
+	font-size: 120rpx;
+	margin-bottom: 24rpx;
+}
+
+.cash-amount {
+	font-size: 64rpx;
+	font-weight: bold;
+	color: #FF6B35;
+	margin-bottom: 16rpx;
+}
+
+.cash-title {
+	font-size: 28rpx;
+	color: #666666;
+	margin-bottom: 32rpx;
+}
+
+.action-buttons {
+	width: 504rpx;
+	flex-direction: column;
+}
+
+.action-btn {
+	width: 504rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 24rpx;
+}
+
+.gift-box-btn {
+	background-color: #FF6B35;
+	margin-top: 0;
+}
+
+.withdraw-btn {
+	background-color: #52C41A;
+	margin-top: 0;
+}
+
+.bind-btn {
+	background-color: #1890FF;
+	margin-top: 0;
+}
+
+.deposit-btn {
+	background-color: #722ED1;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* 调试信息样式 */
+.debug-info {
+	flex-direction: column;
+	align-items: center;
+	width: 504rpx;
+	padding: 24rpx;
+	background-color: #f5f5f5;
+	border-radius: 16rpx;
+}
+
+.debug-text {
+	font-size: 24rpx;
+	color: #666666;
+	margin-bottom: 8rpx;
+}
+</style>
+

@@ -1,0 +1,308 @@
+/**
+ * 运营中心相关 API
+ * 对应Vue2: http.api.js 中的运营中心模块
+ */
+
+import request from '@/utils/request'
+
+// ============ 接口定义（仅作文档参考，不用于函数参数类型） ============
+
+// 向导签约信息接口
+export interface GuideSignInfo {
+	kid: string
+	guideKid: string
+	guideName: string
+	guideAvatar?: string
+	signStatus: number
+	signRate: number
+	signTime?: string
+	auditTime?: string
+	auditStatus?: number
+}
+
+// 推广统计接口
+export interface PromotionStats {
+	totalInvites: number
+	totalRevenue: number
+	monthInvites: number
+	monthRevenue: number
+}
+
+// 运营统计接口
+export interface OperateStats {
+	signedGuides: number
+	totalRevenue: number
+	monthRevenue: number
+	pendingAudit: number
+}
+
+// ============ API 函数 ============
+
+/**
+ * 添加运营（用户绑定）- 用于推广落地页绑定用户到导师
+ * POST /support/tutor/addExtend
+ * @param params { tutorKid: string, userKid: string, tutorNumber?: string }
+ */
+export const addExtend = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/addExtend', params, true)
+}
+
+/**
+ * 查询向导签约列表 - 用于用户管理页面显示向导列表和运营中心首页统计数据
+ * POST /support/tutor/queryGuideSignList
+ * @param params { tutorKid: string, signStatus?: number, pageNumber?: number, pageSize?: number }
+ */
+export const getOperatorGuides = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/queryGuideSignList', params, true)
+}
+
+/**
+ * 签约向导 - 用于用户管理页面签约向导操作
+ * POST /support/tutor/addSign
+ * @param params { tutorKid: string, guideKid: string, signRate: number }
+ */
+export const signGuide = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/addSign', params, true)
+}
+
+/**
+ * 修改签约 - 用于签约记录页面修改签约费率
+ * POST /support/tutor/updateSign
+ * @param params { kid: string, signRate: number }
+ */
+export const updateSignGuide = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/updateSign', params, true)
+}
+
+/**
+ * 审核签约（后台管理系统）- 后台使用，前端不直接调用
+ * POST /support/tutor/auditSign
+ * @param params { kid: string, auditStatus: number, auditReason?: string }
+ */
+export const auditSign = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/auditSign', params, true)
+}
+
+/**
+ * 获取推广统计数据 - 用于用户推广页面显示推广统计
+ * GET /support/tutor/queryPromotionStats
+ */
+export const getPromotionStats = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get('/support/tutor/queryPromotionStats?userKid=' + userKid, null, false)
+}
+
+
+/**
+ * 获取邀请记录 - 用于用户推广页面显示邀请历史
+ * GET /support/tutor/queryInviteHistory
+ * @param params { userKid: string, pageSize?: number }
+ */
+export const getInviteHistory = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	// 使用 JSON 序列化模式获取参数
+	const paramsStr = JSON.stringify(params)
+	const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+	const userKidVal = paramsObj.get('userKid')
+	const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+	const pageSizeVal = paramsObj.get('pageSize')
+	let pageSize = 10
+	if (pageSizeVal != null) {
+		const ps = parseInt(pageSizeVal.toString())
+		if (isNaN(ps) == false) {
+			pageSize = ps
+		}
+	}
+	return request.get('/support/tutor/queryInviteHistory?userKid=' + userKid + '&pageSize=' + pageSize.toString(), null, false)
+}
+
+/**
+ * 根据导师号获取邀请人信息 - 用于推广落地页显示邀请人信息
+ * GET /support/tutor/queryInviterInfo
+ */
+export const getInviterInfo = (tutorNumber: string): Promise<UTSJSONObject> => {
+	return request.get('/support/tutor/queryInviterInfo?tutorNumber=' + tutorNumber, null, false)
+}
+
+/**
+ * 获取运营统计数据 - 用于运营中心首页显示统计卡片
+ * GET /support/tutor/queryOperateStats
+ */
+export const getOperateStats = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get('/support/tutor/queryOperateStats?userKid=' + userKid, null, false)
+}
+
+/**
+ * 获取向导签约信息 - 用于签约记录页面显示向导详细信息
+ * GET /support/tutor/queryGuideSignInfo
+ * @param params { guideId: string, userKid: string }
+ */
+export const getGuideSignInfo = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	// 使用 JSON 序列化模式获取参数
+	const paramsStr = JSON.stringify(params)
+	const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+	const guideIdVal = paramsObj.get('guideId')
+	const guideId = (guideIdVal != null) ? guideIdVal.toString() : ''
+	const userKidVal = paramsObj.get('userKid')
+	const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+	return request.get('/support/tutor/queryGuideSignInfo?guideId=' + guideId + '&userKid=' + userKid, null, false)
+}
+
+/**
+ * 获取签约记录 - 用于签约记录页面显示历史记录
+ * GET /support/tutor/querySignRecords
+ * @param params { guideId: string, userKid: string }
+ */
+export const getSignRecords = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	// 使用 JSON 序列化模式获取参数
+	const paramsStr = JSON.stringify(params)
+	const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+	const guideIdVal = paramsObj.get('guideId')
+	const guideId = (guideIdVal != null) ? guideIdVal.toString() : ''
+	const userKidVal = paramsObj.get('userKid')
+	const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+	return request.get('/support/tutor/querySignRecords?guideId=' + guideId + '&userKid=' + userKid, null, false)
+}
+
+/**
+ * 获取已签约用户数量 - 用于群发消息页面显示接收对象数量
+ * GET /support/tutor/querySignedUserCount
+ */
+export const getSignedUserCount = (userKid: string): Promise<UTSJSONObject> => {
+	return request.get('/support/tutor/querySignedUserCount?userKid=' + userKid, null, false)
+}
+
+/**
+ * 群发消息 - 用于群发消息页面发送消息
+ * POST /support/tutor/sendMassMessage
+ * @param params { tutorKid: string, messageContent: string, targetType: number, targetKids?: string[] }
+ */
+export const sendMassMessage = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/sendMassMessage', params, true)
+}
+
+/**
+ * 获取群发消息历史 - 用于群发消息页面显示发送历史
+ * GET /support/tutor/queryMassMessageHistory
+ * @param params { userKid: string, pageSize?: number }
+ */
+export const getMassMessageHistory = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	// 使用 JSON 序列化模式获取参数
+	const paramsStr = JSON.stringify(params)
+	const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+	const userKidVal = paramsObj.get('userKid')
+	const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+	const pageSizeVal = paramsObj.get('pageSize')
+	let pageSize = 5
+	if (pageSizeVal != null) {
+		const ps = parseInt(pageSizeVal.toString())
+		if (isNaN(ps) == false) {
+			pageSize = ps
+		}
+	}
+	return request.get('/support/tutor/queryMassMessageHistory?userKid=' + userKid + '&pageSize=' + pageSize.toString(), null, false)
+}
+
+// ============ 运营推广佣金相关 API ============
+
+// 可推广向导信息接口
+export interface PromotableGuideInfo {
+	kid: string
+	memberGuideKid: string
+	avatar: string
+	nickname: string
+	servicePrice: number
+	operateRate: number
+	commissionAmount: number
+	isExclusive: boolean
+	guideStatus: number
+	guideIdentity: number
+}
+
+// 更新向导推广设置请求接口
+export interface UpdateGuidePromotionParams {
+	guideKid: string
+	operateRate?: number
+	guideIdentity?: number
+}
+
+/**
+ * 查询可推广向导列表 - 用于运营用户管理页面显示可推广的向导
+ * POST /support/tutor/queryPromotableGuides
+ * @param params { tutorKid: string, keyword?: string, pageNumber?: number, pageSize?: number }
+ */
+export const queryPromotableGuides = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/queryPromotableGuides', params, true)
+}
+
+/**
+ * 更新向导推广设置 - 用于向导管理页面更新推广设置
+ * POST /support/tutor/updateGuidePromotion
+ * @param params { guideKid: string, operateRate?: number, guideIdentity?: number }
+ */
+export const updateGuidePromotion = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/updateGuidePromotion', params, true)
+}
+
+/**
+ * 查询佣金明细 - 用于佣金明细页面显示佣金记录
+ * POST /support/tutor/queryTutorCommission
+ * @param params { tutorKid: string, pageNumber?: number, pageSize?: number }
+ */
+export const queryTutorCommission = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/queryTutorCommission', params, true)
+}
+
+/**
+ * 获取向导推广设置 - 用于向导管理页面加载当前推广设置
+ * POST /support/tutor/getGuidePromotionSettings
+ * @param params { guideKid: string }
+ */
+export const getGuidePromotionSettings = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/getGuidePromotionSettings', params, true)
+}
+
+/**
+ * 审核签约申请 - 用于运营端审核向导的签约申请
+ * POST /support/tutor/auditSign
+ * @param params { kid: string, auditStatus: number, auditReason?: string }
+ * auditStatus: 30=审核通过, 40=审核不通过
+ */
+export const auditSignRequest = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/support/tutor/auditSign', params, true)
+}
+
+/**
+ * 查询待审核签约列表 - 用于运营端查看待审核的签约申请
+ * POST /support/tutor/queryPendingSignList
+ * @param params { tutorKid: string, pageNumber?: number, pageSize?: number }
+ */
+export const queryPendingSignList = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	// 使用 JSON 序列化模式获取参数
+	const paramsStr = JSON.stringify(params)
+	const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+	const tutorKidVal = paramsObj.get('tutorKid')
+	const tutorKid = (tutorKidVal != null) ? tutorKidVal.toString() : ''
+	const pageNumberVal = paramsObj.get('pageNumber')
+	let pageNumber = 1
+	if (pageNumberVal != null) {
+		const pn = parseInt(pageNumberVal.toString())
+		if (isNaN(pn) == false) {
+			pageNumber = pn
+		}
+	}
+	const pageSizeVal = paramsObj.get('pageSize')
+	let pageSize = 10
+	if (pageSizeVal != null) {
+		const ps = parseInt(pageSizeVal.toString())
+		if (isNaN(ps) == false) {
+			pageSize = ps
+		}
+	}
+	// 查询 signStatus=20 的签约申请
+	const queryParams = {
+		tutorKid: tutorKid,
+		signStatus: 20,
+		pageNumber: pageNumber,
+		pageSize: pageSize
+	} as UTSJSONObject
+	return request.post('/support/tutor/queryGuideSignList', queryParams, true)
+}

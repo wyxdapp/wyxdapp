@@ -1,0 +1,492 @@
+﻿﻿/**
+ * 统一登录状态管理组合式函数
+ * 提供登录检查、用户信息获取、登录状态监听等功能
+ * 
+ * 使用方式：
+ * import { useAuth, requireLoginWithRedirect, onLoginStatusChange } from '@/common/composables/useAuth.uts'
+ */
+
+import { ref, onMounted, onUnmounted } from 'vue'
+import { SK_LOGIN_REDIRECT_URL } from '@/common/config/storageKeys.uts'
+import { AUTH_INIT_WAIT_TIMEOUT } from '@/common/config/timeoutConfig.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+import { 
+	getUserLoginStatus, 
+	getUserId, 
+	getUserNickname, 
+	getUserAvatar, 
+	getUserShortKid,
+	getUserPhone,
+	getUserToken,
+	getUserIsGuide,
+	getUserVipStatus,
+	isUserVip,
+	getUserProp,
+	getUserNumberProp,
+	getUserInfoFromStore,
+	initUserInfoAction,
+	isStoreReady,
+	LOGIN_STATUS_CHANGE_EVENT,
+	USER_INFO_UPDATE_EVENT
+} from '@/stores/user.uts'
+
+// ==================== 登录状态变化事件 ====================
+
+// 登录状态变化回调类型
+type LoginStatusCallback = (isLogin: boolean, userId: string) => void
+type UserInfoUpdateCallback = (userInfo: UTSJSONObject | null) => void
+
+// 回调存储（使用数组存储多个回调）
+const loginStatusCallbacks: Array<LoginStatusCallback> = []
+const userInfoUpdateCallbacks: Array<UserInfoUpdateCallback> = []
+
+/**
+ * 触发登录状态变化事件（供外部调用）
+ * @param isLogin 是否已登录
+ * @param userId 用户ID
+ */
+export const emitLoginStatusChange = (isLogin: boolean, userId: string) => {
+	console.log('📢 [Auth] 触发登录状态变化事件:', isLogin, userId)
+	
+	// 调用所有注册的回调
+	for (let i = 0; i < loginStatusCallbacks.length; i = i + 1) {
+		try {
+			const callback = loginStatusCallbacks[i]
+			if (callback != null) {
+				callback(isLogin, userId)
+			}
+		} catch (e) {
+			console.error('❌ [Auth] 执行登录状态回调失败:', e)
+		}
+	}
+}
+
+/**
+ * 触发用户信息更新事件（供外部调用）
+ * @param userInfo 用户信息对象
+ */
+export const emitUserInfoUpdate = (userInfo: UTSJSONObject | null) => {
+	console.log('📢 [Auth] 触发用户信息更新事件')
+	
+	// 调用所有注册的回调
+	for (let i = 0; i < userInfoUpdateCallbacks.length; i = i + 1) {
+		try {
+			const callback = userInfoUpdateCallbacks[i]
+			if (callback != null) {
+				callback(userInfo)
+			}
+		} catch (e) {
+			console.error('❌ [Auth] 执行用户信息更新回调失败:', e)
+		}
+	}
+}
+
+/**
+ * 监听登录状态变化
+ * @param callback 回调函数
+ * @returns 取消监听的函数
+ */
+export const onLoginStatusChange = (callback: LoginStatusCallback): () => void => {
+	loginStatusCallbacks.push(callback)
+	
+	// 同时注册 uni 事件监听（使用 store 导出的事件常量）
+	try {
+		uni.$on(LOGIN_STATUS_CHANGE_EVENT, (data: any) => {
+			if (data != null) {
+				const dataStr = JSON.stringify(data)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const isLoginVal = dataObj.get('isLogin')
+				const userIdVal = dataObj.get('userId')
+				const isLogin = (isLoginVal == true)
+				const userId = (userIdVal != null) ? userIdVal.toString() : ''
+				callback(isLogin, userId)
+			}
+		})
+	} catch (e) {}
+	
+	// 返回取消监听的函数
+	return () => {
+		const index = loginStatusCallbacks.indexOf(callback)
+		if (index >= 0) {
+			loginStatusCallbacks.splice(index, 1)
+		}
+		try {
+			uni.$off(LOGIN_STATUS_CHANGE_EVENT)
+		} catch (e) {}
+	}
+}
+
+/**
+ * 监听用户信息更新
+ * @param callback 回调函数
+ * @returns 取消监听的函数
+ */
+export const onUserInfoUpdate = (callback: UserInfoUpdateCallback): () => void => {
+	userInfoUpdateCallbacks.push(callback)
+	
+	// 同时注册 uni 事件监听（使用 store 导出的事件常量）
+	try {
+		uni.$on(USER_INFO_UPDATE_EVENT, (data: any) => {
+			if (data != null) {
+				const dataStr = JSON.stringify(data)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				callback(dataObj)
+			} else {
+				callback(null)
+			}
+		})
+	} catch (e) {}
+	
+	// 返回取消监听的函数
+	return () => {
+		const index = userInfoUpdateCallbacks.indexOf(callback)
+		if (index >= 0) {
+			userInfoUpdateCallbacks.splice(index, 1)
+		}
+		try {
+			uni.$off(USER_INFO_UPDATE_EVENT)
+		} catch (e) {}
+	}
+}
+
+// ==================== 初始化状态管理 ====================
+
+// 初始化完成标记（使用 store 的状态）
+const initPromiseResolvers: Array<() => void> = []
+
+/**
+ * 标记初始化完成（由 store 调用）
+ */
+export const markInitialized = () => {
+	
+	// 执行所有等待的 Promise resolver
+	for (let i = 0; i < initPromiseResolvers.length; i = i + 1) {
+		try {
+			const resolver = initPromiseResolvers[i]
+			if (resolver != null) {
+				resolver()
+			}
+		} catch (e) {}
+	}
+	// 清空数组
+	initPromiseResolvers.length = 0
+}
+
+/**
+ * 检查是否已初始化（使用 store 的状态）
+ */
+export const isAuthInitialized = (): boolean => {
+	return isStoreReady()
+}
+
+/**
+ * 等待初始化完成
+ * @param timeout 超时时间（毫秒），默认 3000ms
+ * @returns Promise
+ */
+export const waitForInit = (timeout: number = AUTH_INIT_WAIT_TIMEOUT): Promise<boolean> => {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// 如果已经初始化，直接返回
+		if (isStoreReady() == true) {
+			resolve(true)
+			return
+		}
+		
+		// 设置超时
+		let timeoutId: number = 0
+		timeoutId = setTimeout(() => {
+			console.warn('⚠️ [Auth] 等待初始化超时')
+			resolve(false)
+		}, timeout)
+		
+		// 添加到等待队列
+		initPromiseResolvers.push(() => {
+			clearTimeout(timeoutId)
+			resolve(true)
+		})
+	})
+}
+
+// ==================== 登录检查函数 ====================
+
+/**
+ * 检查登录状态（统一入口）
+ * @returns 是否已登录
+ */
+export const checkLogin = (): boolean => {
+	return getUserLoginStatus()
+}
+
+/**
+ * 获取当前用户ID（统一入口）
+ * @returns 用户ID
+ */
+export const getCurrentUserId = (): string => {
+	return getUserId()
+}
+
+/**
+ * 检查登录状态，未登录则显示提示
+ * @param showToast 是否显示提示
+ * @returns 是否已登录
+ */
+export const checkLoginWithToast = (showToast: boolean = true): boolean => {
+	const isLogin = getUserLoginStatus()
+	if (isLogin == false && showToast == true) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+	}
+	return isLogin
+}
+
+/**
+ * 检查登录状态，未登录则跳转登录页
+ * @param showToast 是否显示提示
+ * @param redirectUrl 登录后跳转的页面（可选）
+ * @returns 是否已登录
+ */
+export const requireLoginWithRedirect = (showToast: boolean = true, redirectUrl: string = ''): boolean => {
+	const isLogin = getUserLoginStatus()
+	if (isLogin == false) {
+		if (showToast == true) {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+		}
+		
+		// 保存登录后跳转地址
+		if (redirectUrl != '') {
+			safeSetStorageSync(SK_LOGIN_REDIRECT_URL, redirectUrl)
+		}
+		
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return false
+	}
+	return true
+}
+
+/**
+ * 跳转到登录页
+ * @param redirectUrl 登录后跳转的页面（可选）
+ */
+export const goToLogin = (redirectUrl: string = '') => {
+	// 保存登录后跳转地址
+	if (redirectUrl != '') {
+		safeSetStorageSync(SK_LOGIN_REDIRECT_URL, redirectUrl)
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+
+// ==================== 用户信息获取函数 ====================
+
+/**
+ * 获取用户昵称
+ * @returns 用户昵称
+ */
+export const getAuthUserNickname = (): string => {
+	return getUserNickname()
+}
+
+/**
+ * 获取用户头像
+ * @returns 用户头像URL
+ */
+export const getAuthUserAvatar = (): string => {
+	return getUserAvatar()
+}
+
+/**
+ * 获取用户短号
+ * @returns 用户短号
+ */
+export const getAuthUserShortKid = (): string => {
+	return getUserShortKid()
+}
+
+/**
+ * 获取用户手机号
+ * @returns 用户手机号
+ */
+export const getAuthUserPhone = (): string => {
+	return getUserPhone()
+}
+
+/**
+ * 获取用户 Token
+ * @returns 用户 Token
+ */
+export const getAuthUserToken = (): string => {
+	return getUserToken()
+}
+
+/**
+ * 获取用户是否为向导
+ * @returns 是否为向导
+ */
+export const getAuthUserIsGuide = (): boolean => {
+	return getUserIsGuide()
+}
+
+/**
+ * 获取用户 VIP 状态
+ * @returns VIP 状态码（10 未开通, 20 已开通, 30 已过期）
+ */
+export const getAuthUserVipStatus = (): number => {
+	return getUserVipStatus()
+}
+
+/**
+ * 检查用户是否为 VIP 会员
+ * @returns 是否为 VIP
+ */
+export const isAuthUserVip = (): boolean => {
+	return isUserVip()
+}
+
+/**
+ * 获取完整用户信息对象
+ * @returns UTSJSONObject 或 null
+ */
+export const getAuthUserInfo = (): UTSJSONObject | null => {
+	return getUserInfoFromStore()
+}
+
+/**
+ * 获取用户信息指定属性
+ * @param key 属性名
+ * @returns 属性值字符串
+ */
+export const getAuthUserProp = (key: string): string => {
+	return getUserProp(key)
+}
+
+/**
+ * 获取用户信息数字属性
+ * @param key 属性名
+ * @returns 属性值数字
+ */
+export const getAuthUserNumberProp = (key: string): number => {
+	return getUserNumberProp(key)
+}
+
+// ==================== 组合式函数 ====================
+
+/**
+ * 统一登录状态管理组合式函数
+ * 在组件中使用，自动管理登录状态和用户信息
+ * 
+ * 使用示例：
+ * const { isLogin, userId, userNickname, userAvatar, requireLogin, refreshUserInfo } = useAuth()
+ */
+export const useAuth = () => {
+	// 响应式状态
+	const isLogin = ref<boolean>(false)
+	const userId = ref<string>('')
+	const userNickname = ref<string>('')
+	const userAvatar = ref<string>('')
+	const userShortKid = ref<string>('')
+	const userPhone = ref<string>('')
+	const isGuide = ref<boolean>(false)
+	const isVip = ref<boolean>(false)
+	
+	// 刷新用户信息
+	const refreshUserInfo = () => {
+		isLogin.value = getUserLoginStatus()
+		userId.value = getUserId()
+		userNickname.value = getUserNickname()
+		userAvatar.value = getUserAvatar()
+		userShortKid.value = getUserShortKid()
+		userPhone.value = getUserPhone()
+		isGuide.value = getUserIsGuide()
+		isVip.value = isUserVip()
+	}
+	
+	// 检查登录状态
+	const requireLogin = (showToast: boolean = true): boolean => {
+		if (isLogin.value == false) {
+			if (showToast == true) {
+				uni.showToast({
+					title: '请先登录',
+					icon: 'none'
+				})
+			}
+			return false
+		}
+		return true
+	}
+	
+	// 检查登录并跳转
+	const requireLoginAndRedirect = (showToast: boolean = true, redirectUrl: string = ''): boolean => {
+		return requireLoginWithRedirect(showToast, redirectUrl)
+	}
+	
+	// 取消监听函数
+	let unsubscribe: (() => void) | null = null
+	
+	// 组件挂载时初始化
+	onMounted(() => {
+		// 确保用户信息已初始化
+		initUserInfoAction()
+		
+		// 刷新用户信息
+		refreshUserInfo()
+		
+		// 监听登录状态变化
+		unsubscribe = onLoginStatusChange((loginStatus: boolean, uid: string) => {
+			isLogin.value = loginStatus
+			userId.value = uid
+			if (loginStatus == true) {
+				refreshUserInfo()
+			} else {
+				// 清空用户信息
+				userNickname.value = ''
+				userAvatar.value = ''
+				userShortKid.value = ''
+				userPhone.value = ''
+				isGuide.value = false
+				isVip.value = false
+			}
+		})
+	})
+	
+	// 组件卸载时清理
+	onUnmounted(() => {
+		if (unsubscribe != null) {
+			unsubscribe()
+			unsubscribe = null
+		}
+	})
+	
+	return {
+		// 响应式状态
+		isLogin,
+		userId,
+		userNickname,
+		userAvatar,
+		userShortKid,
+		userPhone,
+		isGuide,
+		isVip,
+		
+		// 方法
+		refreshUserInfo,
+		requireLogin,
+		requireLoginAndRedirect,
+		goToLogin
+	}
+}
+
+// ==================== 默认导出 ====================
+
+export default useAuth

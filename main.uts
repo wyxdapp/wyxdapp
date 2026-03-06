@@ -1,0 +1,15 @@
+import App from './App.uvue'
+import { createSSRApp } from 'vue'
+
+// 显式引用主包模块以消除微信小程序编译器警告
+// 这些模块实际上被分包使用，但编译器未能识别跨分包引用
+// 详见：imports.uts 和 .kiro/specs/wechat-miniprogram-optimization/
+import './imports.uts'
+
+export function createApp() {
+	const app = createSSRApp(App)
+	
+	return {
+		app
+	}
+}

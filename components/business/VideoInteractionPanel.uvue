@@ -1,0 +1,176 @@
+<template>
+	<view class="interaction-panel">
+		<!-- 点赞按钮 -->
+		<view v-if="hideLike == false" class="action-item" @click="onLike">
+			<view class="action-icon-box">
+				<uni-icons 
+					:type="isLikedValue == true ? 'heart-filled' : 'heart'" 
+					:size="32" 
+					:color="isLikedValue == true ? '#FF4757' : '#FFFFFF'"
+				></uni-icons>
+			</view>
+			<text class="action-count">{{ formatCount(likeCountValue) }}</text>
+		</view>
+		
+		<!-- 评论按钮 -->
+		<view v-if="hideComment == false" class="action-item" @click="onComment">
+			<view class="action-icon-box">
+				<uni-icons type="chatbubble" :size="32" color="#FFFFFF"></uni-icons>
+			</view>
+			<text class="action-count">{{ formatCount(commentCountValue) }}</text>
+		</view>
+		
+		<!-- 分享按钮（始终显示） -->
+		<view class="action-item" @click="onShare">
+			<view class="action-icon-box">
+				<uni-icons type="redo" :size="32" color="#FFFFFF"></uni-icons>
+			</view>
+			<text class="action-count">分享</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+
+// ==================== Props ====================
+const props = defineProps({
+	item: {
+		type: Object,
+		required: true
+	},
+	isLiked: {
+		type: Boolean,
+		default: false
+	},
+	likeCount: {
+		type: Number,
+		default: 0
+	},
+	commentCount: {
+		type: Number,
+		default: 0
+	},
+	isFollowed: {
+		type: Boolean,
+		default: false
+	},
+	// 隐藏点赞按钮（简化模式）
+	hideLike: {
+		type: Boolean,
+		default: false
+	},
+	// 隐藏评论按钮（简化模式）
+	hideComment: {
+		type: Boolean,
+		default: false
+	}
+})
+
+// ==================== Emits ====================
+const emit = defineEmits(['like', 'comment', 'share'])
+
+// ==================== 辅助函数 ====================
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.item, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return safeGetNumberProp(props.item, key)
+}
+
+// 格式化数量显示
+const formatCount = (count: number): string => {
+	if (count <= 0) return '0'
+	if (count < 10000) return count.toString()
+	
+	const wan = count / 10000
+	if (wan < 10) {
+		// 保留一位小数
+		const wanInt = Math.floor(wan * 10) / 10
+		return wanInt.toString() + 'w'
+	}
+	return Math.floor(wan).toString() + 'w'
+}
+
+// ==================== 计算属性 ====================
+
+// 是否已点赞
+const isLikedValue = computed((): boolean => {
+	// 优先使用 props 传入的值
+	if (props.isLiked == true) return true
+	
+	// 检查 item 中的 isLike 字段
+	const isLikeVal = getDataNumberProp('isLike')
+	// isLike: 10=已点赞, 20=未点赞
+	return isLikeVal == 10
+})
+
+// 点赞数
+const likeCountValue = computed((): number => {
+	// 优先使用 props 传入的值
+	if (props.likeCount > 0) return props.likeCount
+	
+	// 从 item 中获取
+	const likeNum = getDataNumberProp('likeNum')
+	if (likeNum > 0) return likeNum
+	
+	return getDataNumberProp('likeCount')
+})
+
+// 评论数
+const commentCountValue = computed((): number => {
+	// 优先使用 props 传入的值
+	if (props.commentCount > 0) return props.commentCount
+	
+	// 从 item 中获取
+	const commentNum = getDataNumberProp('commentNum')
+	if (commentNum > 0) return commentNum
+	
+	return getDataNumberProp('commentCount')
+})
+
+// ==================== 事件处理 ====================
+const onLike = () => {
+	emit('like')
+}
+
+const onComment = () => {
+	emit('comment')
+}
+
+const onShare = () => {
+	emit('share')
+}
+</script>
+
+<style scoped>
+.interaction-panel {
+	flex-direction: column;
+	align-items: center;
+	width: 100rpx;
+}
+
+/* 操作按钮 */
+.action-item {
+	flex-direction: column;
+	align-items: center;
+	margin-bottom: 28rpx;
+}
+
+.action-icon-box {
+	width: 64rpx;
+	height: 64rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-count {
+	font-size: 24rpx;
+	color: #FFFFFF;
+	margin-top: 8rpx;
+	text-align: center;
+}
+</style>

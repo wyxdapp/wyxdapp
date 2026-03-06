@@ -1,0 +1,220 @@
+<template>
+	<view class="wy-input" :class="{ 'wy-input--disabled': disabled, 'wy-input--error': error }">
+		<view v-if="label != ''" class="wy-input__label">
+			<text class="wy-input__label-text">{{ label }}</text>
+			<text v-if="required == true" class="wy-input__required">*</text>
+		</view>
+		<view class="wy-input__wrapper">
+			<view v-if="prefixIcon != ''" class="wy-input__prefix">
+				<text class="wy-input__prefix-text">{{ prefixIcon }}</text>
+			</view>
+			<input 
+				class="wy-input__field"
+				:type="type"
+				:value="modelValue"
+				:placeholder="placeholder"
+				:placeholder-style="placeholderStyle"
+				:disabled="disabled"
+				:maxlength="maxlength"
+				:password="password"
+				:focus="focus"
+				@input="handleInput"
+				@focus="handleFocus"
+				@blur="handleBlur"
+				@confirm="handleConfirm"
+			/>
+			<view v-if="clearable == true && modelValue != '' && disabled == false" class="wy-input__clear" @click="handleClear">
+				<text class="wy-input__clear-text">✕</text>
+			</view>
+			<view v-if="suffixIcon != ''" class="wy-input__suffix">
+				<text class="wy-input__suffix-text">{{ suffixIcon }}</text>
+			</view>
+		</view>
+		<view v-if="error == true && errorMessage != ''" class="wy-input__error">
+			<text class="wy-input__error-text">{{ errorMessage }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { defineProps, defineEmits, computed } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	modelValue: { type: String, default: '' },
+	type: { type: String, default: 'text' },
+	label: { type: String, default: '' },
+	placeholder: { type: String, default: '请输入' },
+	disabled: { type: Boolean, default: false },
+	readonly: { type: Boolean, default: false },
+	clearable: { type: Boolean, default: true },
+	password: { type: Boolean, default: false },
+	required: { type: Boolean, default: false },
+	maxlength: { type: Number, default: 140 },
+	focus: { type: Boolean, default: false },
+	error: { type: Boolean, default: false },
+	errorMessage: { type: String, default: '' },
+	prefixIcon: { type: String, default: '' },
+	suffixIcon: { type: String, default: '' }
+})
+
+interface WyInputDetail {
+	value: string
+}
+
+interface WyInputEvent {
+	detail: WyInputDetail
+}
+
+// Emits
+const emit = defineEmits<{
+	'update:modelValue': [value: string]
+	input: [value: string]
+	focus: [event: any]
+	blur: [event: any]
+	confirm: [value: string]
+	clear: []
+}>()
+
+// Computed
+const placeholderStyle = computed(() => {
+	return 'color: #999999; font-size: 28rpx;'
+})
+
+// Methods
+const handleInput = (e: any) => {
+	let value = ''
+	try {
+		const ev = e as WyInputEvent
+		const detail = ev.detail
+		value = detail.value.toString()
+	} catch (err) {}
+	emit('update:modelValue', value)
+	emit('input', value)
+}
+
+const handleFocus = (e: any) => {
+	emit('focus', e)
+}
+
+const handleBlur = (e: any) => {
+	emit('blur', e)
+}
+
+const handleConfirm = (e: any) => {
+	let value = ''
+	try {
+		const ev = e as WyInputEvent
+		const detail = ev.detail
+		value = detail.value.toString()
+	} catch (err) {}
+	emit('confirm', value)
+}
+
+const handleClear = () => {
+	emit('update:modelValue', '')
+	emit('clear')
+}
+</script>
+
+<style scoped>
+.wy-input {
+	display: flex;
+	flex-direction: column;
+}
+
+.wy-input--disabled {
+	opacity: 0.6;
+}
+
+.wy-input--error .wy-input__wrapper {
+	border-color: #F44336;
+}
+
+.wy-input__label {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 16rpx;
+}
+
+.wy-input__label-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.wy-input__required {
+	color: #F44336;
+	margin-left: 4rpx;
+}
+
+.wy-input__wrapper {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	height: 72rpx;
+	padding: 0 24rpx;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+	transition: all 0.3s;
+}
+
+.wy-input__wrapper:focus-within {
+	background-color: #ffffff;
+	border-color: #2EAEF2;
+}
+
+.wy-input__prefix,
+.wy-input__suffix {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.wy-input__prefix-text,
+.wy-input__suffix-text {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.wy-input__prefix {
+	margin-right: 12rpx;
+}
+
+.wy-input__suffix {
+	margin-left: 12rpx;
+}
+
+.wy-input__field {
+	flex: 1;
+	height: 100%;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.wy-input__clear {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40rpx;
+	height: 40rpx;
+	margin-left: 12rpx;
+}
+
+.wy-input__clear-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.wy-input__error {
+	margin-top: 8rpx;
+}
+
+.wy-input__error-text {
+	font-size: 24rpx;
+	color: #F44336;
+}
+</style>

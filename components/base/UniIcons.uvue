@@ -1,0 +1,119 @@
+<template>
+	<text 
+		class="uni-icons" 
+		:style="iconStyle" 
+		@click="handleClick"
+	>{{ iconChar }}</text>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+
+// 图标映射表 - type 到 Unicode 字符的映射
+const ICON_MAP = new Map<string, string>([
+	['arrow-down', '\ue6be'],
+	['arrow-left', '\ue6bc'],
+	['arrow-right', '\ue6bb'],
+	['arrow-up', '\ue6bd'],
+	['back', '\ue6b9'],
+	['calendar', '\ue6a0'],
+	['calendar-filled', '\ue6c0'],
+	['chat', '\ue65d'],
+	['chat-filled', '\ue659'],
+	['phone', '\ue69c'],
+	['phone-filled', '\ue69b'],
+	['location', '\ue6ae'],
+	['location-filled', '\ue6af'],
+	['info', '\ue669'],
+	['info-filled', '\ue649'],
+	['person', '\ue699'],
+	['person-filled', '\ue69d'],
+	['search', '\ue654'],
+	['weixin', '\ue691'],
+	['locked', '\ue66b'],
+	['locked-filled', '\ue668'],
+	['gear', '\ue664'],
+	['gear-filled', '\ue661'],
+	['settings', '\ue653'],
+	['settings-filled', '\ue6ce'],
+	['notification', '\ue6a6'],
+	['notification-filled', '\ue6c1'],
+	['list', '\ue644'],
+	['chatbubble', '\ue697'],
+	['chatbubble-filled', '\ue694'],
+	['share', '\ue672'],
+	['forward', '\ue6ba'],
+	['redo', '\ue6ba'],
+	['heart', '\ue6a3'],
+	['heart-filled', '\ue68c'],
+	['camera', '\ue65a'],
+	['camera-filled', '\ue658'],
+	['checkbox-filled', '\ue62c'],
+	['close', '\ue673'],
+	['compose', '\ue67f'],
+	['gift', '\ue6a4'],
+	['gift-filled', '\ue6c4'],
+	['flag', '\ue65f'],
+	['image', '\ue670'],
+	['medal-filled', '\ue6c3'],
+	['paperplane', '\ue672'],
+	['shop', '\ue62f'],
+	['spinner-cycle', '\ue68a'],
+	['star', '\ue688'],
+	['star-filled', '\ue68f'],
+	['wallet', '\ue6b1'],
+	['wallet-filled', '\ue6c2'],
+	['fire', '\ue6a1'],
+	['auth-filled', '\ue6cc'],
+	['eye', '\ue651']
+])
+
+// Props - 使用运行时声明（uni-app x 要求）
+const props = defineProps({
+	type: { type: String, required: true },  // 图标类型，如 'back', 'phone', 'location' 等
+	size: { type: [Number, String], default: 24 },  // 图标大小
+	color: { type: String, default: '#333333' }  // 图标颜色
+})
+
+// Emits
+const emit = defineEmits<{
+	click: []
+}>()
+
+// 获取图标字符
+const iconChar = computed((): string => {
+	const char = ICON_MAP.get(props.type)
+	if (char != null) {
+		return char
+	}
+	return ''
+})
+
+// 图标样式
+const iconStyle = computed((): string => {
+	const sizeValue = typeof props.size === 'number' 
+		? props.size.toString() + 'rpx' 
+		: props.size as string
+	
+	return `font-size: ${sizeValue}; color: ${props.color}; line-height: 1;`
+})
+
+// 方法
+const handleClick = () => {
+	emit('click')
+}
+</script>
+
+<style scoped>
+/* 引入 uni-icons 字体文件 */
+@font-face {
+	font-family: uniicons;
+	src: url('../../uni_modules/uni-icons/components/uni-icons/uniicons.ttf');
+}
+
+.uni-icons {
+	font-family: uniicons;
+	text-align: center;
+}
+</style>
+

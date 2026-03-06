@@ -1,0 +1,174 @@
+import { ref, computed } from 'vue'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import config from '@/utils/config'
+import { SK_WYXD_LOCATION } from '@/common/config/storageKeys.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+
+// 使用 ref 创建响应式状态
+const latitudeRef = ref<number>(0)
+const longitudeRef = ref<number>(0)
+const cityRef = ref<string>('全部')
+const provinceRef = ref<string>('')
+const districtRef = ref<string>('')
+const isLocationLoadingRef = ref<boolean>(false)
+
+// Getters
+const cityName = computed((): string => {
+	return (cityRef.value != null && cityRef.value != '') ? cityRef.value : '全部'
+})
+
+const hasLocation = computed((): boolean => {
+	return latitudeRef.value != 0 && longitudeRef.value != 0
+})
+
+// Actions
+const initLocation = () => {
+	try {
+		const locationStr = uni.getStorageSync(SK_WYXD_LOCATION)
+		if (locationStr != null && locationStr != '') {
+			const location = JSON.parse(locationStr as string) as UTSJSONObject
+			latitudeRef.value = (location.get('latitude') != null) ? Number(location.get('latitude')) : 0
+			longitudeRef.value = (location.get('longitude') != null) ? Number(location.get('longitude')) : 0
+			cityRef.value = (location.get('city') != null) ? location.get('city')!.toString() : '全部'
+			provinceRef.value = (location.get('province') != null) ? location.get('province')!.toString() : ''
+			districtRef.value = (location.get('district') != null) ? location.get('district')!.toString() : ''
+			console.log('Location initialized')
+		}
+	} catch (e) {
+		console.error('Failed to init location:', e)
+	}
+}
+
+const setLocation = (latitude: number, longitude: number, city: string, province: string, district: string) => {
+	if (latitude != null) latitudeRef.value = latitude
+	if (longitude != null) longitudeRef.value = longitude
+	if (city != null && city != '') cityRef.value = city
+	if (province != null) provinceRef.value = province
+	if (district != null) districtRef.value = district
+	
+	const locationInfo = {
+		latitude: latitudeRef.value,
+		longitude: longitudeRef.value,
+		city: cityRef.value,
+		province: provinceRef.value,
+		district: districtRef.value
+	}
+	safeSetStorageSync(SK_WYXD_LOCATION, JSON.stringify(locationInfo))
+	console.log('Location updated')
+}
+
+const getCurrentLocation = async (): Promise<boolean> => {
+	isLocationLoadingRef.value = true
+	
+	try {
+		const location = await getLocationInfo()
+		const locJson = JSON.stringify(location)
+		const locParsed = JSON.parse(locJson) as UTSJSONObject
+		
+		setLocation(
+			(locParsed.get('latitude') != null) ? Number(locParsed.get('latitude')) : 0,
+			(locParsed.get('longitude') != null) ? Number(locParsed.get('longitude')) : 0,
+			(locParsed.get('city') != null) ? locParsed.get('city')!.toString() : '',
+			(locParsed.get('province') != null) ? locParsed.get('province')!.toString() : '',
+			(locParsed.get('district') != null) ? locParsed.get('district')!.toString() : ''
+		)
+		return true
+	} catch (e) {
+		console.error('Failed to get location:', e)
+		return false
+	} finally {
+		isLocationLoadingRef.value = false
+	}
+}
+
+interface GeoResult {
+	city: string
+	province?: string
+	district?: string
+}
+
+const reverseGeocode = async (latitude: number, longitude: number): Promise<GeoResult> => {
+	try {
+		// #ifdef H5
+		const url = 'https://apis.map.qq.com/ws/geocoder/v1/?output=jsonp'
+		// #endif
+		// #ifndef H5
+		const url = 'https://apis.map.qq.com/ws/geocoder/v1/'
+		// #endif
+
+		const res = await uni.request({
+			url: url,
+			method: 'GET',
+			data: {
+				location: `${latitude},${longitude}`,
+				key: config.map_key,
+				get_poi: 0
+			}
+		})
+		
+		if (res.statusCode === 200) {
+			const data = res.data
+			// UTS 规范：使用 UTSJSONObject 类型
+			let result: UTSJSONObject | null = null
+			
+			if (typeof data === 'string') {
+				const dataStr = data as string
+				if (dataStr.indexOf('(') > -1 && dataStr.indexOf(')') > -1) {
+					const jsonStr = dataStr.substring(dataStr.indexOf('(') + 1, dataStr.lastIndexOf(')'))
+					result = JSON.parse(jsonStr)
+				} else {
+					result = JSON.parse(dataStr)
+				}
+			} else {
+				result = data
+			}
+
+			if (result != null && result.status === 0) {
+				const r = result.result
+				const ac = r.address_component
+				return {
+					city: (ac.city != null) ? ac.city.toString() : '未知',
+					province: (ac.province != null) ? ac.province.toString() : '',
+					district: (ac.district != null) ? ac.district.toString() : ''
+				}
+			}
+		}
+		
+		return { city: '未知' }
+	} catch (e) {
+		console.error('Reverse geocode failed:', e)
+		return { city: '未知' }
+	}
+}
+
+// 导出 useLocationStore 函数
+export const useLocationStore = () => {
+	return {
+		// State
+		get latitude() { return latitudeRef.value },
+		get longitude() { return longitudeRef.value },
+		get city() { return cityRef.value },
+		get province() { return provinceRef.value },
+		get district() { return districtRef.value },
+		get isLocationLoading() { return isLocationLoadingRef.value },
+		get locationInfo() {
+			return {
+				latitude: latitudeRef.value,
+				longitude: longitudeRef.value,
+				city: cityRef.value,
+				province: provinceRef.value,
+				district: districtRef.value
+			}
+		},
+		
+		// Getters
+		get cityName() { return cityName.value },
+		get hasLocation() { return hasLocation.value },
+		
+		// Actions
+		initLocation,
+		setLocation,
+		getCurrentLocation,
+		reverseGeocode
+	}
+}

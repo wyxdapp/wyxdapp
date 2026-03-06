@@ -1,0 +1,97 @@
+/**
+ * 用户模块类型定义
+ * 对应 API 文件: api/user.uts, api/userExtend.uts
+ */
+
+// ============ user.uts 相关类型 ============
+
+// 获取用户主页信息请求参数
+export class GetUserHomePageParams {
+	kid: string = ''
+	focusUserkid: string = ''
+}
+
+// 更新用户基本信息请求参数（旧接口兼容）
+export class UpdateBaseInfoParams {
+	kid: string = ''
+	nickname: string = ''
+	image: string = ''
+	background: string = ''
+	signature: string = ''
+}
+
+// 根据 kid 查询用户详细信息请求参数
+export class QueryUserByKidParams {
+	kid: string = ''
+}
+
+// 更新用户联系方式请求参数
+export class UpdateContactInfoParams {
+	kid: string = ''
+	realname: string = ''
+	contactPhone: string = ''
+	qqNumber: string = ''
+	weixinNumber: string = ''
+}
+
+// 搜索用户请求参数
+export class UserSearchParams {
+	phone: string = ''
+	nickname: string = ''
+	startTime: string = ''
+	endTime: string = ''
+	isSeal: number = 0
+	idAuth: number = 0
+	page: number = 1
+	pageSize: number = 20
+}
+
+// 更新用户基本信息请求参数（新接口，含 kid 用于 URL 路径）
+export class UpdateUserBasicInfoParams {
+	kid: string = ''
+	username: string = ''
+	phone: string = ''
+	realname: string = ''
+	nickname: string = ''
+	sex: string = ''
+	education: string = ''
+	birthDate: string = ''
+	occupation: string = ''
+	birthPlace: string = ''
+	liveCity: string = ''
+	idNumber: string = ''
+	signature: string = ''
+	weixinNumber: string = ''
+	qqNumber: string = ''
+	contactPhone: string = ''
+}
+
+// 更新用户状态请求参数
+export class UpdateUserStatusParams {
+	kid: string = ''
+	status: number = 0
+	isSeal: number = 0
+	bail: number = 0
+	vip: number = 0
+	vipExpireTime: string = ''
+	vipType: number = 0
+}
+
+// 更新用户图片请求参数
+export class UpdateUserImagesParams {
+	kid: string = ''
+	image: string = ''
+	background: string = ''
+	idcardFrontImage: string = ''
+	idcardBackImage: string = ''
+	guideAuthenticatImage: string = ''
+	driverAuthenticatImage: string = ''
+}
+
+// ============ userExtend.uts 相关类型 ============
+
+// 绑定推广人请求参数
+export class BindUserReferrerParams {
+	userKid: string = ''
+	referrerShortKid: string = ''
+}

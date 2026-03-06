@@ -1,0 +1,91 @@
+/**
+ * 本地存储键名注册表
+ * 统一管理所有 uni.getStorageSync / uni.setStorageSync 使用的键名
+ * 使用 SK_ 前缀统一命名，避免键名拼写错误导致的数据读写不一致
+ */
+
+// === 用户认证 ===
+/** 用户登录 Token */
+export const SK_TOKEN = 'token'
+/** 用户信息（JSON 字符串） */
+export const SK_USER_INFO = 'userInfo'
+/** 登录后跳转地址 */
+export const SK_LOGIN_REDIRECT_URL = 'login_redirect_url'
+
+// === 微信授权 ===
+/** 微信授权 code */
+export const SK_WX_CODE = 'wxCode'
+/** 微信授权 code 是否已使用 */
+export const SK_WX_CODE_USED = 'wxCode_used'
+
+// === 聊天 ===
+/** 聊天消息（旧格式，用于迁移） */
+export const SK_CHAT_MESSAGES = 'chat_messages'
+/** 聊天 WebSocket Token */
+export const SK_CHAT_TOKEN = 'chatToken'
+/** WebSocket 连接开始时间戳 */
+export const SK_CONNECTING_START_TIME = 'connectingStartTime'
+/** 聊天消息存储前缀（按会话分片存储） */
+export const SK_CHAT_MSG_PREFIX = 'chat_msg_'
+/** 聊天会话元数据 */
+export const SK_CHAT_CONVERSATIONS_META = 'chat_conversations_meta'
+/** 离线消息缓存 */
+export const SK_OFFLINE_MESSAGES = 'offlineMessages'
+
+// === 通知 ===
+/** 通知缓存 */
+export const SK_NOTIFICATION_CACHE = 'notification_cache'
+
+// === 订单/支付 ===
+/** 待支付订单 KID */
+export const SK_PENDING_ORDER_KID = 'pendingOrderKid'
+/** 待支付参数（H5 微信支付授权回跳后使用） */
+export const SK_PENDING_PAYMENT = 'pendingPayment'
+/** 待处理礼物订单 */
+export const SK_PENDING_GIFT_ORDER = 'pendingGiftOrder'
+
+// === 隐私 ===
+/** 是否同意隐私协议（旧键名，登出时清理用） */
+export const SK_AGREED_TO_PRIVACY = 'agreedToPrivacy'
+/** 登录页隐私协议是否已同意 */
+export const SK_LOGIN_PRIVACY_AGREED = 'login_privacy_agreed'
+/** App 隐私协议同意状态 */
+export const SK_APP_PRIVACY_AGREED = 'app_privacy_agreed'
+
+// === 定位 ===
+/** 是否已成功定位过（用于判断超时时间） */
+export const SK_HAS_SUCCESSFUL_LOCATION = 'hasSuccessfulLocation'
+/** 位置信息缓存 */
+export const SK_WYXD_LOCATION = 'WYXD_LOCATION'
+/** 定位隐私弹窗查看状态 */
+export const SK_LOCATION_PRIVACY_VIEWED = 'WYXD_LOCATION_PRIVACY_VIEWED'
+
+// === 推送 ===
+/** 推送客户端 ID */
+export const SK_PUSH_CLIENT_ID = 'push_client_id'
+/** 推送配置 */
+export const SK_PUSH_CONFIG = 'push_config'
+
+// === 表情 ===
+/** 最近使用的表情 */
+export const SK_RECENT_EMOJIS = 'recent_emojis'
+/** 自定义表情 */
+export const SK_CUSTOM_EMOJIS = 'custom_emojis'
+/** 收藏表情 */
+export const SK_FAVORITE_EMOJIS = 'favorite_emojis'
+
+// === 草稿 ===
+/** 路线草稿 */
+export const SK_ROUTE_DRAFT = 'route_draft'
+
+// === 营销 ===
+/** 营销弹窗展示记录 */
+export const SK_MARKETING_POPUP_RECORD = 'marketing_popup_record'
+/** 待处理推广数据 */
+export const SK_PENDING_PROMOTION = 'pending_promotion'
+
+// === 缓存 ===
+/** 用户资料缓存 */
+export const SK_USER_PROFILE_CACHE = 'user_profile_cache_v1'
+/** 系统设置缓存 */
+export const SK_SYSTEM_SETTINGS_CACHE = 'system_settings_cache'

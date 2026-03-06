@@ -1,0 +1,87 @@
+/**
+ * 微信 SDK 服务
+ * 
+ * 重要说明：
+ * 由于 UTS 条件编译 (#ifdef/#ifndef) 不可靠，
+ * 此文件仅提供占位函数，实际的微信 SDK 调用应在页面中直接实现。
+ * 
+ * APP 端微信登录使用 uni.login API（provider: weixin），需要自定义基座。
+ */
+
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+/**
+ * 获取当前平台
+ */
+export function getCurrentPlatform(): string {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const infoStr = JSON.stringify(systemInfo)
+		const infoObj = JSON.parse(infoStr) as UTSJSONObject
+		const platformVal = infoObj.get('uniPlatform')
+		if (platformVal != null) {
+			return platformVal.toString()
+		}
+	} catch (e) {
+		handleSilentError(e, '获取平台信息')
+	}
+	return ''
+}
+
+/**
+ * 检查是否为 APP 端
+ */
+export function isAppPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios'
+}
+
+/**
+ * 初始化微信 SDK（占位函数）
+ * 实际实现应在页面中直接调用
+ */
+export function initWeChatSDK(): void {
+	const platform = getCurrentPlatform()
+	console.log('📱 [WX-SDK] initWeChatSDK 被调用，当前平台:', platform)
+	
+	if (isAppPlatform() == false) {
+		console.log('⚠️ [WX-SDK] 非 APP 端，跳过微信SDK初始化')
+		return
+	}
+	
+	// APP 端的实际初始化应在页面中直接实现
+	console.log('📱 [WX-SDK] APP 端，请在页面中直接初始化微信SDK')
+}
+
+/**
+ * 获取微信授权 code（占位函数）
+ * 实际实现应在页面中直接调用
+ */
+export function getWechatAuthCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	const platform = getCurrentPlatform()
+	console.log('📱 [WX-SDK] getWechatAuthCode 被调用，当前平台:', platform)
+	
+	if (isAppPlatform() == false) {
+		console.error('❌ [WX-SDK] 非 APP 端不支持此功能')
+		onError('当前平台不支持此功能')
+		return
+	}
+	
+	// APP 端的实际实现应在页面中直接调用
+	console.error('❌ [WX-SDK] 请在页面中直接调用微信SDK')
+	onError('请在页面中直接调用微信SDK')
+}
+
+/**
+ * 检查微信是否安装（占位函数）
+ */
+export function isWeChatInstalled(): boolean {
+	if (isAppPlatform() == false) {
+		return false
+	}
+	// APP 端的实际检查应在页面中直接实现
+	return false
+}

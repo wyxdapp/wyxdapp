@@ -1,0 +1,446 @@
+<template>
+	<view class="chat-input-container">
+		<view class="input-wrapper">
+			<view class="input-left">
+				<!-- 语音/键盘切换图标 -->
+				<image 
+					v-if="voiceMode == false" 
+					class="input-icon" 
+					src="https://jiasu.wyxdapp.com/iconimages/icon_news_vioce.png" 
+					mode="aspectFit" 
+					@click="handleSwitchToVoice"
+				></image>
+				<image 
+					v-else 
+					class="input-icon" 
+					src="https://jiasu.wyxdapp.com/iconimages/icon_news_input.png" 
+					mode="aspectFit" 
+					@click="handleSwitchToText"
+				></image>
+			</view>
+			
+			<view class="input-main">
+				<!-- 文字输入模式 -->
+				<input
+					v-if="voiceMode == false"
+					class="message-input"
+					v-model="inputValue"
+					:placeholder="placeholder"
+					:maxlength="maxLength"
+					:disabled="disabled"
+					confirm-type="send"
+					@focus="handleFocus"
+					@blur="handleBlur"
+					@confirm="handleConfirm"
+				/>
+				<!-- 语音输入模式 - 按住说话按钮 -->
+				<view 
+					v-else 
+					class="voice-btn"
+					:class="isRecording == true ? 'voice-btn-active' : ''"
+					@touchstart="handleTouchStart"
+					@touchmove="handleTouchMove"
+					@touchend="handleTouchEnd"
+					@touchcancel="handleTouchCancel"
+				>
+					<text class="voice-btn-text">{{ isRecording == true ? '松开发送' : '按住说话' }}</text>
+				</view>
+			</view>
+			
+			<view class="input-right">
+				<!-- 键盘图标（表情面板内使用，点击关闭表情面板） -->
+				<image 
+					v-if="showKeyboardIcon == true && voiceMode == false" 
+					class="input-icon" 
+					src="https://jiasu.wyxdapp.com/iconimages/icon_news_input.png" 
+					mode="aspectFit" 
+					@click="handleKeyboard"
+				></image>
+				<!-- 表情图标 -->
+				<image 
+					v-if="showEmojiIcon == true && voiceMode == false" 
+					class="input-icon" 
+					src="https://jiasu.wyxdapp.com/iconimages/icon_news_face.png" 
+					mode="aspectFit" 
+					@click="handleEmoji"
+				></image>
+				<!-- 加号图标 -->
+				<image v-if="inputValue == '' && voiceMode == false" class="input-icon" src="https://jiasu.wyxdapp.com/iconimages/icon_news_add.png" mode="aspectFit" @click="handleShowMore"></image>
+				<view v-else-if="voiceMode == false" class="send-btn" @click="handleSend">
+					<text class="send-text">发送</text>
+				</view>
+				<!-- 语音模式下的加号图标 -->
+				<image v-if="voiceMode == true" class="input-icon" src="https://jiasu.wyxdapp.com/iconimages/icon_news_add.png" mode="aspectFit" @click="handleShowMore"></image>
+			</view>
+		</view>
+		<!-- 底部安全区域填充（动态高度，白色背景） -->
+		<view v-if="safeAreaBottom > 0" class="safe-area-bottom-fill" :style="{ height: safeAreaBottom + 'px' }"></view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, watch } from 'vue'
+import { getSafeAreaBottom as getSafeAreaBottomUtil } from '@/common/utils/systemInfo.uts'
+
+// ✅ 运行时 Props 声明 (符合 uni-app x 规范)
+const props = defineProps({
+	placeholder: {
+		type: String,
+		default: '请输入消息...'
+	},
+	maxLength: {
+		type: Number,
+		default: 500
+	},
+	disabled: {
+		type: Boolean,
+		default: false
+	},
+	showEmojiIcon: {
+		type: Boolean,
+		default: true
+	},
+	showKeyboardIcon: {
+		type: Boolean,
+		default: false
+	}
+})
+
+const emit = defineEmits<{
+	send: [content: string]
+	focus: []
+	blur: []
+	showMore: []
+	voice: []
+	emoji: []
+	keyboard: []
+	voiceStart: []
+	voiceEnd: []
+	voiceCancel: []
+	voiceModeChange: [mode: boolean]
+}>()
+
+const inputValue = ref('')
+const isFocused = ref(false)
+const voiceMode = ref<boolean>(false)
+const isRecording = ref<boolean>(false)
+const touchStartY = ref<number>(0)
+const isCancelArea = ref<boolean>(false)
+const cancelThreshold = 100 // 上滑取消阈值（像素）
+
+// 获取设备底部安全区域高度
+const safeAreaBottom = ref<number>(getSafeAreaBottomUtil())
+
+watch(inputValue, (newVal: string) => {
+	// 可以在这里添加输入监听逻辑
+})
+
+const handleFocus = () => {
+	isFocused.value = true
+	emit('focus')
+}
+
+const handleBlur = () => {
+	isFocused.value = false
+	emit('blur')
+}
+
+// 先定义 handleSend，供 handleConfirm 调用
+const handleSend = () => {
+	const value = inputValue.value
+	if (value == '' || value.trim().length == 0) return
+	emit('send', value)
+	inputValue.value = ''
+}
+
+const handleConfirm = () => {
+	handleSend()
+}
+
+const handleShowMore = () => {
+	emit('showMore')
+}
+
+const handleEmoji = () => {
+	emit('emoji')
+}
+
+const handleKeyboard = () => {
+	emit('keyboard')
+}
+
+// 切换到语音模式
+const handleSwitchToVoice = () => {
+	voiceMode.value = true
+	emit('voiceModeChange', true)
+}
+
+// 切换到文字模式
+const handleSwitchToText = () => {
+	voiceMode.value = false
+	emit('voiceModeChange', false)
+}
+
+// 获取触摸点 Y 坐标
+const getTouchY = (e: any): number => {
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const touches = eObj.get('touches')
+		if (touches != null && Array.isArray(touches) == true) {
+			const touchesArr = touches as Array<any>
+			if (touchesArr.length > 0) {
+				const touch = touchesArr[0]
+				const touchStr = JSON.stringify(touch)
+				const touchObj = JSON.parse(touchStr) as UTSJSONObject
+				const clientY = touchObj.get('clientY')
+				if (clientY != null) {
+					const y = parseFloat(clientY.toString())
+					if (isNaN(y) == false) {
+						return y
+					}
+				}
+			}
+		}
+		// 尝试 changedTouches
+		const changedTouches = eObj.get('changedTouches')
+		if (changedTouches != null && Array.isArray(changedTouches) == true) {
+			const touchesArr = changedTouches as Array<any>
+			if (touchesArr.length > 0) {
+				const touch = touchesArr[0]
+				const touchStr = JSON.stringify(touch)
+				const touchObj = JSON.parse(touchStr) as UTSJSONObject
+				const clientY = touchObj.get('clientY')
+				if (clientY != null) {
+					const y = parseFloat(clientY.toString())
+					if (isNaN(y) == false) {
+						return y
+					}
+				}
+			}
+		}
+	} catch (err) {
+		console.error('获取触摸坐标失败:', err)
+	}
+	return 0
+}
+
+// 触摸开始 - 开始录音
+const handleTouchStart = (e: any) => {
+	console.log('🎤 [ChatInput] touchstart')
+	touchStartY.value = getTouchY(e)
+	isRecording.value = true
+	isCancelArea.value = false
+	emit('voiceStart')
+}
+
+// 触摸移动 - 检测是否进入取消区域
+const handleTouchMove = (e: any) => {
+	const currentY = getTouchY(e)
+	const deltaY = touchStartY.value - currentY
+	
+	// 上滑超过阈值进入取消区域
+	if (deltaY > cancelThreshold) {
+		if (isCancelArea.value == false) {
+			isCancelArea.value = true
+			console.log('🎤 [ChatInput] 进入取消区域')
+		}
+	} else {
+		if (isCancelArea.value == true) {
+			isCancelArea.value = false
+			console.log('🎤 [ChatInput] 离开取消区域')
+		}
+	}
+}
+
+// 触摸结束 - 停止或取消录音
+const handleTouchEnd = () => {
+	console.log('🎤 [ChatInput] touchend, isCancelArea:', isCancelArea.value)
+	
+	if (isRecording.value == false) return
+	
+	isRecording.value = false
+	
+	if (isCancelArea.value == true) {
+		// 取消录音
+		isCancelArea.value = false
+		emit('voiceCancel')
+	} else {
+		// 停止录音并发送
+		emit('voiceEnd')
+	}
+}
+
+// 触摸取消
+const handleTouchCancel = () => {
+	console.log('🎤 [ChatInput] touchcancel')
+	isRecording.value = false
+	isCancelArea.value = false
+	emit('voiceCancel')
+}
+
+// 获取是否在取消区域（供父组件使用）
+const getIsCancelArea = (): boolean => {
+	return isCancelArea.value
+}
+
+// 插入表情到光标位置
+const insertEmoji = (emoji: string) => {
+	inputValue.value = inputValue.value + emoji
+}
+
+// 删除最后一个字符（用于表情面板退格键）
+const deleteEmoji = () => {
+	const value = inputValue.value
+	if (value == '' || value.length == 0) return
+	
+	// ✅ 修复：简单使用 substring 处理
+	if (value.length > 0) {
+		inputValue.value = value.substring(0, value.length - 1)
+	}
+}
+
+// 获取输入值
+const getValue = (): string => {
+	return inputValue.value
+}
+
+// 设置输入值
+const setValue = (value: string) => {
+	inputValue.value = value
+}
+
+// 清空输入
+const clear = () => {
+	inputValue.value = ''
+}
+
+// 设置语音模式
+const setVoiceMode = (mode: boolean) => {
+	voiceMode.value = mode
+}
+
+// 获取语音模式
+const getVoiceMode = (): boolean => {
+	return voiceMode.value
+}
+
+// ⭐ 暴露方法给父组件（必须在函数定义之后）
+defineExpose({
+	insertEmoji,
+	deleteEmoji,
+	getValue,
+	setValue,
+	clear,
+	setVoiceMode,
+	getVoiceMode,
+	getIsCancelArea
+})
+</script>
+
+<style>
+.chat-input-container {
+	background-color: #ffffff;
+	padding-top: 20rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 36rpx;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #f5f5f5;
+}
+
+/* 底部安全区域填充（iPhone X+ 等设备） */
+.safe-area-bottom-fill {
+	width: 750rpx;
+	background-color: #ffffff;
+}
+
+.input-wrapper {
+	flex-direction: row;
+	align-items: center;
+	min-height: 80rpx;
+}
+
+.input-left, .input-right {
+	flex-direction: row;
+	align-items: center;
+	height: 80rpx;
+}
+
+.input-left {
+	margin-right: 20rpx;
+}
+
+.input-right {
+	margin-left: 20rpx;
+}
+
+.input-icon {
+	width: 52rpx;
+	height: 52rpx;
+	margin-left: 24rpx;
+}
+
+.send-btn {
+	background-color: #37B1F2;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	height: 64rpx;
+	border-radius: 12rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.send-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.input-main {
+	flex: 1;
+	flex-direction: row;
+	background-color: #ffffff;
+	border-radius: 12rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	min-height: 80rpx;
+	align-items: center;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e5e5e5;
+}
+
+.message-input {
+	flex: 1;
+	height: 72rpx;
+	background-color: transparent;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	font-size: 32rpx;
+	color: #333333;
+}
+
+/* 语音按钮样式 */
+.voice-btn {
+	flex: 1;
+	height: 72rpx;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.voice-btn-active {
+	background-color: #e0e0e0;
+}
+
+.voice-btn-text {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: normal;
+}
+</style>

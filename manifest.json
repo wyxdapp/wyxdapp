@@ -1,0 +1,261 @@
+{
+	"name": "网约向导",
+	"appid": "__UNI__0B0B4BB",
+	"description": "专业的当地向导服务平台",
+	"versionName": "2.2.8",
+	"versionCode": "228",
+	"uni-app-x": {
+		"compatible": {
+			"runtime": "3.0"
+		}
+	},
+	"quickapp": {},
+	"mp-weixin": {
+		"appid": "wxea01c7c2791737dc",
+		"setting": {
+			"urlCheck": true,
+			"es6": true,
+			"minified": true,
+			"postcss": true,
+			"minifyWXSS": true
+		},
+		"usingComponents": true,
+		"permission": {
+			"scope.userLocation": {
+				"desc": "您的位置信息将用于为您推荐附近的向导和服务"
+			}
+		},
+		"requiredPrivateInfos": [
+			"getLocation",
+			"chooseLocation"
+		],
+		"unipush": {
+			"enable": false
+		}
+	},
+	"mp-alipay": {
+		"usingComponents": true
+	},
+	"mp-baidu": {
+		"usingComponents": true
+	},
+	"mp-toutiao": {
+		"usingComponents": true
+	},
+	"uniStatistics": {
+		"enable": false
+	},
+	"h5": {
+		"oauth": {
+			"weixin": {
+				"appid": "wx428774d18f12e2b1",
+				"appsecret": "f5b3fdcac8e8cda376aad0d49fa4ddfd"
+			}
+		}
+	},
+	"vueVersion": "3",
+	"app": {
+		"distribute": {
+			"oauth": {
+				"weixin": {
+					"appid": "wx4a9aa1fbc92e1054",
+					"appsecret": "120bb590a5dcff4fc8f61016caad8863"
+				}
+			},
+			"android": {
+				"permissions": [
+					"<uses-permission android:name=\"android.permission.INTERNET\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
+					"<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+					"<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
+					"<uses-permission android:name=\"android.permission.CAMERA\"/>",
+					"<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+					"<uses-permission android:name=\"android.permission.VIBRATE\"/>"
+				]
+			},
+			"ios": {
+				"privacyDescription": {
+					"NSPhotoLibraryUsageDescription": "需要访问您的相册以上传图片",
+					"NSPhotoLibraryAddUsageDescription": "需要保存图片到您的相册",
+					"NSCameraUsageDescription": "需要使用您的相机拍摄照片",
+					"NSMicrophoneUsageDescription": "用于在聊天中录制语音消息发送给向导或用户，例如按住说话录制并发送语音消息",
+					"NSLocationWhenInUseUsageDescription": "需要获取您的位置信息以推荐附近服务",
+					"NSLocationAlwaysUsageDescription": "需要获取您的位置信息以推荐附近服务"
+				}
+			},
+			"icons": {
+				"android": {
+					"hdpi": "static/logo.png",
+					"xhdpi": "static/logo.png",
+					"xxhdpi": "static/logo.png",
+					"xxxhdpi": "static/logo.png"
+				},
+				"ios": {
+					"appstore": "static/logo.png",
+					"ipad": {
+						"app": "static/logo.png",
+						"app@2x": "static/logo.png",
+						"notification": "static/logo.png",
+						"notification@2x": "static/logo.png",
+						"proapp@2x": "static/logo.png",
+						"settings": "static/logo.png",
+						"settings@2x": "static/logo.png",
+						"spotlight": "static/logo.png",
+						"spotlight@2x": "static/logo.png"
+					},
+					"iphone": {
+						"app@2x": "static/logo.png",
+						"app@3x": "static/logo.png",
+						"notification@2x": "static/logo.png",
+						"notification@3x": "static/logo.png",
+						"settings@2x": "static/logo.png",
+						"settings@3x": "static/logo.png",
+						"spotlight@2x": "static/logo.png",
+						"spotlight@3x": "static/logo.png"
+					}
+				}
+			}
+		}
+	},
+	"app-android": {
+		"distribute": {
+			"packagename": "com.wyxdapp.guide",
+			"privacy": {
+				"prompt": "请仔细阅读并同意《隐私政策》和《用户协议》，需要获取您的位置信息以推荐附近服务，读取WiFi扫描结果（WiFi名称SSID、WiFi标识BSSID）用于辅助定位和网络优化。",
+				"policy": "https://www.wyxdapp.com/doc/secret.html"
+			},
+			"permissions": [
+				"<uses-permission android:name=\"android.permission.INTERNET\"/>",
+				"<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+				"<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
+				"<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+				"<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
+				"<uses-permission android:name=\"android.permission.CAMERA\"/>",
+				"<uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>",
+				"<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+				"<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>",
+				"<uses-permission android:name=\"android.permission.VIBRATE\"/>",
+				"<uses-permission android:name=\"android.permission.ACCESS_BACKGROUND_LOCATION\"/>"
+			],
+			"modules": {
+				"uni-payment": {
+					"alipay": {}
+				},
+				"uni-oauth": {
+					"weixin": {
+						"appid": "wx4a9aa1fbc92e1054",
+						"UniversalLinks": "https://www.wyxdapp.com/app/"
+					}
+				},
+				"uni-push": {},
+				"uni-location": {
+					"tencent": {
+						"key": "URTBZ-N3HKD-CRC4M-P6ET7-5HORV-V3FFU"
+					},
+					"system": {}
+				}
+			},
+			"icons": {
+				"hdpi": "D:/wyxdapp/logo/72logo.png",
+				"xhdpi": "D:/wyxdapp/logo/96logo.png",
+				"xxhdpi": "D:/wyxdapp/logo/144logo.png",
+				"xxxhdpi": "D:/wyxdapp/logo/192logo.png"
+			},
+			"splashScreens": {
+				"default": {}
+			},
+			"minSdkVersion": "26",
+			"abiFilters": [
+				"armeabi-v7a",
+				"arm64-v8a",
+				"x86",
+				"x86_64"
+			],
+			"usesCleartextTraffic": true
+		}
+	},
+	"app-ios": {
+		"distribute": {
+			"appid": "com.qylvtu.lvtu",
+			"privacy": {
+				"prompt": "在使用服务前，请您仔细阅读《隐私政策》和《用户协议》。我们需要获取您的位置信息以推荐附近服务，读取WiFi扫描结果（WiFi名称SSID、WiFi标识BSSID）用于辅助定位和网络优化。",
+				"policy": "https://www.wyxdapp.com/doc/secret.html"
+			},
+			"privacyDescription": {
+				"NSCameraUsageDescription": "用于拍摄和上传您的个人头像、认证照片和动态图片",
+				"NSPhotoLibraryUsageDescription": "用于选择和上传您的个人头像、认证照片和动态图片",
+				"NSPhotoLibraryAddUsageDescription": "用于保存图片到您的相册",
+				"NSLocationWhenInUseUsageDescription": "用于获取您的位置信息，为您推荐附近的优质向导并显示距离。您可以随时在设置中关闭此权限。",
+				"NSMicrophoneUsageDescription": "用于在聊天中录制语音消息发送给向导或用户，例如按住说话录制并发送语音消息",
+				"NSLocationAlwaysUsageDescription": "需要获取您的位置信息以推荐附近服务",
+				"NSLocalNetworkUsageDescription": "需要访问本地网络以提供服务"
+			},
+			"idfa": false,
+			"modules": {
+				"uni-oauth": {
+					"weixin": {
+						"appid": "wx4a9aa1fbc92e1054",
+						"UniversalLinks": "https://www.wyxdapp.com/app/"
+					}
+				},
+				"uni-location": {
+					"tencent": {
+						"key": "URTBZ-N3HKD-CRC4M-P6ET7-5HORV-V3FFU"
+					},
+					"system": {}
+				},
+				"uni-payment": {
+					"alipay": {}
+				},
+				"uni-push": {}
+			},
+			"icons": {
+				"appstore": "D:/wyxdapp/logo/1024logo.png",
+				"ipad": {
+					"app": "static/logo.png",
+					"app@2x": "static/logo.png",
+					"notification": "static/logo.png",
+					"notification@2x": "static/logo.png",
+					"proapp@2x": "static/logo.png",
+					"settings": "static/logo.png",
+					"settings@2x": "static/logo.png",
+					"spotlight": "static/logo.png",
+					"spotlight@2x": "static/logo.png"
+				},
+				"iphone": {
+					"app@2x": "static/logo.png",
+					"app@3x": "static/logo.png",
+					"notification@2x": "static/logo.png",
+					"notification@3x": "static/logo.png",
+					"settings@2x": "static/logo.png",
+					"settings@3x": "static/logo.png",
+					"spotlight@2x": "static/logo.png",
+					"spotlight@3x": "static/logo.png"
+				}
+			},
+			"splashScreens": {}
+		}
+	},
+	"web": {
+		"router": {
+			"mode": ""
+		},
+		"title": "网约向导",
+		"devServer": {
+			"https": false
+		},
+		"sdkConfigs": {
+			"maps": {
+				"tencent": {
+					"key": "URTBZ-N3HKD-CRC4M-P6ET7-5HORV-V3FFU"
+				}
+			}
+		},
+		"unipush": {
+			"enable": true
+		}
+	}
+}

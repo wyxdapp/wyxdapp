@@ -1,0 +1,539 @@
+<template>
+	<view class="forward-page">
+		<!-- 头部导航栏 -->
+		<!-- #ifndef H5 -->
+		<view class="header-box" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="header-box">
+		<!-- #endif -->
+			<view class="header-content">
+				<view class="back-btn" @click="handleCancel">
+					<view class="back-arrow"></view>
+				</view>
+				<text class="header-title">转发消息</text>
+				<view class="placeholder"></view>
+			</view>
+		</view>
+		
+		<!-- 消息预览 -->
+		<view class="message-preview">
+			<text class="preview-label">转发消息</text>
+			<view class="preview-content">
+				<text class="preview-text">{{ messageContent }}</text>
+			</view>
+		</view>
+		
+		<!-- 搜索栏 -->
+		<view class="search-bar">
+			<view class="search-input-wrapper">
+				<text class="search-icon">🔍</text>
+				<input 
+					v-model="searchKeyword"
+					placeholder="搜索好友"
+					@input="handleSearch"
+					class="search-input-field"
+				/>
+			</view>
+		</view>
+		
+		<!-- 好友列表 -->
+		<view class="friend-list">
+			<view class="list-header">
+				<text class="header-title">选择好友</text>
+				<text class="selected-count">已选择 {{ selectedCount }} 人</text>
+			</view>
+			
+			<scroll-view class="scroll-view" scroll-y :show-scrollbar="false">
+				<view 
+					v-for="(friend, index) in displayFriendList" 
+					:key="index"
+					class="friend-item"
+					@click="toggleFriend(index)"
+				>
+					<view class="checkbox" :class="{ checked: isFriendSelectedByIndex(index) }">
+						<text v-if="isFriendSelectedByIndex(index) == true" class="check-icon">✓</text>
+					</view>
+					<Avatar 
+						:url="getFriendAvatar(index)"
+						:customSize="80"
+						clickMode="none"
+					/>
+					<text class="friend-name">{{ getFriendName(index) }}</text>
+				</view>
+			</scroll-view>
+		</view>
+		
+		<!-- 底部按钮 -->
+		<view class="footer-bar">
+			<view class="btn-cancel" @click="handleCancel">
+				<text class="btn-cancel-text">取消</text>
+			</view>
+			<view class="btn-forward" :class="{ disabled: selectedCount == 0 }" @click="handleForward">
+				<text class="btn-forward-text">{{ sending == true ? '发送中...' : '发送(' + selectedCount.toString() + ')' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 好友数据类
+class FriendData {
+	id: string = ''
+	name: string = ''
+	avatar: string = ''
+	selected: boolean = false
+}
+
+// 响应式数据
+const messageContent = ref<string>('')
+const searchKeyword = ref<string>('')
+const sending = ref<boolean>(false)
+
+// 好友列表（使用独立 ref，避免 computed 中使用数组高阶函数）
+const friendList = ref<Array<FriendData>>([])
+const displayFriendList = ref<Array<FriendData>>([])
+const selectedCount = ref<number>(0)
+
+// 默认头像
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// 延迟函数
+const delay = (ms: number): Promise<void> => {
+	return new Promise((resolve: (value: void) => void) => {
+		safeSetTimeout(() => {
+			resolve()
+		}, ms)
+	})
+}
+
+// 辅助函数：获取好友头像
+const getFriendAvatar = (index: number): string => {
+	if (index < 0 || index >= displayFriendList.value.length) return defaultAvatar
+	const friend = displayFriendList.value[index]
+	return (friend.avatar != '') ? friend.avatar : defaultAvatar
+}
+
+// 辅助函数：获取好友名称
+const getFriendName = (index: number): string => {
+	if (index < 0 || index >= displayFriendList.value.length) return ''
+	return displayFriendList.value[index].name
+}
+
+// 辅助函数：检查好友是否被选中（通过索引）
+const isFriendSelectedByIndex = (index: number): boolean => {
+	if (index < 0 || index >= displayFriendList.value.length) return false
+	return displayFriendList.value[index].selected == true
+}
+
+// 更新选中计数
+const updateSelectedCount = () => {
+	let count = 0
+	for (let i = 0; i < friendList.value.length; i = i + 1) {
+		if (friendList.value[i].selected == true) {
+			count = count + 1
+		}
+	}
+	selectedCount.value = count
+}
+
+// 更新显示列表（根据搜索关键词过滤）
+const updateDisplayList = () => {
+	const keyword = searchKeyword.value
+	const newList: Array<FriendData> = []
+	
+	for (let i = 0; i < friendList.value.length; i = i + 1) {
+		const friend = friendList.value[i]
+		if (keyword == null || keyword == '') {
+			// 无搜索关键词，显示所有
+			newList.push(friend)
+		} else {
+			// 有搜索关键词，过滤匹配的
+			const nameStr = friend.name
+			if (nameStr.indexOf(keyword) >= 0) {
+				newList.push(friend)
+			}
+		}
+	}
+	
+	displayFriendList.value = newList
+}
+
+// 初始化好友列表
+const initFriendList = () => {
+	const list: Array<FriendData> = []
+	
+	const friend1 = new FriendData()
+	friend1.id = '1'
+	friend1.name = '张三'
+	friend1.avatar = defaultAvatar
+	friend1.selected = false
+	list.push(friend1)
+	
+	const friend2 = new FriendData()
+	friend2.id = '2'
+	friend2.name = '李四'
+	friend2.avatar = defaultAvatar
+	friend2.selected = false
+	list.push(friend2)
+	
+	const friend3 = new FriendData()
+	friend3.id = '3'
+	friend3.name = '王五'
+	friend3.avatar = defaultAvatar
+	friend3.selected = false
+	list.push(friend3)
+	
+	friendList.value = list
+	updateDisplayList()
+}
+
+// 搜索处理
+const handleSearch = () => {
+	updateDisplayList()
+}
+
+// 切换好友选中状态
+const toggleFriend = (displayIndex: number) => {
+	if (displayIndex < 0 || displayIndex >= displayFriendList.value.length) return
+	
+	const displayFriend = displayFriendList.value[displayIndex]
+	const friendId = displayFriend.id
+	
+	// 在原始列表中找到对应的好友并切换状态
+	for (let i = 0; i < friendList.value.length; i = i + 1) {
+		if (friendList.value[i].id == friendId) {
+			friendList.value[i].selected = friendList.value[i].selected == false
+			break
+		}
+	}
+	
+	// 同步更新显示列表中的状态
+	displayFriendList.value[displayIndex].selected = displayFriendList.value[displayIndex].selected == false
+	
+	updateSelectedCount()
+}
+
+// 取消
+const handleCancel = () => {
+	uni.navigateBack()
+}
+
+// 转发消息
+const handleForward = async () => {
+	if (selectedCount.value == 0) {
+		uni.showToast({
+			title: '请选择好友',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (sending.value == true) return
+	
+	sending.value = true
+	try {
+		// TODO: 调用转发消息 API
+		// 收集选中的好友ID
+		const selectedIds: Array<string> = []
+		for (let i = 0; i < friendList.value.length; i = i + 1) {
+			if (friendList.value[i].selected == true) {
+				selectedIds.push(friendList.value[i].id)
+			}
+		}
+		
+		console.log('转发给好友:', selectedIds)
+		
+		// 模拟发送延迟
+		await delay(1500)
+		
+		uni.showToast({
+			title: '转发成功',
+			icon: 'success'
+		})
+		
+		safeSetTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '转发消息', sending)
+		} else {
+			sending.value = false
+		}
+	} finally {
+		sending.value = false
+	}
+}
+
+// 页面加载
+onLoad((options: OnLoadOptions) => {
+	// 初始化页面布局
+	initPageLayout()
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		const contentVal = optionsObj.get('content')
+		if (contentVal != null && contentVal.toString() != '') {
+			const decoded = decodeURIComponent(contentVal.toString())
+			if (decoded != null) {
+				messageContent.value = decoded
+			}
+		}
+	}
+	
+	// 初始化好友列表
+	initFriendList()
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style>
+.forward-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.header-box {
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+.header-content {
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 28rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-arrow {
+	width: 20rpx;
+	height: 20rpx;
+	border-left-width: 4rpx;
+	border-left-style: solid;
+	border-left-color: #333333;
+	border-bottom-width: 4rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #333333;
+	transform: rotate(45deg);
+}
+
+.header-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.placeholder {
+	width: 60rpx;
+}
+
+.message-preview {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.preview-label {
+	font-size: 24rpx;
+	color: #999999;
+	margin-bottom: 12rpx;
+}
+
+.preview-content {
+	padding: 20rpx;
+	background-color: #f8f9fa;
+	border-radius: 8rpx;
+}
+
+.preview-text {
+	font-size: 26rpx;
+	color: #333333;
+	lines: 3;
+}
+
+.search-bar {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #ffffff;
+	margin-bottom: 20rpx;
+}
+
+.search-input-wrapper {
+	flex-direction: row;
+	align-items: center;
+	background-color: #f8f9fa;
+	border-radius: 30rpx;
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.search-icon {
+	font-size: 28rpx;
+	margin-right: 12rpx;
+}
+
+.search-input-field {
+	flex: 1;
+	font-size: 26rpx;
+}
+
+.friend-list {
+	flex: 1;
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+.list-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.header-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.selected-count {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.scroll-view {
+	flex: 1;
+}
+
+.friend-item {
+	flex-direction: row;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.checkbox {
+	width: 40rpx;
+	height: 40rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.checkbox.checked {
+	background-color: #37B1F2;
+	border-color: #37B1F2;
+}
+
+.check-icon {
+	font-size: 24rpx;
+	color: #ffffff;
+}
+
+.friend-name {
+	margin-left: 20rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.footer-bar {
+	flex-direction: row;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	background-color: #ffffff;
+}
+
+.btn-cancel {
+	flex: 1;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #f5f5f5;
+	border-radius: 40rpx;
+	margin-right: 20rpx;
+}
+
+.btn-cancel-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.btn-forward {
+	flex: 1;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+}
+
+.btn-forward.disabled {
+	background-color: #cccccc;
+}
+
+.btn-forward-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+</style>

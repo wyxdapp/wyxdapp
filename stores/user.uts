@@ -1,0 +1,1105 @@
+import { ref, computed } from 'vue'
+import { initWebSocketAction } from '@/stores/chat'
+import { checkAndBindPendingPromotion } from '@/common/utils/promotionTracker.uts'
+import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { SK_TOKEN, SK_USER_INFO, SK_WX_CODE, SK_AGREED_TO_PRIVACY } from '@/common/config/storageKeys.uts'
+import { getUrlParams } from '@/common/utils/security/urlValidator.uts'
+import { saveToken, clearToken } from '@/common/utils/security/tokenManager.uts'
+import { secureError } from '@/common/utils/security/secureLogger.uts'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+import { VIP_ACTIVATED, VIP_NOT_ACTIVATED } from '@/common/config/businessCodes.uts'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+
+// ==================== 缓存写入脏检测 ====================
+// 上次序列化写入 storage 的 JSON 字符串，用于脏检测避免重复序列化
+let lastSerializedUserInfo = ''
+
+/**
+ * 带脏检测的用户信息缓存写入
+ * 仅在数据实际变化时执行 JSON.stringify 并写入 storage
+ */
+const saveUserInfoToStorage = (userInfo: UserInfo | null) => {
+	if (userInfo == null) return
+	try {
+		const newStr = JSON.stringify(userInfo)
+		if (newStr != lastSerializedUserInfo) {
+			lastSerializedUserInfo = newStr
+			safeSetStorageSync(SK_USER_INFO, newStr)
+		}
+	} catch (e) {
+		handleSilentError(e, 'UserStore 保存用户信息到 storage')
+	}
+}
+
+// ==================== 登录状态变化事件 ====================
+
+// 事件名称常量
+export const LOGIN_STATUS_CHANGE_EVENT = 'login_status_change'
+export const USER_INFO_UPDATE_EVENT = 'user_info_update'
+
+// 初始化完成标记
+const isStoreInitialized = ref<boolean>(false)
+
+/**
+ * 触发登录状态变化事件
+ * @param isLogin 是否已登录
+ * @param userId 用户ID
+ */
+const emitLoginStatusChange = (isLogin: boolean, userIdVal: string) => {
+	console.log('📢 [UserStore] 触发登录状态变化事件:', isLogin, userIdVal)
+	try {
+		uni.$emit(LOGIN_STATUS_CHANGE_EVENT, {
+			isLogin: isLogin,
+			userId: userIdVal
+		})
+	} catch (e) {
+		handleSilentError(e, 'UserStore 触发登录状态事件')
+	}
+}
+
+/**
+ * 触发用户信息更新事件
+ */
+const emitUserInfoUpdate = () => {
+	console.log('📢 [UserStore] 触发用户信息更新事件')
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo != null) {
+			const userInfoObj = toUTSJSON(userInfo)
+			uni.$emit(USER_INFO_UPDATE_EVENT, userInfoObj)
+		} else {
+			uni.$emit(USER_INFO_UPDATE_EVENT, null)
+		}
+	} catch (e) {
+		handleSilentError(e, 'UserStore 触发用户信息更新事件')
+	}
+}
+
+/**
+ * 标记 Store 初始化完成
+ */
+export const markStoreInitialized = () => {
+	isStoreInitialized.value = true
+}
+
+/**
+ * 检查 Store 是否已初始化
+ */
+export const isStoreReady = (): boolean => {
+	return isStoreInitialized.value
+}
+
+export class UserInfo {
+	kid: string = ''
+	shortKid: string = ''
+	nickname: string = ''
+	avatar: string = ''
+	image: string = ''  // 🎯 添加 image 字段（后端返回的是 image）
+	phone: string = ''
+	token: string = ''
+	phoneWebToken: string = ''
+	refreshToken: string = ''
+	isGuide: number = 0
+	accessToken: string = ''
+	extras: string = ''
+	// 🎯 VIP会员相关字段
+	vip: number = 0        // VIP_NOT_ACTIVATED 未开通, VIP_ACTIVATED 已开通, VIP_EXPIRED 已过期
+	vipExpireTime: string = ''  // VIP到期时间
+	vipType: number = 0    // VIP_TYPE_MONTHLY 月卡, VIP_TYPE_YEARLY 年卡
+	// 🎯 礼物等级字段
+	giftLevel: number = 0  // 礼物等级 1-50
+}
+
+// 使用 ref 创建响应式状态（避免 reactive + 接口泛型的问题）
+const userInfoRef = ref<UserInfo | null>(null)
+const isLoginRef = ref<boolean>(false)
+
+// Getters - 使用 computed
+const isUserGuide = computed((): boolean => {
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo == null) return false
+		return userInfo.isGuide == 1
+	} catch (e) {
+		return false
+	}
+})
+
+const userId = computed((): string => {
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo == null) return ''
+		return userInfo.kid
+	} catch (e) {
+		return ''
+	}
+})
+
+const token = computed((): string => {
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo == null) return ''
+		const tokenVal = userInfo.token
+		const phoneWebTokenVal = userInfo.phoneWebToken
+		// tokenVal 和 phoneWebTokenVal 都是非空 string，直接判断是否为空字符串
+		if (tokenVal != '') return tokenVal
+		return phoneWebTokenVal
+	} catch (e) {
+		return ''
+	}
+})
+
+const isMember = computed((): boolean => {
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo == null) return false
+		
+		const vip = userInfo.vip
+		const vipExpireTime = userInfo.vipExpireTime
+		
+		// vip状态：VIP_NOT_ACTIVATED 未开通, VIP_ACTIVATED 已开通, VIP_EXPIRED 已过期
+		// 使用 == 而非 === 避免 Number 和 Int 的隐式装箱警告
+		if (vip == VIP_ACTIVATED) {
+			// 检查是否过期
+			if (vipExpireTime != '') {
+				const expireDate = new Date(vipExpireTime)
+				const now = new Date()
+				return expireDate > now
+			}
+			return true
+		}
+		
+		return false
+	} catch (e) {
+		return false
+	}
+})
+
+const memberStatusText = computed((): string => {
+	try {
+		const userInfo = userInfoRef.value
+		if (userInfo == null) return '未登录'
+		
+		const vip = userInfo.vip
+		const vipExpireTime = userInfo.vipExpireTime
+		
+		// 使用 == 而非 === 避免 Number 和 Int 的隐式装箱警告
+		if (vip == VIP_ACTIVATED) {
+			if (vipExpireTime != '') {
+				const expireDate = new Date(vipExpireTime)
+				const now = new Date()
+				if (expireDate > now) {
+					const dateStr = vipExpireTime.split(' ')[0]
+					return `已开通，有效期至：${dateStr}`
+				} else {
+					return '已过期，请尽快续费'
+				}
+			}
+			return '已开通'
+		}
+		
+		return '未开通'
+	} catch (e) {
+		return '未开通'
+	}
+})  
+
+// Actions - 独立函数
+const initUserInfo = () => {
+	try {
+		console.log('🔍 [Store] 开始初始化用户信息...')
+		
+		// 🔧 修复：如果 store 中已有有效的用户信息，跳过重新初始化
+		// 这样可以避免在页面切换时重复从 storage 读取并可能误判为无效数据
+		const currentUserInfo = userInfoRef.value
+		if (currentUserInfo != null) {
+			const currentKid = currentUserInfo.kid
+			console.log('🔍 [Store] 检查内存中的用户信息, kid:', currentKid)
+			// currentKid 是非空 string，只需检查是否为空字符串
+			if (currentKid != '') {
+				isLoginRef.value = true
+				// 🔧 修复：确保标记初始化完成
+				markStoreInitialized()
+				return
+			}
+		} else {
+			console.log('🔍 [Store] 内存中无用户信息，从 storage 读取')
+		}
+		
+		// UTS 规范：getStorageSync 返回 Any?，需要先保存到变量
+		const userInfoStr = safeGetStorageSync(SK_USER_INFO)
+		const hasData = (userInfoStr != null)
+		const hasDataStr = (hasData == true && userInfoStr.toString() != '')
+		console.log('🔍 [Store] 从存储获取userInfo:', hasDataStr ? '有数据' : '无数据')
+		
+		if (hasDataStr == true) {
+			let userInfoJson = ''
+			
+			// 尝试获取 JSON 字符串
+			if (typeof userInfoStr === 'string') {
+				userInfoJson = userInfoStr as string
+			} else {
+				// 如果不是字符串，尝试序列化
+				try {
+					userInfoJson = JSON.stringify(userInfoStr)
+				} catch (e) {
+					handleSilentError(e, 'UserStore 序列化用户信息')
+					userInfoRef.value = null
+					isLoginRef.value = false
+					return
+				}
+			}
+			
+			// userInfoJson 是非空 string，只需检查是否为空字符串
+			if (userInfoJson == '') {
+				userInfoRef.value = null
+				isLoginRef.value = false
+				return
+			}
+			
+			// 使用 UTSJSONObject 安全访问属性（避免 ClassCastException）
+			let userInfoObj: UTSJSONObject | null = null
+			try {
+				const parsed = JSON.parse(userInfoJson)
+				if (parsed != null) {
+					userInfoObj = parsed as UTSJSONObject
+				}
+			} catch (e) {
+				handleSilentError(e, 'UserStore JSON解析用户信息')
+				userInfoRef.value = null
+				isLoginRef.value = false
+				return
+			}
+			
+			if (userInfoObj == null) {
+				userInfoRef.value = null
+				isLoginRef.value = false
+				return
+			}
+			
+			// 使用 UTSJSONObject.get() 安全获取属性
+			const kidVal = userInfoObj.get('kid')
+			const kidValue = (kidVal != null && kidVal.toString() != '') ? kidVal.toString() : ''
+			
+			// kidValue 是非空 string，只需检查是否为空字符串
+			if (kidValue != '') {
+				// 数据规范化 - 使用 UTSJSONObject.get() 获取所有属性
+				const normalizedUserInfo = new UserInfo()
+				normalizedUserInfo.kid = kidValue
+				
+				const tokenVal = userInfoObj.get('token')
+				const phoneWebTokenVal = userInfoObj.get('phoneWebToken')
+				const accessTokenVal = userInfoObj.get('accessToken')
+				const tokenStr = (tokenVal != null && tokenVal.toString() != '') ? tokenVal.toString() : ''
+				const phoneWebTokenStr = (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '') ? phoneWebTokenVal.toString() : ''
+				const accessTokenStr = (accessTokenVal != null && accessTokenVal.toString() != '') ? accessTokenVal.toString() : ''
+				
+				normalizedUserInfo.token = (tokenStr != '') ? tokenStr : ((phoneWebTokenStr != '') ? phoneWebTokenStr : accessTokenStr)
+				normalizedUserInfo.phoneWebToken = (phoneWebTokenStr != '') ? phoneWebTokenStr : ((tokenStr != '') ? tokenStr : accessTokenStr)
+				normalizedUserInfo.accessToken = (accessTokenStr != '') ? accessTokenStr : tokenStr
+				
+				const shortKidVal = userInfoObj.get('shortKid')
+				normalizedUserInfo.shortKid = (shortKidVal != null && shortKidVal.toString() != '') ? shortKidVal.toString() : ''
+				
+				const nicknameVal = userInfoObj.get('nickname')
+				const nickNameVal = userInfoObj.get('nickName')
+				const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : ''
+				const nickNameStr = (nickNameVal != null && nickNameVal.toString() != '') ? nickNameVal.toString() : ''
+				normalizedUserInfo.nickname = (nicknameStr != '') ? nicknameStr : ((nickNameStr != '') ? nickNameStr : '用户')
+				
+				const avatarVal = userInfoObj.get('avatar')
+				const imageVal = userInfoObj.get('image')
+				const avatarStr = (avatarVal != null && avatarVal.toString() != '') ? avatarVal.toString() : ''
+				const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : ''
+				// 🎯 修复：优先使用 image 字段（后端返回的是 image），其次使用 avatar
+				normalizedUserInfo.avatar = (imageStr != '') ? imageStr : ((avatarStr != '') ? avatarStr : DEFAULT_AVATAR_LOCAL)
+				normalizedUserInfo.image = (imageStr != '') ? imageStr : avatarStr
+				
+				const phoneVal = userInfoObj.get('phone')
+				normalizedUserInfo.phone = (phoneVal != null && phoneVal.toString() != '') ? phoneVal.toString() : ''
+				
+				// 🎯 VIP 会员相关字段
+				const vipVal = userInfoObj.get('vip')
+				if (vipVal != null) {
+					const vipNum = parseInt(vipVal.toString())
+					if (isNaN(vipNum) == false) {
+						normalizedUserInfo.vip = vipNum
+					}
+				}
+				
+				const vipExpireTimeVal = userInfoObj.get('vipExpireTime')
+				normalizedUserInfo.vipExpireTime = (vipExpireTimeVal != null && vipExpireTimeVal.toString() != '') ? vipExpireTimeVal.toString() : ''
+				
+				const vipTypeVal = userInfoObj.get('vipType')
+				if (vipTypeVal != null) {
+					const vipTypeNum = parseInt(vipTypeVal.toString())
+					if (isNaN(vipTypeNum) == false) {
+						normalizedUserInfo.vipType = vipTypeNum
+					}
+				}
+				
+				// 🎯 礼物等级字段
+				const giftLevelVal = userInfoObj.get('giftLevel')
+				if (giftLevelVal != null) {
+					const giftLevelNum = parseInt(giftLevelVal.toString())
+					if (isNaN(giftLevelNum) == false) {
+						normalizedUserInfo.giftLevel = giftLevelNum
+					}
+				}
+				
+				userInfoRef.value = normalizedUserInfo
+				isLoginRef.value = true
+				
+				const tokenValue = (normalizedUserInfo.token != null && normalizedUserInfo.token != '') ? normalizedUserInfo.token : normalizedUserInfo.phoneWebToken
+				if (tokenValue != null && tokenValue != '') {
+					saveToken(tokenValue)
+				}
+				
+				// 📢 标记初始化完成并触发事件
+				markStoreInitialized()
+				emitLoginStatusChange(true, kidValue)
+			} else {
+				console.warn('⚠️ [Store] 用户信息不完整，清除存储')
+				uni.removeStorageSync(SK_USER_INFO)
+				clearToken()
+				userInfoRef.value = null
+				isLoginRef.value = false
+				// 🔧 修复：用户信息不完整时也标记初始化完成
+				markStoreInitialized()
+			}
+		} else {
+			console.log('ℹ️ [Store] 未找到存储的用户信息')
+			userInfoRef.value = null
+			isLoginRef.value = false
+			// 📢 标记初始化完成（即使未登录）
+			markStoreInitialized()
+		}
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore 初始化用户信息', errorOptions)
+		try {
+			uni.removeStorageSync(SK_USER_INFO)
+			clearToken()
+		} catch (clearError) {
+			handleSilentError(clearError, 'UserStore 初始化失败后清除存储')
+		}
+		userInfoRef.value = null
+		isLoginRef.value = false
+		// 🔧 修复：即使失败也标记初始化完成，避免页面无限等待
+		markStoreInitialized()
+		emitLoginStatusChange(false, '')
+	}
+}
+
+// 用户信息数据接口（用于 JSON.parse 解析，重命名避免全局冲突）
+interface UserStoreInfoData {
+	kid?: string | null
+	token?: string | null
+	phoneWebToken?: string | null
+	accessToken?: string | null
+	shortKid?: string | null
+	nickname?: string | null
+	nickName?: string | null
+	avatar?: string | null
+	image?: string | null
+	phone?: string | null
+	isGuide?: number | null
+	vip?: number | null
+	vipExpireTime?: string | null
+	vipType?: number | null
+	refreshToken?: string | null
+}
+
+const login = (userInfo: UserInfo) => {
+	console.log('🔐 Store login 开始')
+	
+	// 数据规范化
+	const normalizedUserInfo = new UserInfo()
+	normalizedUserInfo.kid = (userInfo.kid != null) ? userInfo.kid : ''
+	
+	const tokenVal = userInfo.token
+	const phoneWebTokenVal = userInfo.phoneWebToken
+	const accessTokenVal = userInfo.accessToken
+	normalizedUserInfo.token = (tokenVal != null && tokenVal != '') ? tokenVal : ((phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal : ((accessTokenVal != null && accessTokenVal != '') ? accessTokenVal : ''))
+	normalizedUserInfo.phoneWebToken = (phoneWebTokenVal != null && phoneWebTokenVal != '') ? phoneWebTokenVal : ((tokenVal != null && tokenVal != '') ? tokenVal : ((accessTokenVal != null && accessTokenVal != '') ? accessTokenVal : ''))
+	normalizedUserInfo.accessToken = (accessTokenVal != null && accessTokenVal != '') ? accessTokenVal : ((tokenVal != null && tokenVal != '') ? tokenVal : '')
+	normalizedUserInfo.shortKid = (userInfo.shortKid != null) ? userInfo.shortKid : ''
+	normalizedUserInfo.nickname = (userInfo.nickname != null && userInfo.nickname != '') ? userInfo.nickname : '用户'
+	// 🎯 修复：优先使用 image 字段（后端返回的是 image），其次使用 avatar
+	const avatarVal = userInfo.avatar
+	const imageVal = userInfo.image
+	const avatarStr = (avatarVal != null && avatarVal != '') ? avatarVal : ''
+	const imageStr = (imageVal != null && imageVal != '') ? imageVal : ''
+	normalizedUserInfo.avatar = (imageStr != '') ? imageStr : ((avatarStr != '') ? avatarStr : DEFAULT_AVATAR_LOCAL)
+	normalizedUserInfo.image = (imageStr != '') ? imageStr : avatarStr
+	normalizedUserInfo.phone = (userInfo.phone != null) ? userInfo.phone : ''
+	// 🎯 VIP 会员相关字段
+	normalizedUserInfo.vip = (userInfo.vip != null) ? userInfo.vip : 0
+	normalizedUserInfo.vipExpireTime = (userInfo.vipExpireTime != null) ? userInfo.vipExpireTime : ''
+	normalizedUserInfo.vipType = (userInfo.vipType != null) ? userInfo.vipType : 0
+	// 🎯 礼物等级字段
+	normalizedUserInfo.giftLevel = (userInfo.giftLevel != null) ? userInfo.giftLevel : 0
+	
+	// 验证必要字段
+	if (normalizedUserInfo.kid == '') {
+		console.error('❌ 登录失败：缺少用户ID (kid)')
+		throw new Error('登录数据不完整：缺少用户ID')
+	}
+	
+	const hasToken = (normalizedUserInfo.token != null && normalizedUserInfo.token != '') || (normalizedUserInfo.phoneWebToken != null && normalizedUserInfo.phoneWebToken != '')
+	if (hasToken == false) {
+		secureError('UserStore', '登录失败：缺少token', 'AUTH_TOKEN_MISSING')
+		throw new Error('登录数据不完整：缺少token')
+	}
+	
+	// 保存到本地存储
+	try {
+		userInfoRef.value = normalizedUserInfo
+		isLoginRef.value = true
+		
+		saveUserInfoToStorage(normalizedUserInfo)
+		
+		const tokenValue = (normalizedUserInfo.token != null && normalizedUserInfo.token != '') ? normalizedUserInfo.token : normalizedUserInfo.phoneWebToken
+		if (tokenValue != null && tokenValue != '') {
+			saveToken(tokenValue)
+		}
+		
+		// 📢 触发登录状态变化事件
+		emitLoginStatusChange(true, normalizedUserInfo.kid)
+		emitUserInfoUpdate()
+		
+		// 🔌 登录成功后立即初始化 WebSocket 连接
+		const userKid = normalizedUserInfo.kid
+		if (userKid != null && userKid != '') {
+			console.log('🔌 [Store] 登录成功，初始化 WebSocket 连接')
+			// 延迟 200ms 确保存储完成
+			setTimeout(() => {
+				initWebSocketAction(userKid)
+			}, 200)
+			
+			// 🎯 登录成功后检查并绑定待处理的推广
+			setTimeout(() => {
+				checkAndBindPendingPromotion(userKid).then((success: boolean) => {
+					if (success == true) {
+					}
+				}).catch((error: any | null): void => {
+					// NOTE: catch block keeps any for UTS compatibility
+					handleSilentError(error as any, 'UserStore 登录后推广绑定')
+				})
+			}, 500)
+			
+			// 🎯 登录成功后异步获取完整用户信息（通过事件机制避免循环依赖）
+			setTimeout(() => {
+				console.log('🔄 [UserStore] 触发用户信息预加载事件')
+				uni.$emit('user_login_success_preload', { userKid: userKid })
+			}, 600)
+		}
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore login 保存用户信息', errorOptions)
+		userInfoRef.value = normalizedUserInfo
+		isLoginRef.value = true
+	}
+}
+
+const setUserInfo = (userInfo: UserInfo) => {
+	login(userInfo)
+}
+
+const updateUserInfo = (userInfo: UTSJSONObject) => {
+	let currentUserInfo = userInfoRef.value
+	
+	// 🔧 修复：如果内存中没有用户信息，先尝试从 storage 初始化
+	if (currentUserInfo == null) {
+		console.log('⚠️ [Store] updateUserInfo - 内存中无用户信息，先尝试初始化')
+		initUserInfo()
+		currentUserInfo = userInfoRef.value
+	}
+	
+	if (currentUserInfo != null) {
+		const updatedUserInfo = new UserInfo()
+		updatedUserInfo.kid = currentUserInfo.kid
+		updatedUserInfo.shortKid = currentUserInfo.shortKid
+		updatedUserInfo.nickname = currentUserInfo.nickname
+		updatedUserInfo.avatar = currentUserInfo.avatar
+		updatedUserInfo.phone = currentUserInfo.phone
+		updatedUserInfo.token = currentUserInfo.token
+		updatedUserInfo.phoneWebToken = currentUserInfo.phoneWebToken
+		updatedUserInfo.refreshToken = currentUserInfo.refreshToken
+		updatedUserInfo.isGuide = currentUserInfo.isGuide
+		updatedUserInfo.accessToken = currentUserInfo.accessToken
+		updatedUserInfo.extras = currentUserInfo.extras
+		updatedUserInfo.vip = currentUserInfo.vip
+		updatedUserInfo.vipExpireTime = currentUserInfo.vipExpireTime
+		updatedUserInfo.vipType = currentUserInfo.vipType
+		updatedUserInfo.giftLevel = currentUserInfo.giftLevel
+		
+		// 应用更新 - 使用 typeConverter 安全转换（避免重复 JSON 序列化）
+		try {
+			const updateParsed = toUTSJSON(userInfo)
+			
+			if (updateParsed != null) {
+				const kidVal = updateParsed.get('kid')
+				if (kidVal != null && kidVal.toString() != '') {
+					updatedUserInfo.kid = kidVal.toString()
+				}
+				
+				const shortKidVal = updateParsed.get('shortKid')
+				if (shortKidVal != null && shortKidVal.toString() != '') {
+					updatedUserInfo.shortKid = shortKidVal.toString()
+				}
+				
+				const nicknameVal = updateParsed.get('nickname')
+				if (nicknameVal != null && nicknameVal.toString() != '') {
+					updatedUserInfo.nickname = nicknameVal.toString()
+				}
+				
+				const avatarVal = updateParsed.get('avatar')
+				if (avatarVal != null && avatarVal.toString() != '') {
+					updatedUserInfo.avatar = avatarVal.toString()
+				}
+				
+				// 🎯 修复：优先使用 image 字段（后端返回的是 image）
+				const imageVal = updateParsed.get('image')
+				if (imageVal != null && imageVal.toString() != '') {
+					updatedUserInfo.avatar = imageVal.toString()
+					updatedUserInfo.image = imageVal.toString()
+				}
+				
+				const phoneVal = updateParsed.get('phone')
+				if (phoneVal != null && phoneVal.toString() != '') {
+					updatedUserInfo.phone = phoneVal.toString()
+				}
+				
+				const tokenVal = updateParsed.get('token')
+				if (tokenVal != null && tokenVal.toString() != '') {
+					updatedUserInfo.token = tokenVal.toString()
+				}
+				
+				const phoneWebTokenVal = updateParsed.get('phoneWebToken')
+				if (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '') {
+					updatedUserInfo.phoneWebToken = phoneWebTokenVal.toString()
+				}
+				
+				const refreshTokenVal = updateParsed.get('refreshToken')
+				if (refreshTokenVal != null && refreshTokenVal.toString() != '') {
+					updatedUserInfo.refreshToken = refreshTokenVal.toString()
+				}
+				
+				const isGuideVal = updateParsed.get('isGuide')
+				if (isGuideVal != null) {
+					const isGuideNum = parseInt(isGuideVal.toString())
+					if (isNaN(isGuideNum) == false) {
+						updatedUserInfo.isGuide = isGuideNum
+					}
+				}
+				
+				const accessTokenVal = updateParsed.get('accessToken')
+				if (accessTokenVal != null && accessTokenVal.toString() != '') {
+					updatedUserInfo.accessToken = accessTokenVal.toString()
+				}
+				
+				const vipVal = updateParsed.get('vip')
+				if (vipVal != null) {
+					const vipNum = parseInt(vipVal.toString())
+					if (isNaN(vipNum) == false) {
+						updatedUserInfo.vip = vipNum
+					}
+				}
+				
+				const vipExpireTimeVal = updateParsed.get('vipExpireTime')
+				if (vipExpireTimeVal != null && vipExpireTimeVal.toString() != '') {
+					updatedUserInfo.vipExpireTime = vipExpireTimeVal.toString()
+				}
+				
+				const vipTypeVal = updateParsed.get('vipType')
+				if (vipTypeVal != null) {
+					const vipTypeNum = parseInt(vipTypeVal.toString())
+					if (isNaN(vipTypeNum) == false) {
+						updatedUserInfo.vipType = vipTypeNum
+					}
+				}
+				
+				// 🎯 礼物等级字段
+				const giftLevelVal = updateParsed.get('giftLevel')
+				if (giftLevelVal != null) {
+					const giftLevelNum = parseInt(giftLevelVal.toString())
+					if (isNaN(giftLevelNum) == false) {
+						updatedUserInfo.giftLevel = giftLevelNum
+					}
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, 'UserStore 更新用户信息字段解析')
+		}
+		
+		userInfoRef.value = updatedUserInfo
+		
+		// 保存到 storage（带脏检测）
+		saveUserInfoToStorage(userInfoRef.value)
+		
+		// 🔧 新增：触发用户信息更新事件，通知其他页面刷新VIP状态等
+		emitUserInfoUpdate()
+	}
+}
+
+const logout = () => {
+	console.log('🔐 [UserStore] 开始登出流程')
+	
+	// 🎯 清理用户信息缓存（通过事件机制避免循环依赖）
+	console.log('🧹 [UserStore] 触发用户信息缓存清理事件')
+	uni.$emit('user_logout_clear_cache', {})
+	
+	// 🔧 修复：先触发登录状态变化事件（在清除 token 之前）
+	// 这样推送解绑请求可以携带有效的 token
+	emitLoginStatusChange(false, '')
+	
+	// 延迟清理用户数据，确保解绑请求已发送
+	setTimeout(() => {
+		// 清理用户数据
+		userInfoRef.value = null
+		isLoginRef.value = false
+		lastSerializedUserInfo = ''  // 清理脏检测缓存
+		uni.removeStorageSync(SK_USER_INFO)
+		clearToken()
+		
+		// #ifdef H5
+		// 🔧 修复：同时清除原生 localStorage，确保 H5 环境下数据完全清除
+		try {
+			if (typeof window != 'undefined' && window.localStorage) {
+				window.localStorage.removeItem('userInfo')
+				window.localStorage.removeItem('token')
+				console.log('🧹 [UserStore] 已清除 H5 原生 localStorage')
+			}
+		} catch (e) {
+			handleSilentError(e, 'UserStore 清除 H5 localStorage')
+		}
+		
+		// 清理URL中的微信授权code参数
+		try {
+			const urlParams = getUrlParams()
+			if (urlParams.has('code')) {
+				const cleanUrl = window.location.origin + window.location.pathname
+				window.history.replaceState({}, document.title, cleanUrl)
+				console.log('🧹 [UserStore] 已清理URL中的微信授权code参数')
+			}
+		} catch (error) {
+			handleSilentError(error, 'UserStore 清理URL参数')
+		}
+		// #endif
+		
+		// 清理其他可能的登录相关存储
+		uni.removeStorageSync(SK_WX_CODE)
+		uni.removeStorageSync(SK_AGREED_TO_PRIVACY)
+		
+		// 跳转到登录页
+		uni.reLaunch({
+			url: '/pagesUser/login/index'
+		})
+	}, 100)
+}
+
+// 导出 logout 操作供外部直接调用（避免在脚本中直接点访问 store 返回对象的函数）
+export const logoutAction = () => {
+	try {
+		logout()
+	} catch (e) {
+		handleSilentError(e, 'UserStore logoutAction')
+	}
+}
+
+// 导出 initUserInfo 操作供外部直接调用
+export const initUserInfoAction = () => {
+	try {
+		initUserInfo()
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore initUserInfoAction', errorOptions)
+		throw e
+	}
+}
+
+// 导出 login 操作供外部直接调用
+export const loginAction = (userInfo: UserInfo) => {
+	try {
+		login(userInfo)
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore loginAction', errorOptions)
+		throw e
+	}
+}
+
+// 导出 updateUserInfo 操作供外部直接调用
+export const updateUserInfoAction = (userInfo: UTSJSONObject) => {
+	try {
+		updateUserInfo(userInfo)
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore updateUserInfoAction', errorOptions)
+		throw e
+	}
+}
+
+// 导出 setUserInfo 操作供外部直接调用（接受 UTSJSONObject 类型参数）
+export const setUserInfoDataAction = (userInfo: UTSJSONObject) => {
+	try {
+		// userInfo 已经是 UTSJSONObject 类型，直接使用
+		const userInfoParsed = userInfo
+		
+		// 构建 UserInfo 对象
+		const newUserInfo = new UserInfo()
+		
+		const kidVal = userInfoParsed.get('kid')
+		newUserInfo.kid = (kidVal != null && kidVal.toString() != '') ? kidVal.toString() : ''
+		
+		const tokenVal = userInfoParsed.get('token')
+		const phoneWebTokenVal = userInfoParsed.get('phoneWebToken')
+		const accessTokenVal = userInfoParsed.get('accessToken')
+		const tokenStr = (tokenVal != null && tokenVal.toString() != '') ? tokenVal.toString() : ''
+		const phoneWebTokenStr = (phoneWebTokenVal != null && phoneWebTokenVal.toString() != '') ? phoneWebTokenVal.toString() : ''
+		const accessTokenStr = (accessTokenVal != null && accessTokenVal.toString() != '') ? accessTokenVal.toString() : ''
+		
+		newUserInfo.token = (tokenStr != '') ? tokenStr : ((phoneWebTokenStr != '') ? phoneWebTokenStr : accessTokenStr)
+		newUserInfo.phoneWebToken = (phoneWebTokenStr != '') ? phoneWebTokenStr : ((tokenStr != '') ? tokenStr : accessTokenStr)
+		newUserInfo.accessToken = (accessTokenStr != '') ? accessTokenStr : tokenStr
+		
+		const shortKidVal = userInfoParsed.get('shortKid')
+		newUserInfo.shortKid = (shortKidVal != null && shortKidVal.toString() != '') ? shortKidVal.toString() : ''
+		
+		const nicknameVal = userInfoParsed.get('nickname')
+		const nickNameVal = userInfoParsed.get('nickName')
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : ''
+		const nickNameStr = (nickNameVal != null && nickNameVal.toString() != '') ? nickNameVal.toString() : ''
+		newUserInfo.nickname = (nicknameStr != '') ? nicknameStr : ((nickNameStr != '') ? nickNameStr : '用户')
+		
+		const avatarVal = userInfoParsed.get('avatar')
+		const imageVal = userInfoParsed.get('image')
+		const avatarStr = (avatarVal != null && avatarVal.toString() != '') ? avatarVal.toString() : ''
+		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : ''
+		// 🎯 修复：优先使用 image 字段（后端返回的是 image），其次使用 avatar
+		newUserInfo.avatar = (imageStr != '') ? imageStr : ((avatarStr != '') ? avatarStr : DEFAULT_AVATAR_LOCAL)
+		newUserInfo.image = (imageStr != '') ? imageStr : avatarStr
+		
+		const phoneVal = userInfoParsed.get('phone')
+		newUserInfo.phone = (phoneVal != null && phoneVal.toString() != '') ? phoneVal.toString() : ''
+		
+		const isGuideVal = userInfoParsed.get('isGuide')
+		if (isGuideVal != null) {
+			const isGuideNum = parseInt(isGuideVal.toString())
+			if (isNaN(isGuideNum) == false) {
+				newUserInfo.isGuide = isGuideNum
+			}
+		}
+		
+		const vipVal = userInfoParsed.get('vip')
+		if (vipVal != null) {
+			const vipNum = parseInt(vipVal.toString())
+			if (isNaN(vipNum) == false) {
+				newUserInfo.vip = vipNum
+			}
+		}
+		
+		const vipExpireTimeVal = userInfoParsed.get('vipExpireTime')
+		newUserInfo.vipExpireTime = (vipExpireTimeVal != null && vipExpireTimeVal.toString() != '') ? vipExpireTimeVal.toString() : ''
+		
+		const vipTypeVal = userInfoParsed.get('vipType')
+		if (vipTypeVal != null) {
+			const vipTypeNum = parseInt(vipTypeVal.toString())
+			if (isNaN(vipTypeNum) == false) {
+				newUserInfo.vipType = vipTypeNum
+			}
+		}
+		
+		// 🎯 礼物等级字段
+		const giftLevelVal = userInfoParsed.get('giftLevel')
+		if (giftLevelVal != null) {
+			const giftLevelNum = parseInt(giftLevelVal.toString())
+			if (isNaN(giftLevelNum) == false) {
+				newUserInfo.giftLevel = giftLevelNum
+			}
+		}
+		
+		// 调用 login 方法保存用户信息
+		login(newUserInfo)
+	} catch (e) {
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore setUserInfoDataAction', errorOptions)
+		throw e
+	}
+}
+
+// 导出 setLoginStatus 操作供外部直接调用
+export const setLoginStatusAction = (status: boolean) => {
+	try {
+		isLoginRef.value = status
+	} catch (e) {
+		handleSilentError(e, 'UserStore setLoginStatusAction')
+	}
+}
+
+// 导出获取用户状态的函数
+export const getUserLoginStatus = (): boolean => {
+	return isLoginRef.value
+}
+
+export const getUserId = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) {
+		console.log('🔍 [UserStore] getUserId - userInfoRef.value is null')
+		return ''
+	}
+	const kid = userInfo.kid
+	console.log('🔍 [UserStore] getUserId - kid:', kid)
+	return kid
+}
+
+// 导出获取用户信息的函数
+export const getUserInfoFromStore = (): UTSJSONObject | null => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return null
+	return toUTSJSON(userInfo)
+}
+
+// 导出获取用户昵称的函数
+export const getUserNickname = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	return userInfo.nickname != null ? userInfo.nickname : ''
+}
+
+// 导出获取用户短号的函数
+export const getUserShortKid = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	return userInfo.shortKid != null ? userInfo.shortKid : ''
+}
+
+// 导出获取用户头像的函数
+export const getUserAvatar = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	// 🎯 修复：优先使用 image 字段（后端返回的是 image），其次使用 avatar
+	const imageVal = userInfo.image
+	const avatarVal = userInfo.avatar
+	if (imageVal != null && imageVal != '') return imageVal
+	if (avatarVal != null && avatarVal != '') return avatarVal
+	return ''
+}
+
+// 导出获取用户手机号的函数
+export const getUserPhone = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	return userInfo.phone != null ? userInfo.phone : ''
+}
+
+// 导出获取用户 Token 的函数
+export const getUserToken = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	const tokenVal = userInfo.token
+	const phoneWebTokenVal = userInfo.phoneWebToken
+	if (tokenVal != null && tokenVal != '') return tokenVal
+	if (phoneWebTokenVal != null && phoneWebTokenVal != '') return phoneWebTokenVal
+	return ''
+}
+
+// 导出获取用户是否为向导的函数
+export const getUserIsGuide = (): boolean => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return false
+	return userInfo.isGuide == 1
+}
+
+// 导出获取用户 VIP 状态的函数
+export const getUserVipStatus = (): number => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return VIP_NOT_ACTIVATED
+	return userInfo.vip != null ? userInfo.vip : VIP_NOT_ACTIVATED
+}
+
+// 导出检查用户是否为 VIP 的函数
+export const isUserVip = (): boolean => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return false
+	const vip = userInfo.vip
+	const vipExpireTime = userInfo.vipExpireTime
+	if (vip == VIP_ACTIVATED) {
+		if (vipExpireTime != null && vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			return expireDate > now
+		}
+		return true
+	}
+	return false
+}
+
+// 导出获取用户 VIP 到期时间的函数
+export const getUserVipExpireTime = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	return userInfo.vipExpireTime != null ? userInfo.vipExpireTime : ''
+}
+
+// 导出获取用户指定属性的函数
+export const getUserProp = (key: string): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	const userInfoObj = toUTSJSON(userInfo)
+	return getString(userInfoObj, key)
+}
+
+// 导出获取用户数字属性的函数
+export const getUserNumberProp = (key: string): number => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return 0
+	const userInfoObj = toUTSJSON(userInfo)
+	return getNumber(userInfoObj, key)
+}
+
+const refreshTokenAction = async (): Promise<boolean> => {
+	const currentUserInfo = userInfoRef.value
+	if (currentUserInfo == null) return false
+	const refreshTokenVal = currentUserInfo.refreshToken
+	if (refreshTokenVal == null || refreshTokenVal == '') {
+		return false
+	}
+	
+	try {
+		const requestResult = await uni.request({
+			url: 'https://api.example.com/auth/refresh',
+			method: 'POST',
+			data: {
+				refreshToken: refreshTokenVal
+			}
+		})
+		
+		// 解析响应 - 使用 typeConverter 替代重复 JSON 序列化
+		if (requestResult == null) return false
+		
+		const resParsed = toUTSJSON(requestResult)
+		if (resParsed == null) return false
+		
+		const resStatusCodeVal = resParsed.getNumber('statusCode')
+		const resStatusCode = (resStatusCodeVal != null) ? Math.floor(resStatusCodeVal as number) : 0
+		const resData = resParsed.getAny('data')
+		
+		if (resStatusCode === 200 && resData != null) {
+			const dataParsed = toUTSJSON(resData)
+			if (dataParsed == null) return false
+			
+			const codeVal = dataParsed.getNumber('code')
+			const code = (codeVal != null) ? Math.floor(codeVal as number) : 0
+			
+			if (code === 200) {
+				const innerData = dataParsed.getJSON('data')
+				if (innerData == null) return false
+				
+				const tokenVal = innerData.getString('token')
+				const accessTokenVal = innerData.getString('accessToken')
+				const refreshTokenNewVal = innerData.getString('refreshToken')
+				
+				const newToken = (tokenVal != null && tokenVal != '') ? tokenVal : ((accessTokenVal != null && accessTokenVal != '') ? accessTokenVal : '')
+				const newRefreshToken = (refreshTokenNewVal != null) ? refreshTokenNewVal : ''
+				
+				if (newToken != '' && userInfoRef.value != null) {
+					userInfoRef.value.token = newToken
+					userInfoRef.value.phoneWebToken = newToken
+					if (newRefreshToken != '') {
+						userInfoRef.value.refreshToken = newRefreshToken
+					}
+					
+					saveUserInfoToStorage(userInfoRef.value)
+					return true
+				}
+			}
+		}
+		
+		return false
+	} catch (e) {
+		secureError('UserStore', 'Token refresh failed', 'TOKEN_REFRESH_FAILED')
+		const errorOptions = new ErrorHandleOptions()
+		errorOptions.showToast = false
+		errorOptions.rethrow = false
+		handleError(e, 'UserStore refreshToken', errorOptions)
+		return false
+	}
+}
+
+// 导出 useUserStore 函数
+// UTS 规范：对象字面量不支持 getter/setter 语法，改为直接返回属性值
+export const useUserStore = () => {
+	// UTS 规范：先将 computed 值存入局部变量，避免属性名与变量名相同导致的递归问题
+	const userInfoVal = userInfoRef.value
+	const isLoginVal = isLoginRef.value
+	const isUserGuideVal = isUserGuide.value
+	const userIdVal = userId.value
+	const tokenVal = token.value
+	const isMemberVal = isMember.value
+	const memberStatusTextVal = memberStatusText.value
+	
+	return {
+		// State - 直接返回当前值
+		// 保留 userInfo 属性名以保持向后兼容
+		userInfo: userInfoVal,
+		isLogin: isLoginVal,
+		
+		// Getters - 直接返回计算属性的当前值
+		isUserGuide: isUserGuideVal,
+		userId: userIdVal,
+		token: tokenVal,
+		isMember: isMemberVal,
+		memberStatusText: memberStatusTextVal,
+		
+		// Actions - 包装为箭头函数以确保正确导出
+		initUserInfo: () => initUserInfo(),
+		login: (userInfo: UserInfo) => login(userInfo),
+		// 注意：方法重命名为 setUserInfoData 避免与 userInfo 属性的 setter 产生 JVM 签名冲突
+		setUserInfoData: (userInfo: UserInfo) => setUserInfo(userInfo),
+		updateUserInfo: (userInfo: UTSJSONObject) => updateUserInfo(userInfo),
+		logout: () => logout(),
+		refreshToken: (): Promise<boolean> => refreshTokenAction(),
+		
+		// Setter 方法 - 用于更新状态
+		setUserInfoValue: (val: UserInfo | null) => { userInfoRef.value = val },
+		setIsLogin: (val: boolean) => { isLoginRef.value = val }
+	}
+}
+
+// 导出UserStore 类型
+// 注意：为避免 JVM 签名冲突，setUserInfo 方法重命名为 setUserInfoData
+export interface UserStore {
+	userInfo: UserInfo | null
+	isLogin: boolean
+	isUserGuide: boolean
+	userId: string
+	token: string
+	isMember: boolean
+	memberStatusText: string
+	initUserInfo(): void
+	login(userInfo: UserInfo): void
+	logout(): void
+	updateUserInfo(userInfo: UTSJSONObject): void
+	refreshToken(): Promise<boolean>
+	setUserInfoData(userInfo: UserInfo): void
+	setUserInfoValue(val: UserInfo | null): void
+	setIsLogin(val: boolean): void
+}
+
+// 显式导出
+export default useUserStore

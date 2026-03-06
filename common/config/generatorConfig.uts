@@ -1,0 +1,16 @@
+/**
+ * 随机数与 ID 生成常量模块
+ * 定义进制基数和随机数范围常量
+ */
+
+// === 进制基数 ===
+/** Base36 进制（用于 toString(36)） */
+export const RADIX_BASE36 = 36
+/** 十六进制 */
+export const RADIX_HEX = 16
+
+// === 随机数范围 ===
+/** 百万级随机范围 */
+export const RANDOM_RANGE_MILLION = 1000000
+/** 万级随机范围 */
+export const RANDOM_RANGE_10K = 10000

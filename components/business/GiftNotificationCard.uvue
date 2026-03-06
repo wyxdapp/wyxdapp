@@ -1,0 +1,167 @@
+<template>
+	<view 
+		class="gift-notification-card"
+		:class="{ unread: props.read == false }"
+		@click="$emit('click')"
+	>
+		<!-- 左侧：发送者头像 -->
+		<view class="card-avatar-wrapper">
+			<Avatar 
+				v-if="props.senderAvatar != ''" 
+				:url="props.senderAvatar"
+				size="medium"
+				:customSize="80"
+				clickMode="none"
+			/>
+			<UniIcons v-else type="gift-filled" :size="48" color="#FF6B6B" />
+			<view v-if="props.read == false" class="unread-dot"></view>
+		</view>
+		
+		<!-- 中间：通知内容 -->
+		<view class="card-content">
+			<view class="card-header">
+				<text class="card-title">{{ props.title }}</text>
+				<text class="card-time">{{ props.time }}</text>
+			</view>
+			
+			<text class="card-text">{{ props.content }}</text>
+			
+			<!-- 礼物预览 -->
+			<view class="gift-preview">
+				<image 
+					v-if="props.giftImage != ''" 
+					class="gift-preview-image" 
+					:src="props.giftImage" 
+					mode="aspectFit"
+				></image>
+				<text class="gift-preview-name">{{ props.giftName }}</text>
+			</view>
+		</view>
+		
+		<!-- 右侧：删除按钮 -->
+		<text class="delete-btn" @click.stop="$emit('delete')">✕</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import Avatar from '@/components/base/Avatar.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+const props = defineProps({
+	title: { type: String, required: true },
+	content: { type: String, required: true },
+	time: { type: String, required: true },
+	senderAvatar: { type: String, default: '' },
+	giftImage: { type: String, default: '' },
+	giftName: { type: String, default: '礼物' },
+	read: { type: Boolean, default: false }
+})
+
+const emit = defineEmits<{
+	click: []
+	delete: []
+}>()
+</script>
+
+<style scoped>
+.gift-notification-card {
+	flex-direction: row;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	position: relative;
+}
+
+.gift-notification-card.unread {
+	background-color: #FFF5F5;
+}
+
+.card-avatar-wrapper {
+	position: relative;
+	width: 80rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+	flex-shrink: 0;
+}
+
+.card-icon {
+	font-size: 48rpx;
+}
+
+.unread-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #FF5252;
+	border-radius: 8rpx;
+}
+
+.card-content {
+	flex: 1;
+	flex-direction: column;
+}
+
+.card-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.card-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.card-time {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+.card-text {
+	font-size: 26rpx;
+	color: #666666;
+	line-height: 40rpx;
+	margin-bottom: 12rpx;
+}
+
+.gift-preview {
+	flex-direction: row;
+	align-items: center;
+	padding: 12rpx;
+	background-color: #FFF0F0;
+	border-radius: 8rpx;
+	border-left-width: 4rpx;
+	border-left-style: solid;
+	border-left-color: #FF6B35;
+}
+
+.gift-preview-image {
+	width: 48rpx;
+	height: 48rpx;
+	margin-right: 12rpx;
+	flex-shrink: 0;
+}
+
+.gift-preview-name {
+	font-size: 24rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.delete-btn {
+	position: absolute;
+	top: 24rpx;
+	right: 24rpx;
+	font-size: 30rpx;
+	color: #cccccc;
+	padding: 4rpx 8rpx;
+}
+</style>

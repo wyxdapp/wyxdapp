@@ -1,0 +1,76 @@
+/**
+ * 首页模块类型定义
+ * 对应 API 文件: api/home.uts
+ */
+
+// 获取首页向导列表请求参数
+export class GetGuideListParams {
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+	cityName: string = ''
+	sortType: number = 0
+}
+
+// 获取首页定制列表请求参数
+export class GetTravelLineListParams {
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+	cityName: string = ''
+	sortType: number = 0
+}
+
+// 获取用户主页信息请求参数
+export class GetUserHomePageParams {
+	kid: string = ''
+	focusUserkid: string = ''
+}
+
+// 根据kid查询用户基本信息请求参数
+export class QueryUserByKidParams {
+	kid: string = ''
+}
+
+// 获取向导信息详情请求参数
+export class GetGuideInfoDetailParams {
+	kid: string = ''
+}
+
+// 获取个人动态列表请求参数
+export class GetUserTrendsParams {
+	userKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 20
+	currentUserKid: string = ''
+	latitude: number = 0
+	longitude: number = 0
+}
+
+// 获取个人定制列表请求参数
+export class GetUserLinesParams {
+	userKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 10
+}
+
+// 首页搜索请求参数
+export class SearchIndexParams {
+	keyword: string = ''
+	searchContent: string = ''
+	searchType: number = 0
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+}
+
+// 分类搜索请求参数
+export class SearchByTypeParams {
+	keyword: string = ''
+	searchType: number = 10
+	pageNumber: number = 1
+	pageSize: number = 20
+	userKid: string = ''
+	latitude: number = 0
+	longitude: number = 0
+}

@@ -1,0 +1,264 @@
+﻿<template>
+	<view class="video-player-page">
+		<!-- 顶部返回按钮 -->
+		<view class="top-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="back-btn" @click="goBack">
+				<image class="back-icon" src="https://jiasu.wyxdapp.com/iconimages/fanhui.png" mode="aspectFit"></image>
+			</view>
+		</view>
+		
+		<!-- 视频播放器 -->
+		<view v-if="hasVideoUrl == true" class="video-container" :style="{ height: pageHeight + 'px' }">
+			<VideoFeedItem 
+				:item="videoItem"
+				:isActive="true"
+				:isNearby="true"
+				:index="0"
+				:hideInteraction="true"
+				@share="onShare"
+				@user-click="onUserClick"
+				@follow="onFollow"
+			/>
+		</view>
+		
+		<!-- 无视频提示 -->
+		<view v-else class="empty-container">
+			<text class="empty-text">视频地址无效</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import VideoFeedItem from '@/components/business/VideoFeedItem.uvue'
+
+// ==================== 状态 ====================
+const statusBarHeight = ref<number>(44)
+const pageHeight = ref<number>(800)
+const videoUrl = ref<string>('')
+const videoThumb = ref<string>('')
+const userKid = ref<string>('')
+const nickname = ref<string>('')
+
+// ==================== 计算属性 ====================
+const hasVideoUrl = computed((): boolean => {
+	return videoUrl.value != ''
+})
+
+// 构建视频数据对象
+const videoItem = computed((): UTSJSONObject => {
+	return {
+		kid: 'chat-video-' + Date.now().toString(),
+		mediaName: videoUrl.value,
+		videoPic: videoThumb.value,
+		coverImage: videoThumb.value,
+		userKid: userKid.value,
+		nickName: nickname.value,
+		nickname: nickname.value,
+		videoWidth: 0,
+		videoHeight: 0,
+		isLike: 0,
+		likeNum: 0,
+		commentNum: 0,
+		isFollow: 0,
+		discoverContent: '',
+		discoverAddress: ''
+	} as UTSJSONObject
+})
+
+// ==================== 导航 ====================
+const goBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({
+				url: '/pages/message/index'
+			})
+		}
+	})
+}
+
+// ==================== 事件处理 ====================
+const onShare = (item: UTSJSONObject) => {
+	// 分享视频
+	const shareLink = videoUrl.value
+	
+	// #ifdef H5
+	if (navigator != null && navigator.clipboard != null) {
+		navigator.clipboard.writeText(shareLink)
+		uni.showToast({
+			title: '链接已复制',
+			icon: 'success'
+		})
+	}
+	// #endif
+	
+	// #ifndef H5
+	uni.setClipboardData({
+		data: shareLink,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制',
+				icon: 'success'
+			})
+		}
+	})
+	// #endif
+}
+
+const onUserClick = (item: UTSJSONObject) => {
+	if (userKid.value != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid.value
+		})
+	}
+}
+
+const onFollow = (item: UTSJSONObject) => {
+	// 关注功能需要登录
+	uni.showToast({
+		title: '请先登录',
+		icon: 'none'
+	})
+}
+
+// ==================== 页面初始化 ====================
+const initPage = () => {
+	// 获取系统信息
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoStr = JSON.stringify(systemInfo)
+		const systemInfoObj = JSON.parse(systemInfoStr) as UTSJSONObject
+		
+		// 状态栏高度
+		const statusBarVal = systemInfoObj.get('statusBarHeight')
+		if (statusBarVal != null) {
+			const sbHeight = parseInt(statusBarVal.toString())
+			if (isNaN(sbHeight) == false && sbHeight > 0) {
+				statusBarHeight.value = sbHeight
+			}
+		}
+		
+		// 屏幕高度
+		const screenHeightVal = systemInfoObj.get('screenHeight')
+		if (screenHeightVal != null) {
+			const screenHeight = parseInt(screenHeightVal.toString())
+			if (isNaN(screenHeight) == false && screenHeight > 0) {
+				pageHeight.value = screenHeight
+			}
+		}
+	} catch (e) {
+		console.error('获取系统信息失败:', e)
+	}
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	initPage()
+	
+	// 解析 URL 参数
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 视频地址（必填）
+		const urlVal = optionsObj.get('url')
+		if (urlVal != null && urlVal.toString() != '') {
+			const decodedUrl : string | null = decodeURIComponent(urlVal.toString())
+			if (decodedUrl != null) {
+				videoUrl.value = decodedUrl
+			}
+		}
+		
+		// 视频封面（可选）
+		const thumbVal = optionsObj.get('thumb')
+		if (thumbVal != null && thumbVal.toString() != '') {
+			const decodedThumb : string | null = decodeURIComponent(thumbVal.toString())
+			if (decodedThumb != null) {
+				videoThumb.value = decodedThumb
+			}
+		}
+		
+		// 用户ID（可选）
+		const userKidVal = optionsObj.get('userKid')
+		if (userKidVal != null && userKidVal.toString() != '') {
+			userKid.value = userKidVal.toString()
+		}
+		
+		// 昵称（可选）
+		const nicknameVal = optionsObj.get('nickname')
+		if (nicknameVal != null && nicknameVal.toString() != '') {
+			const decodedNickname : string | null = decodeURIComponent(nicknameVal.toString())
+			if (decodedNickname != null) {
+				nickname.value = decodedNickname
+			}
+		}
+	}
+	
+	// 检查视频地址
+	if (videoUrl.value == '') {
+		uni.showToast({
+			title: '视频地址无效',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			goBack()
+		}, 1500)
+	}
+})
+</script>
+
+<style>
+.video-player-page {
+	position: relative;
+	width: 750rpx;
+	background-color: #000000;
+}
+
+/* 顶部栏 */
+.top-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	z-index: 100;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 20rpx;
+}
+
+.back-btn {
+	width: 72rpx;
+	height: 72rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+/* 视频容器 */
+.video-container {
+	width: 750rpx;
+}
+
+/* 空状态 */
+.empty-container {
+	width: 750rpx;
+	height: 100%;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+}
+</style>

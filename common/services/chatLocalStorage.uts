@@ -1,0 +1,694 @@
+/**
+ * 聊天消息本地存储管理器
+ * 按会话分区存储消息，替代原有的单一 chat_messages key 存储方式
+ * 
+ * 存储结构：
+ *   chat_msg_{userId1}_{userId2} -> JSON Array of messages
+ *   chat_conversations_meta -> JSON Array of ConversationMeta
+ */
+
+import { getAnyString } from '@/common/utils/messageHelper.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ============================================================
+// ChatLocalStorageManager - 核心存储管理器
+// ============================================================
+
+export class ChatLocalStorageManager {
+	private readonly STORAGE_PREFIX: string = 'chat_msg_'
+	private readonly META_KEY: string = 'chat_conversations_meta'
+	private readonly OLD_STORAGE_KEY: string = 'chat_messages'
+	private persistTimers: Map<string, number> = new Map()
+	private readonly PERSIST_DELAY: number = 500
+	// 内存缓存：避免频繁读取 storage
+	private memoryCache: Map<string, Array<any>> = new Map()
+
+	/**
+	 * 生成会话存储键
+	 * 对两个 userId 排序后拼接，确保同一对用户始终使用同一个 key
+	 */
+	getConversationKey(userId1: string, userId2: string): string {
+		if (userId1 == '' || userId2 == '') {
+			console.warn('⚠️ [ChatLocalStorage] userId 为空')
+			return ''
+		}
+		// 排序确保同一对用户始终生成相同的 key
+		let first = userId1
+		let second = userId2
+		if (userId1 > userId2) {
+			first = userId2
+			second = userId1
+		}
+		return this.STORAGE_PREFIX + first + '_' + second
+	}
+
+	/**
+	 * 序列化消息数组为 JSON 字符串
+	 */
+	serializeMessages(messages: Array<any>): string {
+		try {
+			if (messages == null || messages.length == 0) {
+				return '[]'
+			}
+			return JSON.stringify(messages)
+		} catch (e) {
+		handleSilentError(e, '序列化消息')
+		return '[]'
+	}
+	}
+
+	/**
+	 * 反序列化 JSON 字符串为消息数组
+	 * 遇到损坏数据时跳过该条消息并记录警告
+	 */
+	deserializeMessages(jsonStr: string): Array<any> {
+		const result: Array<any> = []
+		if (jsonStr == null || jsonStr == '' || jsonStr == '[]') {
+			return result
+		}
+		try {
+			const parsed = JSON.parse(jsonStr)
+			if (parsed != null && Array.isArray(parsed) == true) {
+				const arr = parsed as Array<any>
+				for (let i = 0; i < arr.length; i = i + 1) {
+					const item = arr[i]
+					if (item == null) {
+						console.warn('⚠️ [ChatLocalStorage] 跳过 null 消息项, index:', i)
+						continue
+					}
+					// 验证消息至少有 id 字段
+					const msgId = getAnyString(item, 'id')
+					if (msgId == '') {
+						console.warn('⚠️ [ChatLocalStorage] 跳过无 id 的消息项, index:', i)
+						continue
+					}
+					result.push(item)
+				}
+			}
+		} catch (e) {
+		handleSilentError(e, '反序列化消息')
+	}
+		return result
+	}
+
+	/**
+	 * 加载指定会话的消息
+	 * 优先从内存缓存读取，缓存未命中时从 storage 读取
+	 * @returns 按时间排序的消息数组
+	 */
+	loadConversationMessages(userId1: string, userId2: string): Array<any> {
+		const key = this.getConversationKey(userId1, userId2)
+		if (key == '') {
+			return []
+		}
+
+		// 优先从内存缓存读取
+		const cached = this.memoryCache.get(key)
+		if (cached != null) {
+			return cached
+		}
+
+		// 从 storage 读取
+		try {
+			const storageData = uni.getStorageSync(key)
+			const hasData = storageData != null && storageData != ''
+			if (hasData == true) {
+				const dataStr = storageData as string
+				const messages = this.deserializeMessages(dataStr)
+				// 按 createTime 排序
+				messages.sort((a: any, b: any): number => {
+					const timeA = getAnyString(a, 'createTime')
+					const timeB = getAnyString(b, 'createTime')
+					if (timeA < timeB) return -1
+					if (timeA > timeB) return 1
+					return 0
+				})
+				// 写入内存缓存
+				this.memoryCache.set(key, messages)
+				return messages
+			}
+		} catch (e) {
+			handleSilentError(e, '读取会话消息')
+		}
+		return []
+	}
+
+
+	/**
+	 * 保存消息到指定会话（防抖写入）
+	 * 先更新内存缓存，再防抖写入 storage，同时更新元数据
+	 */
+	saveMessages(userId1: string, userId2: string, messages: Array<any>): void {
+		const key = this.getConversationKey(userId1, userId2)
+		if (key == '') return
+
+		// 更新内存缓存
+		this.memoryCache.set(key, messages)
+		// 防抖写入 storage
+		this.debouncedPersist(key, messages)
+		// 更新元数据
+		this.updateMetaForConversation(key, userId1, userId2, messages)
+	}
+
+	/**
+	 * 追加单条消息到会话（防抖写入）
+	 * 先追加到内存缓存，再防抖写入 storage
+	 */
+	appendMessage(userId1: string, userId2: string, message: any): void {
+		if (message == null) return
+		const key = this.getConversationKey(userId1, userId2)
+		if (key == '') return
+
+		// 获取当前消息列表（优先内存缓存）
+		let messages = this.memoryCache.get(key)
+		if (messages == null) {
+			messages = this.loadConversationMessages(userId1, userId2)
+		}
+
+		// 检查是否已存在（按 id 去重）
+		const newMsgId = getAnyString(message, 'id')
+		if (newMsgId != '') {
+			let found = false
+			for (let i = 0; i < messages.length; i = i + 1) {
+				const existingId = getAnyString(messages[i], 'id')
+				if (existingId == newMsgId) {
+					found = true
+					break
+				}
+			}
+			if (found == true) {
+				return
+			}
+		}
+
+		messages.push(message)
+		// 更新内存缓存
+		this.memoryCache.set(key, messages)
+		// 防抖写入 storage
+		this.debouncedPersist(key, messages)
+		// 更新元数据
+		this.updateMetaForConversation(key, userId1, userId2, messages)
+	}
+
+	/**
+	 * 立即持久化指定会话（用于页面卸载等场景）
+	 */
+	forceSave(userId1: string, userId2: string): void {
+		const key = this.getConversationKey(userId1, userId2)
+		if (key == '') return
+
+		// 取消该会话的防抖定时器
+		const existingTimer = this.persistTimers.get(key)
+		if (existingTimer != null) {
+			clearTimeout(existingTimer)
+			this.persistTimers.delete(key)
+		}
+
+		// 立即写入 storage
+		const messages = this.memoryCache.get(key)
+		if (messages != null) {
+			this.persistToStorage(key, messages)
+		}
+	}
+
+	/**
+	 * 删除指定会话的所有本地消息
+	 */
+	clearConversation(userId1: string, userId2: string): void {
+		const key = this.getConversationKey(userId1, userId2)
+		if (key == '') return
+
+		// 取消防抖定时器
+		const existingTimer = this.persistTimers.get(key)
+		if (existingTimer != null) {
+			clearTimeout(existingTimer)
+			this.persistTimers.delete(key)
+		}
+
+		// 清除内存缓存
+		this.memoryCache.delete(key)
+
+		// 清除 storage
+		try {
+			uni.removeStorageSync(key)
+		} catch (e) {
+			handleSilentError(e, '清除会话')
+		}
+
+		// 删除元数据
+		conversationMetaStore.removeMeta(key)
+	}
+
+	/**
+	 * 强制保存所有内存中的会话数据到 storage
+	 * 用于应用退出等场景
+	 */
+	forceFlushAll(): void {
+		// 取消所有防抖定时器
+		this.persistTimers.forEach((timer: number, key: string) => {
+			clearTimeout(timer)
+		})
+		this.persistTimers.clear()
+
+		// 将所有内存缓存写入 storage
+		this.memoryCache.forEach((messages: Array<any>, key: string) => {
+			this.persistToStorage(key, messages)
+		})
+	}
+
+	// ============================================================
+	// 数据迁移
+	// ============================================================
+
+	/**
+	 * 从旧格式（单一 chat_messages key）迁移到按会话分区存储
+	 * 1. 读取旧 key 数据
+	 * 2. 按 senderId/receiverId 分组到对应会话分区
+	 * 3. 更新 ConversationMeta
+	 * 4. 迁移成功后删除旧 key
+	 */
+	migrateFromOldFormat(): void {
+		try {
+			const oldData = uni.getStorageSync(this.OLD_STORAGE_KEY)
+			const hasOldData = oldData != null && oldData != ''
+			if (hasOldData == false) {
+				return
+			}
+
+			console.log('🔄 [ChatLocalStorage] 开始迁移旧格式数据...')
+			const dataStr = oldData as string
+			const allMessages = this.deserializeMessages(dataStr)
+
+			if (allMessages.length == 0) {
+				// 旧数据为空或全部无效，直接删除旧 key
+				try {
+					uni.removeStorageSync(this.OLD_STORAGE_KEY)
+				} catch (e) {
+					// ignore
+				}
+				return
+			}
+
+			// 按会话分组：key = conversationKey, value = messages
+			const groups: Map<string, Array<any>> = new Map()
+			// 记录每个 conversationKey 对应的 userId 对
+			const keyToUsers: Map<string, Array<string>> = new Map()
+
+			for (let i = 0; i < allMessages.length; i = i + 1) {
+				const msg = allMessages[i]
+				const senderId = getAnyString(msg, 'senderId')
+				const receiverId = getAnyString(msg, 'receiverId')
+
+				if (senderId == '' || receiverId == '') {
+					console.warn('⚠️ [ChatLocalStorage] 迁移跳过无 senderId/receiverId 的消息')
+					continue
+				}
+
+				const convKey = this.getConversationKey(senderId, receiverId)
+				if (convKey == '') continue
+
+				let group = groups.get(convKey)
+				if (group == null) {
+					group = []
+					groups.set(convKey, group)
+					// 记录 userId 对
+					let first = senderId
+					let second = receiverId
+					if (senderId > receiverId) {
+						first = receiverId
+						second = senderId
+					}
+					keyToUsers.set(convKey, [first, second])
+				}
+				group.push(msg)
+			}
+
+			// 写入各会话分区
+			groups.forEach((messages: Array<any>, convKey: string) => {
+				// 按 createTime 排序
+				messages.sort((a: any, b: any): number => {
+					const timeA = getAnyString(a, 'createTime')
+					const timeB = getAnyString(b, 'createTime')
+					if (timeA < timeB) return -1
+					if (timeA > timeB) return 1
+					return 0
+				})
+
+				// 直接写入 storage（不走防抖）
+				const jsonStr = this.serializeMessages(messages)
+				try {
+					uni.setStorageSync(convKey, jsonStr)
+				} catch (e) {
+					handleSilentError(e, '迁移写入会话数据')
+				}
+
+				// 更新内存缓存
+				this.memoryCache.set(convKey, messages)
+
+				// 更新元数据
+				const users = keyToUsers.get(convKey)
+				if (users != null && users.length == 2) {
+					const meta = new ConversationMeta()
+					meta.conversationKey = convKey
+					meta.userId1 = users[0]
+					meta.userId2 = users[1]
+					meta.messageCount = messages.length
+					if (messages.length > 0) {
+						const lastMsg = messages[messages.length - 1]
+						meta.lastMessageTime = getAnyString(lastMsg, 'createTime')
+						meta.lastMessageId = getAnyString(lastMsg, 'id')
+					}
+					conversationMetaStore.updateMeta(meta)
+				}
+			})
+
+			// 迁移成功，删除旧 key
+			try {
+				uni.removeStorageSync(this.OLD_STORAGE_KEY)
+			} catch (e) {
+				handleSilentError(e, '删除旧存储key')
+			}
+		} catch (e) {
+			// 迁移失败，保留旧数据不删除，下次启动重试
+			handleSilentError(e, '迁移旧格式数据')
+		}
+	}
+
+	// ============================================================
+	// 私有方法
+	// ============================================================
+
+	/**
+	 * 防抖写入 storage
+	 */
+	private debouncedPersist(key: string, messages: Array<any>): void {
+		// 取消已有的定时器
+		const existingTimer = this.persistTimers.get(key)
+		if (existingTimer != null) {
+			clearTimeout(existingTimer)
+		}
+
+		// 设置新的防抖定时器
+		const timer = setTimeout(() => {
+			this.persistToStorage(key, messages)
+			this.persistTimers.delete(key)
+		}, this.PERSIST_DELAY)
+		this.persistTimers.set(key, timer)
+	}
+
+	/**
+	 * 实际写入 storage
+	 */
+	private persistToStorage(key: string, messages: Array<any>): void {
+		try {
+			const jsonStr = this.serializeMessages(messages)
+			uni.setStorageSync(key, jsonStr)
+		} catch (e) {
+			handleSilentError(e, '持久化消息')
+		}
+	}
+
+	/**
+	 * 根据消息列表更新会话元数据
+	 */
+	private updateMetaForConversation(key: string, userId1: string, userId2: string, messages: Array<any>): void {
+		// 排序 userId 与 getConversationKey 保持一致
+		let first = userId1
+		let second = userId2
+		if (userId1 > userId2) {
+			first = userId2
+			second = userId1
+		}
+
+		const meta = new ConversationMeta()
+		meta.conversationKey = key
+		meta.userId1 = first
+		meta.userId2 = second
+		meta.messageCount = messages.length
+
+		// 找到最新的消息（按 createTime 最大）
+		if (messages.length > 0) {
+			let latestTime = ''
+			let latestId = ''
+			for (let i = 0; i < messages.length; i = i + 1) {
+				const msgTime = getAnyString(messages[i], 'createTime')
+				const msgId = getAnyString(messages[i], 'id')
+				if (msgTime > latestTime) {
+					latestTime = msgTime
+					latestId = msgId
+				}
+			}
+			meta.lastMessageTime = latestTime
+			meta.lastMessageId = latestId
+		}
+
+		// 保留已有的 lastSyncTime
+		const existing = conversationMetaStore.getMeta(key)
+		if (existing != null) {
+			meta.lastSyncTime = existing.lastSyncTime
+			meta.clearAt = existing.clearAt
+		}
+
+		conversationMetaStore.updateMeta(meta)
+	}
+}
+
+// ============================================================
+// ConversationMeta - 会话元数据
+// ============================================================
+
+export class ConversationMeta {
+	conversationKey: string = ''
+	userId1: string = ''
+	userId2: string = ''
+	messageCount: number = 0
+	lastMessageTime: string = ''
+	lastMessageId: string = ''
+	lastSyncTime: number = 0
+	clearAt: number = 0
+}
+
+// ============================================================
+// ConversationMetaStore - 会话元数据索引管理
+// ============================================================
+
+export class ConversationMetaStore {
+	private readonly META_KEY: string = 'chat_conversations_meta'
+	private metaList: Array<ConversationMeta> = []
+
+	/**
+	 * 获取所有会话元数据
+	 */
+	getAllMeta(): Array<ConversationMeta> {
+		return this.metaList
+	}
+
+	/**
+	 * 获取指定会话的元数据
+	 */
+	getMeta(conversationKey: string): ConversationMeta | null {
+		if (conversationKey == '') return null
+		for (let i = 0; i < this.metaList.length; i = i + 1) {
+			if (this.metaList[i].conversationKey == conversationKey) {
+				return this.metaList[i]
+			}
+		}
+		return null
+	}
+
+	/**
+	 * 更新会话元数据（存在则更新，不存在则新增）
+	 */
+	updateMeta(meta: ConversationMeta): void {
+		if (meta.conversationKey == '') return
+		let found = false
+		for (let i = 0; i < this.metaList.length; i = i + 1) {
+			if (this.metaList[i].conversationKey == meta.conversationKey) {
+				this.metaList[i] = meta
+				found = true
+				break
+			}
+		}
+		if (found == false) {
+			this.metaList.push(meta)
+		}
+		this.persist()
+	}
+
+	/**
+	 * 删除会话元数据
+	 */
+	removeMeta(conversationKey: string): void {
+		if (conversationKey == '') return
+		let removeIndex = -1
+		for (let i = 0; i < this.metaList.length; i = i + 1) {
+			if (this.metaList[i].conversationKey == conversationKey) {
+				removeIndex = i
+				break
+			}
+		}
+		if (removeIndex >= 0) {
+			this.metaList.splice(removeIndex, 1)
+			this.persist()
+		}
+	}
+
+	/**
+	 * 持久化元数据到存储
+	 */
+	persist(): void {
+		try {
+			// 手动构建 JSON 数组，避免 class 序列化问题
+			const arr: Array<any> = []
+			for (let i = 0; i < this.metaList.length; i = i + 1) {
+				const m = this.metaList[i]
+				const obj = {
+					conversationKey: m.conversationKey,
+					userId1: m.userId1,
+					userId2: m.userId2,
+					messageCount: m.messageCount,
+					lastMessageTime: m.lastMessageTime,
+					lastMessageId: m.lastMessageId,
+					lastSyncTime: m.lastSyncTime,
+					clearAt: m.clearAt
+				} as any
+				arr.push(obj)
+			}
+			uni.setStorageSync(this.META_KEY, JSON.stringify(arr))
+		} catch (e) {
+			handleSilentError(e, '持久化会话元数据')
+		}
+	}
+
+	/**
+	 * 从存储恢复元数据
+	 */
+	restore(): void {
+		try {
+			const storageData = uni.getStorageSync(this.META_KEY)
+			const hasData = storageData != null && storageData != ''
+			if (hasData == true) {
+				const dataStr = storageData as string
+				const parsed = JSON.parse(dataStr)
+				if (parsed != null && Array.isArray(parsed) == true) {
+					const arr = parsed as Array<any>
+					this.metaList = []
+					for (let i = 0; i < arr.length; i = i + 1) {
+						const item = arr[i]
+						if (item == null) continue
+						try {
+							const itemJson = JSON.stringify(item)
+							if (itemJson == '' || itemJson == 'null') continue
+							const itemObj = JSON.parse(itemJson) as UTSJSONObject
+
+							const meta = new ConversationMeta()
+							const keyVal = itemObj.get('conversationKey')
+							meta.conversationKey = (keyVal != null) ? keyVal.toString() : ''
+							if (meta.conversationKey == '') continue
+
+							const u1Val = itemObj.get('userId1')
+							meta.userId1 = (u1Val != null) ? u1Val.toString() : ''
+							const u2Val = itemObj.get('userId2')
+							meta.userId2 = (u2Val != null) ? u2Val.toString() : ''
+
+							const countVal = itemObj.get('messageCount')
+							if (countVal != null) {
+								const countNum = parseInt(countVal.toString())
+								meta.messageCount = isNaN(countNum) == false ? countNum : 0
+							}
+
+							const timeVal = itemObj.get('lastMessageTime')
+							meta.lastMessageTime = (timeVal != null) ? timeVal.toString() : ''
+							const idVal = itemObj.get('lastMessageId')
+							meta.lastMessageId = (idVal != null) ? idVal.toString() : ''
+
+							const syncVal = itemObj.get('lastSyncTime')
+							if (syncVal != null) {
+								const syncNum = parseInt(syncVal.toString())
+								meta.lastSyncTime = isNaN(syncNum) == false ? syncNum : 0
+							}
+
+							const clearAtVal = itemObj.get('clearAt')
+							if (clearAtVal != null) {
+								const clearAtNum = parseInt(clearAtVal.toString())
+								meta.clearAt = isNaN(clearAtNum) == false ? clearAtNum : 0
+							}
+
+							this.metaList.push(meta)
+						} catch (e) {
+							console.warn('⚠️ [ConversationMetaStore] 跳过无效元数据项:', e)
+						}
+					}
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '恢复会话元数据')
+		}
+	}
+}
+
+// 创建全局单例
+export const chatLocalStorageManager = new ChatLocalStorageManager()
+export const conversationMetaStore = new ConversationMetaStore()
+
+// ============================================================
+// StorageCleaner - 存储清理器
+// ============================================================
+
+export class StorageCleaner {
+	private readonly MAX_MESSAGES_PER_CONVERSATION: number = 200
+
+	/**
+	 * 清理指定会话的超量消息
+	 * 保留最新的 MAX_MESSAGES_PER_CONVERSATION 条
+	 * @returns 被删除的消息数量
+	 */
+	cleanConversation(userId1: string, userId2: string): number {
+		const messages = chatLocalStorageManager.loadConversationMessages(userId1, userId2)
+		if (messages.length <= this.MAX_MESSAGES_PER_CONVERSATION) {
+			return 0
+		}
+
+		// 按 createTime 排序（升序，最旧在前）
+		messages.sort((a: any, b: any): number => {
+			const timeA = getAnyString(a, 'createTime')
+			const timeB = getAnyString(b, 'createTime')
+			if (timeA < timeB) return -1
+			if (timeA > timeB) return 1
+			return 0
+		})
+
+		// 保留最新的 200 条
+		const removeCount = messages.length - this.MAX_MESSAGES_PER_CONVERSATION
+		const kept: Array<any> = []
+		for (let i = removeCount; i < messages.length; i = i + 1) {
+			kept.push(messages[i])
+		}
+
+		// 保存裁剪后的消息（saveMessages 会自动更新元数据）
+		chatLocalStorageManager.saveMessages(userId1, userId2, kept)
+		console.log('🧹 [StorageCleaner] 清理会话:', userId1, '<->', userId2, '删除', removeCount, '条旧消息')
+		return removeCount
+	}
+
+	/**
+	 * 全局清理所有会话
+	 */
+	cleanAll(): void {
+		const allMeta = conversationMetaStore.getAllMeta()
+		let totalRemoved = 0
+		for (let i = 0; i < allMeta.length; i = i + 1) {
+			const meta = allMeta[i]
+			if (meta.messageCount > this.MAX_MESSAGES_PER_CONVERSATION) {
+				const removed = this.cleanConversation(meta.userId1, meta.userId2)
+				totalRemoved = totalRemoved + removed
+			}
+		}
+		if (totalRemoved > 0) {
+			console.log('🧹 [StorageCleaner] 全局清理完成，共删除', totalRemoved, '条旧消息')
+		}
+	}
+}
+
+// StorageCleaner 全局单例
+export const storageCleaner = new StorageCleaner()

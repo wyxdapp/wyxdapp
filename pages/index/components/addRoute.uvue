@@ -1,0 +1,1899 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="goBack">
+					<uni-icons type="left" :size="22" color="#333333" />
+				</view>
+				<text class="nav-title">{{ isEditMode == true ? '编辑路线' : '添加路线' }}</text>
+				<view class="nav-action">
+					<text v-if="isEditMode == false" class="auto-save-tip">自动保存</text>
+				</view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifdef H5 -->
+		<scroll-view 
+			class="scroll-view-h5"
+			:style="{ height: scrollHeight + 'px' }"
+			scroll-y="true"
+		>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<scroll-view 
+			class="scroll-view"
+			:style="{ marginTop: (statusBarHeight + 44) + 'px' }"
+			scroll-y="true"
+		>
+		<!-- #endif -->
+			<view class="page-container" :style="{ paddingTop: '20px' }">
+				<!-- 主图 -->
+				<view class="form-item">
+					<view class="form-label required">
+						<text class="label-text">主图</text>
+					</view>
+					<view class="upload-wrapper">
+						<view 
+							v-if="homePicsLength == 0"
+							class="upload-box"
+							@click="chooseImage"
+						>
+							<text class="upload-plus">+</text>
+							<text class="upload-text">选择图片</text>
+						</view>
+						<view 
+							v-else
+							class="image-preview-wrapper"
+						>
+							<view 
+								v-for="(img, idx) in formHomePics" 
+								:key="idx"
+								class="image-preview-item"
+							>
+								<image :src="img" mode="aspectFill" class="preview-image" />
+								<view class="remove-btn" @click.stop="removeImg(idx)">
+									<text class="remove-icon">×</text>
+								</view>
+							</view>
+							<view 
+								v-if="homePicsLength < 9"
+								class="upload-box-small"
+								@click="chooseImage"
+							>
+								<text class="upload-plus-small">+</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 标题 -->
+				<view class="form-item">
+					<view class="form-label required">
+						<text class="label-text">标题</text>
+					</view>
+					<input 
+						v-model="formLineTitle"
+						placeholder="请输入标题"
+						class="form-input"
+			/>
+		</view>
+
+		<!-- 费用 -->
+		<view class="form-item">
+			<view class="form-label required">
+				<text class="label-text">费用（元）</text>
+			</view>
+			<input 
+				type="digit"
+				v-model="formTripPrice"
+				placeholder="请输入价格"
+				class="form-input"
+			/>
+		</view>
+
+		<!-- 出发 -->
+		<view class="form-item">
+			<view class="form-label required">
+				<text class="label-text">出发</text>
+			</view>
+			<view class="select-input" @click="openCityPicker">
+				<text :class="hasLineAddress == true ? 'input-text' : 'placeholder-text'">
+					{{ displayLineAddress }}
+				</text>
+			</view>
+		</view>
+
+		<!-- 类型 -->
+		<view class="form-item">
+			<view class="form-label">
+				<text class="label-text">类型</text>
+			</view>
+			<view class="type-buttons">
+				<view 
+					@click="setLineType(LINE_TYPE_FREE)" 
+					:class="['type-btn', formLineType == LINE_TYPE_FREE ? 'type-btn-active' : 'type-btn-inactive']"
+				>
+					<text :class="formLineType == LINE_TYPE_FREE ? 'type-text-active' : 'type-text-inactive'">自由行</text>
+				</view>
+				<view 
+					@click="setLineType(10)" 
+					:class="['type-btn', formLineType == 10 ? 'type-btn-active' : 'type-btn-inactive']"
+				>
+					<text :class="formLineType == 10 ? 'type-text-active' : 'type-text-inactive'">组团游</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 时间 -->
+		<view class="form-item">
+			<view class="form-label">
+				<text class="label-text">时间</text>
+			</view>
+			<view class="date-picker-wrapper">
+				<DatePicker 
+					v-model="formDepartureDate"
+					:minDate="minDate"
+					:maxDate="maxDate"
+					@change="handleDateChange"
+				/>
+			</view>
+		</view>
+
+		<!-- 详情 -->
+		<view class="detail-form-item">
+			<view class="detail-label">
+				<text class="label-text">详情</text>
+			</view>
+			<view class="detail-wrapper">
+				<view
+					class="detail-input-area"
+					@click="openRichEditor"
+				>
+					<text v-if="formRouteDetail == ''" class="detail-placeholder">
+						请填写路线详情，包括特色、行程安排、费用说明等信息...
+					</text>
+					<rich-text v-else :nodes="formRouteDetail" class="detail-content"></rich-text>
+				</view>
+			</view>
+		</view>
+
+			<!-- 双按钮：保存草稿 + 发布 -->
+			<view class="button-row">
+				<view class="draft-btn" @click="handleSaveDraft">
+					<text class="draft-text">保存草稿</text>
+				</view>
+				<view class="publish-btn" @click="handlePublish">
+					<text class="publish-text">发布</text>
+				</view>
+			</view>
+		</view>
+		</scroll-view>
+
+		<!-- 富文本编辑器弹窗 -->
+		<view v-if="showRichEditor == true" class="rich-editor-mask" @click="closeRichEditor">
+			<view class="rich-editor-container" @click.stop>
+				<view class="rich-editor-header">
+					<text class="rich-editor-title">编辑详情</text>
+					<text class="rich-editor-close" @click="closeRichEditor">×</text>
+				</view>
+				<web-view
+					:src="editorUrl"
+					@message="onEditorMessage"
+					class="rich-editor-webview"
+					ref="richEditorWebView"
+				></web-view>
+			</view>
+		</view>
+
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { publishRoute } from '@/common/services/routeService.uts'
+import { getRouteDetail } from '@/common/services/routeService.uts'
+import { cosUploader } from '@/utils/upload/cosUploader.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import DatePicker from '@/components/business/DatePicker.uvue'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { 
+	getRouteDraft, 
+	saveRouteDraft,
+	clearRouteDraft, 
+	isDraftExpired,
+	type RouteDraft
+} from '@/common/utils/draftManager.uts'
+import { LINE_TYPE_FREE } from '@/common/config/businessCodes.uts'
+
+// ==================== 页面布局 ====================
+const statusBarHeight = pageStatusBarHeight
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 响应式状态 ====================
+
+// 表单字段（使用独立 ref，避免访问对象属性）
+const formHomePics = ref<Array<string>>([])
+const formUserKid = ref<string>('')
+const formLineTitle = ref<string>('')
+const formLineType = ref<number>(LINE_TYPE_FREE)
+const formTripPrice = ref<string>('')
+const formLineAddress = ref<string>('')
+const formLineDisplay = ref<number>(10)
+const formDepartureDate = ref<string>('')
+const formInsertType = ref<number>(0)
+const formRouteDetail = ref<string>('')
+
+// 移除不再需要的默认值常量
+
+// 日期相关
+const maxDate = ref<string>('')
+const minDate = ref<string>('')
+const showDateDialog = ref<boolean>(false)
+
+// 城市选择 - 已移除 selectCity，改用页面跳转
+
+// 富文本编辑器
+const showRichEditor = ref<boolean>(false)
+const editorUrl = ref<string>('')
+const richEditorWebView = ref<UTSJSONObject | null>(null)
+
+// H5 端 postMessage 监听器引用（用于卸载时移除）
+let h5MessageHandler: ((event: any) => void) | null = null
+// 防止同一操作被 SDK 包装消息和直接消息重复触发
+let lastHandledTimestamp: number = 0
+
+// 待插入到编辑器的图片 URL 列表
+const pendingImages = ref<Array<string>>([])
+
+// 上传状态
+const uploading = ref<boolean>(false)
+
+// 滚动高度（H5 端使用）
+const scrollHeight = ref<number>(600)
+
+// 编辑模式标志和路线 ID
+const isEditMode = ref<boolean>(false)
+const editRouteKid = ref<string>('')
+
+// 自动保存相关
+const autoSaveTimer = ref<number>(0)
+const autoSaveEnabled = ref<boolean>(true)  // 是否启用自动保存
+
+// ==================== 计算属性 ====================
+
+const homePicsLength = computed((): number => {
+	try {
+		return formHomePics.value.length
+	} catch (e) {
+		return 0
+	}
+})
+
+const hasLineAddress = computed((): boolean => {
+	try {
+		const addr = formLineAddress.value
+		return addr != ''
+	} catch (e) {
+		return false
+	}
+})
+
+const displayLineAddress = computed((): string => {
+	try {
+		const addr = formLineAddress.value
+		if (addr != '') {
+			return addr
+		}
+	} catch (e) {}
+	return '选择出发城市'
+})
+
+// ==================== 业务函数 ====================
+
+const padZero = (num: number): string => {
+	if (num < 10) {
+		return '0' + num.toString()
+	}
+	return num.toString()
+}
+
+const initDateRange = () => {
+	const today = new Date()
+	const year = today.getFullYear()
+	const month = today.getMonth() + 1
+	const day = today.getDate()
+	minDate.value = year.toString() + '-' + padZero(month) + '-' + padZero(day)
+	
+	const maxYear = year + 10
+	maxDate.value = maxYear.toString() + '-01-01'
+}
+
+const uploadImages = async (filePaths: Array<string>) => {
+	uploading.value = true
+	
+	for (let i = 0; i < filePaths.length; i++) {
+		try {
+			uni.showLoading({
+				title: '上传中 ' + (i + 1).toString() + '/' + filePaths.length.toString()
+			})
+			
+			const uploadResultRaw = await cosUploader.uploadImage(filePaths[i], 'line', (progress: number) => {})
+
+			// 🔧 修复：使用 JSON.parse + UTSJSONObject 安全访问 UploadResult 属性（避免 error18）
+			if (uploadResultRaw != null) {
+				try {
+					const uploadResultJson = JSON.stringify(uploadResultRaw)
+					if (uploadResultJson != null && uploadResultJson != '') {
+						const uploadResultObj = JSON.parse(uploadResultJson) as UTSJSONObject
+
+						// 安全访问 success 属性
+						const successVal = uploadResultObj.get('success')
+						const isSuccess = (successVal != null && successVal.toString() == 'true')
+
+						if (isSuccess == true) {
+							// 安全访问 data 属性
+							const dataVal = uploadResultObj.get('data')
+							if (dataVal != null) {
+								try {
+									const dataJson = JSON.stringify(dataVal)
+									if (dataJson != null && dataJson != '') {
+										const dataObj = JSON.parse(dataJson) as UTSJSONObject
+
+										// 安全访问 compressedUrl 和 originalUrl
+										const compressedUrlVal = dataObj.get('compressedUrl')
+										const originalUrlVal = dataObj.get('originalUrl')
+
+										let imageUrl = ''
+										if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+											imageUrl = compressedUrlVal.toString()
+										} else if (originalUrlVal != null && originalUrlVal.toString() != '') {
+											imageUrl = originalUrlVal.toString()
+										}
+
+										if (imageUrl != '') {
+											formHomePics.value.push(imageUrl)
+											formInsertType.value = 1
+										}
+									}
+								} catch (dataParseError) {
+									console.error('解析上传数据失败:', dataParseError)
+									throw new Error('上传数据格式错误')
+								}
+							}
+						} else {
+							// 安全访问 error 属性
+							let errorMsg = '上传失败'
+							const errorVal = uploadResultObj.get('error')
+							if (errorVal != null && errorVal.toString() != '') {
+								errorMsg = errorVal.toString()
+							}
+							throw new Error(errorMsg)
+						}
+					} else {
+						throw new Error('上传结果解析失败')
+					}
+				} catch (parseError) {
+					console.error('解析上传结果失败:', parseError)
+					throw new Error('上传结果格式错误')
+				}
+			}
+		} catch (error) {
+			if (!isAuthError(error)) {
+				handlePageError(error, '图片上传', null)
+			}
+		}
+	}
+	
+	uploading.value = false
+	uni.hideLoading()
+}
+
+const chooseImage = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		const maxCount = 9 - formHomePics.value.length
+		
+		uni.chooseImage({
+			count: maxCount,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						const paths: Array<string> = []
+						for (let i = 0; i < tempFilePaths.length; i++) {
+							const path = tempFilePaths[i]
+							if (path != null && path.toString() != '') {
+								paths.push(path.toString())
+							}
+						}
+						if (paths.length > 0) {
+							uploadImages(paths)
+						}
+					}
+				}
+			},
+			fail: (error: any) => {
+				console.error('选择图片失败:', error)
+				uni.showToast({
+					title: '选择图片失败',
+					icon: 'none'
+				})
+			}
+		})
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '请求相机相册权限-选择图片')
+	})
+}
+
+const removeImg = (index: number) => {
+	formHomePics.value.splice(index, 1)
+	if (formHomePics.value.length == 0) {
+		formInsertType.value = 0
+	}
+}
+
+const handleDateChange = (date: string) => {
+	formDepartureDate.value = date
+}
+
+const openCityPicker = () => {
+	// 跳转到城市选择页面
+	uni.navigateTo({
+		url: '/pagesBusiness/citySelect/index?currentCity=' + formLineAddress.value
+	})
+}
+
+const handleSubmitSelect = (city: string) => {
+	if (city != null && city != '' && city != '全部') {
+		formLineAddress.value = city
+	}
+}
+
+const setLineType = (type: number) => {
+	formLineType.value = type
+}
+
+// 富文本编辑器相关方法
+const openRichEditor = () => {
+	// 构建编辑器 URL，携带当前内容和待插入图片
+	const content = encodeURIComponent(formRouteDetail.value)
+	const images = encodeURIComponent(JSON.stringify(pendingImages.value))
+	editorUrl.value = `/static/editor/index.html?content=${content}&pendingImages=${images}`
+	// 清空待插入图片列表
+	pendingImages.value = []
+	showRichEditor.value = true
+}
+
+// H5 端处理来自 iframe 的 postMessage（web-view @message 在 H5 端不实时触发）
+const handleH5PostMessage = (event: any) => {
+	if (event == null) return
+	try {
+		// MessageEvent.data 需要直接访问（不能 JSON.stringify 整个 event）
+		const rawData = (event as any).data
+		if (rawData == null) return
+		
+		const dataStr = JSON.stringify(rawData)
+		if (dataStr == null || dataStr == '' || dataStr == 'null') return
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		// 防重复：编辑器同时发送 SDK 包装消息和直接消息，需要去重
+		const now = Date.now()
+		
+		// 检查是否是 uni SDK 包装的消息格式: { type: "WEB_INVOKE_APPSERVICE", data: { name: "postMessage", arg: {...} }, pageId: "" }
+		const msgType = dataObj.get('type')
+		if (msgType != null && msgType.toString() == 'WEB_INVOKE_APPSERVICE') {
+			const innerDataVal = dataObj.get('data')
+			if (innerDataVal != null) {
+				const innerDataStr = JSON.stringify(innerDataVal)
+				const innerDataObj = JSON.parse(innerDataStr) as UTSJSONObject
+				const argVal = innerDataObj.get('arg')
+				if (argVal != null) {
+					const argStr = JSON.stringify(argVal)
+					const argObj = JSON.parse(argStr) as UTSJSONObject
+					const typeVal = argObj.get('type')
+					if (typeVal != null) {
+						const typeString = typeVal.toString()
+						lastHandledTimestamp = now
+						if (typeString == 'editorContent') {
+							const contentVal = argObj.get('content')
+							if (contentVal != null && contentVal.toString() != '') {
+								formRouteDetail.value = contentVal.toString()
+							}
+							showRichEditor.value = false
+							return
+						} else if (typeString == 'selectImage') {
+							selectAndUploadImage()
+							return
+						} else if (typeString == 'editorCancel') {
+							showRichEditor.value = false
+							return
+						}
+					}
+				}
+			}
+		}
+		
+		// 直接格式: { type: "editorContent", content: "..." }（window.parent.postMessage 直接发送时）
+		// 如果 SDK 包装消息刚处理过（200ms 内），跳过直接消息避免重复
+		if (now - lastHandledTimestamp < 200) return
+		
+		const directType = dataObj.get('type')
+		if (directType != null) {
+			const typeString = directType.toString()
+			if (typeString == 'editorContent') {
+				const contentVal = dataObj.get('content')
+				if (contentVal != null && contentVal.toString() != '') {
+					formRouteDetail.value = contentVal.toString()
+				}
+				showRichEditor.value = false
+			} else if (typeString == 'selectImage') {
+				selectAndUploadImage()
+			} else if (typeString == 'editorCancel') {
+				showRichEditor.value = false
+			}
+		}
+	} catch (e) {
+		// 忽略非编辑器消息
+	}
+}
+
+const closeRichEditor = () => {
+	showRichEditor.value = false
+}
+
+// 刷新编辑器，携带当前内容和待插入图片
+const refreshEditor = () => {
+	const content = encodeURIComponent(formRouteDetail.value)
+	const images = encodeURIComponent(JSON.stringify(pendingImages.value))
+	editorUrl.value = `/static/editor/index.html?content=${content}&pendingImages=${images}`
+	// 清空待插入图片列表
+	pendingImages.value = []
+}
+
+// 将图片添加到待插入列表，并刷新编辑器
+const insertImageToEditor = (imageUrl: string) => {
+	if (imageUrl == null || imageUrl == '') {
+		return
+	}
+	pendingImages.value.push(imageUrl)
+	refreshEditor()
+}
+
+const selectAndUploadImage = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		uni.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+				const tempFilePathsVal = resObj.get('tempFilePaths')
+				if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+					const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+					if (tempFilePaths.length > 0) {
+						const firstPath = tempFilePaths[0]
+						if (firstPath != null && firstPath.toString() != '') {
+							uni.showLoading({
+								title: '上传图片中...'
+							})
+
+							cosUploader.uploadImage(firstPath.toString(), 'line', (progress: number) => {}).then((uploadResultRaw: UTSJSONObject) => {
+								uni.hideLoading()
+
+								// 使用 JSON 序列化方式安全访问返回的对象
+								if (uploadResultRaw != null) {
+									try {
+										const resultJson = JSON.stringify(uploadResultRaw)
+										
+										if (resultJson != null && resultJson != '' && resultJson != '{}') {
+											const resultObj = JSON.parse(resultJson) as UTSJSONObject
+											
+											// 安全访问 success 属性
+											const successVal = resultObj.get('success')
+											const isSuccess = (successVal != null && successVal.toString() == 'true')
+
+											if (isSuccess == true) {
+												// 安全访问 data 属性
+												const dataVal = resultObj.get('data')
+												if (dataVal != null) {
+													const dataJson = JSON.stringify(dataVal)
+													const dataObj = JSON.parse(dataJson) as UTSJSONObject
+													
+													// 安全访问 compressedUrl 和 originalUrl
+													const compressedUrlVal = dataObj.get('compressedUrl')
+													const originalUrlVal = dataObj.get('originalUrl')
+
+													let imageUrl = ''
+													if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+														imageUrl = compressedUrlVal.toString()
+													} else if (originalUrlVal != null && originalUrlVal.toString() != '') {
+														imageUrl = originalUrlVal.toString()
+													}
+
+													if (imageUrl != '') {
+														// 将图片添加到待插入列表并刷新编辑器
+														insertImageToEditor(imageUrl)
+													} else {
+														uni.showToast({
+															title: '获取图片地址失败',
+															icon: 'none'
+														})
+													}
+												} else {
+													uni.showToast({
+														title: '上传失败',
+														icon: 'none'
+													})
+												}
+											} else {
+												// 访问 error 属性
+												let errorMsg = '上传失败'
+												const errorVal = resultObj.get('error')
+												if (errorVal != null && errorVal.toString() != '') {
+													errorMsg = errorVal.toString()
+												}
+												uni.showToast({
+													title: errorMsg,
+													icon: 'none'
+												})
+											}
+										} else {
+											uni.showToast({
+												title: '上传结果为空',
+												icon: 'none'
+											})
+										}
+									} catch (parseError) {
+										console.error('处理上传结果失败:', parseError)
+										uni.showToast({
+											title: '处理上传结果失败',
+											icon: 'none'
+										})
+									}
+								} else {
+									uni.showToast({
+										title: '上传结果为空',
+										icon: 'none'
+									})
+								}
+							}).catch((error: any | null): void => {
+								uni.hideLoading()
+								if (!isAuthError(error as any)) {
+									handlePageError(error as any, '图片上传', null)
+								}
+							})
+						}
+					}
+				}
+			}
+		},
+		fail: (error: any) => {
+			console.error('选择图片失败:', error)
+			uni.showToast({
+				title: '选择图片失败',
+				icon: 'none'
+			})
+		}
+	})
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '请求相机相册权限-上传图片')
+	})
+}
+
+const onEditorMessage = (e: UTSJSONObject | null) => {
+	console.log('收到编辑器消息:', JSON.stringify(e))
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		
+		// 尝试多种数据结构解析方式
+		let typeStr = ''
+		let contentStr = ''
+		
+		// 方式1: e.detail.data 是数组的情况 (实际结构)
+		const detailVal = eObj.get('detail')
+		if (detailVal != null) {
+			const detailStr = JSON.stringify(detailVal)
+			const detailObj = JSON.parse(detailStr) as UTSJSONObject
+			const dataVal = detailObj.get('data')
+			if (dataVal != null) {
+				// 检查 data 是否为数组
+				if (Array.isArray(dataVal) == true) {
+					const dataArr = dataVal as Array<UTSJSONObject>
+					if (dataArr.length > 0) {
+						const firstItem = dataArr[0]
+						if (firstItem != null) {
+							const itemStr = JSON.stringify(firstItem)
+							const itemObj = JSON.parse(itemStr) as UTSJSONObject
+							const typeVal = itemObj.get('type')
+							const contentVal = itemObj.get('content')
+							if (typeVal != null) {
+								typeStr = typeVal.toString()
+							}
+							if (contentVal != null) {
+								contentStr = contentVal.toString()
+							}
+							console.log('解析方式1(数组) - type:', typeStr, 'content:', contentStr)
+						}
+					}
+				} else {
+					// data 是对象的情况
+					const dataStr = JSON.stringify(dataVal)
+					const dataObj = JSON.parse(dataStr) as UTSJSONObject
+					const typeVal = dataObj.get('type')
+					const contentVal = dataObj.get('content')
+					if (typeVal != null) {
+						typeStr = typeVal.toString()
+					}
+					if (contentVal != null) {
+						contentStr = contentVal.toString()
+					}
+					console.log('解析方式1(对象) - type:', typeStr, 'content:', contentStr)
+				}
+			}
+		}
+		
+		// 方式2: e.data 是数组或对象
+		if (typeStr == '') {
+			const dataVal2 = eObj.get('data')
+			if (dataVal2 != null) {
+				if (Array.isArray(dataVal2) == true) {
+					const dataArr2 = dataVal2 as Array<UTSJSONObject>
+					if (dataArr2.length > 0) {
+						const firstItem2 = dataArr2[0]
+						if (firstItem2 != null) {
+							const itemStr2 = JSON.stringify(firstItem2)
+							const itemObj2 = JSON.parse(itemStr2) as UTSJSONObject
+							const typeVal2 = itemObj2.get('type')
+							const contentVal2 = itemObj2.get('content')
+							if (typeVal2 != null) {
+								typeStr = typeVal2.toString()
+							}
+							if (contentVal2 != null) {
+								contentStr = contentVal2.toString()
+							}
+							console.log('解析方式2(数组) - type:', typeStr, 'content:', contentStr)
+						}
+					}
+				} else {
+					const dataStr2 = JSON.stringify(dataVal2)
+					const dataObj2 = JSON.parse(dataStr2) as UTSJSONObject
+					const typeVal2 = dataObj2.get('type')
+					const contentVal2 = dataObj2.get('content')
+					if (typeVal2 != null) {
+						typeStr = typeVal2.toString()
+					}
+					if (contentVal2 != null) {
+						contentStr = contentVal2.toString()
+					}
+					console.log('解析方式2(对象) - type:', typeStr, 'content:', contentStr)
+				}
+			}
+		}
+		
+		// 方式3: e.type (直接结构)
+		if (typeStr == '') {
+			const typeVal3 = eObj.get('type')
+			const contentVal3 = eObj.get('content')
+			if (typeVal3 != null) {
+				typeStr = typeVal3.toString()
+			}
+			if (contentVal3 != null) {
+				contentStr = contentVal3.toString()
+			}
+			console.log('解析方式3 - type:', typeStr, 'content:', contentStr)
+		}
+		
+		// 处理消息
+		if (typeStr != '') {
+			console.log('处理消息类型:', typeStr)
+			
+			if (typeStr == 'editorContent') {
+				if (contentStr != '') {
+					formRouteDetail.value = contentStr
+				}
+				showRichEditor.value = false
+			} else if (typeStr == 'selectImage') {
+				console.log('触发图片选择')
+				selectAndUploadImage()
+			} else if (typeStr == 'editorCancel') {
+				showRichEditor.value = false
+			}
+		} else {
+			console.log('未能解析消息类型')
+		}
+	} catch (error) {
+		handleSilentError(error, '富文本编辑器消息处理')
+	}
+}
+
+// 加载草稿
+const loadDraft = () => {
+	// 如果是编辑模式，不加载草稿
+	if (isEditMode.value == true) {
+		return
+	}
+	
+	try {
+		// 读取草稿
+		const draft = getRouteDraft()
+		
+		if (draft == null) {
+			return
+		}
+		
+		// 检查草稿是否过期
+		if (isDraftExpired(draft) == true) {
+			console.log('草稿已过期，自动清除')
+			clearRouteDraft()
+			return
+		}
+		
+		// 加载草稿数据到表单
+		// 主图
+		const pics = draft.homePics
+		for (let i = 0; i < pics.length; i = i + 1) {
+			formHomePics.value.push(pics[i])
+		}
+		
+		// 其他字段
+		formLineTitle.value = draft.lineTitle
+		formTripPrice.value = draft.tripPrice
+		formLineAddress.value = draft.lineAddress
+		formLineType.value = draft.lineType
+		formDepartureDate.value = draft.departureDate
+		formRouteDetail.value = draft.routeDetail
+		formInsertType.value = draft.insertType
+		
+		// 显示提示
+		uni.showToast({
+			title: '已加载草稿',
+			icon: 'none',
+			duration: 1500
+		})
+	} catch (e) {
+		handleSilentError(e, '加载草稿')
+	}
+}
+
+// 加载现有路线数据（编辑模式）
+const loadRouteData = () => {
+	if (editRouteKid.value == '') {
+		return
+	}
+	
+	uni.showLoading({
+		title: '加载中...'
+	})
+	
+	const params = {
+		kid: editRouteKid.value
+	} as UTSJSONObject
+	
+	getRouteDetail(params).then((res: UTSJSONObject) => {
+		uni.hideLoading()
+		
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const codeVal = resObj.get('code')
+				
+				if (codeVal != null && codeVal.toString() == '200') {
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						const dataStr = JSON.stringify(dataVal)
+						const dataObj = JSON.parse(dataStr) as UTSJSONObject
+						
+						// 后端返回 LineDetailResponse，路线字段在 line 子对象中
+						const lineVal = dataObj.get('line')
+						if (lineVal == null) {
+							uni.showToast({ title: '路线数据为空', icon: 'none' })
+							return
+						}
+						const lineStr = JSON.stringify(lineVal)
+						const lineObj = JSON.parse(lineStr) as UTSJSONObject
+						
+						// 加载标题
+						const lineTitleVal = lineObj.get('lineTitle')
+						if (lineTitleVal != null && lineTitleVal.toString() != '') {
+							formLineTitle.value = lineTitleVal.toString()
+						}
+						
+						// 加载价格
+						const tripPriceVal = lineObj.get('tripPrice')
+						if (tripPriceVal != null) {
+							formTripPrice.value = tripPriceVal.toString()
+						}
+						
+						// 加载出发地
+						const lineAddressVal = lineObj.get('lineAddress')
+						if (lineAddressVal != null && lineAddressVal.toString() != '') {
+							formLineAddress.value = lineAddressVal.toString()
+						}
+						
+						// 加载类型
+						const lineTypeVal = lineObj.get('lineType')
+						if (lineTypeVal != null) {
+							const typeNum = parseInt(lineTypeVal.toString())
+							if (isNaN(typeNum) == false) {
+								formLineType.value = typeNum
+							}
+						}
+						
+						// 加载出发日期
+						const departureDateVal = lineObj.get('departureDate')
+						if (departureDateVal != null && departureDateVal.toString() != '') {
+							formDepartureDate.value = departureDateVal.toString()
+						}
+						
+						// 加载详情（newFeature 字段对应路线详情）
+						const routeDetailVal = lineObj.get('newFeature')
+						if (routeDetailVal != null && routeDetailVal.toString() != '') {
+							formRouteDetail.value = routeDetailVal.toString()
+						}
+						
+						// 加载主图
+						const homePicsVal = lineObj.get('homePics')
+						if (homePicsVal != null && Array.isArray(homePicsVal) == true) {
+							const picsArr = homePicsVal as Array<UTSJSONObject>
+							for (let i = 0; i < picsArr.length; i = i + 1) {
+								const picItem = picsArr[i]
+								if (picItem != null) {
+									const picStr = JSON.stringify(picItem)
+									const picObj = JSON.parse(picStr) as UTSJSONObject
+									const picUrlVal = picObj.get('picUrl')
+									if (picUrlVal != null && picUrlVal.toString() != '') {
+										formHomePics.value.push(picUrlVal.toString())
+									}
+								}
+							}
+							if (formHomePics.value.length > 0) {
+								formInsertType.value = 1
+							}
+						}
+						
+						console.log('路线数据加载成功')
+					}
+				} else {
+					const msgVal = resObj.get('msg')
+					let errorMsg = '加载失败'
+					if (msgVal != null && msgVal.toString() != '') {
+						errorMsg = msgVal.toString()
+					}
+					uni.showToast({
+						title: errorMsg,
+						icon: 'none'
+					})
+				}
+			} catch (e) {
+				console.error('解析路线数据失败:', e)
+				uni.showToast({
+					title: '数据解析失败',
+					icon: 'none'
+				})
+			}
+		}
+	}).catch((error: any | null): void => {
+		uni.hideLoading()
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '加载路线数据', null)
+		}
+	})
+}
+
+// 验证草稿字段（必填：主图、标题、价格、出发地）
+const validateDraftForm = (): string => {
+	if (formHomePics.value.length == 0) {
+		return '请上传主图'
+	}
+
+	const lineTitleVal = formLineTitle.value
+	if (lineTitleVal == null || lineTitleVal == '' || lineTitleVal.trim() == '') {
+		return '请输入标题'
+	}
+
+	const tripPriceVal = formTripPrice.value
+	if (tripPriceVal == null || tripPriceVal == '' || tripPriceVal.trim() == '') {
+		return '请输入费用'
+	}
+
+	const price = parseFloat(tripPriceVal)
+	if (isNaN(price) == true || price <= 0) {
+		return '请输入有效的费用'
+	}
+
+	const lineAddressVal = formLineAddress.value
+	if (lineAddressVal == null || lineAddressVal == '' || lineAddressVal.trim() == '') {
+		return '请选择出发'
+	}
+
+	return ''
+}
+
+// 保存草稿
+const handleSaveDraft = () => {
+	// 编辑模式不支持保存草稿
+	if (isEditMode.value == true) {
+		uni.showToast({
+			title: '编辑模式不支持保存草稿，请直接发布',
+			icon: 'none',
+			duration: 2000
+		})
+		return
+	}
+	
+	// 验证必填字段
+	const errorMsg = validateDraftForm()
+	if (errorMsg != '') {
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 检查是否正在上传
+	if (uploading.value == true) {
+		uni.showToast({
+			title: '正在上传中，请稍候',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		uni.showLoading({
+			title: '保存中...'
+		})
+		
+		// 构建草稿对象
+		const draft = new RouteDraft()
+		draft.homePics = formHomePics.value
+		draft.lineTitle = formLineTitle.value.trim()
+		draft.tripPrice = formTripPrice.value
+		draft.lineAddress = formLineAddress.value.trim()
+		draft.lineType = formLineType.value
+		draft.departureDate = formDepartureDate.value
+		draft.routeDetail = formRouteDetail.value
+		draft.insertType = formInsertType.value
+		draft.createdAt = 0  // saveRouteDraft 会自动设置
+		draft.updatedAt = 0
+		
+		// 保存草稿
+		const success = saveRouteDraft(draft)
+		
+		uni.hideLoading()
+		
+		if (success == true) {
+			uni.showToast({
+				title: '草稿已保存',
+				icon: 'success',
+				duration: 1000
+			})
+			
+			// 1秒后返回上一页
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 1000)
+		} else {
+			uni.showToast({
+				title: '保存草稿失败，请稍后重试',
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		console.error('保存草稿失败:', error)
+		uni.hideLoading()
+		uni.showToast({
+			title: '保存草稿失败，请稍后重试',
+			icon: 'none'
+		})
+	}
+}
+
+// 自动保存草稿（静默保存，无提示）
+const autoSaveDraft = () => {
+	// 编辑模式不自动保存
+	if (isEditMode.value == true) {
+		return
+	}
+	
+	// 未启用自动保存
+	if (autoSaveEnabled.value == false) {
+		return
+	}
+	
+	// 检查是否有内容需要保存（至少有一个字段不为空）
+	const hasContent = (
+		formHomePics.value.length > 0 ||
+		formLineTitle.value.trim() != '' ||
+		formTripPrice.value.trim() != '' ||
+		formLineAddress.value.trim() != '' ||
+		formDepartureDate.value != '' ||
+		formRouteDetail.value.trim() != ''
+	)
+	
+	if (hasContent == false) {
+		return
+	}
+	
+	try {
+		// 构建草稿对象
+		const draft = new RouteDraft()
+		draft.homePics = formHomePics.value
+		draft.lineTitle = formLineTitle.value.trim()
+		draft.tripPrice = formTripPrice.value
+		draft.lineAddress = formLineAddress.value.trim()
+		draft.lineType = formLineType.value
+		draft.departureDate = formDepartureDate.value
+		draft.routeDetail = formRouteDetail.value
+		draft.insertType = formInsertType.value
+		draft.createdAt = 0  // saveRouteDraft 会自动设置
+		draft.updatedAt = 0
+		
+		// 静默保存草稿
+		saveRouteDraft(draft)
+	} catch (error) {
+		handleSilentError(error, '自动保存草稿')
+	}
+}
+
+// 触发自动保存（防抖）
+const triggerAutoSave = () => {
+	// 清除之前的定时器
+	if (autoSaveTimer.value != 0) {
+		clearTimeout(autoSaveTimer.value)
+		autoSaveTimer.value = 0
+	}
+	
+	// 设置新的定时器（2秒后保存）
+	autoSaveTimer.value = setTimeout(() => {
+		autoSaveDraft()
+		autoSaveTimer.value = 0
+	}, 2000)
+}
+
+const validateForm = (): string => {
+	if (formHomePics.value.length == 0) {
+		return '请上传主图'
+	}
+
+	const lineTitleVal = formLineTitle.value
+	if (lineTitleVal == null || lineTitleVal == '' || lineTitleVal.trim() == '') {
+		return '请输入标题'
+	}
+
+	const tripPriceVal = formTripPrice.value
+	if (tripPriceVal == null || tripPriceVal == '' || tripPriceVal.trim() == '') {
+		return '请输入费用'
+	}
+
+	const price = parseFloat(tripPriceVal)
+	if (isNaN(price) == true || price <= 0) {
+		return '请输入有效的费用'
+	}
+
+	const lineAddressVal = formLineAddress.value
+	if (lineAddressVal == null || lineAddressVal == '' || lineAddressVal.trim() == '') {
+		return '请选择出发'
+	}
+
+	const routeDetailVal = formRouteDetail.value
+	if (routeDetailVal == null || routeDetailVal == '' || routeDetailVal.trim() == '') {
+		return '请输入路线详情'
+	}
+
+	return ''
+}
+
+// ==================== 事件处理函数 ====================
+
+const goBack = () => {
+	// 离开页面前自动保存草稿
+	if (isEditMode.value == false) {
+		autoSaveDraft()
+	}
+	
+	uni.navigateBack()
+}
+
+const handlePublish = async () => {
+	const errorMsg = validateForm()
+	if (errorMsg != '') {
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (uploading.value == true) {
+		uni.showToast({
+			title: '正在上传中，请稍候',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		uni.showLoading({
+			title: '发布中...'
+		})
+		
+		// 构建 homePics 数组
+		const homePicsData: Array<UTSJSONObject> = []
+		const pics = formHomePics.value
+		for (let i = 0; i < pics.length; i++) {
+			const picItem = {
+				picType: 10,
+				picUrl: pics[i]
+			} as UTSJSONObject
+			homePicsData.push(picItem)
+		}
+		
+		// 构建简化参数（直接使用富文本详情）
+		// ✅ 编辑模式传 kid，新建模式传 null（后端自动创建）
+		const params = {
+			userKid: formUserKid.value,
+			kid: isEditMode.value == true ? editRouteKid.value : null,
+			lineTitle: formLineTitle.value.trim(),
+			tripPrice: parseFloat(formTripPrice.value),
+			lineAddress: formLineAddress.value.trim(),
+			lineType: formLineType.value,
+			departureDate: formDepartureDate.value,
+			homePics: homePicsData,
+			lineDisplay: formLineDisplay.value,
+			routeDetail: formRouteDetail.value.trim(),
+			insertType: formInsertType.value
+		} as UTSJSONObject
+		
+		const res = await publishRoute(params)
+		
+		uni.hideLoading()
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const codeVal = resObj.get('code')
+			
+			if (codeVal != null && codeVal.toString() == '200') {
+				// 发布成功后清除本地草稿（仅新建模式）
+				if (isEditMode.value == false) {
+					clearRouteDraft()
+				}
+				
+				uni.showToast({
+					title: '发布成功',
+					icon: 'success'
+				})
+				
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 1500)
+			} else {
+				const msgVal = resObj.get('msg')
+				let errorMsgVal = '发布失败'
+				if (msgVal != null && msgVal.toString() != '') {
+					errorMsgVal = msgVal.toString()
+				}
+				throw new Error(errorMsgVal)
+			}
+		}
+	} catch (error) {
+		uni.hideLoading()
+		if (!isAuthError(error)) {
+			handlePageError(error, '发布定制路线', null)
+		}
+	}
+}
+
+const initPageData = () => {
+	// 初始化日期范围
+	initDateRange()
+	
+	// 检查登录状态
+	const isLogin = checkIsLogin()
+	if (isLogin == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	const userKid = getUserKidFromStore()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		setTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+		return
+	}
+	
+	formUserKid.value = userKid
+	
+	// 根据模式加载数据
+	if (isEditMode.value == true) {
+		// 编辑模式：加载现有路线数据
+		loadRouteData()
+	} else {
+		// 新建模式：加载草稿
+		loadDraft()
+	}
+}
+
+// ==================== 生命周期 ====================
+
+onLoad((options: OnLoadOptions) => {
+	// 检查是否为编辑模式（有 kid 参数）
+	if (options != null) {
+		try {
+			const optionsObj = JSON.parse(JSON.stringify(options)) as UTSJSONObject
+			const kidVal = optionsObj.get('kid')
+			if (kidVal != null && kidVal.toString() != '') {
+				isEditMode.value = true
+				editRouteKid.value = kidVal.toString()
+				console.log('编辑模式，kid:', editRouteKid.value)
+			}
+		} catch (e) {
+			console.error('解析页面参数失败:', e)
+		}
+	}
+})
+
+onMounted(() => {
+	initPageLayout()
+	
+	// #ifdef H5
+	// H5 端：监听 iframe postMessage，因为 web-view @message 在 H5 不实时触发
+	h5MessageHandler = (event: any) => {
+		handleH5PostMessage(event)
+	}
+	window.addEventListener('message', h5MessageHandler as any)
+	// #endif
+	
+	// 监听城市选择事件
+	uni.$on('onCitySelected', (data: UTSJSONObject | null) => {
+		if (data != null) {
+			try {
+				const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+				const cityVal = dataObj.get('city')
+				if (cityVal != null) {
+					const city = cityVal.toString()
+					handleSubmitSelect(city)
+				}
+			} catch (e) {
+				console.error('解析城市选择数据失败:', e)
+			}
+		}
+	})
+	
+	// 计算滚动区域高度（H5 端使用）
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+		const windowHeightVal = systemInfoObj.get('windowHeight')
+		if (windowHeightVal != null) {
+			const windowHeight = parseInt(windowHeightVal.toString())
+			if (isNaN(windowHeight) == false && windowHeight > 0) {
+				scrollHeight.value = windowHeight
+			}
+		}
+	} catch (e) {
+		scrollHeight.value = 600
+	}
+	
+	initPageData()
+})
+
+// 页面卸载时移除事件监听
+onUnmounted(() => {
+	uni.$off('onCitySelected')
+	
+	// #ifdef H5
+	// 移除 H5 端 postMessage 监听
+	if (h5MessageHandler != null) {
+		window.removeEventListener('message', h5MessageHandler as any)
+		h5MessageHandler = null
+	}
+	// #endif
+	
+	// 清除自动保存定时器
+	if (autoSaveTimer.value != 0) {
+		clearTimeout(autoSaveTimer.value)
+		autoSaveTimer.value = 0
+	}
+})
+
+// ==================== Watch 监听（自动保存）====================
+import { watch } from 'vue'
+
+// 监听表单字段变化，触发自动保存
+watch([formLineTitle, formTripPrice, formLineAddress, formDepartureDate, formRouteDetail], () => {
+	triggerAutoSave()
+})
+
+// 监听图片变化
+watch(formHomePics, () => {
+	triggerAutoSave()
+}, { deep: true })
+
+// 监听类型变化
+watch(formLineType, () => {
+	triggerAutoSave()
+})
+</script>
+
+
+<style scoped>
+/* 页面容器 */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #ffffff;
+	position: relative;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	width: 750rpx;
+	background-color: #ffffff;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+	z-index: 1000;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.nav-back {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	text-align: center;
+}
+
+.nav-action {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.auto-save-tip {
+	font-size: 24rpx;
+	color: #999999;
+}
+/* #endif */
+
+/* APP 端滚动视图 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+/* H5 端滚动视图 */
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+.page-container {
+	padding: 0 28rpx;
+	padding-bottom: 60rpx;
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+.form-item {
+	flex-direction: row;
+	align-items: center;
+	padding: 32rpx 0;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.form-label {
+	width: 180rpx;
+	flex-direction: row;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.label-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.upload-wrapper {
+	flex: 1;
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.upload-box {
+	width: 150rpx;
+	height: 150rpx;
+	background-color: #fafafa;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #d9d9d9;
+	border-radius: 8rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.upload-plus {
+	font-size: 80rpx;
+	color: #d9d9d9;
+	font-weight: normal;
+	line-height: 80rpx;
+	margin-bottom: 8rpx;
+}
+
+.upload-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.image-preview-wrapper {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.image-preview-item {
+	width: 150rpx;
+	height: 150rpx;
+	border-radius: 8rpx;
+	overflow: hidden;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.preview-image {
+	width: 150rpx;
+	height: 150rpx;
+}
+
+.remove-btn {
+	position: absolute;
+	top: 8rpx;
+	right: 8rpx;
+	width: 40rpx;
+	height: 40rpx;
+	background-color: rgba(0, 0, 0, 0.6);
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.remove-icon {
+	color: #ffffff;
+	font-size: 32rpx;
+	font-weight: bold;
+	line-height: 32rpx;
+}
+
+.upload-box-small {
+	width: 150rpx;
+	height: 150rpx;
+	background-color: #fafafa;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #d9d9d9;
+	border-radius: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.upload-plus-small {
+	font-size: 60rpx;
+	color: #d9d9d9;
+	font-weight: normal;
+	line-height: 60rpx;
+}
+
+.form-input {
+	flex: 1;
+	height: 80rpx;
+	background-color: #ffffff;
+	padding: 0;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.select-input {
+	flex: 1;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.input-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.placeholder-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.type-buttons {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+}
+
+.type-btn {
+	height: 52rpx;
+	padding: 0 32rpx;
+	border-radius: 26rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 20rpx;
+}
+
+.type-btn-active {
+	background-color: #C6EBFF;
+}
+
+.type-btn-inactive {
+	background-color: #F2F2F2;
+}
+
+.type-text-active {
+	font-size: 24rpx;
+	color: #ffffff;
+}
+
+.type-text-inactive {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.detail-form-item {
+	flex-direction: column;
+	padding: 32rpx 0;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.detail-label {
+	width: 180rpx;
+	flex-direction: row;
+	align-items: center;
+	flex-shrink: 0;
+	margin-bottom: 16rpx;
+}
+
+.detail-wrapper {
+	flex: 1;
+	min-height: 200rpx;
+}
+
+.detail-input-area {
+	min-height: 200rpx;
+	background-color: #ffffff;
+	padding: 16rpx;
+	border-radius: 8rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #e8e8e8;
+	flex-direction: column;
+	justify-content: flex-start;
+	align-items: flex-start;
+}
+
+.detail-placeholder {
+	font-size: 28rpx;
+	color: #999999;
+	line-height: 1.5;
+}
+
+.detail-content {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.5;
+	width: 100%;
+}
+
+.submit-btn {
+	width: 654rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 52rpx;
+	margin-top: 128rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: 400;
+}
+
+.date-picker-wrapper {
+	flex: 1;
+}
+
+/* 富文本编辑器弹窗样式 */
+.rich-editor-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.rich-editor-container {
+	width: 90%;
+	height: 80%;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.rich-editor-header {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.rich-editor-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.rich-editor-close {
+	font-size: 48rpx;
+	color: #999999;
+	line-height: 48rpx;
+}
+
+.rich-editor-webview {
+	flex: 1;
+	width: 100%;
+}
+
+/* 双按钮容器 */
+.button-row {
+	flex-direction: row;
+	padding: 40rpx 28rpx;
+	padding-bottom: 60rpx;
+}
+
+/* 保存草稿按钮 (浅蓝色) */
+.draft-btn {
+	flex: 1;
+	height: 88rpx;
+	background-color: #C6EBFF;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 24rpx;
+}
+
+.draft-text {
+	font-size: 32rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+/* 发布按钮 (天蓝色) */
+.publish-btn {
+	flex: 1;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.publish-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+</style>

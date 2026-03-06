@@ -1,0 +1,72 @@
+/**
+ * APP 相关 API
+ * 版本检查、更新等功能
+ * 
+ * @author WYXD Team
+ * @date 2025-01-15
+ */
+
+import request from '@/utils/request'
+
+// ============ 接口定义 ============
+
+// 版本检查参数
+export class CheckVersionParams {
+	platform: string = ''      // 平台类型：android/ios/h5
+	versionName: string = ''   // 当前版本名称
+	versionCode: number = 0    // 当前版本号
+}
+
+// 版本上报参数
+export class ReportAppVersionParams {
+	platform: string = ''      // 平台类型：android/ios/h5
+	versionName: string = ''   // 当前版本名称
+	versionCode: number = 0    // 当前版本号
+	deviceId: string = ''      // 设备ID
+}
+
+// ============ API 函数 ============
+
+/**
+ * 检查 APP 版本更新
+ * POST /api/app/version/check
+ * 
+ * @param params { platform: string, versionName: string, versionCode: number }
+ * @returns Promise<UTSJSONObject> 包含最新版本信息
+ */
+export const checkAppVersionApi = (params: CheckVersionParams): Promise<UTSJSONObject> => {
+	const payload = {
+		platform: params.platform,
+		versionName: params.versionName,
+		versionCode: params.versionCode
+	} as UTSJSONObject
+	return request.post('/api/app/version/check', payload, false)
+}
+
+/**
+ * 获取 APP 最新版本信息
+ * GET /api/app/version/latest
+ * 
+ * @param platform 平台类型：android/ios
+ * @returns Promise<UTSJSONObject> 包含最新版本信息
+ */
+export const getLatestVersionApi = (platform: string): Promise<UTSJSONObject> => {
+	return request.get('/api/app/version/latest', { platform: platform }, false)
+}
+
+/**
+ * 上报 APP 版本信息（用于统计）
+ * POST /api/app/version/report
+ * 
+ * @param params { platform: string, versionName: string, versionCode: number, deviceId: string }
+ * @returns Promise<UTSJSONObject>
+ */
+export const reportAppVersionApi = (params: ReportAppVersionParams): Promise<UTSJSONObject> => {
+	const payload = {
+		platform: params.platform,
+		versionName: params.versionName,
+		versionCode: params.versionCode,
+		deviceId: params.deviceId
+	} as UTSJSONObject
+	return request.post('/api/app/version/report', payload, false)
+}

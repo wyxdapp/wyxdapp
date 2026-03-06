@@ -1,0 +1,358 @@
+/**
+ * APP 版本配置
+ * 
+ * 定义版本号、下载地址、更新检查 API 等配置
+ * 
+ * @author WYXD Team
+ * @date 2025-01-15
+ */
+
+// ==================== 版本号配置 ====================
+
+/**
+ * 缓存的当前版本名称
+ */
+let cachedVersionName: string | null = null
+
+/**
+ * 缓存的当前版本号
+ */
+let cachedVersionCode: number | null = null
+
+/**
+ * 从 manifest.json 动态获取当前版本名称
+ * @returns 版本名称字符串，如 "2.2.0"
+ */
+export function getCurrentVersionName(): string {
+	const cached = cachedVersionName
+	if (cached != null) {
+		return cached
+	}
+	
+	try {
+		// #ifdef APP-PLUS
+		// APP 端从原生 API 获取版本信息
+		const appInfo = uni.getAppBaseInfo()
+		if (appInfo != null && appInfo.version != null) {
+			const ver = appInfo.version
+			cachedVersionName = ver
+			return ver
+		}
+		// #endif
+		
+		// #ifdef H5
+		// H5 端或其他平台使用默认值
+		cachedVersionName = '2.2.6'
+		return '2.2.6'
+		// #endif
+		
+		// #ifdef MP-WEIXIN
+		// 小程序端使用默认值
+		cachedVersionName = '2.2.6'
+		return '2.2.6'
+		// #endif
+	} catch (e: any) {
+		console.warn('[VersionConfig] 获取版本信息失败，使用默认值:', e)
+		cachedVersionName = '2.2.6'
+		return '2.2.6'
+	}
+	
+	// 默认兜底
+	cachedVersionName = '2.2.6'
+	return '2.2.6'
+}
+
+/**
+ * 从 manifest.json 动态获取当前版本号
+ * @returns 版本号数字
+ */
+export function getCurrentVersionCode(): number {
+	const cached = cachedVersionCode
+	if (cached != null) {
+		return cached
+	}
+	
+	try {
+		// #ifdef APP-PLUS
+		// APP 端从原生 API 获取版本号
+		const appInfo = uni.getAppBaseInfo()
+		if (appInfo != null && appInfo.versionCode != null) {
+			// uni-app 返回的是字符串，需要转换为数字
+			const codeStr = appInfo.versionCode.toString()
+			const parsedCode = parseInt(codeStr)
+			if (isNaN(parsedCode)) {
+				cachedVersionCode = 220
+				return 220
+			} else {
+				cachedVersionCode = parsedCode
+				return parsedCode
+			}
+		}
+		// #endif
+		
+		// #ifdef H5
+		// H5 端或其他平台使用默认值
+		cachedVersionCode = 225
+		return 225
+		// #endif
+		
+		// #ifdef MP-WEIXIN
+		// 小程序端使用默认值
+		cachedVersionCode = 225
+		return 225
+		// #endif
+	} catch (e: any) {
+		console.warn('[VersionConfig] 获取版本号失败，使用默认值:', e)
+		cachedVersionCode = 225
+		return 225
+	}
+	
+	// 默认兜底
+	cachedVersionCode = 225
+	return 225
+}
+
+// ==================== 下载地址配置 ====================
+
+// 直接使用字符串常量，避免跨模块类型推导问题
+const ANDROID_URL = 'https://cos.wyxdapp.com/down/wyxdapp.apk'
+const IOS_URL = 'https://apps.apple.com/cn/app/网约向导/id1470361392'
+const H5_URL = 'https://jiasu.wyxdapp.com/down.html'
+
+/**
+ * Android APK 下载地址
+ */
+export const ANDROID_DOWNLOAD_URL: string = ANDROID_URL
+
+/**
+ * iOS App Store 链接
+ */
+export const IOS_APPSTORE_URL: string = IOS_URL
+
+/**
+ * H5 下载页面地址
+ */
+export const H5_DOWNLOAD_PAGE_URL: string = H5_URL
+
+// ==================== API 配置 ====================
+
+/**
+ * 版本检查 API 地址
+ */
+export const CHECK_UPDATE_API = '/api/app/version/check'
+
+// ==================== 获取当前版本信息 ====================
+
+/**
+ * 获取当前版本名称（带 v 前缀）
+ * @returns 版本名称字符串，如 "v2.2.0"
+ */
+export function getCurrentVersionDisplay(): string {
+	return 'v' + getCurrentVersionName()
+}
+
+// ==================== 平台判断辅助函数 ====================
+
+/**
+ * 获取当前平台类型
+ * @returns 平台类型字符串 'android' | 'ios' | 'h5'
+ */
+export function getCurrentPlatform(): string {
+	// #ifdef APP-ANDROID
+	return 'android'
+	// #endif
+	// #ifdef APP-IOS
+	return 'ios'
+	// #endif
+	// #ifdef H5
+	return 'h5'
+	// #endif
+	// #ifdef MP-WEIXIN
+	return 'mp-weixin'
+	// #endif
+	return 'unknown'
+}
+
+/**
+ * 判断是否为 Android 平台
+ * @returns 是否为 Android
+ */
+export function isAndroidPlatform(): boolean {
+	// #ifdef APP-ANDROID
+	return true
+	// #endif
+	// #ifndef APP-ANDROID
+	return false
+	// #endif
+}
+
+/**
+ * 判断是否为 iOS 平台
+ * @returns 是否为 iOS
+ */
+export function isIOSPlatform(): boolean {
+	// #ifdef APP-IOS
+	return true
+	// #endif
+	// #ifndef APP-IOS
+	return false
+	// #endif
+}
+
+/**
+ * 判断是否为 H5 平台
+ * @returns 是否为 H5
+ */
+export function isH5Platform(): boolean {
+	// #ifdef H5
+	return true
+	// #endif
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
+ * 判断是否为 APP 平台（Android 或 iOS）
+ * @returns 是否为 APP
+ */
+export function isAppPlatform(): boolean {
+	// #ifdef APP-PLUS
+	return true
+	// #endif
+	// #ifndef APP-PLUS
+	return false
+	// #endif
+}
+
+// ==================== 下载地址获取 ====================
+
+/**
+ * 根据平台获取下载地址
+ * @returns 下载地址字符串
+ */
+export function getDownloadUrl(): string {
+	// #ifdef APP-ANDROID
+	return ANDROID_DOWNLOAD_URL
+	// #endif
+	// #ifdef APP-IOS
+	return IOS_APPSTORE_URL
+	// #endif
+	// #ifdef H5
+	return H5_DOWNLOAD_PAGE_URL
+	// #endif
+	return H5_DOWNLOAD_PAGE_URL
+}
+
+
+// ==================== 版本比较工具函数 ====================
+
+/**
+ * 比较两个版本号
+ * 
+ * @param v1 第一个版本号，如 "2.1.0"
+ * @param v2 第二个版本号，如 "2.1.0"
+ * @returns 正数表示 v1 > v2，负数表示 v1 < v2，0 表示相等
+ * 
+ * 示例：
+ * compareVersion("2.1.0", "2.1.0") => 1 (v1 > v2)
+ * compareVersion("2.1.0", "2.1.0") => -1 (v1 < v2)
+ * compareVersion("2.1.0", "2.1.0") => 0 (相等)
+ * compareVersion("2.0", "2.0.1") => -1 (v1 < v2)
+ */
+export function compareVersion(v1: string, v2: string): number {
+	// 处理空字符串情况
+	if (v1 == null || v1 == '') {
+		if (v2 == null || v2 == '') {
+			return 0
+		}
+		return -1
+	}
+	if (v2 == null || v2 == '') {
+		return 1
+	}
+	
+	// 移除版本号前缀（如 v、V）
+	let version1 = v1
+	let version2 = v2
+	
+	if (version1.indexOf('v') == 0 || version1.indexOf('V') == 0) {
+		version1 = version1.substring(1)
+	}
+	if (version2.indexOf('v') == 0 || version2.indexOf('V') == 0) {
+		version2 = version2.substring(1)
+	}
+	
+	// 按点号分割版本号
+	const parts1 = version1.split('.')
+	const parts2 = version2.split('.')
+	
+	// 获取最大长度
+	const maxLen = (parts1.length > parts2.length) ? parts1.length : parts2.length
+	
+	// 逐位比较
+	let i = 0
+	while (i < maxLen) {
+		// 获取当前位的数值，不存在则为 0
+		let num1 = 0
+		let num2 = 0
+		
+		if (i < parts1.length) {
+			const parsed1 = parseInt(parts1[i])
+			if (isNaN(parsed1) == false) {
+				num1 = parsed1
+			}
+		}
+		
+		if (i < parts2.length) {
+			const parsed2 = parseInt(parts2[i])
+			if (isNaN(parsed2) == false) {
+				num2 = parsed2
+			}
+		}
+		
+		// 比较当前位
+		if (num1 > num2) {
+			return 1
+		}
+		if (num1 < num2) {
+			return -1
+		}
+		
+		i = i + 1
+	}
+	
+	// 所有位都相等
+	return 0
+}
+
+/**
+ * 判断是否有新版本
+ * 
+ * @param currentVersion 当前版本号
+ * @param serverVersion 服务器版本号
+ * @returns 是否有新版本可用
+ */
+export function hasNewVersion(currentVersion: string, serverVersion: string): boolean {
+	const result = compareVersion(serverVersion, currentVersion)
+	return result > 0
+}
+
+/**
+ * 格式化版本号显示
+ * 
+ * @param version 版本号
+ * @returns 格式化后的版本号，如 "v2.1.0"
+ */
+export function formatVersionDisplay(version: string): string {
+	if (version == null || version == '') {
+		return ''
+	}
+	
+	// 如果已经有 v 前缀，直接返回
+	if (version.indexOf('v') == 0 || version.indexOf('V') == 0) {
+		return version
+	}
+	
+	return 'v' + version
+}

@@ -1,0 +1,317 @@
+<template>
+	<view class="image-self-container" :style="containerStyle" @click="handleClick">
+		<image 
+			:class="['image-self', { 'loading': loading }]"
+			:style="imageStyle"
+			:src="displayUrl"
+			:mode="mode"
+			:lazy-load="lazyLoad"
+			@load="handleLoad"
+			@error="handleError"
+			@click.stop="handleImageClick">
+		</image>
+		
+		<!-- 加载状态 -->
+		<view v-if="loading" class="loading-overlay">
+			<Loading :color="loadingColor" :size="loadingSize"></Loading>
+		</view>
+		
+		<!-- 错误状态 -->
+		<view v-if="error" class="error-overlay">
+			<UniIcons type="image" :size="48" color="#CCCCCC" />
+			<text class="error-text">加载失败</text>
+		</view>
+		
+		<!-- 预览功能 -->
+		<view v-if="preView == true && error == false && loading == false" class="preview-badge">
+			<text class="preview-icon">🔍</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import Loading from '@/components/base/Loading.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// Props - 运行时声明
+const props = defineProps({
+	width: { type: [Number, String], default: 'auto' },
+	height: { type: [Number, String], default: 'auto' },
+	borderRadius: { type: [Number, String], default: '0rpx' },
+	url: { type: String, default: '' },
+	defaultImage: { type: String, default: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png' },
+	mode: { type: String, default: 'aspectFill' },
+	lazyLoad: { type: Boolean, default: true },
+	preView: { type: Boolean, default: true },
+	disablePreview: { type: Boolean, default: false },
+	loadingColor: { type: String, default: '#2EAEF2' },
+	loadingSize: { type: [Number, String], default: 28 },
+	quality: { type: Number, default: 80 },
+	showLoadingByDefault: { type: Boolean, default: false },
+	enableErrorRetry: { type: Boolean, default: true }
+})
+
+// Emits定义
+const emit = defineEmits<{
+	click: []
+	load: []
+	error: []
+	retry: []
+}>()
+
+// 响应式数据
+const loading = ref(false)
+const error = ref(false)
+const retryCount = ref(0)
+
+// 计算属性
+const containerStyle = computed((): string => {
+	let style = ''
+	
+	const w = props.width
+	if (typeof w === 'number') {
+		style += `width: ${w}rpx;`
+	} else if (typeof w === 'string') {
+		const wStr = w as string
+		if (wStr != 'auto' && wStr != '') {
+			style += `width: ${wStr};`
+		}
+	}
+	
+	const h = props.height
+	if (typeof h === 'number') {
+		style += `height: ${h}rpx;`
+	} else if (typeof h === 'string') {
+		const hStr = h as string
+		if (hStr != 'auto' && hStr != '') {
+			style += `height: ${hStr};`
+		}
+	}
+	
+	return style
+})
+
+const imageStyle = computed((): string => {
+	let style = ''
+	
+	const br = props.borderRadius
+	if (typeof br === 'number') {
+		const brNum = br as number
+		style += `border-radius: ${brNum}rpx;`
+	} else if (typeof br === 'string') {
+		const brStr = br as string
+		if (brStr != '0rpx' && brStr != '0' && brStr != '') {
+			style += `border-radius: ${brStr};`
+		}
+	}
+	
+	return style
+})
+
+const displayUrl = computed((): string => {
+	const hasError = error.value == true
+	const defaultImg = props.defaultImage
+	const url = props.url
+
+	if (hasError == true) {
+		if (defaultImg != '') {
+			return defaultImg
+		}
+	}
+
+	if (url != '') {
+		return url
+	}
+
+	if (defaultImg != '') {
+		return defaultImg
+	}
+
+	return ''
+})
+
+// 方法 - 先定义会被调用的函数
+const retryLoad = () => {
+	loading.value = true
+	error.value = false
+	emit('retry')
+}
+
+const handlePreview = () => {
+	if (props.url == '' || error.value == true) return
+	
+	// #ifdef H5 || MP-WEIXIN
+	uni.previewImage({
+		urls: [props.url],
+		current: props.url,
+		longPressActions: {
+			itemList: ['发送给朋友', '保存图片'],
+			success: (res) => {
+				console.log('预览操作成功', res.tapIndex)
+			},
+			fail: (err) => {
+				console.error('预览操作失败', err)
+			}
+		}
+	})
+	// #endif
+	
+	// #ifdef APP-PLUS
+	// APP端可以使用更丰富的预览功能
+	uni.previewImage({
+		urls: [props.url],
+		current: props.url
+	})
+	// #endif
+}
+
+const handleClick = () => {
+	// ✅ 修复：移除 ! 运算符
+	const canPreview = props.disablePreview == false
+	const noError = error.value == false
+	const notLoading = loading.value == false
+	const previewEnabled = props.preView == true
+	
+	if (canPreview == true && noError == true && notLoading == true && previewEnabled == true) {
+		handlePreview()
+	}
+	emit('click')
+}
+
+const handleImageClick = () => {
+	emit('click')
+}
+
+const handleLoad = () => {
+	loading.value = false
+	error.value = false
+	retryCount.value = 0
+	emit('load')
+}
+
+const handleError = () => {
+	loading.value = false
+	error.value = true
+	
+	const enableRetry = props.enableErrorRetry == true
+	const retryCountVal = retryCount.value as number
+	if (enableRetry == true && retryCountVal < 3) {
+		retryCount.value = (retryCountVal + 1) as number
+		setTimeout(() => {
+			retryLoad()
+		}, 1000 * (retryCountVal + 1))
+	}
+	
+	emit('error')
+}
+
+// 生命周期
+onMounted(() => {
+	if (props.showLoadingByDefault == true) {
+		if (props.url == '') {
+			loading.value = true
+		}
+	}
+})
+
+// 暴露方法给父组件
+defineExpose({
+	retryLoad,
+	preview: handlePreview
+})
+</script>
+
+<style scoped>
+.image-self-container {
+	position: relative;
+	display: flex;
+	overflow: hidden;
+}
+
+.image-self {
+	width: 100%;
+	height: 100%;
+	display: flex;
+}
+
+.image-self.loading {
+	opacity: 0.7;
+}
+
+.loading-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(255, 255, 255, 0.8);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1;
+}
+
+.error-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #f5f5f5;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 1;
+}
+
+.error-icon {
+	font-size: 48rpx;
+	margin-bottom: 8rpx;
+}
+
+.error-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.preview-badge {
+	position: absolute;
+	top: 8rpx;
+	right: 8rpx;
+	width: 40rpx;
+	height: 40rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	border-radius: 20rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 2;
+}
+
+.preview-icon {
+	font-size: 20rpx;
+	color: #ffffff;
+}
+
+/* 响应式设计 */
+@media (max-width: 750rpx) {
+	.error-icon {
+		font-size: 36rpx;
+	}
+	
+	.error-text {
+		font-size: 20rpx;
+	}
+	
+	.preview-badge {
+		width: 32rpx;
+		height: 32rpx;
+	}
+	
+	.preview-icon {
+		font-size: 16rpx;
+	}
+}
+</style>

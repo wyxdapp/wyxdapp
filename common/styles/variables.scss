@@ -1,0 +1,81 @@
+/* ==================== Vue3 Uni-app X 样式变量 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：所有样式变量统一定义，使用 rpx 单位确保响应式 */
+
+/* ==================== 主题颜色 ==================== */
+$color-primary: #37B1F2;        // 主题蓝 - 主要按钮、链接
+$color-success: #22AA76;        // 成功绿 - 成功状态
+$color-warning: #FFC300;        // 警告黄 - 警告提示
+$color-error: #F83535;          // 错误红 - 错误提示
+$color-price: #FF6B6B;          // 橙色强调 - 价格、数字
+
+/* 渐变色 */
+$gradient-primary: linear-gradient(90deg, #2DCAC2 0%, #0187F5 100%);
+
+/* ==================== 文字颜色 ==================== */
+$color-title: #333333;          // 标题黑 - 标题、重要文字
+$color-text: #666666;           // 正文灰 - 正文、次要信息
+$color-placeholder: #999999;    // 辅助灰 - 辅助说明、占位符
+$color-white: #FFFFFF;          // 白色 - 按钮文字、反色文字
+
+/* ==================== 背景颜色 ==================== */
+$bg-white: #FFFFFF;             // 纯白 - 卡片、输入框
+$bg-page: #F5F5F5;              // 浅灰 - 页面背景
+$bg-divider: #EEEEEE;           // 线条灰 - 分割线
+$bg-mask: rgba(0, 0, 0, 0.4);   // 遮罩 - 弹窗遮罩
+
+/* ==================== 字号（rpx）==================== */
+$font-xl: 36rpx;                // 特大 - 页面主标题
+$font-lg: 32rpx;                // 大 - 卡片标题
+$font-md: 28rpx;                // 中 - 正文、按钮
+$font-sm: 24rpx;                // 小 - 辅助文字
+$font-xs: 20rpx;                // 特小 - 极小文字
+
+/* 特殊字号 */
+$font-40: 40rpx;                // 金额数字强调
+$font-48: 48rpx;                // 大标题
+
+/* ==================== 间距（rpx - 基于 8rpx 网格系统）==================== */
+$spacing-xs: 8rpx;              // 微小间距
+$spacing-sm: 16rpx;             // 小间距
+$spacing-md: 24rpx;             // 中等间距（常用）
+$spacing-lg: 32rpx;             // 大间距
+$spacing-xl: 40rpx;             // 特大间距
+
+/* 常用特殊值 */
+$spacing-12: 12rpx;
+$spacing-20: 20rpx;
+$spacing-28: 28rpx;
+$spacing-48: 48rpx;
+$spacing-64: 64rpx;
+
+/* ==================== 圆角（rpx）==================== */
+$radius-sm: 8rpx;               // 小圆角 - 按钮、标签
+$radius-md: 16rpx;              // 中圆角 - 卡片、输入框
+$radius-lg: 24rpx;              // 大圆角 - 弹窗、大卡片
+$radius-full: 9999rpx;          // 完全圆角 - 胶囊按钮
+
+/* ==================== 阴影 ==================== */
+$shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.08);
+$shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.12);
+$shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.16);
+
+/* ==================== 层级（z-index）==================== */
+$z-index-base: 1;
+$z-index-fixed: 10;
+$z-index-popup: 100;
+$z-index-modal: 200;
+$z-index-toast: 300;
+
+/* ==================== 动画时间 ==================== */
+$duration-fast: 150ms;
+$duration-base: 300ms;
+$duration-slow: 500ms;
+
+/* ==================== 边框 ==================== */
+$border-width: 1rpx;
+$border-color: #EEEEEE;
+
+/* ==================== 透明度 ==================== */
+$opacity-disabled: 0.5;
+$opacity-hover: 0.8;

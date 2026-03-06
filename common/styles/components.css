@@ -1,0 +1,829 @@
+/* ==================== Vue3 Uni-app X 组件样式 ==================== */
+/* 通用组件样式，基于Vue2项目迁移 */
+
+/* ==================== 性别年龄标签 ==================== */
+/* 
+  uni-app x 不支持 CSS background，必须使用 <image> 标签
+  
+  使用方式：
+  <view class="boy">
+      <image src="https://jiasu.wyxdapp.com/iconimages/n_index_boy.png" mode="aspectFill" class="bg-image" />
+      <text class="age-text">年龄</text>
+  </view>
+*/
+
+.boy {
+  width: 96rpx;
+  height: 38rpx;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.girl {
+  width: 98rpx;
+  height: 44rpx;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ==================== 认证标签 ==================== */
+/* 
+  uni-app x 不支持 CSS background，必须使用 <image> 标签
+  
+  使用方式：
+  <view class="name-authentication">
+      <image src="https://jiasu.wyxdapp.com/iconimages/n_index_realName.png" mode="aspectFill" />
+  </view>
+*/
+
+.name-authentication {
+  width: 140rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+.official-certification {
+  width: 138rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+.tour-guide {
+  width: 140rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+.mobile {
+  width: 140rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+.wechat {
+  width: 140rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+.driver {
+  width: 140rpx;
+  height: 34rpx;
+  position: relative;
+  display: flex;
+}
+
+/* ==================== 页面容器 ==================== */
+.fix-page {
+  width: 100%;
+  height: 100%;  /* ✅ 修复：uni-app x 不支持 vh，改为 % */
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ==================== 头部背景 ==================== */
+/* 
+  注意：uni-app x 不支持 background-image、background-size、background-repeat
+  背景图必须使用 <image> 标签实现，不能使用 CSS background 属性
+*/
+
+/* 首页/发现页背景容器 */
+.bg-index-header {
+  width: 100%;
+  height: 392rpx;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* 订单/消息/我的页背景容器 */
+.bg-my-header {
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* 兼容旧类名 */
+.hear-bg {
+  width: 100%;
+  height: 392rpx;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+/* 头部导航样式 - 用于固定高度的头部区域（订单页、粉丝页等） */
+.head-box {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 333;
+  height: 174rpx;
+  width: 100%;
+}
+
+.search-contain {
+  width: 100%;
+  height: 84rpx;
+}
+
+.location-name {
+  max-width: 160rpx;
+}
+
+.search-box {
+  height: 60rpx;
+  border-radius: 30rpx;
+}
+
+.tab-box {
+  width: 100%;
+  height: 90rpx;
+}
+
+/* ==================== Swiper容器 ==================== */
+.swiper {
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+}
+
+.swiper-item {
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+}
+
+.scroll-view {
+  height: 100%;
+  width: 100%;
+  z-index: 3;
+}
+
+/* ==================== 卡片样式 ==================== */
+.card {
+  background-color: #FFFFFF;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.card-shadow {
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+}
+
+/* 横向卡片基础样式 */
+.card-horizontal {
+  flex-direction: row;
+  padding-top: 12rpx;
+  padding-bottom: 12rpx;
+  padding-left: 12rpx;
+  padding-right: 12rpx;
+  background-color: transparent;
+  margin-bottom: 20rpx;
+  border-radius: 16rpx;
+}
+
+/* 卡片图片容器 */
+.card-image-box {
+  position: relative;
+  width: 196rpx;
+  height: 274rpx;
+  border-radius: 24rpx;
+  overflow: hidden;
+}
+
+.card-image-box-sm {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+/* 卡片信息区域 */
+.card-info-box {
+  flex: 1;
+  margin-left: 20rpx;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-top: 10rpx;
+  padding-bottom: 10rpx;
+}
+
+/* ==================== 按钮样式 ==================== */
+.btn {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 16rpx;
+  padding-bottom: 16rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  border-radius: 8rpx;
+}
+
+.btn-text {
+  font-size: 28rpx;
+}
+
+.btn-primary {
+  background-color: #37B1F2;
+}
+
+.btn-primary-text {
+  color: #FFFFFF;
+}
+
+.btn-success {
+  background-color: #22AA76;
+}
+
+.btn-success-text {
+  color: #FFFFFF;
+}
+
+.btn-warning {
+  background-color: #FFC300;
+}
+
+.btn-warning-text {
+  color: #FFFFFF;
+}
+
+.btn-error {
+  background-color: #F83535;
+}
+
+.btn-error-text {
+  color: #FFFFFF;
+}
+
+/* 主题色按钮 */
+.btn-theme {
+  background-color: #2DCAC2;
+  border-radius: 52rpx;
+}
+
+.btn-theme-text {
+  color: #FFFFFF;
+}
+
+/* ==================== 全局蓝色圆角按钮（APP 兼容）==================== */
+/* 
+ * 说明：APP 端不支持 linear-gradient 渐变，统一使用纯蓝色背景
+ * 使用方式：class="btn-blue-round" 或 class="btn-blue-round-lg"
+ */
+
+/* 标准蓝色圆角按钮 */
+.btn-blue-round {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #37B1F2;
+  border-radius: 44rpx;
+  height: 80rpx;
+  padding-left: 48rpx;
+  padding-right: 48rpx;
+}
+
+.btn-blue-round-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* 大号蓝色圆角按钮 */
+.btn-blue-round-lg {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #37B1F2;
+  border-radius: 52rpx;
+  height: 88rpx;
+  width: 100%;
+}
+
+.btn-blue-round-lg-text {
+  font-size: 32rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* 小号蓝色圆角按钮 */
+.btn-blue-round-sm {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #37B1F2;
+  border-radius: 28rpx;
+  height: 56rpx;
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+}
+
+.btn-blue-round-sm-text {
+  font-size: 26rpx;
+  color: #FFFFFF;
+}
+
+/* 蓝色圆角按钮 - 禁用状态 */
+.btn-blue-round-disabled {
+  background-color: #CCCCCC;
+}
+
+/* 蓝色圆角按钮 - 点击态 */
+.btn-blue-round-active {
+  opacity: 0.9;
+  transform: scale(0.98);
+}
+
+/* 灰色边框圆角按钮（次要操作）*/
+.btn-gray-round {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #FFFFFF;
+  border-width: 2rpx;
+  border-style: solid;
+  border-color: #CCCCCC;
+  border-radius: 44rpx;
+  height: 80rpx;
+  padding-left: 48rpx;
+  padding-right: 48rpx;
+}
+
+.btn-gray-round-text {
+  font-size: 28rpx;
+  color: #666666;
+}
+
+/* 橙色圆角按钮（特殊操作，如抽奖）*/
+.btn-orange-round {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #FF6B35;
+  border-radius: 44rpx;
+  height: 80rpx;
+  padding-left: 48rpx;
+  padding-right: 48rpx;
+}
+
+.btn-orange-round-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* 绿色圆角按钮（成功/确认操作）*/
+.btn-green-round {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #52C41A;
+  border-radius: 44rpx;
+  height: 80rpx;
+  padding-left: 48rpx;
+  padding-right: 48rpx;
+}
+
+.btn-green-round-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* 紫色圆角按钮（VIP/特殊操作）*/
+.btn-purple-round {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  background-color: #9C27B0;
+  border-radius: 44rpx;
+  height: 80rpx;
+  padding-left: 48rpx;
+  padding-right: 48rpx;
+}
+
+.btn-purple-round-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* ==================== 列表状态样式 ==================== */
+.list-loading {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 60rpx;
+  padding-bottom: 60rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.list-empty {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 120rpx;
+  padding-bottom: 120rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.list-load-more {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 32rpx;
+  padding-bottom: 32rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.list-no-more {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 32rpx;
+  padding-bottom: 32rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.list-status-text {
+  font-size: 28rpx;
+  color: #999999;
+}
+
+.list-load-more-text {
+  font-size: 24rpx;
+  color: #2EAEF2;
+}
+
+/* ==================== 空状态 ==================== */
+.empty-state {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 120rpx;
+  padding-bottom: 120rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.empty-container {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 120rpx;
+  padding-bottom: 120rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+
+.empty-container--sm {
+  padding-top: 60rpx;
+  padding-bottom: 60rpx;
+}
+
+.empty-container--lg {
+  padding-top: 180rpx;
+  padding-bottom: 180rpx;
+}
+
+.empty-icon {
+  width: 200rpx;
+  height: 200rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty-icon--sm {
+  width: 140rpx;
+  height: 140rpx;
+  margin-bottom: 16rpx;
+}
+
+.empty-icon--lg {
+  width: 280rpx;
+  height: 280rpx;
+  margin-bottom: 32rpx;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #999999;
+  text-align: center;
+}
+
+.empty-hint {
+  font-size: 24rpx;
+  color: #CCCCCC;
+  text-align: center;
+  margin-top: 12rpx;
+}
+
+.empty-action {
+  margin-top: 32rpx;
+}
+
+/* ==================== 加载状态 ==================== */
+.loading-state {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding-top: 60rpx;
+  padding-bottom: 60rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.loading-container {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 60rpx;
+  padding-bottom: 60rpx;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.loading-container--sm {
+  padding-top: 32rpx;
+  padding-bottom: 32rpx;
+}
+
+.loading-container--lg {
+  padding-top: 120rpx;
+  padding-bottom: 120rpx;
+}
+
+.loading-text {
+  font-size: 28rpx;
+  color: #999999;
+  margin-left: 12rpx;
+}
+
+.loading-spinner {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.loading-spinner--sm {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.loading-spinner--lg {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+/* ==================== 位置信息 ==================== */
+.location-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.location-icon-sm {
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 12rpx;
+}
+
+.location-icon-xs {
+  width: 20rpx;
+  height: 20rpx;
+  margin-right: 8rpx;
+}
+
+.location-text {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+.location-text-sm {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+/* ==================== 文本省略 ==================== */
+/* 单行省略 */
+.text-ellipsis-1 {
+  lines: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* 两行省略 - 兼容 H5 和 APP */
+.text-ellipsis-2 {
+  lines: 2;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-height: 72rpx;
+  line-height: 36rpx;
+}
+
+/* 三行省略 */
+.text-ellipsis-3 {
+  lines: 3;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-height: 108rpx;
+  line-height: 36rpx;
+}
+
+/* ==================== 标签样式 ==================== */
+.tag {
+  background-color: #F5F7FA;
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: #E4E7ED;
+  padding-top: 4rpx;
+  padding-bottom: 4rpx;
+  padding-left: 14rpx;
+  padding-right: 14rpx;
+  border-radius: 18rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.tag-text {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+.tag-primary {
+  background-color: #E3F2FD;
+  border-color: #E3F2FD;
+}
+
+.tag-primary .tag-text {
+  color: #2196F3;
+}
+
+.tag-success {
+  background-color: #E8F5E9;
+  border-color: #E8F5E9;
+}
+
+.tag-success .tag-text {
+  color: #4CAF50;
+}
+
+/* 角标样式 */
+.badge {
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 17rpx;
+  padding-top: 6rpx;
+  padding-bottom: 6rpx;
+  padding-left: 12rpx;
+  padding-right: 12rpx;
+  flex-direction: row;
+  align-items: center;
+}
+
+.badge-text {
+  font-size: 20rpx;
+  color: #FFFFFF;
+}
+
+.badge-bound {
+  background-color: #52C41A;
+}
+
+.badge-match {
+  background-color: #FF9800;
+}
+
+.badge-recommend {
+  background-color: #2EAEF2;
+}
+
+/* ==================== 分割线 ==================== */
+.divider {
+  height: 1rpx;
+  background-color: #EEEEEE;
+}
+
+.divider-dashed {
+  border-bottom: 2rpx dashed #EEEEEE;
+}
+
+/* ==================== Tab 栏样式 ==================== */
+.tabs-row {
+  flex-direction: row;
+  align-items: center;
+  background-color: transparent;
+}
+
+.tab-item {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-right: 48rpx;
+  height: 90rpx;
+}
+
+.tab-text {
+  font-size: 28rpx;
+  color: #666666;
+  line-height: 40rpx;
+}
+
+.tab-text-active {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: bold;
+}
+
+.tab-underline {
+  width: 40rpx;
+  height: 6rpx;
+  background-color: #2DCAC2;
+  border-radius: 3rpx;
+  margin-top: 8rpx;
+}
+
+/* ==================== 筛选按钮 ==================== */
+.filter-btn {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 60rpx;
+  margin-left: auto;
+}
+
+.filter-icon {
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 10rpx;
+}
+
+.filter-text {
+  font-size: 22rpx;
+  color: #333333;
+}
+
+/* ==================== 悬浮按钮 ==================== */
+.float-btn {
+  position: fixed;
+  bottom: 180rpx;
+  right: 32rpx;
+  width: 168rpx;
+  height: 80rpx;
+  background-color: #2DCAC2;
+  border-radius: 52rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+.float-btn-text {
+  font-size: 28rpx;
+  color: #FFFFFF;
+  font-weight: bold;
+}
+
+/* ==================== 列表容器 ==================== */
+.list-container {
+  padding-top: 0;
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+  padding-bottom: 120rpx;
+  background-color: transparent;
+}
+
+/* 两列网格列表 */
+.list-grid-2 {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding-top: 20rpx;
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+  padding-bottom: 120rpx;
+  background-color: transparent;
+}

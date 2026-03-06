@@ -1,0 +1,74 @@
+/**
+ * 微信小程序端微信登录服务
+ * 使用 uni.login 获取 code
+ * 
+ * 使用条件编译确保仅在小程序端编译 uni.login 相关代码，
+ * 其他平台提供空实现，避免编译错误。
+ */
+
+import { SK_WX_CODE } from '@/common/config/storageKeys.uts'
+
+/**
+ * 初始化微信 SDK（小程序端无需初始化）
+ */
+export function initWeChatSDK(): void {
+	console.log('📱 [WX-SDK-MP] 微信小程序端无需初始化SDK')
+}
+
+/**
+ * 获取微信授权 code
+ * @param onSuccess 成功回调，参数为授权 code
+ * @param onError 失败回调，参数为错误信息
+ */
+export function getWechatAuthCode(
+	onSuccess: (code: string) => void,
+	onError: (error: string) => void
+): void {
+	// #ifdef MP-WEIXIN
+	console.log('📱 [WX-SDK-MP] 开始获取微信授权code')
+	
+	// 清理旧的 wxCode
+	uni.removeStorageSync(SK_WX_CODE)
+	console.log('🧹 [WX-SDK-MP] 已清理旧的微信授权code')
+	
+	// 使用 uni.login 获取 code
+	uni.login({
+		success: (res) => {
+			const code = res.code
+			if (code != null && code != '') {
+				onSuccess(code)
+			} else {
+				console.error('❌ [WX-SDK-MP] 获取code失败，code为空')
+				onError('获取微信登录code失败')
+			}
+		},
+		fail: (err) => {
+			console.error('❌ [WX-SDK-MP] uni.login 失败:', err)
+			let errMsg = '获取微信登录code失败'
+			if (err != null && err.errMsg != null && err.errMsg != '') {
+				errMsg = err.errMsg.toString()
+			}
+			onError(errMsg)
+		}
+	})
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	console.log('📱 [WX-SDK-MP] 非小程序环境，不支持此登录方式')
+	onError('当前环境不支持小程序微信登录')
+	// #endif
+}
+
+/**
+ * 检查微信是否安装（小程序端始终返回 true）
+ */
+export function isWeChatInstalled(): boolean {
+	// #ifdef MP-WEIXIN
+	// 微信小程序运行在微信内，始终可用
+	return true
+	// #endif
+	
+	// #ifndef MP-WEIXIN
+	return false
+	// #endif
+}

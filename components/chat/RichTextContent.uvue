@@ -1,0 +1,162 @@
+<template>
+	<view class="rich-text-content">
+		<text 
+			v-for="(segment, index) in parsedSegments" 
+			:key="index"
+			:class="getSegmentClass(segment)"
+			@click="handleSegmentClick(segment)"
+		>{{ segment.displayText }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch } from 'vue'
+import { parseTextContent, ParsedSegment } from '@/common/utils/linkParser.uts'
+
+// Props 定义
+const props = defineProps({
+	content: { type: String, default: '' },
+	isSelf: { type: Boolean, default: false }
+})
+
+// Events 定义
+const emit = defineEmits<{
+	linkClick: [url: string]
+	phoneClick: [phone: string]
+}>()
+
+// 内部状态：用于监听 content 变化
+const currentContent = ref<string>('')
+
+// 解析后的段落列表
+const parsedSegments = ref<Array<ParsedSegment>>([])
+
+// 解析文本内容
+const parseContent = () => {
+	const contentVal = props.content
+	if (contentVal == '') {
+		parsedSegments.value = []
+		return
+	}
+	
+	const segments = parseTextContent(contentVal)
+	parsedSegments.value = segments
+}
+
+// 获取段落样式类
+const getSegmentClass = (segment: ParsedSegment): string => {
+	const segmentType = segment.type
+	const isSelfMsg = props.isSelf
+	
+	if (segmentType == 'url') {
+		if (isSelfMsg == true) {
+			return 'link-segment link-segment-self'
+		}
+		return 'link-segment link-segment-other'
+	}
+	
+	if (segmentType == 'phone') {
+		if (isSelfMsg == true) {
+			return 'phone-segment phone-segment-self'
+		}
+		return 'phone-segment phone-segment-other'
+	}
+	
+	if (isSelfMsg == true) {
+		return 'text-segment text-segment-self'
+	}
+	return 'text-segment text-segment-other'
+}
+
+// 处理段落点击
+const handleSegmentClick = (segment: ParsedSegment) => {
+	const segmentType = segment.type
+	
+	if (segmentType == 'url') {
+		const url = segment.url
+		if (url != '') {
+			emit('linkClick', url)
+		} else {
+			// 如果 url 为空，使用 content
+			const content = segment.content
+			if (content != '') {
+				emit('linkClick', content)
+			}
+		}
+	} else if (segmentType == 'phone') {
+		const phone = segment.content
+		if (phone != '') {
+			emit('phoneClick', phone)
+		}
+	}
+	// text 类型不处理点击
+}
+
+// 监听 content 变化 - 使用 computed 包装后监听
+const contentComputed = computed((): string => {
+	return props.content
+})
+
+watch(contentComputed, () => {
+	parseContent()
+}, { immediate: true })
+</script>
+
+<style>
+.rich-text-content {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+/* 普通文本段落 */
+.text-segment {
+	font-size: 32rpx;
+	line-height: 48rpx;
+}
+
+.text-segment-self {
+	color: #ffffff;
+}
+
+.text-segment-other {
+	color: #333333;
+}
+
+/* URL 链接段落 */
+.link-segment {
+	font-size: 32rpx;
+	line-height: 48rpx;
+	/* text-decoration 不支持，使用边框模拟下划线 */
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+}
+
+.link-segment-self {
+	color: #B3D9FF;
+	border-bottom-color: #B3D9FF;
+}
+
+.link-segment-other {
+	color: #37B1F2;
+	border-bottom-color: #37B1F2;
+}
+
+/* 电话号码段落 */
+.phone-segment {
+	font-size: 32rpx;
+	line-height: 48rpx;
+	/* text-decoration 不支持，使用边框模拟下划线 */
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+}
+
+.phone-segment-self {
+	color: #B3D9FF;
+	border-bottom-color: #B3D9FF;
+}
+
+.phone-segment-other {
+	color: #37B1F2;
+	border-bottom-color: #37B1F2;
+}
+</style>

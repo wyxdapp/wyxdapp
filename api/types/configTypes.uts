@@ -1,0 +1,10 @@
+/**
+ * 配置模块类型定义
+ * 对应 API 文件: api/config.uts
+ */
+
+// 系统配置缓存数据类型
+export class SystemSettingsData {
+	// 配置数据以 UTSJSONObject 形式存储，包含动态键值对
+	// 此类用于标识缓存和返回的配置数据结构
+}

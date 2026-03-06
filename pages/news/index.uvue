@@ -1,0 +1,2295 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<!-- 背景图（使用绝对定位，与首页保持一致） -->
+		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill"></image>
+		
+		<!-- 顶部标题栏 -->
+		<view class="header-box" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+			<view class="title-bar">
+				<text class="title">消息{{ unreadCount > 0 ? '(' + unreadCount + ')' : '' }}</text>
+			</view>
+			
+			<!-- 搜索框 -->
+			<view class="search-box" @click="goToSearch">
+				<image class="search-icon-img" src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png" mode="aspectFit"></image>
+				<text class="search-placeholder">搜索昵称</text>
+			</view>
+			
+			<!-- 快捷功能区 (卡片样式) -->
+			<view class="quick-card">
+				<view 
+					v-for="(item, index) in quickFuncs" 
+					:key="index"
+					class="quick-item"
+					@click="handleQuickFunc(item)"
+				>
+					<view class="icon-wrapper">
+						<image class="quick-icon" :src="item.icon" mode="aspectFit"></image>
+						<view v-if="item.badge > 0" class="badge">
+							<text class="badge-text">{{ item.badge > BADGE_COUNT_MAX_DISPLAY ? (BADGE_COUNT_MAX_DISPLAY + '+') : item.badge }}</text>
+						</view>
+					</view>
+					<text class="quick-name">{{ item.name }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 会话列表 / 未登录占位 -->
+		<scroll-view 
+			v-if="isLogin == true"
+			class="conversation-list"
+			:style="{ height: contentHeight + 'px' }"
+			scroll-y="true"
+			:show-scrollbar="false"
+			@scrolltolower="loadMore"
+		>
+			<!-- 🎯 动态消息入口（仅登录且配置开启时显示） -->
+			<view 
+				v-if="showDynamicEntry == true && isLogin == true"
+				class="conversation-item dynamic-entry-item"
+				@click="goToDynamicPage"
+			>
+				<view class="avatar-wrapper">
+					<image :src="dynamicEntry.icon" class="avatar" mode="aspectFill"></image>
+					<!-- 永久红点（不显示数字） -->
+					<view v-if="dynamicEntry.showRedDot == true" class="red-dot"></view>
+				</view>
+				
+				<view class="conversation-content">
+					<view class="top-row">
+						<text class="username">{{ dynamicEntry.title }}</text>
+					</view>
+					<view class="bottom-row">
+						<text class="message-preview">点击查看最新动态</text>
+					</view>
+				</view>
+			</view>
+			
+			<view v-if="loading == true && conversations.length == 0" class="loading">
+				<text class="loading-text">加载中...</text>
+			</view>
+			
+			<ListStatus 
+				v-else-if="conversations.length == 0" 
+				status="empty" 
+				emptyText="暂无消息"
+			/>
+			
+			<view v-else>
+				<view 
+					v-for="item in conversations" 
+					:key="item.conversationId"
+					class="conversation-item"
+					@click="goToChat(item)"
+					@longpress="showActions(item)"
+				>
+					<view class="avatar-badge-box">
+						<view class="avatar-inner">
+							<Avatar 
+								:url="item.targetUserAvatar"
+								:userId="item.targetUserId"
+								:isOnline="item.isOnline"
+								size="medium"
+								clickMode="none"
+							/>
+						</view>
+						<!-- ⭐ 未读消息数角标：放在无圆角的外层容器中，避免 APP 端裁剪 -->
+						<view v-if="item.unreadCount > 0" class="unread-badge">
+							<text class="unread-badge-text">{{ item.unreadCount > BADGE_COUNT_MAX_DISPLAY ? (BADGE_COUNT_MAX_DISPLAY + '+') : item.unreadCount }}</text>
+						</view>
+					</view>
+					
+					<view class="conversation-content">
+						<view class="top-row">
+							<NicknameWithBadges
+								:nickname="getDisplayName(item.targetUserName, item.targetUserId)"
+								:vipType="getVipTypeString(item.vip, item.vipType)"
+								:giftLevel="item.giftLevel"
+								:targetUserKid="item.targetUserId"
+								size="medium"
+								@vipClick="handleVipClick"
+								@giftClick="handleGiftIconClick"
+							/>
+							<text class="time">{{ formatTime(item.lastMessageTime) }}</text>
+						</view>
+						<view class="bottom-row">
+							<text class="message-preview" :class="{ bold: item.unreadCount > 0 }">{{ getMessagePreview(item) }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<view v-if="hasMore == true && loading == false" class="load-more">
+				<text class="load-more-text">上拉加载更多</text>
+			</view>
+			
+			<view v-if="hasMore == false && conversations.length > 0" class="no-more">
+				<text class="no-more-text">没有更多了</text>
+			</view>
+		</scroll-view>
+		
+		<!-- 未登录提示与登录按钮 -->
+		<view v-else class="login-placeholder">
+			<text class="login-placeholder-title">登录后可查看你的消息会话</text>
+			<text class="login-placeholder-desc">登录后即可与向导、游客进行聊天并接收消息提醒</text>
+			<view class="login-btn" @click="goToLogin">
+				<text class="login-btn-text">点击登录</text>
+			</view>
+		</view>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="selectedUserKid"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+		
+
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
+import { useUserStore, initUserInfoAction, getUserLoginStatus, getUserId } from '@/stores/user.uts'
+import { useChatStore, initWebSocketAction, forceReconnectAction } from '@/stores/chat.uts'
+import { 
+	useUnreadStore,
+	getFollowUnreadCountDirect,
+	getCommentUnreadCountDirect,
+	getVisitorUnreadCountDirect,
+	getNotificationUnreadCountDirect,
+	getTotalMessageUnreadDirect,
+	decreaseChatUnreadCountDirect,
+	setChatUnreadCountFromConversations
+} from '@/stores/unread.uts'
+import { resetMessageReminderCount, ResetMessageReminderParams } from '@/api/chat.uts'
+import { getConversations, GetConversationsParams } from '@/api/chat.uts'
+import { getSystemSettings } from '@/api/config.uts'
+import { formatRelativeTime } from '@/common/utils/dateUtils.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import Button from '@/components/base/Button.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { isMemberFeatureEnabled, parseBooleanConfig } from '@/common/composables/useFeatureToggles.uts'
+import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
+// 🔧 新增：导入统一的登录状态管理工具
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	requireLoginReliable,
+	onLoginStatusChange as registerLoginStatusChange,
+	offLoginStatusChange as unregisterLoginStatusChange,
+	getCurrentUserIdReliable,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+import { 
+	fetchOnlineStatus, 
+	getOnlineStatusDirect, 
+	setOnlineStatusDirect 
+} from '@/stores/onlineStatus.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 🔧 修复：兼容 H5 和 APP 环境的属性访问
+// 统一使用 JSON 序列化再解析的方式，确保返回 UTSJSONObject
+const getObjValue = (obj: UTSJSONObject | null, key: string): string | number | boolean | UTSJSONObject | null => {
+	if (obj == null) return null
+	try {
+		// 统一方案：序列化再解析，确保得到 UTSJSONObject
+		const objStr = JSON.stringify(obj)
+		if (objStr == null || objStr == '') return null
+		const objParsed = JSON.parse(objStr) as UTSJSONObject
+		if (objParsed != null) {
+			return objParsed.get(key)
+		}
+		return null
+	} catch (e) {
+		return null
+	}
+}
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = getObjValue(obj, key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = getObjValue(obj, key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+const getObjBoolean = (obj: UTSJSONObject | null, key: string): boolean => {
+	if (obj == null) return false
+	const val = getObjValue(obj, key)
+	if (val != null) {
+		const str = val.toString()
+		return str == 'true' || str == '1'
+	}
+	return false
+}
+
+// ==================== Store 访问 ====================
+// 注意：不要在顶层缓存 store 实例，每次需要时重新获取以确保数据最新
+const chatStore = useChatStore()
+const unreadStore = useUnreadStore()
+
+const getStoreObj = (store: UTSJSONObject | null): UTSJSONObject | null => {
+	return toJsonObj(store)
+}
+
+// 🔧 使用统一的登录检查函数（来自 stores/user.uts）
+// getUserLoginStatus() 和 getUserId() 已从 stores/user.uts 导入
+
+// 🔧 修复：使用导出的 getter 函数直接读取响应式 ref 值
+// 解决 useUnreadStore() 返回静态快照导致 watch 无法触发的问题
+const getTotalMessageUnreadFromStore = (): number => {
+	return getTotalMessageUnreadDirect()
+}
+
+const getFollowUnreadCountFromStore = (): number => {
+	return getFollowUnreadCountDirect()
+}
+
+const getCommentUnreadCountFromStore = (): number => {
+	return getCommentUnreadCountDirect()
+}
+
+const getVisitorUnreadCountFromStore = (): number => {
+	return getVisitorUnreadCountDirect()
+}
+
+const getNotificationUnreadCountFromStore = (): number => {
+	return getNotificationUnreadCountDirect()
+}
+
+// ==================== 快捷功能数据类 ====================
+class QuickFuncItem {
+	name: string = ''
+	icon: string = ''
+	badge: number = 0
+	type: string = ''
+	constructor(name: string, icon: string, badge: number, type: string) {
+		this.name = name
+		this.icon = icon
+		this.badge = badge
+		this.type = type
+	}
+}
+
+// ==================== 会话数据类 ====================
+class ConversationItem {
+	conversationId: string = ''
+	targetUserId: string = ''
+	targetUserName: string = ''
+	targetUserAvatar: string = ''
+	lastMessage: string = ''
+	lastMessageTime: string = ''
+	messageType: number = 0
+	unreadCount: number = 0
+	isTop: boolean = false
+	// 勋章相关字段
+	giftLevel: number = 0      // 礼物积分等级 1-50
+	vip: number = 10           // 会员状态 10未开通/20已开通/30过期
+	vipType: number = 0        // 会员类型 10月卡/20年卡
+	// 在线状态
+	isOnline: boolean = false
+	constructor() {}
+}
+
+// ==================== 动态消息入口数据类 ====================
+class DynamicMessageEntry {
+	id: string = 'dynamic_message'
+	title: string = '动态消息'
+	icon: string = 'https://jiasu.wyxdapp.com/iconimages/icon_news_group.png'
+	showRedDot: boolean = true
+	targetUrl: string = '/pagesBusiness/find/index'
+	constructor() {}
+}
+
+// 布局相关
+const headerHeight = ref<number>(0)
+const contentHeight = ref<number>(0)
+
+// 响应式数据
+const quickFuncs = ref<Array<QuickFuncItem>>([
+	new QuickFuncItem('通知', 'https://jiasu.wyxdapp.com/iconimages/icon_news_tongzhi.png', 0, 'notification'),
+	new QuickFuncItem('关注', 'https://jiasu.wyxdapp.com/iconimages/icon_news_fans.png', 0, 'fans'),
+	new QuickFuncItem('评论', 'https://jiasu.wyxdapp.com/iconimages/icon_news_comment.png', 0, 'comment'),
+	new QuickFuncItem('访客', 'https://jiasu.wyxdapp.com/iconimages/icon_news_visitor.png', 0, 'visitor')
+])
+
+const conversations = ref<Array<ConversationItem>>([])
+const loading = ref<boolean>(false)
+const hasMore = ref<boolean>(true)
+const showGiftSelector = ref<boolean>(false)
+const selectedUserKid = ref<string>('')
+const page = ref<number>(1)
+
+// WebSocket 健康检查定时器
+let healthCheckTimer: number = 0
+
+// ⭐ 新增：条件轮询相关状态
+let pollTimer: number = 0
+const POLL_INTERVAL = 15000  // 轮询间隔 15 秒
+let isPolling = false        // 是否正在轮询中（防重入）
+const isPageVisible = ref<boolean>(false)  // 页面是否可见
+
+// 🔧 优化：使用响应式 ref 存储登录状态，确保 UI 正确更新
+const isLoginValue = ref<boolean>(false)
+
+// 🎯 动态消息入口配置状态
+const showDynamicEntry = ref<boolean>(false)  // 是否显示动态消息入口（默认隐藏）
+const configLoaded = ref<boolean>(false)      // 配置是否已加载
+const configCacheTime = ref<number>(0)        // 配置缓存时间戳
+
+// 配置缓存有效期（5分钟）
+const CONFIG_CACHE_DURATION = 5 * 60 * 1000
+
+// 动态消息入口实例
+const dynamicEntry = ref<DynamicMessageEntry>(new DynamicMessageEntry())
+
+// 登录状态（使用响应式 ref）
+const isLogin = computed((): boolean => {
+	return isLoginValue.value
+})
+
+// 计算属性
+const unreadCount = computed((): number => {
+	return getTotalMessageUnreadFromStore()
+})
+
+// 获取当前用户ID（使用统一函数）
+const currentUserId = computed((): string => {
+	return getCurrentUserIdReliable()
+})
+
+// 默认头像和昵称
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// VIP 类型转换函数：将后端会员数据转换为 Avatar 组件需要的 vipType 字符串
+// vip: 10未开通/20已开通/30过期
+// vipType: 10月卡/20年卡
+// 返回: 'year'(年卡) / 'normal'(其他会员) / ''(非会员)
+const getVipTypeString = (vip: number, memberType: number): string => {
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (vip != 20) return ''
+	// memberType: 40=年卡 → 'year'，其他 → 'normal'
+	if (memberType == 40) return 'year'
+	return 'normal'
+}
+
+const getDisplayAvatar = (avatar: string | null): string => {
+	if (avatar != null && avatar.length > 0) {
+		return avatar
+	}
+	return defaultAvatar
+}
+
+const getDisplayName = (name: string | null, odUserId: string): string => {
+	if (name != null && name.length > 0 && name != '用户') {
+		return name
+	}
+	if (odUserId != null && odUserId.length > 6) {
+		return '用户' + odUserId.substring(odUserId.length - 6)
+	}
+	return '用户'
+}
+
+const getMessagePreview = (item: ConversationItem): string => {
+	if (item.lastMessage == '' || item.lastMessage.length == 0) {
+		return '[暂无消息]'
+	}
+	// 如果是图片消息
+	if (item.messageType == 2) {
+		return '[图片]'
+	}
+	// 如果是语音消息
+	if (item.messageType == 3) {
+		return '[语音]'
+	}
+	
+	// 🔧 修复：系统通知消息（messageType=10），解析 JSON 提取 title 显示友好预览
+	if (item.messageType == 10) {
+		const trimmedNotify = item.lastMessage.trim()
+		if (trimmedNotify.indexOf('{') == 0) {
+			try {
+				const notifyObj = JSON.parse(trimmedNotify) as UTSJSONObject
+				if (notifyObj != null) {
+					const notifyTitle = getObjString(notifyObj, 'title')
+					if (notifyTitle != '') {
+						return '[通知] ' + notifyTitle
+					}
+				}
+			} catch (e) {
+				// JSON 解析失败，使用默认文本
+			}
+		}
+		return '[系统通知]'
+	}
+	
+	// 处理文本消息
+	let message = item.lastMessage
+	
+	// 检测是否是卡片消息（JSON 格式，以 { 开头）
+	const trimmedMsg = message.trim()
+	if (trimmedMsg.indexOf('{') == 0) {
+		try {
+			const cardObj = JSON.parse(trimmedMsg) as UTSJSONObject
+			if (cardObj != null) {
+				const cardType = getObjString(cardObj, 'cardType')
+				const title = getObjString(cardObj, 'title')
+				const content = getObjString(cardObj, 'content')
+				
+				// 根据卡片类型返回友好文字
+				if (cardType == 'profile') {
+					if (title != '') {
+						return '[名片] ' + title
+					}
+					return '[名片]'
+				} else if (cardType == 'order') {
+					if (content != '') {
+						return '[订单] ' + content
+					}
+					if (title != '') {
+						return '[订单] ' + title
+					}
+					return '[订单消息]'
+				} else if (cardType == 'gift') {
+					return '[礼物]'
+				} else if (cardType == 'location') {
+					return '[位置]'
+				} else if (cardType == 'link') {
+					if (title != '') {
+						return '[链接] ' + title
+					}
+					return '[链接]'
+				} else {
+					// 其他卡片类型，尝试显示 title 或 content
+					if (title != '') {
+						return '[卡片] ' + title
+					}
+					if (content != '') {
+						return '[卡片] ' + content
+					}
+					return '[卡片消息]'
+				}
+			}
+		} catch (e) {
+			// 解析失败，不是有效的 JSON，继续按普通文本处理
+		}
+	}
+	
+	// 检测是否是分享卡片（包含URL或多行内容）
+	const hasUrl = message.indexOf('http://') >= 0 || message.indexOf('https://') >= 0
+	const hasNewline = message.indexOf('\n') >= 0
+	const hasReturn = message.indexOf('\r') >= 0
+	const hasMultipleLines = hasNewline == true || hasReturn == true
+	
+	if (hasUrl == true && hasMultipleLines == true) {
+		// 如果是分享卡片，只显示第一行作为标题
+		let firstLine = message
+		const newlineIdx = message.indexOf('\n')
+		if (newlineIdx >= 0) {
+			firstLine = message.substring(0, newlineIdx)
+		}
+		if (firstLine == '') {
+			return '[分享]'
+		}
+		return firstLine
+	}
+	
+	// 移除所有换行符，用空格替代（处理其他多行文本）
+	if (hasMultipleLines == true) {
+		let result = ''
+		for (let i = 0; i < message.length; i = i + 1) {
+			const char = message.charAt(i)
+			if (char == '\n' || char == '\r') {
+				result = result + ' '
+			} else {
+				result = result + char
+			}
+		}
+		message = result
+	}
+	
+	return message
+}
+
+// 查找快捷功能索引
+const findQuickFuncIndex = (type: string): number => {
+	for (let i = 0; i < quickFuncs.value.length; i = i + 1) {
+		if (quickFuncs.value[i].type == type) {
+			return i
+		}
+	}
+	return -1
+}
+
+// 更新快捷功能徽章
+const updateQuickFuncBadge = (type: string, badge: number) => {
+	const idx = findQuickFuncIndex(type)
+	if (idx != -1) {
+		quickFuncs.value[idx].badge = badge
+	}
+}
+
+// 用于监听未读数变化的计算属性
+const followUnreadCount = computed((): number => {
+	return getFollowUnreadCountFromStore()
+})
+
+const commentUnreadCount = computed((): number => {
+	return getCommentUnreadCountFromStore()
+})
+
+const visitorUnreadCount = computed((): number => {
+	return getVisitorUnreadCountFromStore()
+})
+
+const notificationUnreadCount = computed((): number => {
+	return getNotificationUnreadCountFromStore()
+})
+
+// 监听未读数变化，更新快捷功能徽章
+watch(followUnreadCount, (newVal: number, oldVal: number) => {
+	updateQuickFuncBadge('fans', newVal)
+})
+
+watch(commentUnreadCount, (newVal: number, oldVal: number) => {
+	updateQuickFuncBadge('comment', newVal)
+})
+
+watch(visitorUnreadCount, (newVal: number, oldVal: number) => {
+	console.log('🔍 [NewsPage] 访客未读数变化:', oldVal, '->', newVal)
+	updateQuickFuncBadge('visitor', newVal)
+})
+
+// 添加通知未读数监听器
+watch(notificationUnreadCount, (newVal: number, oldVal: number) => {
+	updateQuickFuncBadge('notification', newVal)
+})
+
+// ==================== 方法定义（必须在生命周期之前）====================
+
+// 更新会话列表的在线状态
+const updateConversationsOnlineStatus = () => {
+	const convList = conversations.value
+	for (let i = 0; i < convList.length; i = i + 1) {
+		const conv = convList[i]
+		const isOnline = getOnlineStatusDirect(conv.targetUserId)
+		conv.isOnline = isOnline
+	}
+	console.log('[News] 更新会话在线状态完成')
+}
+
+// 处理在线状态变更事件
+const handleOnlineStatusChange = (data: UTSJSONObject | null) => {
+	console.log('[News] 收到在线状态变更事件:', data)
+	try {
+		const dataJson = JSON.stringify(data)
+		const dataObj = JSON.parse(dataJson) as UTSJSONObject
+		
+		const userId = dataObj.getString('userId')
+		const isOnlineVal = dataObj.getBoolean('isOnline')
+		const isOnline = isOnlineVal == true
+		
+		if (userId == null || userId == '') {
+			return
+		}
+		
+		// 更新本地缓存
+		setOnlineStatusDirect(userId, isOnline)
+		
+		// 更新会话列表中对应用户的在线状态
+		const convList = conversations.value
+		for (let i = 0; i < convList.length; i = i + 1) {
+			const conv = convList[i]
+			if (conv.targetUserId == userId) {
+				conv.isOnline = isOnline
+				console.log('[News] 更新会话在线状态: userId=' + userId + ', isOnline=' + isOnline.toString())
+				break
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '处理在线状态变更事件')
+	}
+}
+
+// ⭐ 重新计算会话列表未读数总和并同步到 TabBar 徽章（提前声明，供后续函数调用）
+const recalcUnreadSum = () => {
+	let sum = 0
+	for (let i = 0; i < conversations.value.length; i = i + 1) {
+		const conv = conversations.value[i]
+		if (conv != null) {
+			sum = sum + conv.unreadCount
+		}
+	}
+	setChatUnreadCountFromConversations(sum)
+	console.log('🔢 [NewsPage] 重新计算未读数总和:', sum)
+}
+
+// 加载会话列表
+const doLoadConversations = async () => {
+	if (loading.value == true) return
+	if (isPolling == true) return  // 🔧 防止与 silentRefresh 并发
+	
+	loading.value = true
+	
+	try {
+		const userId = currentUserId.value
+		if (userId == '') {
+			loading.value = false
+			return
+		}
+		
+		// 使用 API 直接调用
+		const params = new GetConversationsParams()
+		params.userId = userId
+		params.page = page.value
+		params.size = 20
+		
+		const res = await getConversations(params)
+		console.log('[News] API 响应:', JSON.stringify(res))
+		
+		const resObj = toJsonObj(res)
+		console.log('[News] resObj:', resObj != null ? 'not null' : 'null')
+		
+		if (resObj != null) {
+			// 🔧 修复：code 可能是字符串 "200" 或数字 200
+			const codeVal = getObjValue(resObj, 'code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+			const code = parseInt(codeStr)
+			console.log('[News] code:', code, 'codeVal:', codeVal)
+			
+			if (code == 200) {
+				// 🔧 修复：data 直接是数组，不是 { list: [], hasMore: true }
+				const dataVal = getObjValue(resObj, 'data')
+				console.log('[News] dataVal:', dataVal != null ? 'not null' : 'null', typeof dataVal, Array.isArray(dataVal))
+				
+				if (dataVal != null) {
+					// 检查 data 是否直接是数组
+					const isDataArray = Array.isArray(dataVal) == true
+					
+					let listArr: Array<UTSJSONObject> = []
+					
+					if (isDataArray == true) {
+						// data 直接是数组
+						listArr = dataVal as Array<UTSJSONObject>
+						console.log('[News] data 是数组，长度:', listArr.length)
+					} else {
+						// data 是对象，包含 list 字段
+						const dataObj = toJsonObj(dataVal)
+						if (dataObj != null) {
+							const listVal = getObjValue(dataObj, 'list')
+							if (listVal != null && Array.isArray(listVal) == true) {
+								listArr = listVal as Array<UTSJSONObject>
+							}
+							hasMore.value = getObjBoolean(dataObj, 'hasMore')
+						}
+					}
+					
+					if (listArr.length > 0) {
+						const newConversations: Array<ConversationItem> = []
+						for (let i = 0; i < listArr.length; i = i + 1) {
+							const conv = listArr[i]
+							const convObj = toJsonObj(conv)
+							if (convObj != null) {
+								const item = new ConversationItem()
+								item.conversationId = getObjString(convObj, 'conversationId')
+								item.targetUserId = getObjString(convObj, 'targetUserId')
+								item.targetUserName = getObjString(convObj, 'targetUserName')
+								item.targetUserAvatar = getObjString(convObj, 'targetUserAvatar')
+								item.lastMessage = getObjString(convObj, 'lastMessage')
+								item.lastMessageTime = getObjString(convObj, 'lastMessageTime')
+								item.messageType = getObjNumber(convObj, 'messageType')
+								// 🔧 修复：字段名可能是 lastMessageType
+								if (item.messageType == 0) {
+									item.messageType = getObjNumber(convObj, 'lastMessageType')
+								}
+								item.unreadCount = getObjNumber(convObj, 'unreadCount')
+								item.isTop = getObjBoolean(convObj, 'isTop')
+								// 🎯 新增：解析勋章相关字段
+								item.giftLevel = getObjNumber(convObj, 'targetUserGiftLevel')
+								item.vip = getObjNumber(convObj, 'targetUserVip')
+								if (item.vip == 0) item.vip = 10  // 默认未开通
+								item.vipType = getObjNumber(convObj, 'targetUserVipType')
+								newConversations.push(item)
+								console.log('[News] 解析会话:', item.targetUserName, item.lastMessage)
+							}
+						}
+						
+						if (page.value == 1) {
+							conversations.value = newConversations
+						} else {
+							for (let j = 0; j < newConversations.length; j = j + 1) {
+								conversations.value.push(newConversations[j])
+							}
+						}
+						
+						// 如果 data 是数组，根据返回数量判断是否还有更多
+						if (isDataArray == true) {
+							hasMore.value = listArr.length >= params.size
+						}
+						
+						// ⭐ 新增：批量查询在线状态
+						const userIdsToQuery: Array<string> = []
+						for (let k = 0; k < newConversations.length; k = k + 1) {
+							const conv = newConversations[k]
+							if (conv.targetUserId != null && conv.targetUserId != '') {
+								userIdsToQuery.push(conv.targetUserId)
+							}
+						}
+						if (userIdsToQuery.length > 0) {
+							fetchOnlineStatus(userIdsToQuery)
+							// 延迟更新会话列表的在线状态（等待 API 返回）
+							setTimeout(() => {
+								updateConversationsOnlineStatus()
+							}, 500)
+						}
+					}
+				}
+			}
+		}
+		
+		console.log('加载会话列表成功:', conversations.value.length, '条')
+		
+		// ⭐ 新增：加载完成后重新计算未读数总和并同步 TabBar 徽章
+		recalcUnreadSum()
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载会话列表', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// 处理会话列表更新
+const handleConversationUpdate = async () => {
+	console.log('[News] 收到会话更新通知，重新加载最新数据')
+
+	// 🔧 优化：保留当前页码，避免用户浏览位置跳跃
+	// 只有在第一页时才重新加载，否则保持当前页
+	const currentPage = page.value
+	if (currentPage == 1) {
+		// 第一页：重新加载最新数据
+		await doLoadConversations()
+	} else {
+		// 其他页：静默重新加载当前页（避免用户体验中断）
+		// 由于会话数据可能已更新，需要刷新当前页数据
+		await doLoadConversations()
+	}
+}
+
+// 加载消息提醒徽章
+const loadMessageReminderBadges = async () => {
+	const userId = currentUserId.value
+	if (userId == '') return
+	
+	try {
+		// 使用 API 直接调用而不是通过 store
+		// chatStore.fetchMessageReminderCount 无法直接访问
+		// 这里简化处理，徽章数据通过 watch 监听 unreadStore 更新
+		console.log('[News] 加载消息提醒徽章')
+	} catch (error) {
+		handleSilentError(error, '加载消息提醒徽章')
+	}
+}
+
+// 🎯 加载动态消息入口配置
+const loadDynamicEntryConfig = () => {
+	console.log('[DynamicEntry] 开始加载配置')
+	
+	getSystemSettings().then((res: UTSJSONObject) => {
+		console.log('[DynamicEntry] 配置响应:', res)
+		
+		if (res == null) {
+			// API 失败时使用默认值（隐藏入口）
+			showDynamicEntry.value = false
+			configLoaded.value = true
+			console.log('[DynamicEntry] API 返回 null，使用默认值（隐藏）')
+			return
+		}
+		
+		// 安全解析响应
+		let resObj: UTSJSONObject | null = null
+		try {
+			const resJson = JSON.stringify(res)
+			if (resJson != null && resJson != '' && resJson != 'null') {
+				resObj = JSON.parse(resJson) as UTSJSONObject
+			}
+		} catch (e) {
+			console.error('[DynamicEntry] 解析响应失败:', e)
+			showDynamicEntry.value = false
+			configLoaded.value = true
+			return
+		}
+		
+		if (resObj == null) {
+			showDynamicEntry.value = false
+			configLoaded.value = true
+			return
+		}
+		
+		// 获取响应码
+		let codeVal: string | number | null = null
+		try { 
+			const codeRaw = resObj.get('code')
+			if (codeRaw != null) {
+				if (typeof codeRaw == 'number') {
+					codeVal = codeRaw as number
+				} else {
+					codeVal = codeRaw.toString()
+				}
+			}
+		} catch (e) {}
+		
+		// 兼容数字和字符串类型的响应码
+		let isSuccess = false
+		if (codeVal != null) {
+			if (typeof codeVal == 'number') {
+				const codeNum = codeVal as number
+				isSuccess = (codeNum == 200)
+			} else {
+				const codeStr = codeVal.toString()
+				isSuccess = (codeStr == '200')
+			}
+		}
+		
+		if (isSuccess == true) {
+			let dataRaw: UTSJSONObject | null = null
+			try { 
+				const dataGetVal = resObj.get('data')
+				if (dataGetVal != null) {
+					const dataJson = JSON.stringify(dataGetVal)
+					if (dataJson != null && dataJson != '' && dataJson != 'null') {
+						dataRaw = JSON.parse(dataJson) as UTSJSONObject
+					}
+				}
+			} catch (e) {}
+			
+			if (dataRaw != null) {
+				let dataObj: UTSJSONObject | null = dataRaw
+				
+				if (dataObj != null) {
+					let configValueStr: string | null = null
+					try { 
+						const cfgVal = dataObj.get('dynamic_message_entry_enabled')
+						if (cfgVal != null) configValueStr = cfgVal.toString()
+					} catch (e) {}
+					
+					if (configValueStr != null) {
+						const configValue = configValueStr
+						showDynamicEntry.value = parseBooleanConfig(configValue)
+						console.log('[DynamicEntry] 配置值:', configValue, '显示状态:', showDynamicEntry.value)
+					} else {
+						showDynamicEntry.value = false
+						console.log('[DynamicEntry] 配置不存在，使用默认值（隐藏）')
+					}
+				} else {
+					showDynamicEntry.value = false
+				}
+			} else {
+				showDynamicEntry.value = false
+			}
+		} else {
+			showDynamicEntry.value = false
+			console.log('[DynamicEntry] API 失败，使用默认值（隐藏）')
+		}
+		
+		// 更新缓存时间和加载状态
+		configCacheTime.value = Date.now()
+		configLoaded.value = true
+		console.log('[DynamicEntry] 配置加载完成，显示状态:', showDynamicEntry.value)
+		
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '加载动态消息入口配置')
+		// 失败时使用默认值（隐藏入口）
+		showDynamicEntry.value = false
+		configLoaded.value = true
+		configCacheTime.value = Date.now()
+	})
+}
+
+// 🎯 检查配置缓存是否过期
+const checkConfigCache = () => {
+	const currentTime = Date.now()
+	const cacheAge = currentTime - configCacheTime.value
+	
+	// 如果缓存过期（超过5分钟）或未加载过，重新加载配置
+	if (configLoaded.value == false || cacheAge > CONFIG_CACHE_DURATION) {
+		console.log('[DynamicEntry] 缓存过期或未加载，重新加载配置')
+		loadDynamicEntryConfig()
+	} else {
+		console.log('[DynamicEntry] 使用缓存配置，剩余有效期:', Math.floor((CONFIG_CACHE_DURATION - cacheAge) / 1000), '秒')
+	}
+}
+
+// 初始化页面布局（必须在 init 之前定义，UTS 没有函数提升）
+const initPageLayout = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + 标题栏 + 搜索框 + 快捷功能区）
+	// 标题栏约 60rpx，搜索框约 96rpx，快捷功能区约 136rpx，padding 约 44rpx
+	headerHeight.value = pageStatusBarHeight.value + 168
+	
+	// 计算内容区域高度（窗口高度 - 头部高度）
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	console.log('[News] 状态栏高度:', pageStatusBarHeight.value, '头部高度:', headerHeight.value, '内容高度:', contentHeight.value)
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+}
+
+// 方法
+const init = async () => {
+	// 初始化页面布局
+	initPageLayout()
+	
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	// 因为 App.uvue 的初始化是延迟的，页面可能在初始化完成前就加载了
+	initUserInfoAction()
+	
+	// 🔧 优化：使用 checkUserLoginReliable 进行可靠的登录检查
+	const currentLoginStatus = checkUserLoginReliable()
+	const currentUserIdVal = getCurrentUserIdReliable()
+	
+	// 更新响应式登录状态
+	isLoginValue.value = currentLoginStatus
+	
+	console.log('[News] init - 登录状态:', currentLoginStatus, '用户ID:', currentUserIdVal)
+	
+	// 未登录时展示登录引导
+	if (currentLoginStatus == false || currentUserIdVal == '') {
+		console.log('[News] 用户未登录，将展示登录按钮，不加载会话列表')
+		return
+	}
+	
+	console.log('[News] 用户已登录，userId:', currentUserIdVal)
+	
+	// 不再重复初始化 WebSocket，依赖 App.uvue 的全局连接
+	// WebSocket 在 App.uvue 的 onLaunch 中已经初始化
+	
+	// 加载会话列表
+	doLoadConversations()
+}
+
+// 强制重连 WebSocket
+const forceReconnectWebSocket = () => {
+	const userId = currentUserId.value
+	if (userId != '') {
+		console.log('[News] 尝试强制重连 WebSocket, userId:', userId)
+		// 使用导出的独立函数进行强制重连
+		forceReconnectAction(userId)
+	}
+}
+
+// ========== 登录状态变化回调（必须在 onMounted 之前定义）==========
+const handleLoginStatusChange = (data: UTSJSONObject | null) => {
+	const dataObj = parseLoginStatusData(data)
+	if (dataObj == null) return
+	
+	const loginStatus = getIsLoginFromData(dataObj)
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = loginStatus
+	
+	console.log('[News] 登录状态变化:', loginStatus, '之前状态:', wasLoggedIn)
+	
+	// 如果刚登录，加载数据
+	if (wasLoggedIn == false && loginStatus == true) {
+		console.log('[News] 用户刚登录，加载会话列表')
+		page.value = 1
+		doLoadConversations()
+		loadMessageReminderBadges()
+	}
+}
+
+// ⭐ 新增：更新会话未读数（根据WebSocket推送数据）
+const updateConversationsUnreadCount = (conversationUnreads: Array<UTSJSONObject>) => {
+	if (conversationUnreads == null || conversationUnreads.length == 0) return
+
+	// 创建未读数Map，key为targetUserId，value为未读数
+	const unreadMap = new Map<string, number>()
+	for (let i = 0; i < conversationUnreads.length; i = i + 1) {
+		const unread = conversationUnreads[i]
+		if (unread != null) {
+			const unreadObj = toJsonObj(unread)
+			if (unreadObj != null) {
+				// ⭐ 修复：兼容后端两种字段名格式
+				// 后端 SQL 返回 userId/count，但前端期望 targetUserId/unreadCount
+				let targetUserId = getObjString(unreadObj, 'targetUserId')
+				if (targetUserId == '') {
+					// 兼容后端返回的 userId 字段
+					targetUserId = getObjString(unreadObj, 'userId')
+				}
+				let unreadCount = getObjNumber(unreadObj, 'unreadCount')
+				if (unreadCount == 0) {
+					// 兼容后端返回的 count 字段
+					unreadCount = getObjNumber(unreadObj, 'count')
+				}
+				if (targetUserId != '' && unreadCount >= 0) {
+					unreadMap.set(targetUserId, unreadCount)
+					console.log('📊 [NewsPage] 解析会话未读数:', targetUserId, '=', unreadCount)
+				}
+			}
+		}
+	}
+
+	// 🔧 修复：使用响应式方式更新会话未读数
+	// 直接修改数组元素属性不会触发 Vue 响应式更新
+	// 需要通过 splice 替换元素来触发更新
+	for (let i = 0; i < conversations.value.length; i = i + 1) {
+		const conversation = conversations.value[i]
+		if (conversation != null) {
+			const targetUserId = conversation.targetUserId
+			// UTS 规范：Map.get() 返回 Number?，需要明确处理
+			// ⭐ 关键修复：只有当会话在推送列表中时才更新未读数
+			const hasKey = unreadMap.has(targetUserId)
+			if (hasKey == true) {
+				const mapValue = unreadMap.get(targetUserId)
+				const newUnreadCount = (mapValue != null) ? mapValue : 0
+				if (conversation.unreadCount != newUnreadCount) {
+					// 创建新的会话项对象
+					const newItem = new ConversationItem()
+					newItem.conversationId = conversation.conversationId
+					newItem.targetUserId = conversation.targetUserId
+					newItem.targetUserName = conversation.targetUserName
+					newItem.targetUserAvatar = conversation.targetUserAvatar
+					newItem.lastMessage = conversation.lastMessage
+					newItem.lastMessageTime = conversation.lastMessageTime
+					newItem.messageType = conversation.messageType
+					newItem.unreadCount = newUnreadCount  // 使用新的未读数
+					newItem.isTop = conversation.isTop
+					newItem.giftLevel = conversation.giftLevel
+					newItem.vip = conversation.vip
+					newItem.vipType = conversation.vipType
+					// 使用 splice 替换元素，触发响应式更新
+					conversations.value.splice(i, 1, newItem)
+					console.log('🔄 [NewsPage] 更新会话未读数:', targetUserId, '->', newUnreadCount)
+				}
+			}
+		}
+	}
+}
+
+// ⭐ 新增：智能合并会话列表（不闪烁，保持用户浏览位置）
+const mergeConversations = (newList: Array<ConversationItem>) => {
+	for (let n = 0; n < newList.length; n = n + 1) {
+		const newConv = newList[n]
+		let foundIndex = -1
+		for (let i = 0; i < conversations.value.length; i = i + 1) {
+			if (conversations.value[i].targetUserId == newConv.targetUserId) {
+				foundIndex = i
+				break
+			}
+		}
+		
+		if (foundIndex >= 0) {
+			// 找到匹配：对比是否有变化
+			const existing = conversations.value[foundIndex]
+			if (existing.lastMessage != newConv.lastMessage ||
+				existing.lastMessageTime != newConv.lastMessageTime ||
+				existing.unreadCount != newConv.unreadCount ||
+				existing.messageType != newConv.messageType) {
+				// 有变化：用 splice 替换触发 Vue 响应式更新
+				conversations.value.splice(foundIndex, 1, newConv)
+			}
+		} else {
+			// 未找到：按 lastMessageTime 降序插入
+			let insertIndex = conversations.value.length
+			for (let j = 0; j < conversations.value.length; j = j + 1) {
+				if (newConv.lastMessageTime > conversations.value[j].lastMessageTime) {
+					insertIndex = j
+					break
+				}
+			}
+			conversations.value.splice(insertIndex, 0, newConv)
+		}
+	}
+}
+
+// ⭐ 新增：静默刷新（不显示 loading，用于 onShow 和轮询）
+const silentRefresh = async () => {
+	if (isPolling == true) return  // 防重入
+	if (loading.value == true) return  // 🔧 防止与 doLoadConversations 并发
+	isPolling = true
+	
+	try {
+		const userId = currentUserId.value
+		if (userId == '') {
+			isPolling = false
+			return
+		}
+		
+		const params = new GetConversationsParams()
+		params.userId = userId
+		params.page = 1
+		params.size = 20
+		
+		const res = await getConversations(params)
+		const resObj = toJsonObj(res)
+		
+		if (resObj != null) {
+			const codeVal = getObjValue(resObj, 'code')
+			const codeStr = (codeVal != null) ? codeVal.toString() : '0'
+			const code = parseInt(codeStr)
+			
+			if (code == 200) {
+				const dataVal = getObjValue(resObj, 'data')
+				if (dataVal != null) {
+					const isDataArray = Array.isArray(dataVal) == true
+					let listArr: Array<UTSJSONObject> = []
+					
+					if (isDataArray == true) {
+						listArr = dataVal as Array<UTSJSONObject>
+					} else {
+						const dataObj = toJsonObj(dataVal)
+						if (dataObj != null) {
+							const listVal = getObjValue(dataObj, 'list')
+							if (listVal != null && Array.isArray(listVal) == true) {
+								listArr = listVal as Array<UTSJSONObject>
+							}
+						}
+					}
+					
+					if (listArr.length > 0) {
+						const newConversations: Array<ConversationItem> = []
+						for (let i = 0; i < listArr.length; i = i + 1) {
+							const conv = listArr[i]
+							const convObj = toJsonObj(conv)
+							if (convObj != null) {
+								const item = new ConversationItem()
+								item.conversationId = getObjString(convObj, 'conversationId')
+								item.targetUserId = getObjString(convObj, 'targetUserId')
+								item.targetUserName = getObjString(convObj, 'targetUserName')
+								item.targetUserAvatar = getObjString(convObj, 'targetUserAvatar')
+								item.lastMessage = getObjString(convObj, 'lastMessage')
+								item.lastMessageTime = getObjString(convObj, 'lastMessageTime')
+								item.messageType = getObjNumber(convObj, 'messageType')
+								if (item.messageType == 0) {
+									item.messageType = getObjNumber(convObj, 'lastMessageType')
+								}
+								item.unreadCount = getObjNumber(convObj, 'unreadCount')
+								item.isTop = getObjBoolean(convObj, 'isTop')
+								item.giftLevel = getObjNumber(convObj, 'targetUserGiftLevel')
+								item.vip = getObjNumber(convObj, 'targetUserVip')
+								if (item.vip == 0) item.vip = 10
+								item.vipType = getObjNumber(convObj, 'targetUserVipType')
+								newConversations.push(item)
+							}
+						}
+						
+						// 智能合并而非全量替换
+						mergeConversations(newConversations)
+						recalcUnreadSum()
+						console.log('🔄 [NewsPage] 静默刷新完成，合并', newConversations.length, '条会话')
+					}
+				}
+			}
+		}
+	} catch (e) {
+		// 静默处理错误，不影响用户体验
+		handleSilentError(e, '静默刷新会话列表')
+	} finally {
+		isPolling = false
+	}
+}
+
+// ⭐ 新增：启动条件轮询（仅 WebSocket 断连时）
+const startPolling = () => {
+	if (pollTimer != 0) return  // 已在轮询中
+	
+	pollTimer = setInterval(() => {
+		if (isPageVisible.value == true && isLoginValue.value == true) {
+			silentRefresh()
+		}
+	}, POLL_INTERVAL)
+	console.log('🔄 [NewsPage] 启动条件轮询，间隔:', POLL_INTERVAL, 'ms')
+}
+
+// ⭐ 新增：停止轮询
+const stopPolling = () => {
+	if (pollTimer != 0) {
+		clearInterval(pollTimer)
+		pollTimer = 0
+		console.log('⏹️ [NewsPage] 停止条件轮询')
+	}
+}
+
+// ⭐ 新增：检查 WebSocket 状态并决定是否启动轮询
+const checkAndStartPolling = () => {
+	const chatStoreLocal = useChatStore()
+	const chatStoreObj = toJsonObj(chatStoreLocal)
+	if (chatStoreObj != null) {
+		const isConnected = getObjBoolean(chatStoreObj, 'isConnected')
+		if (isConnected == true) {
+			// WebSocket 已连接，停止轮询
+			stopPolling()
+		} else {
+			// WebSocket 断连，启动轮询
+			startPolling()
+		}
+	} else {
+		// 无法获取状态，启动轮询作为降级
+		startPolling()
+	}
+}
+
+// 🎯 跳转到动态页面
+const goToDynamicPage = () => {
+	const entry = dynamicEntry.value
+	if (entry != null && entry.targetUrl != '') {
+		uni.navigateTo({
+			url: entry.targetUrl
+		})
+	}
+}
+
+// ==================== 生命周期（必须在所有函数之后）====================
+
+// ⭐ 新增：处理WS会话未读数更新事件（来自 WebSocket 100 消息）
+const handleConversationUnreadUpdate = (data: UTSJSONObject | null) => {
+	console.log('📨 [NewsPage] 收到WS会话未读数更新事件:', data)
+	try {
+		// ⭐ 修复：使用 toJsonObj 安全转换，然后用 .get() 访问属性
+		const dataObj = toJsonObj(data)
+		if (dataObj == null) {
+			console.log('⚠️ [NewsPage] data 转换为 UTSJSONObject 失败')
+			return
+		}
+		
+		const conversationUnreadsVal = dataObj.get('conversationUnreads')
+		if (conversationUnreadsVal != null && Array.isArray(conversationUnreadsVal) == true) {
+			const conversationUnreads = conversationUnreadsVal as Array<UTSJSONObject>
+			const arrLen = countArrayItems(conversationUnreads)
+			if (arrLen > 0) {
+				updateConversationsUnreadCount(conversationUnreads)
+				recalcUnreadSum()
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '处理WS会话未读数更新')
+	}
+}
+
+// ⭐ 处理未读数提醒更新事件（来自 WebSocket 301 消息）
+const handleUnreadReminderUpdate = (data: UTSJSONObject | null) => {
+	console.log('📨 [NewsPage] 收到未读数提醒更新事件:', data)
+	try {
+		const dataObj = toJsonObj(data)
+		if (dataObj == null) return
+
+		// 更新快捷功能徽章
+		const followVal = getObjNumber(dataObj, 'follow')
+		const commentVal = getObjNumber(dataObj, 'comment')
+		const visitorVal = getObjNumber(dataObj, 'visitor')
+		const notificationVal = getObjNumber(dataObj, 'notification')
+
+		updateQuickFuncBadge('fans', followVal)
+		updateQuickFuncBadge('comment', commentVal)
+		updateQuickFuncBadge('visitor', visitorVal)
+		updateQuickFuncBadge('notification', notificationVal)
+
+		// 注：301 消息不包含 conversationUnreads，会话未读数由 100/102 消息单独处理
+
+	} catch (e) {
+		handleSilentError(e, '处理未读数提醒更新')
+	}
+}
+
+// ⭐ 新增：处理新消息到达事件（来自 MessageStateManager）
+const handleNewMessageReceived = (data: UTSJSONObject | null) => {
+	console.log('📨 [NewsPage] 收到新消息事件:', data)
+	try {
+		const dataObj = toJsonObj(data)
+		if (dataObj == null) {
+			console.log('⚠️ [NewsPage] 新消息事件 data 转换失败')
+			return
+		}
+		
+		const senderId = getObjString(dataObj, 'senderId')
+		const content = getObjString(dataObj, 'content')
+		const createTime = getObjString(dataObj, 'createTime')
+		const messageType = getObjNumber(dataObj, 'messageType')
+		
+		if (senderId == '') {
+			console.warn('⚠️ [NewsPage] 新消息事件缺少 senderId')
+			return
+		}
+		
+		// 在会话列表中查找对应会话
+		let foundIndex = -1
+		for (let i = 0; i < conversations.value.length; i = i + 1) {
+			const conv = conversations.value[i]
+			if (conv != null && conv.targetUserId == senderId) {
+				foundIndex = i
+				break
+			}
+		}
+		
+		if (foundIndex >= 0) {
+			// 找到已有会话：更新 lastMessage、lastMessageTime、messageType、unreadCount+1，移到首位
+			const existingConv = conversations.value[foundIndex]
+			const newItem = new ConversationItem()
+			newItem.conversationId = existingConv.conversationId
+			newItem.targetUserId = existingConv.targetUserId
+			newItem.targetUserName = existingConv.targetUserName
+			newItem.targetUserAvatar = existingConv.targetUserAvatar
+			newItem.lastMessage = content
+			newItem.lastMessageTime = createTime
+			newItem.messageType = messageType
+			newItem.unreadCount = existingConv.unreadCount + 1
+			newItem.isTop = existingConv.isTop
+			newItem.giftLevel = existingConv.giftLevel
+			newItem.vip = existingConv.vip
+			newItem.vipType = existingConv.vipType
+			newItem.isOnline = existingConv.isOnline
+			
+			// 先移除旧位置，再插入到首位
+			conversations.value.splice(foundIndex, 1)
+			conversations.value.splice(0, 0, newItem)
+			console.log('🔄 [NewsPage] 更新已有会话:', senderId, '-> 移到首位, 未读数:', newItem.unreadCount)
+		} else {
+			// 未找到会话：创建临时 ConversationItem 插入首位
+			const newItem = new ConversationItem()
+			newItem.conversationId = ''
+			newItem.targetUserId = senderId
+			newItem.targetUserName = ''
+			newItem.targetUserAvatar = ''
+			newItem.lastMessage = content
+			newItem.lastMessageTime = createTime
+			newItem.messageType = messageType
+			newItem.unreadCount = 1
+			
+			conversations.value.splice(0, 0, newItem)
+			console.log('🆕 [NewsPage] 新增临时会话:', senderId)
+			
+			// 异步刷新列表获取完整数据
+			page.value = 1
+			doLoadConversations()
+		}
+		
+		// ⭐ 新增：新消息到达后重新计算未读数总和
+		recalcUnreadSum()
+	} catch (e) {
+		handleSilentError(e, '处理新消息事件')
+	}
+}
+
+// ⭐ 新增：处理单会话未读数更新事件（来自 WebSocket 102 消息）
+const handleSingleUnreadUpdate = (data: UTSJSONObject | null) => {
+	console.log('📨 [NewsPage] 收到单会话未读数更新事件:', data)
+	try {
+		const dataObj = toJsonObj(data)
+		if (dataObj == null) {
+			console.log('⚠️ [NewsPage] 单会话未读数事件 data 转换失败')
+			return
+		}
+		
+		const conversationUserId = getObjString(dataObj, 'conversationUserId')
+		const unreadCount = getObjNumber(dataObj, 'unreadCount')
+		
+		if (conversationUserId == '') {
+			console.warn('⚠️ [NewsPage] 单会话未读数事件缺少 conversationUserId')
+			return
+		}
+		
+		// 在会话列表中查找对应会话并更新未读数
+		for (let i = 0; i < conversations.value.length; i = i + 1) {
+			const conv = conversations.value[i]
+			if (conv != null && conv.targetUserId == conversationUserId) {
+				if (conv.unreadCount != unreadCount) {
+					const newItem = new ConversationItem()
+					newItem.conversationId = conv.conversationId
+					newItem.targetUserId = conv.targetUserId
+					newItem.targetUserName = conv.targetUserName
+					newItem.targetUserAvatar = conv.targetUserAvatar
+					newItem.lastMessage = conv.lastMessage
+					newItem.lastMessageTime = conv.lastMessageTime
+					newItem.messageType = conv.messageType
+					newItem.unreadCount = unreadCount
+					newItem.isTop = conv.isTop
+					newItem.giftLevel = conv.giftLevel
+					newItem.vip = conv.vip
+					newItem.vipType = conv.vipType
+					newItem.isOnline = conv.isOnline
+					conversations.value.splice(i, 1, newItem)
+					console.log('🔄 [NewsPage] 单会话未读数更新:', conversationUserId, '->', unreadCount)
+				}
+				break
+			}
+		}
+		
+		// ⭐ 新增：单会话未读数更新后重新计算总和
+		recalcUnreadSum()
+	} catch (e) {
+		handleSilentError(e, '处理单会话未读数更新')
+	}
+}
+
+onMounted(() => {
+	// 初始化页面布局
+	initPageLayout()
+	
+	// 🔧 优化：注册登录状态变化监听
+	registerLoginStatusChange(handleLoginStatusChange)
+	
+	// ⭐ 监听未读数提醒更新事件（来自 WebSocket 301 消息）
+	uni.$on('unread:reminderUpdate', handleUnreadReminderUpdate)
+	console.log('[News] 已注册未读数提醒更新监听')
+
+	// ⭐ 新增：监听WS会话未读数更新事件（来自 WebSocket 100 消息）
+	uni.$on('chat:conversationUnreadUpdate', handleConversationUnreadUpdate)
+	console.log('[News] 已注册WS会话未读数更新监听')
+
+	// ⭐ 新增：监听新消息到达事件（来自 MessageStateManager）
+	uni.$on('chat:newMessageReceived', handleNewMessageReceived)
+	console.log('[News] 已注册新消息到达监听')
+
+	// ⭐ 新增：监听单会话未读数更新事件（来自 WebSocket 102 消息）
+	uni.$on('chat:singleUnreadUpdate', handleSingleUnreadUpdate)
+	console.log('[News] 已注册单会话未读数更新监听')
+	
+	// ⭐ 新增：监听在线状态变更事件（来自 WebSocket 200/201 消息）
+	uni.$on('online:statusChange', handleOnlineStatusChange)
+	console.log('[News] 已注册在线状态变更监听')
+	
+	// 🔧 优化：使用 waitForLoginStatus 等待 Store 初始化
+	// 返回 1=已登录，0=未登录
+	// UTS 规范：onMounted 不能是 async，使用 .then() 处理 Promise
+	waitForLoginStatus(2000).then((loginResult: number) => {
+		isLoginValue.value = (loginResult == 1)
+		
+		console.log('[News] onMounted - 登录状态:', isLoginValue.value)
+		
+		// 初始化页面
+		init()
+		loadMessageReminderBadges()
+		
+		// ⭐ 初始化时也更新一次快捷功能徽章
+		if (isLoginValue.value == true) {
+			updateQuickFuncBadge('fans', getFollowUnreadCountDirect())
+			updateQuickFuncBadge('comment', getCommentUnreadCountDirect())
+			updateQuickFuncBadge('visitor', getVisitorUnreadCountDirect())
+			updateQuickFuncBadge('notification', getNotificationUnreadCountDirect())
+		}
+		
+		// 🎯 加载动态消息入口配置
+		loadDynamicEntryConfig()
+	})
+	
+	// 监听会话列表更新事件
+	uni.$on('chat:conversationUpdate', handleConversationUpdate)
+	console.log('[News] 已注册会话更新监听')
+})
+
+// 页面显示时检查是否需要刷新
+onShow(() => {
+	console.log('[News] 页面显示，检查是否需要刷新')
+	
+	// ⭐ 标记页面可见
+	isPageVisible.value = true
+	
+	// 🔧 优化：使用 checkUserLoginReliable 进行可靠的登录检查
+	const currentLoginStatus = checkUserLoginReliable()
+	const currentUserIdVal = getCurrentUserIdReliable()
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = currentLoginStatus
+	
+	console.log('[News] 当前登录状态:', currentLoginStatus, '用户ID:', currentUserIdVal, '之前状态:', wasLoggedIn)
+	
+	// ⭐ 页面显示时刷新快捷功能徽章（确保从其他页面返回时显示最新数据）
+	if (currentLoginStatus == true) {
+		updateQuickFuncBadge('fans', getFollowUnreadCountDirect())
+		updateQuickFuncBadge('comment', getCommentUnreadCountDirect())
+		updateQuickFuncBadge('visitor', getVisitorUnreadCountDirect())
+		updateQuickFuncBadge('notification', getNotificationUnreadCountDirect())
+		console.log('[News] 已刷新快捷功能徽章 - 访客:', getVisitorUnreadCountDirect())
+	}
+	
+	// 🎯 检查动态消息入口配置缓存
+	checkConfigCache()
+	
+	// ⭐ 修复：从聊天详情页返回时优先刷新列表（确保未读数正确）
+	const shouldRefresh = safeGetStorageSync('shouldRefreshConversations')
+	if (shouldRefresh != null && shouldRefresh != '' && shouldRefresh != 'false') {
+		console.log('[News] 从聊天页返回，刷新会话列表获取最新未读数')
+		page.value = 1
+		doLoadConversations()
+		uni.removeStorageSync('shouldRefreshConversations')
+		// ⭐ 检查是否需要启动条件轮询
+		if (currentLoginStatus == true) {
+			checkAndStartPolling()
+		}
+		return
+	}
+	
+	// ⭐ 已登录时执行静默刷新 + 条件轮询检查
+	if (currentLoginStatus == true && currentUserIdVal != '') {
+		// 如果之前未登录，现在已登录，则全量加载
+		if (wasLoggedIn == false) {
+			console.log('[News] 用户刚登录，加载会话列表')
+			page.value = 1
+			doLoadConversations()
+		} else if (conversations.value.length == 0 && loading.value == false) {
+			// 会话列表为空，全量加载
+			console.log('[News] 用户已登录但会话列表为空，重新加载')
+			page.value = 1
+			doLoadConversations()
+		} else {
+			// ⭐ 正常情况：执行静默刷新（不显示 loading）
+			silentRefresh()
+		}
+		
+		// ⭐ 检查 WebSocket 状态，断连时启动条件轮询
+		checkAndStartPolling()
+	}
+	
+	// 启动健康检查定时器
+	if (healthCheckTimer == 0) {
+		healthCheckTimer = setInterval(() => {
+			if (isLoginValue.value == false) return
+			
+			const chatStoreLocal = useChatStore()
+			const chatStoreObj = toJsonObj(chatStoreLocal)
+			if (chatStoreObj != null) {
+				const isConnected = getObjBoolean(chatStoreObj, 'isConnected')
+				const connecting = getObjBoolean(chatStoreObj, 'connecting')
+				// 如果未连接且未在连接中，强制重连
+				if (isConnected == false && connecting == false) {
+					console.log('[News] 检测到 WebSocket 未连接，强制重连')
+					forceReconnectWebSocket()
+				}
+			}
+		}, 15000) // 每 15 秒检查一次
+		console.log('[News] 已启动 WebSocket 健康检查定时器')
+	}
+})
+
+// ⭐ 新增：页面隐藏时停止轮询
+onHide(() => {
+	isPageVisible.value = false
+	stopPolling()
+	console.log('[News] 页面隐藏，停止轮询')
+})
+
+onUnmounted(() => {
+	// 🔧 优化：取消登录状态变化监听
+	unregisterLoginStatusChange(handleLoginStatusChange)
+	
+	// ⭐ 停止条件轮询
+	stopPolling()
+	
+	// 移除监听
+	uni.$off('chat:conversationUpdate', handleConversationUpdate)
+	// ⭐ 移除未读数提醒更新监听
+	uni.$off('unread:reminderUpdate', handleUnreadReminderUpdate)
+	// ⭐ 新增：移除WS会话未读数更新监听
+	uni.$off('chat:conversationUnreadUpdate', handleConversationUnreadUpdate)
+	// ⭐ 新增：移除新消息到达监听
+	uni.$off('chat:newMessageReceived', handleNewMessageReceived)
+	// ⭐ 新增：移除单会话未读数更新监听
+	uni.$off('chat:singleUnreadUpdate', handleSingleUnreadUpdate)
+	// ⭐ 新增：移除在线状态变更监听
+	uni.$off('online:statusChange', handleOnlineStatusChange)
+	console.log('[News] 已移除会话更新监听、未读数提醒监听、WS会话未读数监听、新消息监听、单会话未读数监听和在线状态监听')
+	
+	// 清理健康检查定时器
+	if (healthCheckTimer != 0) {
+		clearInterval(healthCheckTimer)
+		healthCheckTimer = 0
+		console.log('[News] 已清理 WebSocket 健康检查定时器')
+	}
+	
+	// 清理资源 - chatStore.closeWebSocket 无法直接调用
+	console.log('[News] 页面卸载')
+})
+
+const loadMore = () => {
+	if (hasMore.value == false || loading.value == true) return
+	page.value = page.value + 1
+	doLoadConversations()
+}
+
+const refreshData = () => {
+	page.value = 1
+	hasMore.value = true
+	doLoadConversations()
+}
+
+/**
+ * 检查登录状态（使用统一的登录守卫）
+ */
+const requireLogin = (showToast: boolean): boolean => {
+	return requireLoginReliable(showToast, '/pages/news/index')
+}
+
+const goToChat = (item: ConversationItem) => {
+	// 添加登录检查
+	if (requireLogin(true) == false) return
+	
+	// ⭐ 修复：标记会话为已读，同时更新总未读数
+	if (item.unreadCount > 0) {
+		// 保存当前未读数用于减少总数
+		const currentUnread = item.unreadCount
+		
+		// 🔧 修复：使用响应式方式更新会话未读数
+		// 直接修改 item.unreadCount 不会触发 Vue 响应式更新
+		// 需要找到数组中的索引，然后通过 splice 替换元素来触发更新
+		const targetUserId = item.targetUserId
+		console.log('🔍 [NewsPage] goToChat - 查找会话:', targetUserId, '当前未读:', currentUnread)
+		
+		for (let i = 0; i < conversations.value.length; i = i + 1) {
+			if (conversations.value[i].targetUserId == targetUserId) {
+				console.log('🔍 [NewsPage] goToChat - 找到会话索引:', i)
+				// 创建新的会话项对象
+				const newItem = new ConversationItem()
+				newItem.conversationId = item.conversationId
+				newItem.targetUserId = item.targetUserId
+				newItem.targetUserName = item.targetUserName
+				newItem.targetUserAvatar = item.targetUserAvatar
+				newItem.lastMessage = item.lastMessage
+				newItem.lastMessageTime = item.lastMessageTime
+				newItem.messageType = item.messageType
+				newItem.unreadCount = 0  // 清零未读数
+				newItem.isTop = item.isTop
+				newItem.giftLevel = item.giftLevel
+				newItem.vip = item.vip
+				newItem.vipType = item.vipType
+				// 使用 splice 替换元素，触发响应式更新
+				conversations.value.splice(i, 1, newItem)
+				break
+			}
+		}
+		
+		// 同步更新总未读数和 TabBar 徽章（基于会话列表实际总和）
+		recalcUnreadSum()
+	}
+	
+	// 跳转到聊天详情页（传递完整参数）
+	const targetUserNameVal = item.targetUserName != '' ? item.targetUserName : ''
+	const targetUserAvatarVal = item.targetUserAvatar != '' ? item.targetUserAvatar : ''
+	const url = '/pagesTrade/news/detail?targetUserId=' + item.targetUserId + '&conversationId=' + item.conversationId + '&targetUserName=' + encodeURIComponent(targetUserNameVal) + '&targetUserAvatar=' + encodeURIComponent(targetUserAvatarVal)
+	uni.navigateTo({
+		url: url
+	})
+}
+
+const handleImageError = (e: UTSJSONObject | null) => {
+	console.log('头像加载失败，使用默认头像')
+}
+
+const goToSearch = () => {
+	// 搜索功能允许未登录访问
+	uni.navigateTo({
+		url: '/pagesBusiness/search/search'
+	})
+}
+
+const goToLogin = () => {
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+const goToSettings = () => {
+	// 添加登录检查
+	if (requireLogin(true) == false) return
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/setting/index'
+	})
+}
+
+// 清零消息提醒未读数（必须在 handleQuickFunc 之前定义）
+const doResetReminderCount = async (type: string) => {
+	const userId = currentUserId.value
+	console.log('[News] doResetReminderCount - type:', type, 'userId:', userId)
+	
+	// 🔧 修复：增强用户ID检查，确保不为空且不为 null
+	if (userId == null || userId == '' || userId.length == 0) {
+		console.warn('[News] doResetReminderCount - 用户ID为空，跳过重置')
+		return
+	}
+	
+	try {
+		let reminderType = 0
+		if (type == 'fans') {
+			reminderType = 10
+		} else if (type == 'comment') {
+			reminderType = 30
+		} else if (type == 'visitor') {
+			reminderType = 40
+		} else if (type == 'notification') {
+			reminderType = 50
+		}
+		
+		if (reminderType > 0) {
+			const params = new ResetMessageReminderParams()
+			params.userKid = userId
+			params.reminderType = reminderType
+			console.log('[News] doResetReminderCount - 调用API, params:', JSON.stringify(params))
+			await resetMessageReminderCount(params)
+			// 更新本地 badge
+			updateQuickFuncBadge(type, 0)
+			console.log('[News] doResetReminderCount - 重置成功')
+		}
+	} catch (error) {
+		handleSilentError(error, '重置消息提醒计数')
+	}
+}
+
+const handleQuickFunc = async (item: QuickFuncItem) => {
+	// 添加登录检查
+	if (requireLogin(true) == false) return
+	
+	// 跳转到对应页面
+	let url = ''
+	if (item.type == 'notification') {
+		url = '/pages/news/notify/index'
+	} else if (item.type == 'fans') {
+		url = '/pages/news/fans/index'
+	} else if (item.type == 'comment') {
+		url = '/pages/news/comment/index'
+	} else if (item.type == 'visitor') {
+		url = '/pages/news/visitor/index'
+	}
+	
+	if (url != '') {
+		// 清零对应的提醒未读数
+		await doResetReminderCount(item.type)
+		uni.navigateTo({ url: url })
+	}
+}
+
+// 执行删除会话（必须在 deleteConv 之前定义）
+const doDeleteConv = async (item: ConversationItem) => {
+	try {
+		const userId = currentUserId.value
+		// chatStore.removeConversation 无法直接调用
+		// 简化处理，直接从本地列表移除
+		const newList: Array<ConversationItem> = []
+		for (let i = 0; i < conversations.value.length; i = i + 1) {
+			if (conversations.value[i].conversationId != item.conversationId) {
+				newList.push(conversations.value[i])
+			}
+		}
+		conversations.value = newList
+		uni.showToast({
+			title: '已删除',
+			icon: 'success',
+			duration: 1500
+		})
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '删除会话', null)
+		}
+	}
+}
+
+// 置顶/取消置顶会话（必须在 showActions 之前定义）
+const togglePin = async (item: ConversationItem) => {
+	try {
+		const pin = (item.isTop == false)
+		// chatStore.togglePinConversation 无法直接调用
+		// 更新本地状态
+		item.isTop = pin
+		uni.showToast({
+			title: pin == true ? '已置顶' : '已取消置顶',
+			icon: 'success',
+			duration: 1500
+		})
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '置顶会话', null)
+		}
+	}
+}
+
+// 删除会话（必须在 showActions 之前定义）
+const deleteConv = async (item: ConversationItem) => {
+	const content = '确定要删除与"' + item.targetUserName + '"的会话吗？'
+	uni.showModal({
+		title: '删除会话',
+		content: content,
+		confirmText: '删除',
+		confirmColor: '#ff4444',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				doDeleteConv(item)
+			}
+		}
+	})
+}
+
+const showActions = (item: ConversationItem) => {
+	// 添加登录检查
+	if (requireLogin(true) == false) return
+	
+	const pinText = item.isTop == true ? '取消置顶' : '置顶会话'
+	uni.showActionSheet({
+		itemList: [pinText, '删除会话'],
+		success: (res: any) => {
+			if (res != null) {
+				const resObj = toJsonObj(res)
+				if (resObj != null) {
+					const tapIndexVal = resObj.get('tapIndex')
+					if (tapIndexVal != null) {
+						const tapIndex = parseInt(tapIndexVal.toString())
+						if (tapIndex == 0) {
+							// 置顶/取消置顶
+							togglePin(item)
+						} else if (tapIndex == 1) {
+							// 删除会话
+							deleteConv(item)
+						}
+					}
+				}
+			}
+		}
+	})
+}
+
+const formatTime = (time: string): string => {
+	return formatRelativeTime(time)
+}
+
+// 处理发送礼物给用户
+// VIP图标点击 - 跳转VIP页面
+const handleVipClick = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+// 礼物图标点击 - 打开礼物选择面板
+const handleGiftIconClick = (targetUserKid: string) => {
+	if (requireLogin(true) == false) return
+	selectedUserKid.value = targetUserKid
+	showGiftSelector.value = true
+}
+
+const handleSendGiftToUser = (item: ConversationItem) => {
+	if (requireLogin(true) == false) return
+	selectedUserKid.value = item.targetUserId
+	showGiftSelector.value = true
+}
+
+// 处理选择礼物
+const handleSelectGift = async (gift: UTSJSONObject | null) => {
+	showGiftSelector.value = false
+	if (gift != null) {
+		const giftObj = toJsonObj(gift)
+		if (giftObj != null) {
+			const giftId = getObjString(giftObj, 'id')
+			if (giftId != '' && selectedUserKid.value != '') {
+				try {
+					const userId = currentUserId.value
+					const sendParams = {
+						userKid: userId,
+						receiveUserKid: selectedUserKid.value,
+						lotteryRecordKid: giftId
+					} as UTSJSONObject
+					await sendGiftFromBag(sendParams)
+					uni.showToast({
+						title: '礼物发送成功',
+						icon: 'success'
+					})
+				} catch (error) {
+					if (!isAuthError(error)) {
+						handlePageError(error, '发送礼物', null)
+					}
+				}
+			}
+		}
+	}
+}
+</script>
+
+<style scoped>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+/* 顶部背景图（使用绝对定位，与首页保持一致） */
+.bg-my-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+.header-box {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+	z-index: 10;
+}
+
+.title-bar {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.title {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.actions {
+	flex-direction: row;
+	align-items: center;
+}
+
+.action-btn {
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+	padding-left: 10rpx;
+	padding-right: 10rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-text {
+	font-size: 40rpx;
+	color: #333333;
+}
+
+/* 搜索框样式 */
+.search-box {
+	height: 72rpx;
+	background-color: #ffffff;
+	border-radius: 36rpx;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 24rpx;
+}
+
+.search-icon-img {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 16rpx;
+}
+
+.search-placeholder {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+/* 快捷功能区 */
+.quick-card {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	margin-bottom: 20rpx;
+	flex-direction: row;
+	justify-content: space-around;
+}
+
+.quick-item {
+	flex-direction: column;
+	align-items: center;
+	flex: 1;
+}
+
+.icon-wrapper {
+	position: relative;
+	margin-bottom: 12rpx;
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.quick-icon {
+	width: 88rpx;
+	height: 88rpx;
+}
+
+.badge {
+	position: absolute;
+	top: 0;
+	right: 0;
+	background-color: #ff4444;
+	border-radius: 16rpx;
+	padding-left: 8rpx;
+	padding-right: 8rpx;
+	min-width: 32rpx;
+	height: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 2;
+}
+
+.badge-text {
+	font-size: 20rpx;
+	color: #ffffff;
+}
+
+.quick-name {
+	font-size: 26rpx;
+	color: #333333;
+}
+
+/* 列表区域 */
+.conversation-list {
+	flex-direction: column;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	z-index: 1;
+}
+
+.loading,
+.empty,
+.load-more,
+.no-more {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+}
+
+.loading-text,
+.empty-text,
+.load-more-text,
+.no-more-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.conversation-item {
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-bottom: 20rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+/* 外层容器：无圆角、无裁剪，用于承载头像和角标 */
+.avatar-badge-box {
+	position: relative;
+	margin-right: 20rpx;
+	width: 96rpx;
+	height: 96rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+/* 头像内层：居中放置头像 */
+.avatar-inner {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: 88rpx;
+	height: 88rpx;
+}
+
+.avatar-wrapper {
+	position: relative;
+	margin-right: 20rpx;
+	overflow: visible;
+	width: 88rpx;
+	height: 88rpx;
+}
+
+.avatar {
+	width: 88rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #eeeeee;
+}
+
+/* 🎯 动态消息入口红点（永久显示，不显示数字） */
+.red-dot {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 16rpx;
+	height: 16rpx;
+	background-color: #ff4444;
+	border-radius: 8rpx;
+	z-index: 10;
+}
+
+.unread-badge {
+	position: absolute;
+	top: 0;
+	right: 0;
+	background-color: #ff4444;
+	border-radius: 100rpx;
+	padding-left: 8rpx;
+	padding-right: 8rpx;
+	min-width: 36rpx;
+	height: 36rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.unread-badge-text {
+	font-size: 20rpx;
+	color: #ffffff;
+}
+
+.conversation-content {
+	flex: 1;
+	flex-direction: column;
+	justify-content: center;
+	overflow: hidden;
+}
+
+.top-row {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8rpx;
+}
+
+.username {
+	font-size: 30rpx;
+	color: #333333;
+	max-width: 350rpx;
+}
+
+.username.bold {
+	font-weight: bold;
+}
+
+.time {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.bottom-row {
+	flex-direction: row;
+	flex: 1;
+	overflow: hidden;
+}
+
+.message-preview {
+	font-size: 26rpx;
+	color: #999999;
+	flex: 1;
+	lines: 1;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.message-preview.bold {
+	color: #666666;
+	font-weight: bold;
+}
+
+.news-item-image {
+	width: 200rpx;
+	height: 150rpx;
+	border-radius: 12rpx;
+}
+
+/* 未登录提示区域 */
+.login-placeholder {
+	flex: 1;
+	padding-top: 80rpx;
+	padding-bottom: 40rpx;
+	padding-left: 60rpx;
+	padding-right: 60rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	background-color: #f5f5f5;
+}
+
+.login-placeholder-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.login-placeholder-desc {
+	font-size: 26rpx;
+	color: #999999;
+	margin-bottom: 40rpx;
+}
+
+/* 登录按钮（蓝色底色，白色文字） */
+.login-btn {
+	width: 400rpx;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.login-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+
+</style>

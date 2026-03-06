@@ -1,0 +1,594 @@
+/**
+ * 未读数管理 Store - 使用 Vue 响应式 API
+ * 统一管理消息和订单的未读数，并更新底部导航栏徽章
+ * 
+ * 🔧 重构说明：
+ * - 主要数据源：WebSocket 301 消息推送（通过 updateUnreadCountsDirect）
+ * - 降级方案：fetchAllUnreadCounts 仅在应用初始化时调用
+ * - 订单未读数完全依赖 WebSocket 301 消息，不再调用 API
+ * - iOS角标与chatUnread保持同步
+ */
+
+import { ref, computed } from 'vue'
+import { useChatStore } from '@/stores/chat'
+import { getMessageReminderCount, GetMessageReminderCountParams } from '@/api/chat'
+// 🔧 重构：移除 getPendingOrderCount，订单未读数由 WebSocket 301 消息推送
+import { getNotificationUnreadCount } from '@/common/services/notificationService.uts'
+// 🔧 性能优化：使用 typeConverter 替代 JSON.stringify/JSON.parse
+import { toUTSJSON, getNumber } from '@/common/utils/typeConverter.uts'
+import { safeGetString, safeGetNumber } from '@/utils/nullGuard.uts'
+// ⭐ iOS角标工具模块
+import { setAppBadgeNumber, clearAppBadge } from '@/common/utils/iosBadge.uts'
+// ⭐ Android角标工具模块
+import { setAppBadgeNumber as setAndroidBadge, clearAppBadge as clearAndroidBadge } from '@/common/utils/androidBadge.uts'
+import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// TabBar 页面路径列表（非微信小程序）
+const TAB_BAR_PAGES: Array<string> = [
+	'pages/index/index',
+	'pagesBusiness/find/index',
+	'pages/news/index',
+	'pages/order/index',
+	'pages/my/index'
+]
+
+// 微信小程序 TabBar 页面路径列表
+const TAB_BAR_PAGES_MP: Array<string> = [
+	'pages/news/index',
+	'pages/order/index',
+	'pages/my/index'
+]
+
+/**
+ * 检测当前页面是否为 TabBar 页面
+ * @returns 是否为 TabBar 页面
+ */
+const checkIsTabBarPage = (): boolean => {
+	try {
+		const pages = getCurrentPages()
+		if (pages != null && pages.length > 0) {
+			const currentPage = pages[pages.length - 1]
+			if (currentPage != null) {
+				const pageObj = toUTSJSON(currentPage)
+				if (pageObj != null) {
+					const route = safeGetString(pageObj, 'route')
+					if (route != '') {
+						// #ifdef MP-WEIXIN
+						for (let i = 0; i < TAB_BAR_PAGES_MP.length; i = i + 1) {
+							if (route == TAB_BAR_PAGES_MP[i]) {
+								return true
+							}
+						}
+						// #endif
+						// #ifndef MP-WEIXIN
+						for (let i = 0; i < TAB_BAR_PAGES.length; i = i + 1) {
+							if (route == TAB_BAR_PAGES[i]) {
+								return true
+							}
+						}
+						// #endif
+					}
+				}
+			}
+		}
+	} catch (e) {
+		console.warn('⚠️ [UnreadStore] 检测 TabBar 页面失败:', e)
+	}
+	return false
+}
+
+// 使用 ref 创建响应式状态
+const messageUnreadCountRef = ref<number>(0)
+const chatUnreadCountRef = ref<number>(0)
+const notificationUnreadCountRef = ref<number>(0)
+const followUnreadCountRef = ref<number>(0)
+const commentUnreadCountRef = ref<number>(0)
+const visitorUnreadCountRef = ref<number>(0)
+const likeUnreadCountRef = ref<number>(0)
+const orderUnreadCountRef = ref<number>(0)
+const lastUpdateTimeRef = ref<number>(0)
+
+// Getters
+const totalMessageUnread = computed((): number => {
+	return messageUnreadCountRef.value
+})
+
+const totalOrderUnread = computed((): number => {
+	return orderUnreadCountRef.value
+})
+
+// ⭐ iOS角标更新函数
+const updateiOSAppBadge = () => {
+	// #ifdef APP-IOS
+	try {
+		const count = chatUnreadCountRef.value
+		setAppBadgeNumber(count)
+	} catch (e) {
+		console.warn('⚠️ [UnreadStore] 更新iOS角标失败:', e)
+	}
+	// #endif
+}
+
+// ⭐ Android角标更新函数
+const updateAndroidAppBadge = () => {
+	// #ifdef APP-ANDROID
+	try {
+		const count = chatUnreadCountRef.value
+		setAndroidBadge(count)
+	} catch (e) {
+		console.warn('⚠️ [UnreadStore] 更新Android角标失败:', e)
+	}
+	// #endif
+}
+
+// Actions
+// 🔧 修复：TabBar 徽章更新不应该检查当前页面
+// 因为 WebSocket 消息可能在任何页面到达，但徽章应该始终更新
+const updateTabBarBadge = () => {
+	try {
+		// 所有平台统一使用相同的索引（消息Tab在所有平台都是index 1）
+		const messageTabIndex = 1
+		
+		console.log('🔄 [UnreadStore] 更新消息TabBar徽章, 未读数:', messageUnreadCountRef.value)
+		
+		if (messageUnreadCountRef.value > 0) {
+			const badgeText = messageUnreadCountRef.value > BADGE_COUNT_MAX_DISPLAY ? (BADGE_COUNT_MAX_DISPLAY.toString() + '+') : messageUnreadCountRef.value.toString()
+			uni.setTabBarBadge({
+				index: messageTabIndex,
+				text: badgeText,
+				success: () => {
+				},
+				fail: (error: any) => {
+					// 非 TabBar 页面时会失败，这是正常的，静默处理
+					console.log('ℹ️ [UnreadStore] 消息TabBar徽章更新跳过（可能不在TabBar页面）')
+				}
+			})
+		} else {
+			uni.removeTabBarBadge({
+				index: messageTabIndex,
+				success: () => {
+				},
+				fail: (error: any) => {
+					// 非 TabBar 页面时会失败，这是正常的，静默处理
+					console.log('ℹ️ [UnreadStore] 消息TabBar徽章移除跳过（可能不在TabBar页面）')
+				}
+			})
+		}
+		
+		// ⭐ 同步更新iOS应用图标角标
+		updateiOSAppBadge()
+		
+		// ⭐ 同步更新Android应用图标角标
+		updateAndroidAppBadge()
+	} catch (error) {
+		console.warn('⚠️ [UnreadStore] 更新消息TabBar徽章异常:', error)
+	}
+}
+
+const updateOrderTabBarBadge = (count: number) => {
+	// 所有平台统一使用相同的索引（订单Tab在所有平台都是index 2）
+	const orderTabIndex = 2
+	
+	console.log('🔄 [UnreadStore] 更新订单TabBar徽章, 未读数:', count)
+	
+	try {
+		if (count > 0) {
+			uni.setTabBarBadge({
+				index: orderTabIndex,
+				text: count.toString(),
+				success: () => {
+				},
+				fail: (error: any) => {
+					// 非 TabBar 页面时会失败，这是正常的，静默处理
+					console.log('ℹ️ [UnreadStore] 订单TabBar徽章更新跳过（可能不在TabBar页面）')
+				}
+			})
+		} else {
+			uni.removeTabBarBadge({
+				index: orderTabIndex,
+				success: () => {
+				},
+				fail: (error: any) => {
+					// 非 TabBar 页面时会失败，这是正常的，静默处理
+					console.log('ℹ️ [UnreadStore] 订单TabBar徽章移除跳过（可能不在TabBar页面）')
+				}
+			})
+		}
+	} catch (error) {
+		console.warn('⚠️ [UnreadStore] 更新订单TabBar徽章异常:', error)
+	}
+}
+
+const calculateTotalMessageUnread = () => {
+	const total = chatUnreadCountRef.value
+	
+	if (messageUnreadCountRef.value != total) {
+		messageUnreadCountRef.value = total
+		updateTabBarBadge()
+	}
+}
+
+const updateMessageUnreadCount = (count: number) => {
+	messageUnreadCountRef.value = count
+	updateTabBarBadge()
+}
+
+const updateChatUnreadCount = (count: number) => {
+	chatUnreadCountRef.value = count
+	calculateTotalMessageUnread()
+}
+
+/**
+ * ⭐ 新增：减少聊天未读数（用于点击会话时本地减少）
+ * @param decreaseBy 要减少的数量
+ */
+const decreaseChatUnreadCount = (decreaseBy: number) => {
+	if (decreaseBy <= 0) return
+	
+	const currentCount = chatUnreadCountRef.value
+	const newCount = currentCount - decreaseBy
+	chatUnreadCountRef.value = (newCount > 0) ? newCount : 0
+	
+	// 同步更新总消息未读数
+	messageUnreadCountRef.value = chatUnreadCountRef.value
+	
+	// 更新 TabBar 徽章
+	updateTabBarBadge()
+	
+	// ⭐ 同步更新iOS应用图标角标
+	updateiOSAppBadge()
+	
+	// ⭐ 同步更新Android应用图标角标
+	updateAndroidAppBadge()
+}
+
+// 🔧 修复 ClassCastException：参数类型改为 UTSJSONObject，使用 toUTSJSON 内部转换
+const updateMessageReminderCounts = (counts: UTSJSONObject) => {
+	// 直接使用 UTSJSONObject
+	const countsObj = counts
+	
+	followUnreadCountRef.value = getNumber(countsObj, 'follwerReminderCount')
+	commentUnreadCountRef.value = getNumber(countsObj, 'commentReminderCount')
+	visitorUnreadCountRef.value = getNumber(countsObj, 'visitorReminderCount')
+}
+
+const updateNotificationUnreadCount = (count: number) => {
+	notificationUnreadCountRef.value = count
+}
+
+// ⭐ 新增：批量更新未读数方法（用于WebSocket 301消息处理）
+const updateUnreadCounts = (counts: UTSJSONObject) => {
+	try {
+		// 直接使用 UTSJSONObject
+		const countsObj = counts
+
+		// 更新各个未读数（注意：字段名与WebSocket传递的保持一致）
+		const followUnread = getIntValue(countsObj, 'follow')
+		const commentUnread = getIntValue(countsObj, 'commentUnreadCount')
+		const visitorUnread = getIntValue(countsObj, 'visitorUnreadCount')
+		const likeUnread = getIntValue(countsObj, 'likeUnreadCount')
+		const notificationUnread = getIntValue(countsObj, 'notificationUnreadCount')
+		const chatUnread = getIntValue(countsObj, 'chatUnreadCount')
+		const orderUnread = getIntValue(countsObj, 'orderUnreadCount')
+
+		// 更新响应式状态
+		followUnreadCountRef.value = followUnread
+		commentUnreadCountRef.value = commentUnread
+		visitorUnreadCountRef.value = visitorUnread
+		likeUnreadCountRef.value = likeUnread
+		notificationUnreadCountRef.value = notificationUnread
+		chatUnreadCountRef.value = chatUnread
+		orderUnreadCountRef.value = orderUnread
+
+		// 更新最后更新时间
+		lastUpdateTimeRef.value = Date.now()
+
+		// 重新计算总消息未读数
+		calculateTotalMessageUnread()
+
+		// 更新TabBar徽章
+		updateTabBarBadge()
+		
+		// 🔧 修复：同时更新订单TabBar徽章
+		updateOrderTabBarBadge(orderUnread)
+
+		// ⭐ 发射事件通知页面更新徽章
+		// 使用 uni.$emit 发射全局事件，页面监听此事件来更新 UI
+		uni.$emit('unread:reminderUpdate', {
+			follow: followUnread,
+			comment: commentUnread,
+			visitor: visitorUnread,
+			like: likeUnread,
+			notification: notificationUnread,
+			chat: chatUnread,
+			order: orderUnread
+		})
+
+	} catch (e: any) {
+		handleSilentError(e, '批量更新未读数')
+	}
+}
+
+// 辅助方法：安全获取整数值（委托给 safeGetNumber）
+const getIntValue = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	return safeGetNumber(obj, key, 0)
+}
+
+// 导出为独立函数，供外部直接调用
+export const updateOrderUnreadCountDirect = (count: number) => {
+	orderUnreadCountRef.value = count
+	updateOrderTabBarBadge(count)
+}
+
+// 导出通知未读数更新函数，供外部直接调用
+export const updateNotificationUnreadCountDirect = (count: number) => {
+	notificationUnreadCountRef.value = count
+}
+
+// ⭐ 导出批量更新未读数函数，供 WebSocket 事件处理器直接调用
+export const updateUnreadCountsDirect = (counts: UTSJSONObject) => {
+	updateUnreadCounts(counts)
+}
+
+// ⭐ 导出消息未读数更新函数，供 WebSocket 事件处理器直接调用
+export const updateMessageUnreadCountDirect = (count: number) => {
+	updateMessageUnreadCount(count)
+}
+
+// ⭐ 新增：导出减少聊天未读数函数，供页面点击会话时调用
+export const decreaseChatUnreadCountDirect = (decreaseBy: number) => {
+	decreaseChatUnreadCount(decreaseBy)
+}
+
+// ⭐ 新增：导出iOS角标更新函数，供App.uvue前台切换时调用
+export const updateiOSAppBadgeDirect = () => {
+	updateiOSAppBadge()
+}
+
+// ⭐ 新增：导出Android角标更新函数，供App.uvue前台切换时调用
+export const updateAndroidAppBadgeDirect = () => {
+	updateAndroidAppBadge()
+}
+
+// ⭐ 导出 getter 函数，供页面直接读取响应式 ref 的当前值
+// 解决 useUnreadStore() 返回静态快照导致 watch 无法触发的问题
+export const getFollowUnreadCountDirect = (): number => {
+	return followUnreadCountRef.value
+}
+
+export const getCommentUnreadCountDirect = (): number => {
+	return commentUnreadCountRef.value
+}
+
+export const getVisitorUnreadCountDirect = (): number => {
+	return visitorUnreadCountRef.value
+}
+
+export const getLikeUnreadCountDirect = (): number => {
+	return likeUnreadCountRef.value
+}
+
+export const getNotificationUnreadCountDirect = (): number => {
+	return notificationUnreadCountRef.value
+}
+
+export const getChatUnreadCountDirect = (): number => {
+	return chatUnreadCountRef.value
+}
+
+export const getOrderUnreadCountDirect = (): number => {
+	return orderUnreadCountRef.value
+}
+
+export const getTotalMessageUnreadDirect = (): number => {
+	return messageUnreadCountRef.value
+}
+
+// ⭐ 新增：允许 News_Page 直接设置聊天未读数（基于会话列表 unreadCount 总和）
+export const setChatUnreadCountFromConversations = (sum: number) => {
+	chatUnreadCountRef.value = sum
+	messageUnreadCountRef.value = sum
+	updateTabBarBadge()
+	// 同步更新 iOS/Android 应用图标角标
+	updateiOSAppBadge()
+	updateAndroidAppBadge()
+}
+
+// 导出 fetchAllUnreadCounts 操作供外部直接调用
+export const fetchAllUnreadCountsAction = async (userId: string) => {
+	try {
+		await fetchAllUnreadCounts(userId)
+	} catch (e: any) {
+		handleSilentError(e, '获取全部未读数')
+	}
+}
+
+const updateOrderUnreadCount = (count: number) => {
+	orderUnreadCountRef.value = count
+	updateOrderTabBarBadge(count)
+}
+
+/**
+ * 🔧 重构说明：此函数仅用于应用初始化时的降级方案
+ * 
+ * 主要数据源：WebSocket 301 消息推送（通过 updateUnreadCountsDirect）
+ * 降级方案：当 WebSocket 未连接时，通过此函数获取初始未读数
+ * 
+ * 注意：
+ * - 订单未读数完全依赖 WebSocket 301 消息推送，不再调用 API
+ * - 此函数应仅在应用启动时调用一次
+ * - WebSocket 连接建立后，所有未读数更新由 301 消息驱动
+ */
+const fetchAllUnreadCounts = async (userId: string) => {
+	if (userId == null || userId == '') {
+		console.warn('⚠️ [UnreadStore] 用户ID为空，无法获取未读数')
+		return
+	}
+	
+	try {
+		const chatStore = useChatStore()
+		
+		// 获取聊天未读数 - 🔧 性能优化：使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+		const chatStoreObj = toUTSJSON(chatStore)
+		if (chatStoreObj != null) {
+			const chatCount = safeGetNumber(chatStoreObj, 'unreadCount')
+			updateChatUnreadCount(chatCount)
+		}
+		
+		// 获取消息提醒未读数（关注、评论、访客等）
+		try {
+			// UTS 规范：不能使用对象字面量，需使用类实例
+			const params = new GetMessageReminderCountParams()
+			params.userKid = userId
+			const reminderRes = await getMessageReminderCount(params)
+			if (reminderRes != null) {
+				// 🔧 性能优化：使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+				const resObj = toUTSJSON(reminderRes)
+				const dataVal = resObj != null ? resObj.get('data') : null
+				if (dataVal != null) {
+					// 🔧 修复 ClassCastException：不能直接转换为 MessageReminderCount
+					// 必须使用 UTSJSONObject 逐个提取属性，手动构建对象
+					try {
+						// 🔧 性能优化：使用 toUTSJSON + getNumber 替代 JSON.stringify + JSON.parse
+						const dataObj = toUTSJSON(dataVal)
+						
+						// 逐个提取属性
+						const likeCount = getIntValue(dataObj, 'likeReminderCount')
+						const commentCount = getIntValue(dataObj, 'commentReminderCount')
+						const followerCount = getIntValue(dataObj, 'follwerReminderCount')
+						const visitorCount = getIntValue(dataObj, 'visitorReminderCount')
+						
+						// 构建 UTSJSONObject 传递给 updateMessageReminderCounts
+						const reminderCounts = new UTSJSONObject()
+						reminderCounts.set('likeReminderCount', likeCount)
+						reminderCounts.set('commentReminderCount', commentCount)
+						reminderCounts.set('follwerReminderCount', followerCount)
+						reminderCounts.set('visitorReminderCount', visitorCount)
+						
+						updateMessageReminderCounts(reminderCounts)
+					} catch (parseError: any) {
+						handleSilentError(parseError, '解析消息提醒数据')
+					}
+				}
+			}
+		} catch (e: any) {
+			handleSilentError(e, '获取消息提醒未读数')
+		}
+		
+		// 订单未读数完全依赖 WebSocket 301 消息推送，不再调用 API
+		
+		// 获取通知未读数（用于通知图标徽章）
+		try {
+			const notificationCount = await getNotificationUnreadCount(userId)
+			// UTS 规范：不能使用 Number() 构造函数
+			const notificationCountVal = (notificationCount != null) ? parseInt(notificationCount.toString()) : 0
+			updateNotificationUnreadCount(notificationCountVal)
+		} catch (e: any) {
+			handleSilentError(e, '获取通知未读数')
+		}
+		
+		lastUpdateTimeRef.value = Date.now()
+	} catch (error: any) {
+		handleSilentError(error, '获取未读数')
+	}
+}
+
+const reset = () => {
+	messageUnreadCountRef.value = 0
+	chatUnreadCountRef.value = 0
+	notificationUnreadCountRef.value = 0
+	followUnreadCountRef.value = 0
+	commentUnreadCountRef.value = 0
+	visitorUnreadCountRef.value = 0
+	orderUnreadCountRef.value = 0
+	lastUpdateTimeRef.value = 0
+	
+	try {
+		// 所有平台统一使用相同的索引
+		uni.removeTabBarBadge({ index: 1 })  // 消息Tab
+		uni.removeTabBarBadge({ index: 2 })  // 订单Tab
+		
+		// ⭐ 清除iOS应用图标角标
+		clearAppBadge()
+		
+		// ⭐ 清除Android应用图标角标
+		clearAndroidBadge()
+	} catch (error) {
+		console.warn('⚠️ [UnreadStore] 清除TabBar徽章失败:', error)
+	}
+}
+
+// 导出 useUnreadStore 函数
+// UTS 规范：对象字面量不支持 getter/setter 语法
+export const useUnreadStore = () => {
+	// UTS 规范：先将值存入局部变量，避免递归问题
+	const messageUnreadCountVal = messageUnreadCountRef.value
+	const chatUnreadCountVal = chatUnreadCountRef.value
+	const notificationUnreadCountVal = notificationUnreadCountRef.value
+	const followUnreadCountVal = followUnreadCountRef.value
+	const commentUnreadCountVal = commentUnreadCountRef.value
+	const visitorUnreadCountVal = visitorUnreadCountRef.value
+	const orderUnreadCountVal = orderUnreadCountRef.value
+	const lastUpdateTimeVal = lastUpdateTimeRef.value
+	const totalMessageUnreadVal = totalMessageUnread.value
+	const totalOrderUnreadVal = totalOrderUnread.value
+	
+	return {
+		// State - 直接返回当前值
+		messageUnreadCount: messageUnreadCountVal,
+		chatUnreadCount: chatUnreadCountVal,
+		notificationUnreadCount: notificationUnreadCountVal,
+		followUnreadCount: followUnreadCountVal,
+		commentUnreadCount: commentUnreadCountVal,
+		visitorUnreadCount: visitorUnreadCountVal,
+		orderUnreadCount: orderUnreadCountVal,
+		lastUpdateTime: lastUpdateTimeVal,
+		
+		// Getters - 直接返回计算属性的当前值
+		totalMessageUnread: totalMessageUnreadVal,
+		totalOrderUnread: totalOrderUnreadVal,
+		
+		// Actions - 包装为箭头函数
+		updateMessageUnreadCount: (count: number) => updateMessageUnreadCount(count),
+		updateChatUnreadCount: (count: number) => updateChatUnreadCount(count),
+		decreaseChatUnreadCount: (decreaseBy: number) => decreaseChatUnreadCount(decreaseBy),
+		// 🔧 修复 ClassCastException：参数类型改为 UTSJSONObject
+		updateMessageReminderCounts: (counts: UTSJSONObject) => updateMessageReminderCounts(counts),
+		updateNotificationUnreadCount: (count: number) => updateNotificationUnreadCount(count),
+		updateOrderUnreadCount: (count: number) => updateOrderUnreadCount(count),
+		updateUnreadCounts: (counts: UTSJSONObject) => updateUnreadCounts(counts),
+		calculateTotalMessageUnread: () => calculateTotalMessageUnread(),
+		updateTabBarBadge: () => updateTabBarBadge(),
+		updateOrderTabBarBadge: (count: number) => updateOrderTabBarBadge(count),
+		fetchAllUnreadCounts: (userId: string) => fetchAllUnreadCounts(userId),
+		reset: () => reset()
+	}
+}
+
+// 导出 UnreadStore 类型
+export interface UnreadStore {
+	messageUnreadCount: number
+	chatUnreadCount: number
+	notificationUnreadCount: number
+	followUnreadCount: number
+	visitorUnreadCount: number
+	orderUnreadCount: number
+	lastUpdateTime: number
+	totalMessageUnread: number
+	totalOrderUnread: number
+	updateMessageUnreadCount(count: number): void
+	updateChatUnreadCount(count: number): void
+	decreaseChatUnreadCount(decreaseBy: number): void
+	// 🔧 修复 ClassCastException：参数类型改为 UTSJSONObject
+	updateMessageReminderCounts(counts: UTSJSONObject): void
+	updateNotificationUnreadCount(count: number): void
+	updateOrderUnreadCount(count: number): void
+	updateUnreadCounts(counts: UTSJSONObject): void
+	calculateTotalMessageUnread(): void
+	updateTabBarBadge(): void
+	updateOrderTabBarBadge(count: number): void
+	fetchAllUnreadCounts(userId: string): void
+	reset(): void
+}

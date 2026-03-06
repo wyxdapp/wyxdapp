@@ -1,0 +1,2006 @@
+<template>
+	<view class="page bg-white" v-if="initFinish == true">
+		<!-- #ifndef H5 -->
+		<!-- APP端状态栏占位 -->
+		<view class="status-bar-placeholder" :style="{ height: pageStatusBarHeight + 'px' }"></view>
+		<!-- #endif -->
+		
+		<!-- 动态详情 - 直接使用 DynamicItem 组件 -->
+		<DynamicItem 
+			v-if="hasInfo == true"
+			:item="dynamicItemData"
+			:detail="true"
+			@user-click="handleUserProfile"
+			@like="handleDoUp"
+			@more-click="handleMoreOptions"
+			@line-click="handleLineClick"
+		/>
+		
+		<!-- 分割线 -->
+		<view class="divider-line"></view>
+		
+		<!-- 评论列表 -->
+		<view class="comment-section">
+			<!-- 空状态 -->
+			<view v-if="commendListLength == 0 && loading == false" class="empty-comment-box">
+				<view class="empty-comment-illustration">
+					<view class="empty-decorative-dot dot-blue dot-1"></view>
+					<view class="empty-decorative-dot dot-blue dot-2"></view>
+					<view class="empty-decorative-dot dot-blue dot-3"></view>
+					<view class="empty-decorative-dot dot-yellow dot-4"></view>
+					<view class="empty-decorative-dot dot-purple dot-5"></view>
+					<view class="empty-wind-line wind-line-1"></view>
+					<view class="empty-wind-line wind-line-2"></view>
+					<view class="empty-wind-line wind-line-3"></view>
+					<view class="empty-wind-line wind-line-4"></view>
+					<view class="empty-bell-icon">
+						<view class="bell-body"></view>
+						<view class="bell-clapper"></view>
+					</view>
+				</view>
+				<text class="empty-comment-text">暂无评论哦~</text>
+			</view>
+			
+			<!-- 评论列表 -->
+			<view v-else-if="commendListLength > 0" class="comment-list">
+				<view v-for="(item, index) in commendList" :key="index" class="comment-item">
+					<view class="comment-content-wrapper">
+						<Avatar 
+							:url="getCommentAvatar(item)"
+							size="medium"
+							:customSize="80"
+							clickMode="none"
+							@click="handleCommentUserProfile(item)"
+						/>
+						<view class="comment-info">
+							<view class="comment-header">
+								<text class="comment-nickname" @click="handleCommentUserProfile(item)">{{ getCommentNickname(item) }}</text>
+								<text class="comment-time">{{ formatCommentTime(getCommentTime(item)) }}</text>
+							</view>
+							<text class="comment-text" @click="handleClickComment(item)">{{ getCommentContent(item) }}</text>
+							
+							<!-- 评论图片 -->
+							<view v-if="hasCommentPics(item) == true" class="comment-pics">
+								<image 
+									v-for="(p, idx) in getCommentPicList(item)" 
+									:key="idx" 
+									:src="getPicUrl(p)" 
+									mode="aspectFill" 
+									class="comment-pic-item"
+									@click="previewCommentImage(item, idx)"
+								/>
+							</view>
+							
+							<!-- 嵌套回复 -->
+							<view v-if="hasReplyList(item) == true" class="reply-list">
+								<view v-for="(reply, rIdx) in getReplyListSlice(item)" :key="rIdx" class="reply-item">
+									<Avatar 
+										:url="getCommentAvatar(reply)"
+										:customSize="56"
+										clickMode="none"
+										@click="handleCommentUserProfile(reply)"
+									/>
+									<view class="reply-info">
+										<view class="reply-header">
+											<text class="reply-nickname" @click="handleCommentUserProfile(reply)">{{ getCommentNickname(reply) }}</text>
+											<text class="reply-time">{{ formatCommentTime(getCommentTime(reply)) }}</text>
+										</view>
+										<text class="reply-text">{{ getReplyContent(reply) }}</text>
+									</view>
+								</view>
+								<!-- 显示更多回复链接 -->
+								<view v-if="getReplyCount(item) > 2" class="view-more-replies" @click="viewAllReplies(item)">
+									<text class="more-replies-text">共{{ getReplyCount(item) }}条回复 ></text>
+								</view>
+							</view>
+						</view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 加载更多 -->
+			<view class="load-more-box" v-if="commendListLength >= 5">
+				<view v-if="pageListStatus == 'loading'" class="loading-more">
+					<text class="loading-more-text">加载中...</text>
+				</view>
+				<view v-else-if="pageListStatus == 'nomore'" class="no-more">
+					<text class="no-more-text">没有更多了</text>
+				</view>
+				<view v-else class="load-more" @click="loadMoreComments">
+					<text class="load-more-text">点击加载更多</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 输入框 -->
+		<view class="footer-box">
+			<view class="input-box" @click="checkLogin">
+				<input 
+					v-model="commentContentStr" 
+					type="text" 
+					:disabled="isLoggedIn == false"
+					:focus="inputFocus"
+					@blur="handleInputBlur"
+					:placeholder="inputPlaceholder"
+					class="input-field"
+				/>
+			</view>
+			<view class="send-btn" :class="{ active: canSend == true }" @click="send">
+				<text class="send-text" :class="{ 'send-text-active': canSend == true }">{{ sendBtnText }}</text>
+			</view>
+		</view>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { onLoad, onReachBottom } from '@dcloudio/uni-app'
+import { useUserStore, initUserInfoAction } from '@/stores/user.uts'
+import { useLikeStore, toggleLike, batchSetLikeStatus, getLikeStatus, getLikeCount, isLikeProcessing } from '@/stores/like.uts'
+import { getTrendDetail, addComment, getCommentList, addReply, getReplyList } from '@/api/discover.uts'
+import { GetCommentListParams, GetReplyListParams, AddReplyParams, AddCommentParams, GetTrendDetailParams } from '@/api/types/discoverTypes.uts'
+import { COMMENT_MODULE_TREND } from '@/common/config/businessCodes.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import { addVisitor } from '@/api/behavior.uts'
+import { AddVisitorParams } from '@/api/types/behaviorTypes.uts'
+import DynamicItem from '@/components/business/DynamicItem.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { getLocationInfo } from '@/common/utils/location.uts'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	getChatList as getChatListFn, 
+	getChatListRef,
+	handleShareToChat as handleShareToChatFn
+} from '@/common/composables/useChatAndShare.uts'
+import { 
+	handleShareWechat as handleShareWechatFn,
+	handleShareMoments as handleShareMomentsFn,
+	handleCopyLink as handleCopyLinkFn,
+	handleShowQrcode as handleShowQrcodeFn
+} from '@/common/composables/useShareUi.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== 类定义 ====================
+class InfoData {
+	kid: string = ''
+	userKid: string = ''
+	nickName: string = ''
+	userImage: string = ''
+	sex: string = ''
+	age: string = ''
+	publishTime: string = ''
+	discoverContent: string = ''
+	insertType: number = 0
+	picList: Array<any> = []
+	mediaName: string = ''
+	videoPic: string = ''
+	line: UTSJSONObject | null = null
+	discoverAddress: string = ''
+	distance: string = ''
+	likeNum: number = 0
+	commentNum: number = 0
+	isLike: number = 20
+	level: UTSJSONObject | null = null
+	badge: UTSJSONObject | null = null
+	auditStatus: number = 0
+}
+
+class CommendTempData {
+	userKid: string = ''
+	commentModule: number = COMMENT_MODULE_TREND
+	contentKid: string = ''
+	commentContent: string = ''
+}
+
+class PageListData {
+	contentKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 10
+	status: string = 'loadmore'
+}
+
+class ReplyTargetData {
+	commentKid: string = ''
+	userKid: string = ''
+	nickname: string = ''
+}
+
+// ==================== 常量 ====================
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+// ==================== Store ====================
+const userStore = useUserStore()
+
+// ==================== 响应式数据 ====================
+const initFinish = ref<boolean>(false)
+const loading = ref<boolean>(false)
+const inputFocus = ref<boolean>(false)
+const flag = ref<boolean>(true)
+const replyMode = ref<boolean>(false)
+const latitude = ref<number>(0)
+const longitude = ref<number>(0)
+
+// 动态详情
+const info = ref<InfoData>(new InfoData())
+const hasInfoData = ref<boolean>(false)
+
+// 评论相关
+const commendTemp = ref<CommendTempData>(new CommendTempData())
+const commendList = ref<Array<UTSJSONObject>>([])
+const pageList = ref<PageListData>(new PageListData())
+const replyTarget = ref<ReplyTargetData>(new ReplyTargetData())
+const hasReplyTarget = ref<boolean>(false)
+
+// 输入框内容（用于 v-model）
+const commentContentStr = ref<string>('')
+
+// 分享相关状态
+const showSharePopup = ref(false)
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	desc: '',
+	summary: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+})
+const shareChatList = ref<Array<UTSJSONObject>>([])
+
+// ==================== Store 访问辅助函数 ====================
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+const isUserLoggedIn = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// ==================== 属性访问辅助函数 ====================
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+const getItemNumberProp = (item: UTSJSONObject | null, key: string): number => {
+	if (item == null) return 0
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val == null) return 0
+		const num = parseInt(val.toString())
+		return (isNaN(num) == false) ? num : 0
+	} catch (e) {
+		return 0
+	}
+}
+
+const getItemArrayProp = (item: UTSJSONObject | null, key: string): Array<UTSJSONObject> => {
+	if (item == null) return []
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val == null) return []
+		if (Array.isArray(val) == true) {
+			return val as Array<UTSJSONObject>
+		}
+		return []
+	} catch (e) {
+		return []
+	}
+}
+
+// ==================== 计算属性 ====================
+const isLoggedIn = computed((): boolean => {
+	return isUserLoggedIn()
+})
+
+const hasInfo = computed((): boolean => {
+	return hasInfoData.value == true
+})
+
+const commendListLength = computed((): number => {
+	return commendList.value.length
+})
+
+const pageListStatus = computed((): string => {
+	return pageList.value.status
+})
+
+const inputPlaceholder = computed((): string => {
+	if (isUserLoggedIn() == false) {
+		return '登录后可评论'
+	}
+	if (replyMode.value == true && hasReplyTarget.value == true) {
+		return '回复 @' + replyTarget.value.nickname
+	}
+	return '请输入评论'
+})
+
+const canSend = computed((): boolean => {
+	if (isUserLoggedIn() == false) return false
+	const content = commentContentStr.value.trim()
+	return content != ''
+})
+
+const sendBtnText = computed((): string => {
+	return isUserLoggedIn() ? '发布' : '登录'
+})
+
+// ==================== 格式化函数（必须在 dynamicItemData 之前定义）====================
+
+// 将日期字符串转换为 iOS 兼容格式
+const toIOSDateString = (timeStr: string): string => {
+	if (timeStr == null || timeStr == '') return ''
+	// iOS 不支持 "yyyy-MM-dd HH:mm:ss" 格式，需要转换为 "yyyy-MM-ddTHH:mm:ss"
+	// 将空格替换为 T
+	return timeStr.replace(' ', 'T')
+}
+
+const formatTime = (timeStr: string): string => {
+	if (timeStr == null || timeStr == '') return ''
+	
+	if (timeStr.includes('月') == true || timeStr.includes('日') == true) {
+		return timeStr
+	}
+	
+	try {
+		// 转换为 iOS 兼容格式
+		const iosDateStr = toIOSDateString(timeStr)
+		const date = new Date(iosDateStr)
+		const year = date.getFullYear()
+		const month = (date.getMonth() + 1).toString().padStart(2, '0')
+		const day = date.getDate().toString().padStart(2, '0')
+		const hours = date.getHours().toString().padStart(2, '0')
+		const minutes = date.getMinutes().toString().padStart(2, '0')
+		const seconds = date.getSeconds().toString().padStart(2, '0')
+		return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+	} catch (e) {
+		return timeStr
+	}
+}
+
+const formatCommentTime = (timeStr: string): string => {
+	if (timeStr == null || timeStr == '') return ''
+	
+	if (timeStr.includes('月') == true && timeStr.includes('日') == true) {
+		return timeStr
+	}
+	
+	try {
+		// 转换为 iOS 兼容格式
+		const iosDateStr = toIOSDateString(timeStr)
+		const date = new Date(iosDateStr)
+		const now = new Date()
+		const diff = now.getTime() - date.getTime()
+		const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+		
+		const hours = date.getHours()
+		const minutes = date.getMinutes()
+		const period = hours >= 12 ? '下午' : '上午'
+		let displayHours = hours > 12 ? hours - 12 : hours
+		if (hours == 0) displayHours = 12
+		const minutesStr = minutes.toString().padStart(2, '0')
+		
+		if (days == 0) {
+			return `今天${period} ${displayHours}:${minutesStr}`
+		} else if (days == 1) {
+			return `昨天${period} ${displayHours}:${minutesStr}`
+		} else {
+			const month = date.getMonth() + 1
+			const day = date.getDate()
+			return `${month}月${day}日${period} ${displayHours}:${minutesStr}`
+		}
+	} catch (e) {
+		return timeStr
+	}
+}
+
+const dynamicItemData = computed((): UTSJSONObject => {
+	if (hasInfoData.value == false) {
+		const emptyData = {} as UTSJSONObject
+		return emptyData
+	}
+	
+	// 处理图片列表
+	let picList: Array<string> = []
+	const infoPicList = info.value.picList
+	if (infoPicList != null && infoPicList.length > 0) {
+		for (let i = 0; i < infoPicList.length; i++) {
+			const p = infoPicList[i]
+			if (p == null) continue
+			const pStr = p.toString()
+			if (pStr.indexOf('http') >= 0) {
+				// 已经是 URL 字符串
+				picList.push(pStr)
+			} else if (p instanceof UTSJSONObject) {
+				const picUrl = (p as UTSJSONObject).getString('picUrl') ?? ''
+				if (picUrl != '') {
+					picList.push(picUrl)
+				}
+			} else if (pStr != '') {
+				picList.push(pStr)
+			}
+		}
+	}
+	
+	const result = {
+		kid: info.value.kid,
+		userKid: info.value.userKid,
+		userImage: (info.value.userImage != '') ? info.value.userImage : defaultAvatar,
+		nickName: info.value.nickName,
+		publishTime: formatTime(info.value.publishTime),
+		discoverContent: info.value.discoverContent,
+		insertType: info.value.insertType,
+		picList: picList,
+		videoPic: info.value.videoPic,
+		mediaName: info.value.mediaName,
+		discoverAddress: info.value.discoverAddress,
+		distance: info.value.distance,
+		likeNum: info.value.likeNum,
+		isLike: info.value.isLike,
+		commentNum: info.value.commentNum,
+		level: info.value.level,
+		badge: info.value.badge,
+		line: info.value.line,
+		auditStatus: info.value.auditStatus
+	} as UTSJSONObject
+	return result
+})
+
+// ==================== 模板辅助函数 ====================
+const getCommentAvatar = (item: UTSJSONObject): string => {
+	const evaluateUserImage = getItemStringProp(item, 'evaluateUserImage')
+	if (evaluateUserImage != '') return evaluateUserImage
+	const image = getItemStringProp(item, 'image')
+	if (image != '') return image
+	return defaultAvatar
+}
+
+const getCommentNickname = (item: UTSJSONObject): string => {
+	const evaluateUserNickName = getItemStringProp(item, 'evaluateUserNickName')
+	if (evaluateUserNickName != '') return evaluateUserNickName
+	const nickname = getItemStringProp(item, 'nickname')
+	if (nickname != '') return nickname
+	return '用户'
+}
+
+const getCommentTime = (item: UTSJSONObject): string => {
+	const evaluateTime = getItemStringProp(item, 'evaluateTime')
+	if (evaluateTime != '') return evaluateTime
+	const commentTime = getItemStringProp(item, 'commentTime')
+	return commentTime
+}
+
+const getCommentContent = (item: UTSJSONObject): string => {
+	return getItemStringProp(item, 'commentContent')
+}
+
+const getReplyContent = (item: UTSJSONObject): string => {
+	// 获取被回复用户的昵称（如果有）
+	const beCommentUserNickName = getItemStringProp(item, 'beCommentUserNickName')
+	
+	// 获取回复内容
+	let content = getItemStringProp(item, 'replyContent')
+	if (content == '') {
+		content = getItemStringProp(item, 'commentContent')
+	}
+	
+	// 如果有被回复用户，显示"回复 @用户名: 内容"格式
+	if (beCommentUserNickName != '') {
+		return '回复 @' + beCommentUserNickName + ': ' + content
+	}
+	
+	return content
+}
+
+const hasCommentPics = (item: UTSJSONObject): boolean => {
+	const picUrlList = getItemArrayProp(item, 'picUrlList')
+	return picUrlList.length > 0
+}
+
+const getCommentPicList = (item: UTSJSONObject): Array<UTSJSONObject> => {
+	return getItemArrayProp(item, 'picUrlList')
+}
+
+const getPicUrl = (p: UTSJSONObject): string => {
+	const picUrl = getItemStringProp(p, 'picUrl')
+	if (picUrl != '') return picUrl
+	if (p != null) return p.toString()
+	return ''
+}
+
+const hasReplyList = (item: UTSJSONObject): boolean => {
+	const replyList = getItemArrayProp(item, 'replyList')
+	return replyList.length > 0
+}
+
+const getReplyListSlice = (item: UTSJSONObject): Array<UTSJSONObject> => {
+	const replyList = getItemArrayProp(item, 'replyList')
+	if (replyList.length <= 2) return replyList
+	const result: Array<UTSJSONObject> = []
+	for (let i = 0; i < 2 && i < replyList.length; i++) {
+		result.push(replyList[i])
+	}
+	return result
+}
+
+const getReplyCount = (item: UTSJSONObject): number => {
+	return getItemNumberProp(item, 'replyCount')
+}
+
+const handleInputBlur = () => {
+	inputFocus.value = false
+}
+
+// ==================== 业务函数 ====================
+const checkLogin = () => {
+	if (isUserLoggedIn() == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pagesUser/login/index'
+			})
+		}, 1500)
+	}
+}
+
+const getLocation = async () => {
+	try {
+		const location = await getLocationInfo()
+		const locationStr = JSON.stringify(location)
+		const locationObj = JSON.parse(locationStr) as UTSJSONObject
+		const latVal = locationObj.get('latitude')
+		const lngVal = locationObj.get('longitude')
+		if (latVal != null) {
+			const lat = parseFloat(latVal.toString())
+			if (isNaN(lat) == false) latitude.value = lat
+		}
+		if (lngVal != null) {
+			const lng = parseFloat(lngVal.toString())
+			if (isNaN(lng) == false) longitude.value = lng
+		}
+	} catch (err) {
+		handleSilentError(err, '定位')
+		latitude.value = 30.5928
+		longitude.value = 114.3055
+	}
+}
+
+const recordVisitor = async () => {
+	try {
+		let currentUserKid = getUserKidFromStore()
+		const targetUserKid = info.value.userKid
+		const dynamicKid = info.value.kid
+		
+		if (targetUserKid == null || targetUserKid == '') {
+			console.log('动态作者ID为空，跳过访客记录')
+			return
+		}
+		
+		if (currentUserKid != '' && currentUserKid == targetUserKid) {
+			console.log('自己访问自己，跳过访客记录')
+			return
+		}
+		
+		// 未登录用户记录为匿名访客（后端会将空值转为 '0'）
+		if (currentUserKid == '') {
+			console.log('未登录用户，将记录为匿名访客')
+		}
+		
+		const visitorParams = new AddVisitorParams()
+		visitorParams.userKid = targetUserKid
+		visitorParams.visitUserKid = currentUserKid
+		visitorParams.visitType = 'dynamic'
+		visitorParams.targetKid = dynamicKid
+		await addVisitor(visitorParams)
+		console.log('动态页面访客记录成功')
+	} catch (error) {
+		handleSilentError(error, '动态页面访客记录')
+	}
+}
+
+const goToLineDetail = (lineKid: string) => {
+	uni.navigateTo({
+		url: `/pagesBusiness/routeInfo/index?lineKid=${lineKid}`
+	})
+}
+
+const handleLineClick = (line: UTSJSONObject) => {
+	const lineKid = getItemStringProp(line, 'kid')
+	if (lineKid != '') {
+		goToLineDetail(lineKid)
+	}
+}
+
+const handleUserProfile = (item: UTSJSONObject) => {
+	let userKid = getItemStringProp(item, 'userKid')
+	if (userKid == '') {
+		userKid = info.value.userKid
+	}
+	if (userKid != '') {
+		uni.navigateTo({
+			url: `/pagesUser/persionInfo/index?id=${userKid}`
+		})
+	}
+}
+
+const handleCommentUserProfile = (item: UTSJSONObject) => {
+	let userKid = getItemStringProp(item, 'evaluateUserKid')
+	if (userKid == '') {
+		userKid = getItemStringProp(item, 'userKid')
+	}
+	if (userKid != '') {
+		uni.navigateTo({
+			url: `/pagesUser/persionInfo/index?id=${userKid}`
+		})
+	}
+}
+
+const handleClickComment = (item: UTSJSONObject) => {
+	checkLogin()
+	if (isUserLoggedIn() == false) return
+	
+	replyMode.value = true
+	hasReplyTarget.value = true
+	
+	let commentKid = getItemStringProp(item, 'commentKid')
+	if (commentKid == '') {
+		commentKid = getItemStringProp(item, 'kid')
+	}
+	
+	let userKid = getItemStringProp(item, 'userKid')
+	if (userKid == '') {
+		userKid = getItemStringProp(item, 'evaluateUserKid')
+	}
+	
+	let nickname = getItemStringProp(item, 'evaluateUserNickName')
+	if (nickname == '') {
+		nickname = getItemStringProp(item, 'nickname')
+	}
+	if (nickname == '') {
+		nickname = '用户'
+	}
+	
+	replyTarget.value.commentKid = commentKid
+	replyTarget.value.userKid = userKid
+	replyTarget.value.nickname = nickname
+	inputFocus.value = true
+}
+
+const handleDoUp = async (item: UTSJSONObject) => {
+	checkLogin()
+	if (isUserLoggedIn() == false) return
+	if (hasInfoData.value == false) return
+	
+	const infoKid = info.value.kid
+	if (infoKid == '') return
+	
+	// 防止重复点击
+	if (isLikeProcessing(infoKid) == true) return
+	
+	if (flag.value == false) return
+	flag.value = false
+	
+	try {
+		const currentUserKid = getUserKidFromStore()
+		if (currentUserKid == '') {
+			flag.value = true
+			return
+		}
+		
+		await toggleLike(currentUserKid, infoKid)
+		
+		// 从全局 store 回填到详情数据
+		const isLiked = getLikeStatus(infoKid)
+		const likeCount = getLikeCount(infoKid)
+		info.value.isLike = (isLiked == true) ? 10 : 20
+		info.value.likeNum = likeCount
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '点赞操作', null)
+		}
+	} finally {
+		flag.value = true
+	}
+}
+
+const handleMoreOptions = async () => {
+	console.log('[Commend] handleMoreOptions called - 分享动态详情')
+	
+	try {
+		// 构建分享标题
+		const nickName = info.value.nickName
+		const shareTitle = nickName != '' ? `${nickName}的动态` : '网约向导趣游玩'
+		
+		// 构建分享描述
+		let shareDesc = '发现精彩动态，一起来看看吧！'
+		const content = info.value.discoverContent
+		if (content != '') {
+			// 截取前50个字符作为描述
+			shareDesc = content.length > 50 ? content.substring(0, 50) + '...' : content
+		}
+		
+		// 获取分享图片
+		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		const insertType = info.value.insertType
+		
+		if (insertType == 1) {
+			// 图片类型 - 使用第一张图片
+			const picList = info.value.picList
+			if (picList != null && picList.length > 0) {
+				const firstPic = picList[0]
+				if (firstPic != null) {
+					const firstPicStr = firstPic.toString()
+					if (firstPicStr.indexOf('http') >= 0) {
+						imageStr = firstPicStr
+					} else if (firstPic instanceof UTSJSONObject) {
+						const picUrl = (firstPic as UTSJSONObject).getString('picUrl') ?? ''
+						if (picUrl != '') {
+							imageStr = picUrl
+						}
+					} else if (firstPicStr != '') {
+						imageStr = firstPicStr
+					}
+				}
+			}
+		} else if (insertType == 3) {
+			// 视频类型 - 使用视频封面
+			const videoPic = info.value.videoPic
+			if (videoPic != '') {
+				imageStr = videoPic
+			}
+		}
+		
+		// 构建分享链接
+		const kid = info.value.kid
+		let shareLink = 'https://m.wyxdapp.com/#/pagesBusiness/commend/index?kid=' + kid
+		
+		// 获取当前用户的推广短号
+		let referrerShortKid = ''
+		try {
+			const storeObj = toJsonObj(userStore)
+			if (storeObj != null) {
+				const userInfoVal = storeObj.get('userInfo')
+				if (userInfoVal != null) {
+					const userInfoJson = JSON.stringify(userInfoVal)
+					if (userInfoJson != null && userInfoJson != '') {
+						const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+						const shortKidVal = userInfoObj.get('shortKid')
+						if (shortKidVal != null && shortKidVal.toString() != '') {
+							referrerShortKid = shortKidVal.toString()
+							// 添加推广参数到链接
+							if (shareLink.indexOf('?') >= 0) {
+								shareLink = shareLink + '&ref=' + referrerShortKid
+							} else {
+								shareLink = shareLink + '?ref=' + referrerShortKid
+							}
+						}
+					}
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 构建分享数据
+		const newPayload: UTSJSONObject = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: imageStr,
+			userId: info.value.userKid,
+			referrerShortKid: referrerShortKid
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleMoreOptions] 分享数据构建完成:')
+		console.log('[handleMoreOptions] - title:', shareTitle)
+		console.log('[handleMoreOptions] - desc:', shareDesc)
+		console.log('[handleMoreOptions] - imageUrl:', imageStr)
+		console.log('[handleMoreOptions] - link:', shareLink)
+	} catch (e) {
+		handleSilentError(e, '构建分享数据')
+		// 使用默认值
+		sharePayload.value = {
+			title: '网约向导趣游玩',
+			summary: '发现精彩动态，一起来看看吧！',
+			desc: '发现精彩动态，一起来看看吧！',
+			link: 'https://m.wyxdapp.com',
+			url: 'https://m.wyxdapp.com',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		console.log('[Commend] getChatListFn result:', JSON.stringify(result))
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+				console.log('[Commend] assigned result to shareChatList, new length:', shareChatList.value.length)
+			} else {
+				// fallback: 安全解析模块级 chatList
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const chatList = getChatListRef()
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {}
+					
+					if (fallbackArr.length == 0) {
+						try {
+							const chatList = getChatListRef()
+							const chatListObj = JSON.parse(JSON.stringify(chatList)) as UTSJSONObject
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										try {
+											const parsedV = JSON.parse(JSON.stringify(v))
+											if (Array.isArray(parsedV) == true) {
+												fallbackArr = parsedV as Array<UTSJSONObject>
+											}
+										} catch (e) {}
+									}
+								} catch (e) {}
+							}
+						} catch (e) {}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+					console.log('[Commend] used fallback chatList, length:', shareChatList.value.length)
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '解析会话列表')
+		}
+	} catch (e) {
+		handleSilentError(e, '获取会话列表')
+		shareChatList.value = []
+	}
+
+	showSharePopup.value = true
+}
+
+// 分享相关事件处理
+const handleShareToChat = (data: UTSJSONObject | null) => {
+	console.log('[Commend] handleShareToChat called with data:', JSON.stringify(data))
+	
+	// 🔧 修复：从 data 中提取 chatItem（SharePopup 传递的是 { chatItem, shareData }）
+	let chatItem: UTSJSONObject = {} as UTSJSONObject
+	try {
+		const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+		const chatItemVal = dataObj.get('chatItem')
+		if (chatItemVal != null) {
+			chatItem = chatItemVal as UTSJSONObject
+			console.log('[Commend] 成功提取 chatItem:', JSON.stringify(chatItem))
+		} else {
+			console.error('[Commend] ❌ data 中没有 chatItem 字段')
+		}
+	} catch (e) {
+		handleSilentError(e, '解析分享数据')
+	}
+	
+	if (chatItem == null) {
+		uni.showToast({
+			title: '分享失败，会话信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 构建动态信息对象用于分享（使用动态卡片格式）
+	// 🔧 确保字段完整，便于 useChatAndShare.uts 正确识别为动态内容
+	const contentText = info.value.discoverContent != '' ? info.value.discoverContent : '精彩动态分享'
+	
+	const dynamicInfo = {
+		kid: info.value.kid,
+		id: info.value.kid,
+		title: contentText.length > TEXT_PREVIEW_LENGTH ? contentText.substring(0, TEXT_PREVIEW_LENGTH) + '...' : contentText,
+		content: contentText,
+		text: contentText,
+		description: contentText,  // 🔧 添加 description 字段
+		image: '',
+		coverImage: '',
+		// 🔧 添加用户信息字段，用于卡片显示
+		userKid: info.value.userKid,
+		nickName: info.value.nickName,
+		userImage: info.value.userImage
+	}
+	
+	// 获取封面图片
+	const insertType = info.value.insertType
+	if (insertType == 1) {
+		// 图片类型 - 使用第一张图片
+		const picList = info.value.picList
+		if (picList.length > 0) {
+			const firstPic = picList[0]
+			if (firstPic != null) {
+				// 🔧 修复：安全地获取图片 URL
+				// firstPic 可能是字符串或对象，需要分别处理
+				let picUrl = ''
+				try {
+					// 先尝试作为字符串处理
+					const picStr = firstPic.toString()
+					if (picStr != '' && picStr.indexOf('http') >= 0) {
+						// 已经是 URL 字符串
+						picUrl = picStr
+					} else if (firstPic instanceof UTSJSONObject) {
+						// 尝试作为对象处理
+						const picUrlFromObj = (firstPic as UTSJSONObject).getString('picUrl') ?? ''
+						if (picUrlFromObj != '') {
+							picUrl = picUrlFromObj
+						}
+					}
+				} catch (e) {
+					handleSilentError(e, '获取分享图片URL')
+				}
+				
+				if (picUrl != '') {
+					dynamicInfo.image = picUrl
+					dynamicInfo.coverImage = picUrl
+				}
+			}
+		}
+	} else if (insertType == 3) {
+		// 视频类型 - 使用视频封面
+		const videoPic = info.value.videoPic
+		if (videoPic != '') {
+			dynamicInfo.image = videoPic
+			dynamicInfo.coverImage = videoPic
+		}
+	}
+	
+	// 🔧 如果没有图片，使用默认动态图片
+	if (dynamicInfo.image == '') {
+		dynamicInfo.image = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+		dynamicInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+	}
+	
+	console.log('[Commend] handleShareToChat - dynamicInfo:', JSON.stringify(dynamicInfo))
+	console.log('[Commend] - 动态ID:', dynamicInfo.kid)
+	console.log('[Commend] - 标题:', dynamicInfo.title)
+	console.log('[Commend] - 内容:', dynamicInfo.content)
+	console.log('[Commend] - 图片:', dynamicInfo.image)
+	
+	// 🔧 修复：传递包含 chatItem 的对象作为第一个参数
+	const shareData = {
+		chatItem: chatItem
+	} as UTSJSONObject
+	
+	handleShareToChatFn(shareData, dynamicInfo)
+}
+
+const handleShareWechat = (data: UTSJSONObject | null) => {
+	handleShareWechatFn(data)
+}
+
+const handleShareMoments = (data: UTSJSONObject | null) => {
+	handleShareMomentsFn(data)
+}
+
+const handleCopyLink = (data: UTSJSONObject | null) => {
+	handleCopyLinkFn(data)
+}
+
+const handleShowQrcode = (data: UTSJSONObject | null) => {
+	handleShowQrcodeFn(data)
+}
+
+const previewCommentImage = (item: UTSJSONObject, index: number) => {
+	const picList = getItemArrayProp(item, 'picUrlList')
+	let urls: Array<string> = []
+	for (let i = 0; i < picList.length; i++) {
+		const p = picList[i]
+		const picUrl = getItemStringProp(p, 'picUrl')
+		if (picUrl != '') {
+			urls.push(picUrl)
+		} else if (p != null) {
+			urls.push(p.toString())
+		}
+	}
+	uni.previewImage({
+		urls: urls,
+		current: index
+	})
+}
+
+const viewAllReplies = async (item: UTSJSONObject) => {
+	let commentKid = getItemStringProp(item, 'commentKid')
+	if (commentKid == '') {
+		commentKid = getItemStringProp(item, 'kid')
+	}
+	if (commentKid == '') return
+	
+	try {
+		const params = new GetReplyListParams()
+		params.commentKid = commentKid
+		params.pageNumber = 1
+		params.pageSize = 50
+		const res = await getReplyList(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					const itemStr = JSON.stringify(item)
+					const itemObj = JSON.parse(itemStr) as UTSJSONObject
+					itemObj.set('replyList', entitiesVal)
+					
+					const countVal = dataObj.get('count')
+					if (countVal != null) {
+						const count = parseInt(countVal.toString())
+						if (isNaN(count) == false) {
+							itemObj.set('replyCount', count)
+						}
+					} else {
+						itemObj.set('replyCount', (entitiesVal as Array<UTSJSONObject>).length)
+					}
+				}
+			}
+		}
+	} catch (error) {
+		handleSilentError(error, '获取回复列表')
+	}
+}
+
+const getCommendList = async () => {
+	if (pageList.value.status == 'loading' || pageList.value.status == 'nomore') {
+		return
+	}
+	
+	// 检查 contentKid 是否有效
+	const contentKidVal = pageList.value.contentKid
+	if (contentKidVal == null || contentKidVal == '') {
+		console.error('获取评论列表失败: contentKid为空')
+		pageList.value.status = 'loadmore'
+		return
+	}
+	
+	try {
+		pageList.value.status = 'loading'
+		
+		const params = new GetCommentListParams()
+		params.discoverKid = contentKidVal
+		params.pageNumber = pageList.value.pageNumber
+		params.pageSize = pageList.value.pageSize
+		params.commentModule = commendTemp.value.commentModule
+		const res = await getCommentList(params)
+		
+		let entities: Array<UTSJSONObject> = []
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as Array<UTSJSONObject>
+				} else if (Array.isArray(dataVal) == true) {
+					entities = dataVal as Array<UTSJSONObject>
+				}
+				
+				// 同步评论总数
+				const countVal = dataObj.get('count')
+				if (countVal != null) {
+					const count = parseInt(countVal.toString())
+					if (isNaN(count) == false) {
+						info.value.commentNum = count
+						uni.setNavigationBarTitle({
+							title: `评论(${count})`
+						})
+					}
+				}
+			}
+		}
+		
+		// 处理每条评论，如果有回复列表则加载前2条
+		if (entities.length > 0) {
+			for (let i = 0; i < entities.length; i++) {
+				const item = entities[i]
+				const replyCount = getItemNumberProp(item, 'replyCount')
+				const replyList = getItemArrayProp(item, 'replyList')
+				
+				if (replyCount > 0 && replyList.length == 0) {
+					try {
+						let commentKid = getItemStringProp(item, 'commentKid')
+						if (commentKid == '') {
+							commentKid = getItemStringProp(item, 'kid')
+						}
+						
+						const replyParams = new GetReplyListParams()
+						replyParams.commentKid = commentKid
+						replyParams.pageNumber = 1
+						replyParams.pageSize = 2
+						const replyRes = await getReplyList(replyParams)
+						
+						if (replyRes != null) {
+							const replyResStr = JSON.stringify(replyRes)
+							const replyResObj = JSON.parse(replyResStr) as UTSJSONObject
+							const replyDataVal = replyResObj.get('data')
+							if (replyDataVal != null) {
+								const replyDataStr = JSON.stringify(replyDataVal)
+								const replyDataObj = JSON.parse(replyDataStr) as UTSJSONObject
+								const replyEntitiesVal = replyDataObj.get('entities')
+								if (replyEntitiesVal != null && Array.isArray(replyEntitiesVal) == true) {
+									const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+									itemObj.set('replyList', replyEntitiesVal)
+									
+									const replyCountVal = replyDataObj.get('count')
+									if (replyCountVal != null) {
+										const rc = parseInt(replyCountVal.toString())
+										if (isNaN(rc) == false) {
+											itemObj.set('replyCount', rc)
+										}
+									}
+									entities[i] = itemObj
+								}
+							}
+						}
+					} catch (e) {
+						handleSilentError(e, '加载回复')
+					}
+				}
+			}
+			
+			const currentList = commendList.value
+			for (let j = 0; j < entities.length; j++) {
+				currentList.push(entities[j])
+			}
+			commendList.value = currentList
+			pageList.value.status = 'loadmore'
+		} else {
+			pageList.value.status = 'nomore'
+		}
+	} catch (error) {
+		handleSilentError(error, '获取评论列表')
+		pageList.value.status = 'loadmore'
+		// 显示用户友好的错误提示
+		let errorMsg = '获取评论列表失败'
+		if (error != null) {
+			const errorStr = error.toString()
+			if (errorStr.indexOf('网络') >= 0 || errorStr.indexOf('network') >= 0) {
+				errorMsg = '网络连接失败，请检查网络'
+			} else if (errorStr.indexOf('timeout') >= 0 || errorStr.indexOf('超时') >= 0) {
+				errorMsg = '请求超时，请稍后重试'
+			}
+		}
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	}
+}
+
+const loadMoreComments = () => {
+	if (pageList.value.status == 'loadmore') {
+		pageList.value.pageNumber++
+		getCommendList()
+	}
+}
+
+const send = async () => {
+	checkLogin()
+	if (isUserLoggedIn() == false) return
+	
+	const content = commentContentStr.value.trim()
+	if (content == '') {
+		uni.showToast({
+			title: '请输入评论内容',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (flag.value == false) return
+	flag.value = false
+	
+	try {
+		const currentUserKid = getUserKidFromStore()
+		
+		// 回复评论
+		if (replyMode.value == true && hasReplyTarget.value == true && replyTarget.value.commentKid != '') {
+			const payload = new AddReplyParams()
+			payload.userKid = currentUserKid
+			payload.commentKid = replyTarget.value.commentKid
+			payload.replyContent = content
+			payload.idempotencyKey = `${currentUserKid}-${replyTarget.value.commentKid}-${Date.now()}`
+			
+			await addReply(payload)
+			
+			uni.showToast({
+				title: '回复成功',
+				icon: 'success'
+			})
+			
+			replyMode.value = false
+			hasReplyTarget.value = false
+			replyTarget.value = new ReplyTargetData()
+			commentContentStr.value = ''
+			commendTemp.value.commentContent = ''
+			flag.value = true
+			
+			// 刷新评论列表
+			pageList.value.pageNumber = 1
+			pageList.value.status = 'loadmore'
+			commendList.value = []
+			getCommendList()
+			return
+		}
+		
+		// 新增评论
+		const commentPayload = new AddCommentParams()
+		commentPayload.userKid = currentUserKid
+		commentPayload.contentKid = commendTemp.value.contentKid
+		commentPayload.commentContent = content
+		commentPayload.commentModule = commendTemp.value.commentModule
+		await addComment(commentPayload)
+		
+		commentContentStr.value = ''
+		commendTemp.value.commentContent = ''
+		flag.value = true
+		
+		// 更新评论数
+		info.value.commentNum = info.value.commentNum + 1
+		uni.setNavigationBarTitle({
+			title: `评论(${info.value.commentNum})`
+		})
+		
+		// 刷新评论列表
+		safeSetTimeout(() => {
+			pageList.value.pageNumber = 1
+			pageList.value.status = 'loadmore'
+			commendList.value = []
+			getCommendList()
+		}, 650)
+		
+		uni.showToast({
+			title: '评论成功',
+			icon: 'success'
+		})
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '评论', null)
+		}
+		flag.value = true
+	}
+}
+
+const getData = async (data: GetTrendDetailParams) => {
+	try {
+		loading.value = true
+		const res = await getTrendDetail(data)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			
+			if (dataVal != null) {
+				const detailStr = JSON.stringify(dataVal)
+				const detail = JSON.parse(detailStr) as UTSJSONObject
+				
+				// 解析详情数据
+				let kid = ''
+				const kidVal = detail.get('kid')
+				const dynamicKidVal = detail.get('dynamicKid')
+				if (kidVal != null && kidVal.toString() != '') {
+					kid = kidVal.toString()
+				} else if (dynamicKidVal != null && dynamicKidVal.toString() != '') {
+					kid = dynamicKidVal.toString()
+				}
+				
+				const userKidVal = detail.get('userKid')
+				const userKid = (userKidVal != null) ? userKidVal.toString() : ''
+				
+				let nickName = ''
+				const nicknameVal = detail.get('nickname')
+				const nickNameVal = detail.get('nickName')
+				if (nicknameVal != null && nicknameVal.toString() != '') {
+					nickName = nicknameVal.toString()
+				} else if (nickNameVal != null && nickNameVal.toString() != '') {
+					nickName = nickNameVal.toString()
+				}
+				
+				let userImage = defaultAvatar
+				const avatarVal = detail.get('avatar')
+				const userImageVal = detail.get('userImage')
+				if (avatarVal != null && avatarVal.toString() != '') {
+					userImage = avatarVal.toString()
+				} else if (userImageVal != null && userImageVal.toString() != '') {
+					userImage = userImageVal.toString()
+				}
+				
+				const sexVal = detail.get('sex')
+				const sex = (sexVal != null) ? sexVal.toString() : ''
+				
+				const ageVal = detail.get('age')
+				const age = (ageVal != null) ? ageVal.toString() : ''
+				
+				let publishTime = ''
+				const publishTimeVal = detail.get('publishTime')
+				const createTimeVal = detail.get('createTime')
+				if (publishTimeVal != null && publishTimeVal.toString() != '') {
+					publishTime = publishTimeVal.toString()
+				} else if (createTimeVal != null && createTimeVal.toString() != '') {
+					publishTime = createTimeVal.toString()
+				}
+				
+				let discoverContent = ''
+				const contentVal = detail.get('content')
+				const discoverContentVal = detail.get('discoverContent')
+				if (contentVal != null && contentVal.toString() != '') {
+					discoverContent = contentVal.toString()
+				} else if (discoverContentVal != null && discoverContentVal.toString() != '') {
+					discoverContent = discoverContentVal.toString()
+				}
+				
+				let insertType = 0
+				const insertTypeVal = detail.get('insertType')
+				if (insertTypeVal != null) {
+					const it = parseInt(insertTypeVal.toString())
+					if (isNaN(it) == false) insertType = it
+				}
+				
+				let picList: Array<any> = []
+				const imagesVal = detail.get('images')
+				const picListVal = detail.get('picList')
+				if (imagesVal != null && Array.isArray(imagesVal) == true) {
+					picList = imagesVal as Array<any>
+				} else if (picListVal != null && Array.isArray(picListVal) == true) {
+					picList = picListVal as Array<any>
+				}
+				
+				let mediaName = ''
+				const mediaNameVal = detail.get('mediaName')
+				const videoVal = detail.get('video')
+				if (mediaNameVal != null && mediaNameVal.toString() != '') {
+					mediaName = mediaNameVal.toString()
+				} else if (videoVal != null && videoVal.toString() != '') {
+					mediaName = videoVal.toString()
+				}
+				
+				const videoPicVal = detail.get('videoPic')
+				const videoPic = (videoPicVal != null) ? videoPicVal.toString() : ''
+				
+				const lineVal = detail.get('line')
+				let line: UTSJSONObject | null = null
+				if (lineVal != null) {
+					line = lineVal as UTSJSONObject
+				}
+				
+				let discoverAddress = ''
+				const locationVal = detail.get('location')
+				const discoverAddressVal = detail.get('discoverAddress')
+				if (locationVal != null && locationVal.toString() != '') {
+					discoverAddress = locationVal.toString()
+				} else if (discoverAddressVal != null && discoverAddressVal.toString() != '') {
+					discoverAddress = discoverAddressVal.toString()
+				}
+				
+				const distanceVal = detail.get('distance')
+				const distance = (distanceVal != null) ? distanceVal.toString() : ''
+				
+				let likeNum = 0
+				const likeCountVal = detail.get('likeCount')
+				const likeNumVal = detail.get('likeNum')
+				if (likeCountVal != null) {
+					const lc = parseInt(likeCountVal.toString())
+					if (isNaN(lc) == false) likeNum = lc
+				} else if (likeNumVal != null) {
+					const ln = parseInt(likeNumVal.toString())
+					if (isNaN(ln) == false) likeNum = ln
+				}
+				
+				let commentNum = 0
+				const commentCountVal = detail.get('commentCount')
+				const commentNumVal = detail.get('commentNum')
+				if (commentCountVal != null) {
+					const cc = parseInt(commentCountVal.toString())
+					if (isNaN(cc) == false) commentNum = cc
+				} else if (commentNumVal != null) {
+					const cn = parseInt(commentNumVal.toString())
+					if (isNaN(cn) == false) commentNum = cn
+				}
+				
+				const isLikeVal = detail.get('isLike')
+				const isLike = (isLikeVal == true || isLikeVal == 10) ? 10 : 20
+				
+				const levelVal = detail.get('level')
+				let level: UTSJSONObject | null = null
+				if (levelVal != null) {
+					level = levelVal as UTSJSONObject
+				}
+				
+				const badgeVal = detail.get('badge')
+				let badge: UTSJSONObject | null = null
+				if (badgeVal != null) {
+					badge = badgeVal as UTSJSONObject
+				}
+				
+				let auditStatus = 0
+				const auditStatusVal = detail.get('auditStatus')
+				if (auditStatusVal != null) {
+					const as2 = parseInt(auditStatusVal.toString())
+					if (isNaN(as2) == false) auditStatus = as2
+				}
+				
+				// 设置 info 数据
+				info.value.kid = kid
+				info.value.userKid = userKid
+				info.value.nickName = nickName
+				info.value.userImage = userImage
+				info.value.sex = sex
+				info.value.age = age
+				info.value.publishTime = publishTime
+				info.value.discoverContent = discoverContent
+				info.value.insertType = insertType
+				info.value.picList = picList
+				info.value.mediaName = mediaName
+				info.value.videoPic = videoPic
+				info.value.line = line
+				info.value.discoverAddress = discoverAddress
+				info.value.distance = distance
+				info.value.likeNum = likeNum
+				info.value.commentNum = commentNum
+				info.value.isLike = isLike
+				info.value.level = level
+				info.value.badge = badge
+				info.value.auditStatus = auditStatus
+				hasInfoData.value = true
+				
+				// 同步点赞状态到全局 store
+				if (kid != '') {
+					const likeDataItem = {
+						kid: kid,
+						isLike: isLike,
+						likeNum: likeNum
+					} as UTSJSONObject
+					const likeData: Array<any> = [likeDataItem]
+					batchSetLikeStatus(likeData)
+				}
+				
+				// 设置导航栏标题
+				if (commentNum > 0) {
+					uni.setNavigationBarTitle({
+						title: `评论(${commentNum})`
+					})
+				}
+				
+				pageList.value.contentKid = kid
+				commendTemp.value.contentKid = kid
+				
+				// 记录访客
+				recordVisitor()
+				
+				// 获取评论列表
+				const currentUserKid = getUserKidFromStore()
+				if (currentUserKid != '') {
+					commendTemp.value.userKid = currentUserKid
+				}
+				getCommendList()
+			}
+		}
+		
+		initFinish.value = true
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取动态详情', loading)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 初始化页面布局（状态栏高度等）
+	initPageLayoutComposable()
+	
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	// 因为 App.uvue 的初始化是延迟的，页面可能在初始化完成前就加载了
+	initUserInfoAction()
+	
+	if (options == null) {
+		uni.showToast({
+			title: '动态id出错1',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const optionsStr = JSON.stringify(options)
+	const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+	
+	// 兼容两种参数名：id 和 kid
+	let dynamicId = ''
+	const idVal = optionsObj.get('id')
+	const kidVal = optionsObj.get('kid')
+	
+	if (idVal != null && idVal.toString() != '') {
+		dynamicId = idVal.toString()
+	} else if (kidVal != null && kidVal.toString() != '') {
+		dynamicId = kidVal.toString()
+	}
+	
+	if (dynamicId == '') {
+		uni.showToast({
+			title: '动态id出错2',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 获取位置信息
+	getLocation()
+	
+	// 构建请求数据
+	const dataObj = new GetTrendDetailParams()
+	dataObj.kid = dynamicId
+	
+	const currentUserKid = getUserKidFromStore()
+	if (currentUserKid != '') {
+		dataObj.userKid = currentUserKid
+	}
+	
+	// 传递位置信息
+	if (latitude.value > 0 && longitude.value > 0) {
+		dataObj.latitude = latitude.value
+		dataObj.longitude = longitude.value
+	}
+	
+	getData(dataObj)
+})
+
+onReachBottom(() => {
+	checkLogin()
+	if (pageList.value.status == 'loadmore') {
+		pageList.value.status = 'loading'
+		pageList.value.pageNumber++
+		getCommendList()
+	}
+})
+
+// ==================== Watch ====================
+watch(commentContentStr, (newVal: string, oldVal: string) => {
+	commendTemp.value.commentContent = newVal
+})
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style lang="scss" scoped>
+.page {
+	width: 100%;
+	padding-bottom: 256rpx;
+	background-color: #ffffff;
+}
+
+/* APP端状态栏占位 */
+.status-bar-placeholder {
+	width: 750rpx;
+	background-color: #ffffff;
+}
+
+.bg-white {
+	background-color: #ffffff;
+}
+
+.divider-line {
+	width: 100%;
+	height: 20rpx;
+	background-color: #f5f5f5;
+}
+
+.comment-section {
+	min-height: 200rpx;
+}
+
+.empty-comment-box {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+	padding-bottom: 300rpx;
+	min-height: 500rpx;
+}
+
+.empty-comment-illustration {
+	width: 300rpx;
+	height: 300rpx;
+	margin-bottom: 32rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.empty-bell-icon {
+	width: 200rpx;
+	height: 200rpx;
+}
+
+.bell-body {
+	width: 180rpx;
+	height: 180rpx;
+	background-color: #81D4FA;
+	border-radius: 90rpx;
+}
+
+.bell-clapper {
+	width: 18rpx;
+	height: 48rpx;
+	background-color: #4FC3F7;
+	border-radius: 9rpx;
+	margin-top: -24rpx;
+	margin-left: 81rpx;
+}
+
+.empty-decorative-dot {
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 8rpx;
+}
+
+.dot-blue {
+	background-color: #90CAF9;
+}
+
+.dot-yellow {
+	background-color: #FFD54F;
+}
+
+.dot-purple {
+	background-color: #CE93D8;
+}
+
+.dot-1 {
+	margin-top: 30rpx;
+	margin-left: 40rpx;
+}
+
+.dot-2 {
+	margin-top: 60rpx;
+	margin-right: 50rpx;
+}
+
+.dot-3 {
+	margin-bottom: 80rpx;
+	margin-left: 30rpx;
+}
+
+.dot-4 {
+	margin-top: 100rpx;
+	margin-right: 30rpx;
+}
+
+.dot-5 {
+	margin-bottom: 50rpx;
+	margin-right: 60rpx;
+}
+
+.empty-wind-line {
+	width: 60rpx;
+	height: 4rpx;
+	background-color: rgba(255, 255, 255, 0.6);
+	border-radius: 2rpx;
+}
+
+.wind-line-1 {
+	margin-top: 45rpx;
+	margin-left: 15rpx;
+}
+
+.wind-line-2 {
+	margin-top: 35rpx;
+	margin-right: 25rpx;
+}
+
+.wind-line-3 {
+	margin-bottom: 95rpx;
+	margin-left: 5rpx;
+}
+
+.wind-line-4 {
+	margin-bottom: 65rpx;
+	margin-right: 15rpx;
+}
+
+.empty-comment-text {
+	font-size: 28rpx;
+	color: #999999;
+	margin-top: 16rpx;
+}
+
+.comment-list {
+	background-color: #ffffff;
+}
+
+.comment-item {
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.comment-content-wrapper {
+	flex-direction: row;
+	padding: 24rpx 32rpx;
+}
+
+.comment-avatar {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	flex-shrink: 0;
+}
+
+.comment-info {
+	flex: 1;
+	margin-left: 24rpx;
+}
+
+.comment-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 8rpx;
+}
+
+.comment-nickname {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+	max-width: 400rpx;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.comment-time {
+	font-size: 24rpx;
+	color: #999999;
+	flex-shrink: 0;
+	margin-left: 16rpx;
+}
+
+.comment-text {
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 44rpx;
+}
+
+.comment-pics {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-top: 16rpx;
+}
+
+.comment-pic-item {
+	width: 200rpx;
+	height: 200rpx;
+	border-radius: 12rpx;
+	background-color: #f5f5f5;
+	margin-right: 12rpx;
+	margin-bottom: 12rpx;
+}
+
+.reply-list {
+	background-color: #f8f9fa;
+	border-radius: 12rpx;
+	padding: 20rpx;
+	margin-top: 20rpx;
+}
+
+.reply-item {
+	flex-direction: row;
+	margin-bottom: 16rpx;
+}
+
+.reply-avatar {
+	width: 56rpx;
+	height: 56rpx;
+	border-radius: 28rpx;
+	flex-shrink: 0;
+}
+
+.reply-info {
+	flex: 1;
+	margin-left: 16rpx;
+}
+
+.reply-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 8rpx;
+}
+
+.reply-nickname {
+	font-size: 26rpx;
+	font-weight: bold;
+	color: #333333;
+	max-width: 300rpx;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.reply-time {
+	font-size: 22rpx;
+	color: #999999;
+	flex-shrink: 0;
+	margin-left: 12rpx;
+}
+
+.reply-text {
+	font-size: 26rpx;
+	color: #333333;
+	line-height: 38rpx;
+}
+
+.view-more-replies {
+	margin-top: 12rpx;
+	padding-top: 12rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #e0e0e0;
+}
+
+.more-replies-text {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.load-more-box {
+	padding: 32rpx 0;
+}
+
+.loading-more {
+	align-items: center;
+}
+
+.loading-more-text {
+	color: #999999;
+	font-size: 24rpx;
+}
+
+.no-more {
+	align-items: center;
+}
+
+.no-more-text {
+	color: #999999;
+	font-size: 24rpx;
+}
+
+.load-more {
+	align-items: center;
+}
+
+.load-more-text {
+	color: #2EAEF2;
+	font-size: 24rpx;
+}
+
+.footer-box {
+	position: fixed;
+	left: 0;
+	bottom: 0;
+	width: 750rpx;
+	background-color: #f5f5f5;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #e0e0e0;
+	padding: 24rpx;
+	padding-bottom: 48rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.input-box {
+	flex: 1;
+	height: 76rpx;
+	border-radius: 38rpx;
+	background-color: #ffffff;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	display: flex;
+	align-items: center;
+}
+
+.input-field {
+	flex: 1;
+	height: 76rpx;
+	font-size: 28rpx;
+	color: #333333;
+	background-color: transparent;
+}
+
+.send-btn {
+	margin-left: 20rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	height: 76rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 38rpx;
+	background-color: #e0e0e0;
+}
+
+.send-btn.active {
+	background-color: #2EAEF2;
+}
+
+.send-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.send-text-active {
+	color: #ffffff;
+}
+</style>

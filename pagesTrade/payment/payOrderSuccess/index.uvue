@@ -1,0 +1,346 @@
+<template>
+	<view class="success-page">
+		<view class="header-bg"></view>
+		
+		<view class="success-content">
+			<view class="success-icon-wrapper">
+				<text class="success-icon">✓</text>
+			</view>
+			<text class="success-title">支付成功！</text>
+			<text class="success-subtitle">欢迎再次光临</text>
+		</view>
+		
+		<view class="order-card">
+			<view class="amount-section">
+				<text class="amount-symbol">¥</text>
+				<text class="amount-value">{{ payMoney }}</text>
+			</view>
+			
+			<view class="divider"></view>
+			
+			<view class="info-section">
+				<text class="info-item">订单编号：{{ orderNo }}</text>
+				<text class="info-item">下单时间：{{ createTime }}</text>
+				<text class="info-item">支付方式：{{ payMethodText }}</text>
+			</view>
+			
+			<view class="divider"></view>
+			
+			<view class="action-row" @click="goToOrderDetail">
+				<text class="action-text">订单详情</text>
+				<text class="arrow">›</text>
+			</view>
+		</view>
+		
+		<view class="footer-button">
+			<view class="primary-btn" @click="goToHome">
+				<text class="primary-btn-text">返回首页</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { getCurrentTimeString } from '@/common/utils/dateUtils.uts'
+import { goToHome } from '@/common/utils/utsSafe.uts'
+import { initUserInfoAction, updateUserInfoAction } from '@/stores/user.uts'
+import { refreshCurrentUserProfile, invalidateCurrentUserProfile, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 响应式数据（拆分为独立 ref）====================
+const payMoney = ref<string>('0.00')
+const orderNo = ref<string>('')
+const createTime = ref<string>('')
+const payMethod = ref<number>(0)
+const orderId = ref<string>('')
+const orderKid = ref<string>('')
+const shortKid = ref<string>('')
+const orderType = ref<number>(0)
+
+// 支付方式文本（使用独立 ref 而非 computed 访问对象属性）
+const payMethodText = computed((): string => {
+	const method = payMethod.value
+	if (method == 0) {
+		return '余额支付'
+	} else if (method == 1) {
+		return '微信支付'
+	} else if (method == 2) {
+		return '支付宝'
+	}
+	return '在线支付'
+})
+
+// 跳转订单详情
+const goToOrderDetail = () => {
+	let targetId = orderKid.value
+	if (targetId == '') {
+		targetId = orderId.value
+	}
+	if (targetId != '') {
+		uni.redirectTo({
+			url: '/pagesTrade/orderDetails/index?orderKid=' + targetId
+		})
+	} else {
+		uni.showToast({ title: '订单信息不完整', icon: 'none' })
+	}
+}
+
+// 返回首页（使用全局工具函数）
+// goToHome 已从 utsSafe.uts 导入
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 支付金额
+		const payMoneyVal = optionsObj.get('payMoney')
+		if (payMoneyVal != null && payMoneyVal.toString() != '') {
+			payMoney.value = payMoneyVal.toString()
+		}
+		
+		// 订单号（优先使用 shortKid）
+		const shortKidVal = optionsObj.get('shortKid')
+		if (shortKidVal != null && shortKidVal.toString() != '') {
+			shortKid.value = shortKidVal.toString()
+			orderNo.value = shortKidVal.toString()
+		} else {
+			const orderNoVal = optionsObj.get('orderNo')
+			if (orderNoVal != null && orderNoVal.toString() != '') {
+				orderNo.value = orderNoVal.toString()
+			}
+		}
+		
+		// 订单 Kid
+		const orderKidVal = optionsObj.get('orderKid')
+		if (orderKidVal != null && orderKidVal.toString() != '') {
+			orderKid.value = orderKidVal.toString()
+		}
+		
+		// 订单 ID（兼容旧参数）
+		const orderIdVal = optionsObj.get('orderId')
+		if (orderIdVal != null && orderIdVal.toString() != '') {
+			orderId.value = orderIdVal.toString()
+		}
+		
+		// 创建时间
+		const createTimeVal = optionsObj.get('creatTime')
+		if (createTimeVal != null && createTimeVal.toString() != '') {
+			createTime.value = createTimeVal.toString()
+		} else {
+			const createTimeVal2 = optionsObj.get('createTime')
+			if (createTimeVal2 != null && createTimeVal2.toString() != '') {
+				createTime.value = createTimeVal2.toString()
+			} else {
+				createTime.value = getCurrentTimeString()
+			}
+		}
+		
+		// 支付方式
+		const payMethodVal = optionsObj.get('payMethod')
+		if (payMethodVal != null && payMethodVal.toString() != '') {
+			const methodNum = parseInt(payMethodVal.toString())
+			if (isNaN(methodNum) == false) {
+				payMethod.value = methodNum
+			}
+		}
+
+		// 订单类型
+		const orderTypeVal = optionsObj.get('orderType')
+		if (orderTypeVal != null && orderTypeVal.toString() != '') {
+			const typeNum = parseInt(orderTypeVal.toString())
+			if (isNaN(typeNum) == false) {
+				orderType.value = typeNum
+			}
+		}
+	}
+
+	// 🎯 会员订单支付成功后刷新用户信息
+	if (orderType.value == 30) {
+		// 🔧 修复：增加延迟时间到2秒，确保后端处理完成
+		setTimeout(() => {
+			console.log('[PaySuccess] 会员订单支付成功，从服务器刷新用户信息')
+			
+			// 🔧 新增：先使缓存失效
+			invalidateCurrentUserProfile()
+			
+			// 然后强制刷新
+			refreshCurrentUserProfile().then((profile: any | null) => {
+				if (profile != null) {
+					try {
+						const profileStr = JSON.stringify(profile)
+						const profileObj = JSON.parse(profileStr) as UTSJSONObject
+						// 更新本地存储的用户信息
+						updateUserInfoAction(profileObj)
+						
+						// 🔧 新增：触发用户信息更新事件，通知其他页面刷新VIP状态
+						uni.$emit('user_info_update', profileObj)
+						
+						console.log('[PaySuccess] 会员状态已更新')
+					} catch (e) {}
+				}
+			}).catch((error: any | null): void => {
+				handleSilentError(error as any, '刷新用户信息')
+				// 降级：尝试从本地存储读取
+				initUserInfoAction()
+			})
+		}, 2000) // 🔧 修复：增加到2秒，确保后端处理完成
+	}
+})
+
+// 🔧 优化：组件卸载时清理 useCurrentUserProfile 事件监听器，防止内存泄漏
+onUnmounted(() => {
+	destroyEventListeners()
+})
+</script>
+
+<style scoped>
+.success-page {
+	width: 750rpx;
+	min-height: 1334rpx;
+	background-color: #f5f5f5;
+	position: relative;
+}
+
+.header-bg {
+	width: 750rpx;
+	height: 380rpx;
+	background-color: #37B1F2;
+	border-radius: 0 0 24rpx 24rpx;
+}
+
+.success-content {
+	position: absolute;
+	top: 116rpx;
+	left: 0;
+	right: 0;
+	flex-direction: column;
+	align-items: center;
+}
+
+.success-icon-wrapper {
+	width: 120rpx;
+	height: 120rpx;
+	background-color: #ffffff;
+	border-radius: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 24rpx;
+}
+
+.success-icon {
+	font-size: 80rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.success-title {
+	font-size: 40rpx;
+	color: #ffffff;
+	font-weight: bold;
+	margin-bottom: 16rpx;
+}
+
+.success-subtitle {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.order-card {
+	background-color: #ffffff;
+	margin-top: 280rpx;
+	margin-left: 28rpx;
+	margin-right: 28rpx;
+	margin-bottom: 20rpx;
+	border-radius: 16rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.amount-section {
+	flex-direction: row;
+	align-items: flex-end;
+	justify-content: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.amount-symbol {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-right: 8rpx;
+}
+
+.amount-value {
+	font-size: 64rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.divider {
+	height: 2rpx;
+	background-color: #f0f0f0;
+	margin-top: 24rpx;
+	margin-bottom: 24rpx;
+}
+
+.info-section {
+	flex-direction: column;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+}
+
+.info-item {
+	font-size: 28rpx;
+	color: #666666;
+	line-height: 60rpx;
+}
+
+.action-row {
+	flex-direction: row;
+	justify-content: flex-end;
+	align-items: center;
+	padding-top: 16rpx;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #666666;
+	margin-right: 8rpx;
+}
+
+.arrow {
+	font-size: 40rpx;
+	color: #cccccc;
+}
+
+.footer-button {
+	position: fixed;
+	bottom: 60rpx;
+	left: 235rpx;
+	width: 280rpx;
+}
+
+.primary-btn {
+	width: 280rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.primary-btn-text {
+	color: #ffffff;
+	font-size: 32rpx;
+	font-weight: bold;
+}
+</style>

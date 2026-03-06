@@ -1,0 +1,162 @@
+<template>
+	<view 
+		class="follow-btn"
+		:class="currentIsFollow == true ? 'follow-btn--followed' : 'follow-btn--unfollow'"
+		hover-class="follow-btn--active"
+		@click.stop="handleClick"
+	>
+		<text 
+			class="follow-btn__text"
+			:class="currentIsFollow == true ? 'follow-btn__text--followed' : 'follow-btn__text--unfollow'"
+		>{{ currentIsFollow == true ? '已关注' : '关注' }}</text>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getUserId } from '@/stores/user.uts'
+import { 
+	isFollowing, 
+	isProcessing, 
+	toggleFollow, 
+	setFollowStatus 
+} from '@/stores/follow.uts'
+
+// Props 定义
+const props = defineProps({
+	// 目标用户 KID（必填）
+	targetUserKid: { type: String, default: '' },
+	// 是否已关注（可选，用于初始化状态，支持 boolean 或 number 类型）
+	isFollow: { type: [Boolean, Number], default: false }
+})
+
+// Emits 定义
+const emit = defineEmits<{
+	change: [isFollow: boolean, targetUserKid: string]
+}>()
+
+// 解析 isFollow 值（兼容 boolean 和 number 类型）
+const parseIsFollow = (val: any): boolean => {
+	// 直接检查类型，避免冗余的 null 检查
+	if (typeof val == 'boolean') return val as boolean
+	if (typeof val == 'number') return (val as number) == 10 || (val as number) == 1
+	const strVal = val.toString()
+	return strVal == 'true' || strVal == '10' || strVal == '1'
+}
+
+// 计算当前关注状态（从 store 获取，同时更新 store）
+const currentIsFollow = computed((): boolean => {
+	const targetKid = props.targetUserKid
+	if (targetKid == '') {
+		return parseIsFollow(props.isFollow)
+	}
+	// 每次计算时同步 props 到 store
+	const isFollowVal = parseIsFollow(props.isFollow)
+	setFollowStatus(targetKid, isFollowVal)
+	return isFollowing(targetKid)
+})
+
+// 点击事件处理
+const handleClick = async () => {
+	const targetKid = props.targetUserKid
+	if (targetKid == '') {
+		console.warn('FollowButton: targetUserKid 不能为空')
+		return
+	}
+	
+	// 检查是否正在处理
+	if (isProcessing(targetKid) == true) {
+		return
+	}
+	
+	// 获取当前用户 KID
+	const currentUserKid = getUserId()
+	if (currentUserKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 不能关注自己
+	if (currentUserKid == targetKid) {
+		uni.showToast({
+			title: '不能关注自己',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		// 调用 store 的 toggleFollow 方法
+		const newStatus = await toggleFollow(currentUserKid, targetKid)
+		
+		// 触发 change 事件
+		emit('change', newStatus, targetKid)
+		
+		// 显示提示
+		uni.showToast({
+			title: newStatus == true ? '关注成功' : '已取消关注',
+			icon: 'success'
+		})
+	} catch (error: any) {
+		let errorMsg = '操作失败'
+		// error.message 可能为 null 或空
+		if (error.message != null && error.message != '') {
+			errorMsg = error.message.toString()
+		}
+		uni.showToast({
+			title: errorMsg,
+			icon: 'none'
+		})
+	}
+}
+</script>
+
+<style scoped>
+/* 基础样式 */
+.follow-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	border-radius: 28rpx;
+}
+
+/* 未关注状态 - 蓝色背景 */
+.follow-btn--unfollow {
+	background-color: #37B1F2;
+}
+
+/* 已关注状态 - 白色背景 + 灰色边框 */
+.follow-btn--followed {
+	background-color: #ffffff;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #cccccc;
+}
+
+/* 点击效果 */
+.follow-btn--active {
+	opacity: 0.8;
+}
+
+/* 文字基础样式 */
+.follow-btn__text {
+	font-size: 24rpx;
+}
+
+/* 未关注文字 - 白色 */
+.follow-btn__text--unfollow {
+	color: #ffffff;
+}
+
+/* 已关注文字 - 灰色 */
+.follow-btn__text--followed {
+	color: #999999;
+}
+</style>

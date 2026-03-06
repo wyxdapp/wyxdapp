@@ -1,0 +1,328 @@
+<template>
+	<view class="marketing-popup-container" v-if="shouldRender == true">
+		<!-- 遮罩层 -->
+		<view class="popup-overlay" @click="handleOverlayClick"></view>
+		
+		<!-- 弹窗内容 -->
+		<view class="popup-content">
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-icon">✕</text>
+			</view>
+			
+			<!-- 内容展示区 -->
+			<view class="content-area">
+				<!-- 图片模式 -->
+				<image 
+					v-if="contentType == 'image'"
+					class="popup-image" 
+					:src="imageUrl" 
+					mode="widthFix"
+					@click="handleImageClick"
+					@error="handleImageError"
+				/>
+				<!-- 广告代码模式 (rich-text) -->
+				<rich-text 
+					v-if="contentType == 'html'"
+					:nodes="htmlContent"
+					class="popup-html"
+				/>
+			</view>
+			
+			<!-- 按钮区 -->
+			<view class="button-area" v-if="buttonType != 'none'">
+				<!-- 单按钮 -->
+				<view v-if="buttonType == 'single'" class="single-btn" @click="handlePrimaryClick">
+					<text class="btn-text-primary">{{ primaryButtonText }}</text>
+				</view>
+				<!-- 双按钮 -->
+				<view v-if="buttonType == 'double'" class="double-btn-row">
+					<view class="secondary-btn" @click="handleSecondaryClick">
+						<text class="btn-text-secondary">{{ secondaryButtonText }}</text>
+					</view>
+					<view class="primary-btn" @click="handlePrimaryClick">
+						<text class="btn-text-primary">{{ primaryButtonText }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp, getBoolProp } from '@/common/utils/utsSafe.uts'
+
+// Props - 运行时声明
+const props = defineProps({
+	visible: { type: Boolean, default: false },
+	popupData: { type: Object, default: null }
+})
+
+// Emits
+const emit = defineEmits(['close', 'buttonClick'])
+
+// ==================== 计算属性 ====================
+
+// 获取弹窗数据属性的辅助函数
+const getPopupProp = (key: string): string => {
+	if (props.popupData == null) return ''
+	// 使用临时变量避免 Smart cast 问题
+	const data = props.popupData as any
+	return getStringProp(data, key)
+}
+
+const getPopupBoolProp = (key: string): boolean => {
+	if (props.popupData == null) return false
+	// 使用临时变量避免 Smart cast 问题
+	const data = props.popupData as any
+	return getBoolProp(data, key)
+}
+
+// 内容类型
+const contentType = computed((): string => {
+	const type = getPopupProp('contentType')
+	return type != '' ? type : 'image'
+})
+
+// 图片URL
+const imageUrl = computed((): string => {
+	return getPopupProp('imageUrl')
+})
+
+// HTML内容
+const htmlContent = computed((): string => {
+	return getPopupProp('htmlContent')
+})
+
+// 图片点击链接
+const imageClickUrl = computed((): string => {
+	return getPopupProp('imageClickUrl')
+})
+
+// 按钮类型
+const buttonType = computed((): string => {
+	const type = getPopupProp('buttonType')
+	return type != '' ? type : 'none'
+})
+
+// 主按钮文字
+const primaryButtonText = computed((): string => {
+	const text = getPopupProp('primaryButtonText')
+	return text != '' ? text : '立即参与'
+})
+
+// 主按钮链接
+const primaryButtonUrl = computed((): string => {
+	return getPopupProp('primaryButtonUrl')
+})
+
+// 副按钮文字
+const secondaryButtonText = computed((): string => {
+	const text = getPopupProp('secondaryButtonText')
+	return text != '' ? text : '稍后再说'
+})
+
+// 副按钮链接
+const secondaryButtonUrl = computed((): string => {
+	return getPopupProp('secondaryButtonUrl')
+})
+
+// 点击遮罩是否关闭
+const closeOnOverlay = computed((): boolean => {
+	return getPopupBoolProp('closeOnOverlay')
+})
+
+// ==================== 数据有效性验证 ====================
+
+// 检查弹窗数据是否有效（kid 非空）
+const hasValidData = computed((): boolean => {
+	if (props.popupData == null) return false
+	const data = props.popupData as any
+	const kid = getStringProp(data, 'kid')
+	return kid != ''
+})
+
+// 检查是否有有效内容（imageUrl 或 htmlContent 非空）
+const hasValidContent = computed((): boolean => {
+	if (props.popupData == null) return false
+	const imgUrl = imageUrl.value
+	const html = htmlContent.value
+	return imgUrl != '' || html != ''
+})
+
+// 最终渲染条件：visible + 数据有效 + 内容有效
+const shouldRender = computed((): boolean => {
+	return props.visible == true && hasValidData.value == true && hasValidContent.value == true
+})
+
+// ==================== 事件处理 ====================
+
+// 关闭弹窗
+const handleClose = () => {
+	emit('close')
+}
+
+// 遮罩点击
+const handleOverlayClick = () => {
+	if (closeOnOverlay.value == true) {
+		emit('close')
+	}
+}
+
+// 图片点击
+const handleImageClick = () => {
+	const url = imageClickUrl.value
+	if (url != '') {
+		emit('buttonClick', 'image', url)
+	}
+}
+
+// 图片加载失败
+const handleImageError = () => {
+	// 图片加载失败时关闭弹窗
+	emit('close')
+}
+
+// 主按钮点击
+const handlePrimaryClick = () => {
+	const url = primaryButtonUrl.value
+	emit('buttonClick', 'primary', url)
+}
+
+// 副按钮点击
+const handleSecondaryClick = () => {
+	const url = secondaryButtonUrl.value
+	if (url != '') {
+		emit('buttonClick', 'secondary', url)
+	} else {
+		// 无链接时直接关闭
+		emit('close')
+	}
+}
+</script>
+
+<style scoped>
+.marketing-popup-container {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.popup-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.6);
+}
+
+.popup-content {
+	position: relative;
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: column;
+	align-items: center;
+	padding-bottom: 40rpx;
+}
+
+.close-btn {
+	position: absolute;
+	top: -80rpx;
+	right: 0;
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(255, 255, 255, 0.3);
+	border-radius: 30rpx;
+}
+
+.close-icon {
+	font-size: 32rpx;
+	color: #ffffff;
+}
+
+.content-area {
+	width: 100%;
+	flex-direction: column;
+	align-items: center;
+}
+
+.popup-image {
+	width: 600rpx;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+}
+
+.popup-html {
+	width: 560rpx;
+	padding: 20rpx;
+}
+
+.button-area {
+	width: 100%;
+	flex-direction: column;
+	align-items: center;
+	padding-top: 30rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+}
+
+.single-btn {
+	width: 520rpx;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.double-btn-row {
+	width: 520rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.primary-btn {
+	width: 240rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.secondary-btn {
+	width: 240rpx;
+	height: 80rpx;
+	background-color: #f5f5f5;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-text-primary {
+	font-size: 30rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.btn-text-secondary {
+	font-size: 30rpx;
+	color: #666666;
+}
+</style>

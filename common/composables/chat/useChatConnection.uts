@@ -1,0 +1,148 @@
+/**
+ * 聊天连接状态 Composable
+ * 管理 WebSocket 连接状态和重连逻辑
+ */
+
+import { ref, computed } from 'vue'
+import { 
+	forceReconnectAction, 
+	getWebSocketConnectedStatus 
+} from '@/stores/chat'
+import { chatService, ChatServiceStatus } from '@/stores/chatService'
+
+// 连接状态常量
+export const ConnectionStatus = {
+	CONNECTED: 'connected',
+	CONNECTING: 'connecting',
+	DISCONNECTED: 'disconnected'
+}
+
+/**
+ * 聊天连接状态 Composable
+ * @param currentUserId 当前用户ID
+ */
+export function useChatConnection(currentUserId: string) {
+	// 响应式状态
+	const connectionStatus = ref<string>(ConnectionStatus.DISCONNECTED)
+	
+	// 事件监听器取消函数
+	let offStatusChange: (() => void) | null = null
+	let offError: (() => void) | null = null
+	
+	// 计算属性：连接状态文本
+	const connectionStatusText = computed((): string => {
+		if (connectionStatus.value == ConnectionStatus.CONNECTING) {
+			return '正在连接服务器...'
+		}
+		if (connectionStatus.value == ConnectionStatus.DISCONNECTED) {
+			return '连接已断开，正在重连...'
+		}
+		return ''
+	})
+	
+	// 计算属性：是否显示连接状态提示
+	const showConnectionStatus = computed((): boolean => {
+		return connectionStatus.value != ConnectionStatus.CONNECTED
+	})
+
+	/**
+	 * 初始化连接
+	 */
+	const initConnection = () => {
+		// 设置当前用户ID
+		chatService.setCurrentUserId(currentUserId)
+		
+		// 检查 WebSocket 连接状态
+		const isConnected = getWebSocketConnectedStatus()
+		
+		if (isConnected == true) {
+			connectionStatus.value = ConnectionStatus.CONNECTED
+		} else {
+			connectionStatus.value = ConnectionStatus.CONNECTING
+			// 尝试重连
+			reconnect()
+		}
+	}
+	
+	/**
+	 * 重连
+	 */
+	const reconnect = (): Promise<boolean> => {
+		connectionStatus.value = ConnectionStatus.CONNECTING
+		
+		return forceReconnectAction(currentUserId).then((success: boolean): boolean => {
+			if (success == true) {
+				// 重连成功后多次检查状态
+				let checkCount = 0
+				const maxChecks = 5
+				let intervalId: number = 0
+				intervalId = setInterval(() => {
+					checkCount = checkCount + 1
+					const newStatus = getWebSocketConnectedStatus()
+					if (newStatus == true) {
+						connectionStatus.value = ConnectionStatus.CONNECTED
+						clearInterval(intervalId)
+					} else if (checkCount >= maxChecks) {
+						clearInterval(intervalId)
+					}
+				}, 1000)
+			}
+			return success
+		}).catch((err: any | null): boolean => {
+			console.error('❌ [useChatConnection] 重连失败:', err)
+			connectionStatus.value = ConnectionStatus.DISCONNECTED
+			return false
+		})
+	}
+	
+	/**
+	 * 设置状态监听器
+	 */
+	const setupStatusListeners = () => {
+		// 清理已有监听器
+		cleanupStatusListeners()
+		
+		// 监听连接状态变化
+		offStatusChange = chatService.onStatusChange((status) => {
+			if (status == ChatServiceStatus.CONNECTED) {
+				connectionStatus.value = ConnectionStatus.CONNECTED
+			} else if (status == ChatServiceStatus.CONNECTING) {
+				connectionStatus.value = ConnectionStatus.CONNECTING
+			} else {
+				connectionStatus.value = ConnectionStatus.DISCONNECTED
+			}
+		})
+		
+		// 监听错误事件
+		offError = chatService.onError((error) => {
+			console.error('❌ [useChatConnection] 聊天服务错误:', error)
+		})
+	}
+	
+	/**
+	 * 清理状态监听器
+	 */
+	const cleanupStatusListeners = () => {
+		// UTS 规范：可变闭包变量不能 smart cast，先保存到局部变量
+		const existingStatusChange = offStatusChange
+		if (existingStatusChange != null) {
+			existingStatusChange()
+			offStatusChange = null
+		}
+		const existingError = offError
+		if (existingError != null) {
+			existingError()
+			offError = null
+		}
+	}
+	
+	return {
+		connectionStatus,
+		connectionStatusText,
+		showConnectionStatus,
+		initConnection,
+		reconnect,
+		setupStatusListeners,
+		cleanupStatusListeners
+	}
+}

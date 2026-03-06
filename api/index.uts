@@ -1,0 +1,37 @@
+/**
+ * API统一导出文件
+ * 整合所有API模块
+ */
+
+// 认证相关
+export * from './auth.uts'
+
+// 用户相关
+export * from './user.uts'
+
+// 聊天相关
+export * from './chat.uts'
+
+// 首页相关
+export * from './home.uts'
+
+// 发现页相关
+export * from './discover.uts'
+
+// 订单相关
+export * from './order.uts'
+
+// 钱包相关
+export * from './wallet.uts'
+
+// 定制相关
+export * from './travel.uts'
+
+// 行为相关（点赞、评论、访客）
+export * from './behavior.uts'
+
+// 运营中心
+export * from './operator.uts'
+
+// 通知相关
+export * from './notification.uts'

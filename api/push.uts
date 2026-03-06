@@ -1,0 +1,202 @@
+/**
+ * 推送相关 API
+ * uni-push 2.0 客户端 ID 绑定与推送配置管理
+ * 
+ * 注意：接口路径使用 /chat/push/* 以匹配 Nginx 转发规则
+ */
+
+import request from '@/utils/request'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+
+// ==================== 接口定义 ====================
+
+/**
+ * 绑定推送客户端 ID 参数
+ */
+export class BindPushClientParams {
+	clientId: string = ''
+	platform: string = ''  // android/ios/mp-weixin/h5
+}
+
+/**
+ * 推送配置
+ */
+export class PushConfigData {
+	pushEnabled: boolean = true       // 推送总开关
+	chatPushEnabled: boolean = true   // 聊天通知开关
+}
+
+/**
+ * 更新短信通知开关参数
+ */
+export class UpdateSmsNotificationParams {
+	userId: string = ''
+	enabled: boolean = false
+}
+
+/**
+ * 更新公众号通知开关参数
+ */
+export class UpdateWechatNotificationParams {
+	userId: string = ''
+	enabled: boolean = false
+}
+
+// ==================== API 函数 ====================
+
+/**
+ * 绑定推送客户端 ID
+ * POST /chat/push/bind
+ * @param params 绑定参数
+ */
+export const bindPushClient = (params: BindPushClientParams): Promise<UTSJSONObject> => {
+	// 🔧 使用重试机制：推送绑定是关键接口，失败时自动重试
+	return request.postWithRetry('/chat/push/bind', params, false, 3)
+}
+
+/**
+ * 解绑推送客户端 ID
+ * DELETE /chat/push/unbind
+ */
+export const unbindPushClient = (): Promise<UTSJSONObject> => {
+	return request.delete('/chat/push/unbind', null, false)
+}
+
+/**
+ * 获取推送配置
+ * GET /chat/push/config?userId=xxx
+ * 注意：GET 请求参数需要拼接到 URL 上，后端参数名是 userId
+ * 
+ * 返回字段：
+ * - pushEnabled: 推送总开关
+ * - chatPushEnabled: 聊天通知开关
+ * - clientIdBound: 是否已绑定客户端ID
+ * - smsNotificationEnabled: 短信通知开关
+ * - wechatNotificationEnabled: 公众号通知开关
+ * - canEnableSms: 是否可以开启短信通知（会员）
+ * - canEnableWechat: 是否可以开启公众号通知（已绑定微信）
+ * - smsEligibilityMsg: 短信通知资格提示
+ * - wechatEligibilityMsg: 公众号通知资格提示
+ */
+export const getPushConfig = (): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		// UTS 中不能直接用 Promise.reject，需要用 new Promise 包装
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	// GET 请求参数拼接到 URL 上，后端参数名是 userId
+	const url = '/chat/push/config?userId=' + userKid
+	// 🔧 使用重试机制：推送配置是关键接口，失败时自动重试
+	return request.getWithRetry(url, null, false, 3)
+}
+
+/**
+ * 更新推送配置
+ * PUT /chat/push/config
+ * @param config 推送配置
+ * 注意：后端参数名是 userId，不是 userKid
+ */
+export const updatePushConfig = (config: PushConfigData): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		// UTS 中不能直接用 Promise.reject，需要用 new Promise 包装
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const params = {
+		userId: userKid,  // 后端参数名是 userId
+		pushEnabled: config.pushEnabled,
+		chatPushEnabled: config.chatPushEnabled
+	} as UTSJSONObject
+	return request.put('/chat/push/config', params, false)
+}
+
+/**
+ * 更新短信通知开关
+ * PUT /chat/push/sms/enabled
+ * @param enabled 是否开启
+ */
+export const updateSmsNotificationEnabled = (enabled: boolean): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const params = {
+		userId: userKid,
+		enabled: enabled
+	} as UTSJSONObject
+	return request.put('/chat/push/sms/enabled', params, false)
+}
+
+/**
+ * 更新公众号通知开关
+ * PUT /chat/push/wechat/enabled
+ * @param enabled 是否开启
+ */
+export const updateWechatNotificationEnabled = (enabled: boolean): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const params = {
+		userId: userKid,
+		enabled: enabled
+	} as UTSJSONObject
+	return request.put('/chat/push/wechat/enabled', params, false)
+}
+
+/**
+ * 检查短信通知资格
+ * GET /chat/push/sms/eligibility
+ */
+export const checkSmsEligibility = (): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const url = '/chat/push/sms/eligibility?userId=' + userKid
+	return request.get(url, null, false)
+}
+
+/**
+ * 检查公众号通知资格
+ * GET /chat/push/wechat/eligibility
+ */
+export const checkWechatEligibility = (): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const url = '/chat/push/wechat/eligibility?userId=' + userKid
+	return request.get(url, null, false)
+}
+
+/**
+ * 更新小程序通知开关
+ * PUT /chat/push/miniprogram/enabled
+ * @param enabled 是否开启
+ */
+export const updateMiniProgramNotificationEnabled = (enabled: boolean): Promise<UTSJSONObject> => {
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		return new Promise<UTSJSONObject>((resolve: (value: UTSJSONObject) => void, reject: (reason: UTSJSONObject) => void) => {
+			reject({ message: '用户未登录' } as UTSJSONObject)
+		})
+	}
+	const params = {
+		userId: userKid,
+		enabled: enabled
+	} as UTSJSONObject
+	return request.put('/chat/push/miniprogram/enabled', params, false)
+}

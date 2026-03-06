@@ -1,0 +1,159 @@
+/**
+ * 表情配置文件
+ * 使用 Unicode Emoji，无需图片资源
+ */
+
+export class EmojiItem {
+	emoji: string = ''
+	name: string = ''
+	category: string = ''
+	
+	constructor(emoji: string, name: string, category: string) {
+		this.emoji = emoji
+		this.name = name
+		this.category = category
+	}
+	
+	/**
+	 * 转换为普通对象，确保在APP端JSON序列化正确
+	 * 解决APP端类实例JSON.stringify返回对象引用字符串的问题
+	 */
+	toPlainObject(): any {
+		return {
+			emoji: this.emoji,
+			name: this.name,
+			category: this.category,
+			type: 'unicode'
+		} as any
+	}
+}
+
+export const EMOJI_DATA: Array<EmojiItem> = [
+	// ⭐ 所有表情都放在常用分类
+	new EmojiItem('😀', '开心', 'common'),
+	new EmojiItem('😃', '大笑', 'common'),
+	new EmojiItem('😄', '哈哈', 'common'),
+	new EmojiItem('😁', '嘿嘿', 'common'),
+	new EmojiItem('😆', '笑哭', 'common'),
+	new EmojiItem('😅', '汗', 'common'),
+	new EmojiItem('🤣', '捧腹', 'common'),
+	new EmojiItem('😂', '喜极而泣', 'common'),
+	new EmojiItem('😊', '微笑', 'common'),
+	new EmojiItem('😇', '天使', 'common'),
+	new EmojiItem('🙂', '轻笑', 'common'),
+	new EmojiItem('😉', '眨眼', 'common'),
+	new EmojiItem('😌', '满足', 'common'),
+	new EmojiItem('😍', '花痴', 'common'),
+	new EmojiItem('🥰', '爱心', 'common'),
+	new EmojiItem('😘', '飞吻', 'common'),
+	new EmojiItem('😗', '亲亲', 'common'),
+	new EmojiItem('😙', '微笑亲', 'common'),
+	new EmojiItem('😚', '闭眼亲', 'common'),
+	new EmojiItem('🤗', '拥抱', 'common'),
+	new EmojiItem('🤔', '思考', 'common'),
+	new EmojiItem('🤨', '质疑', 'common'),
+	new EmojiItem('😐', '无语', 'common'),
+	new EmojiItem('😑', '面无表情', 'common'),
+	new EmojiItem('😶', '闭嘴', 'common'),
+	new EmojiItem('🙄', '翻白眼', 'common'),
+	new EmojiItem('😏', '得意', 'common'),
+	new EmojiItem('😣', '难过', 'common'),
+	new EmojiItem('😥', '失望', 'common'),
+	new EmojiItem('😮', '惊讶', 'common'),
+	new EmojiItem('🤐', '闭嘴', 'common'),
+	new EmojiItem('😯', '震惊', 'common'),
+	new EmojiItem('😪', '困', 'common'),
+	new EmojiItem('😫', '疲惫', 'common'),
+	new EmojiItem('🥱', '打哈欠', 'common'),
+	new EmojiItem('😴', '睡觉', 'common'),
+	new EmojiItem('😛', '吐舌', 'common'),
+	new EmojiItem('😜', '眨眼吐舌', 'common'),
+	new EmojiItem('😝', '闭眼吐舌', 'common'),
+	new EmojiItem('👍', '点赞', 'common'),
+	new EmojiItem('👎', '踩', 'common'),
+	new EmojiItem('👏', '鼓掌', 'common'),
+	new EmojiItem('🙏', '祈祷', 'common'),
+	new EmojiItem('👌', 'OK', 'common'),
+	new EmojiItem('✌️', '胜利', 'common'),
+	new EmojiItem('🤝', '握手', 'common'),
+	new EmojiItem('💪', '加油', 'common'),
+	new EmojiItem('🤞', '祈愿', 'common'),
+	new EmojiItem('🤟', '爱你', 'common'),
+	new EmojiItem('🤘', '摇滚', 'common'),
+	new EmojiItem('👊', '拳头', 'common'),
+	new EmojiItem('✊', '加油拳', 'common'),
+	new EmojiItem('🤛', '左拳', 'common'),
+	new EmojiItem('🤜', '右拳', 'common'),
+	new EmojiItem('👋', '挥手', 'common'),
+	new EmojiItem('🤚', '举手', 'common'),
+	new EmojiItem('🖐️', '五指', 'common'),
+	new EmojiItem('✋', '停止', 'common'),
+	new EmojiItem('🖖', '瓦肯举手礼', 'common'),
+	new EmojiItem('❤️', '红心', 'common'),
+	new EmojiItem('🧡', '橙心', 'common'),
+	new EmojiItem('💛', '黄心', 'common'),
+	new EmojiItem('💚', '绿心', 'common'),
+	new EmojiItem('💙', '蓝心', 'common'),
+	new EmojiItem('💜', '紫心', 'common'),
+	new EmojiItem('🖤', '黑心', 'common'),
+	new EmojiItem('🤍', '白心', 'common'),
+	new EmojiItem('🤎', '棕心', 'common'),
+	new EmojiItem('💔', '心碎', 'common'),
+	new EmojiItem('❣️', '心叹号', 'common'),
+	new EmojiItem('💕', '双心', 'common'),
+	new EmojiItem('💞', '旋转心', 'common'),
+	new EmojiItem('💓', '心跳', 'common'),
+	new EmojiItem('💗', '成长心', 'common'),
+	new EmojiItem('💖', '闪亮心', 'common'),
+	new EmojiItem('💘', '丘比特', 'common'),
+	new EmojiItem('💝', '礼物心', 'common'),
+	new EmojiItem('💟', '心装饰', 'common'),
+	new EmojiItem('☮️', '和平', 'common'),
+	new EmojiItem('🎉', '庆祝', 'common'),
+	new EmojiItem('🎊', '彩球', 'common'),
+	new EmojiItem('🎈', '气球', 'common'),
+	new EmojiItem('🎁', '礼物', 'common'),
+	new EmojiItem('🏆', '奖杯', 'common'),
+	new EmojiItem('🥇', '金牌', 'common'),
+	new EmojiItem('🥈', '银牌', 'common'),
+	new EmojiItem('🥉', '铜牌', 'common'),
+	new EmojiItem('⭐', '星星', 'common'),
+	new EmojiItem('🌟', '闪亮星', 'common'),
+	new EmojiItem('✨', '闪光', 'common'),
+	new EmojiItem('💫', '眩晕', 'common'),
+	new EmojiItem('🔥', '火', 'common'),
+	new EmojiItem('💥', '爆炸', 'common'),
+	new EmojiItem('💯', '100分', 'common'),
+	new EmojiItem('✅', '对勾', 'common'),
+	new EmojiItem('❌', '叉号', 'common'),
+	new EmojiItem('⚠️', '警告', 'common'),
+	new EmojiItem('🚫', '禁止', 'common'),
+	new EmojiItem('💢', '愤怒', 'common')
+]
+
+// 表情分类配置
+export class EmojiCategory {
+	key: string = ''
+	label: string = ''
+	
+	constructor(key: string, label: string) {
+		this.key = key
+		this.label = label
+	}
+	
+	/**
+	 * 转换为普通对象，确保在APP端JSON序列化正确
+	 * 解决APP端类实例属性访问问题
+	 */
+	toPlainObject(): any {
+		return {
+			key: this.key,
+			label: this.label
+		} as any
+	}
+}
+
+export const EMOJI_CATEGORIES: Array<EmojiCategory> = [
+	new EmojiCategory('common', '常用'),
+	new EmojiCategory('custom', '自定义')
+]

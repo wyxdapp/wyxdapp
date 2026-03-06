@@ -1,0 +1,403 @@
+﻿<template>
+	<view :class="bgClass || 'bg-white'">
+		<!-- 有数据时显示 -->
+		<template v-if="show">
+			<view v-for="(item, index) in list" :key="index">
+				<!-- 用户信息区 -->
+				<view class="plr-32 pt-32 pb-18" :class="liBgClass || 'bg-white'">
+					<view class="flex-row align-center">
+						<Avatar 
+							:url="item.userImage"
+							size="large"
+							:customSize="192"
+							clickMode="none"
+							@click="handleUserProfile(item)"
+						/>
+						<view class="flex-1 pl-24" @click="handleUserProfile(item)">
+							<NicknameWithBadges
+								:nickname="item.nickName"
+								:vipType="getVipType(item)"
+								:giftLevel="getGiftLevel(item)"
+								size="large"
+							/>
+							<view class="fs-sm color-text mt-16">{{item.publishTime}}</view>
+						</view>
+					</view>
+					<!-- 内容文本 -->
+					<view 
+						class="mt-28 fs-md color-title content u-line-3" 
+						@click="goToDetail(item)"
+					>
+						<text>{{item.discoverContent}}</text>
+					</view>
+				</view>
+				
+				<!-- 媒体内容区 -->
+				<view :class="liBgClass || 'bg-white'">
+					<view class="plr-22">
+						<!-- 图片网格 -->
+						<template v-if="item.insertType == 1 && item.picList && item.picList.length > 0">
+							<view class="image-grid ptb-10" :class="getImageGridClass(item.picList.length)">
+								<image 
+									v-for="(pic, picIndex) in item.picList.slice(0, 9)" 
+									:key="picIndex"
+									class="grid-image" 
+									:src="pic.picUrl || pic" 
+									mode="aspectFill"
+								></image>
+							</view>
+						</template>
+						
+						<!-- 视频 -->
+						<template v-if="item.insertType == 3">
+							<view class="video-box relative ptb-10 plr-10">
+								<video 
+									class="video" 
+									:id="'video' + index" 
+									:src="item.mediaName" 
+									:poster="item.videoPic" 
+									controls 
+									objectFit="cover"
+									:show-loading="false"
+									@play="videoPlay(index)"
+								></video>
+							</view>
+						</template>
+						
+						<!-- 关联定制路线 -->
+						<template v-if="item.insertType == 4 && item.line && item.line.homePics && item.line.homePics.length > 0">
+							<view class="ptb-10 plr-10">
+								<view 
+									class="bg-light-base p-24 flex-row align-center border-radius-16" 
+									@click="goToLineDetail(item.line.kid)"
+								>
+									<image 
+										class="line-cover" 
+										:src="item.line.homePics[0].picUrl" 
+										mode="aspectFill"
+									></image>
+									<text class="fs-sm color-title ml-24">{{item.line.lineTitle}}</text>
+								</view>
+							</view>
+						</template>
+					</view>
+				</view>
+				
+				<!-- 底部互动区 -->
+				<view :class="liBgClass || 'bg-white'" class="plr-32 pt-26 pb-48 flex-row align-center space-between">
+					<view class="flex-row align-center">
+						<image class="location-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_position.png" mode="aspectFit"></image>
+						<text class="fs-sm color-title ml-12">{{item.discoverAddress}} {{formatDistance(item.distance)}}</text>
+					</view>
+					<view class="flex-row align-center">
+						<!-- 点赞 -->
+						<view class="flex-row align-center" @click="handleDoUp(item, index)">
+							<image 
+								class="action-icon" 
+								:src="item.isLike == 10 ? 'https://jiasu.wyxdapp.com/iconimages/n_icon_upActive.png' : 'https://jiasu.wyxdapp.com/iconimages/n_icon_up.png'" 
+								mode="aspectFit"
+							></image>
+							<view class="fs-sm color-title ml-12 do-box flex-row align-center flex-center">{{item.likeNum}}</view>
+						</view>
+						<!-- 评论 -->
+						<view class="flex-row align-center ml-28" @click="goToDetail(item)">
+							<image class="action-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_commentNoFill.png" mode="aspectFit"></image>
+							<view class="fs-sm color-title ml-12 do-box flex-row align-center flex-center">{{item.commentNum}}</view>
+						</view>
+					</view>
+				</view>
+			</view>
+		</template>
+		
+		<!-- 空状态 -->
+		<view class="null-page" v-else>
+			<view class="empty-container">
+				<image class="empty-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_noTrends.png" mode="aspectFit"></image>
+				<text class="empty-text">{{nullText}}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { useUserStore } from '@/stores/user.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+// import GridItem from '@/components/business/GridItem.uvue' // 暂时注释，使用简单图片显示
+
+// Props
+interface TrendsItemData {
+	kid: string
+	userKid: string
+	userImage: string
+	nickName: string
+	publishTime: string
+	discoverContent: string
+	insertType: number
+	picList?: any[]
+	mediaName?: string
+	videoPic?: string
+	line?: any
+	discoverAddress: string
+	distance: string
+	isLike: number
+	likeNum: number
+	commentNum: number
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	list: { type: Array, required: true },
+	nullText: { type: String, default: '这位向导还没发布动态哦～' },
+	bgClass: { type: String, default: '' },
+	liBgClass: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	play: [data: { top: number, index: number }]
+}>()
+
+// Data
+const userStore = useUserStore()
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+const flag = ref(true)
+
+// Computed
+const show = computed(() => {
+	return !!(props.list && props.list.length > 0)
+})
+
+// Methods
+const formatDistance = (distance: string): string => {
+	const dist = parseFloat(distance) || 0
+	return (dist / 1000).toFixed(2) + 'km'
+}
+
+const getImageGridClass = (count: number): string => {
+	if (count === 1) return 'grid-1'
+	if (count === 2) return 'grid-2'
+	if (count === 4) return 'grid-4'
+	return 'grid-9'
+}
+
+// VIP 类型转换函数
+const getVipType = (item: any): string => {
+	try {
+		const itemStr = JSON.stringify(item)
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		const vipVal = itemObj.get('vip')
+		const vip = vipVal != null ? parseInt(vipVal.toString()) : 10
+		// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+		if (vip != 20) return ''
+		const vipTypeVal = itemObj.get('vipType')
+		const vipType = vipTypeVal != null ? parseInt(vipTypeVal.toString()) : 0
+		// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+		// VIP_TYPE_YEARLY（年卡）→ 'year'，其他 → 'normal'
+		if (vipType == 20) return 'year'
+		return 'normal'
+	} catch (e) {}
+	return ''
+}
+
+// 礼物等级获取函数
+const getGiftLevel = (item: any): number => {
+	try {
+		const itemStr = JSON.stringify(item)
+		const itemObj = JSON.parse(itemStr) as UTSJSONObject
+		const giftLevelVal = itemObj.get('giftLevel')
+		if (giftLevelVal != null) {
+			const level = parseInt(giftLevelVal.toString())
+			if (isNaN(level) == false) return level
+		}
+	} catch (e) {}
+	return 0
+}
+
+const handleUserProfile = (item: TrendsItemData) => {
+	if (!item || item.userKid == false) {
+		uni.showToast({
+			title: '用户信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: `/pagesUser/persionInfo/index?id=${item.userKid}`
+	})
+}
+
+const goToDetail = (item: TrendsItemData) => {
+	uni.navigateTo({
+		url: `/pagesBusiness/commend/index?id=${item.kid}`
+	})
+}
+
+const goToLineDetail = (lineKid: string) => {
+	uni.navigateTo({
+		url: `/pagesBusiness/routeInfo/index?lineKid=${lineKid}`
+	})
+}
+
+const videoPlay = (index: number) => {
+	// 暂停其他视频
+	props.list.forEach((item, i) => {
+		if (i != index) {
+			const videoContext = uni.createVideoContext('video' + i)
+			videoContext.pause()
+		}
+	})
+	
+	// 播放当前视频
+	const videoContext = uni.createVideoContext('video' + index)
+	videoContext.play()
+}
+
+const handleDoUp = async (item: TrendsItemData, index: number) => {
+	// 检查登录状态（使用 store 的 isLogin 状态）
+	const isLogin = userStore.isLogin
+	if (isLogin == false) {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (flag.value == null || flag.value == false || flag.value == '') return
+	flag.value = false
+	
+	try {
+		// TODO: 调用点赞/取消点赞API
+		if (item.isLike == 10) {
+			// 取消点赞
+			item.likeNum--
+			item.isLike = 20
+		} else {
+			// 点赞
+			item.likeNum++
+			item.isLike = 10
+		}
+	} catch (error) {
+		console.error('点赞操作失败:', error)
+	} finally {
+		flag.value = true
+	}
+}
+</script>
+
+<style scoped>
+.user-avatar {
+	width: 192rpx;
+	height: 192rpx;
+	border-radius: 60rpx;
+}
+
+.nick-name {
+	max-width: 1120rpx;
+}
+
+.content {
+	line-height: 84rpx;
+	white-space: pre-wrap;
+}
+
+/* 图片网格 */
+.image-grid {
+	display: flex;
+	flex-wrap: wrap;
+	margin-right: 20rpx;
+	margin-left: 20rpx;
+}
+
+.image-grid.grid-1 .grid-image {
+	width: 100%;
+	height: 860rpx;
+	border-radius: 48rpx;
+}
+
+.image-grid.grid-2 {
+	display: flex;
+	flex-direction: row;
+}
+
+.image-grid.grid-2 .grid-image {
+	width: 50%;
+	height: 460rpx;
+	border-radius: 48rpx;
+}
+
+.image-grid.grid-4,
+.image-grid.grid-9 {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.image-grid.grid-4 .grid-image {
+	width: 50%;
+	height: 400rpx;
+	border-radius: 48rpx;
+}
+
+.image-grid.grid-9 .grid-image {
+	width: 33.333%;
+	height: 400rpx;
+	border-radius: 48rpx;
+}
+
+.video-box {
+	position: relative;
+}
+
+.video {
+	width: 100%;
+	height: 860rpx;
+	border-radius: 48rpx;
+	overflow: hidden;
+}
+
+.line-cover {
+	width: 192rpx;
+	height: 192rpx;
+	border-radius: 16rpx;
+}
+
+.location-icon,
+.action-icon {
+	width: 56rpx;
+	height: 56rpx;
+}
+
+.do-box {
+	min-width: 136rpx;
+}
+
+.null-page {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 160rpx 0;
+}
+
+.empty-container {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.empty-icon {
+	width: 396rpx;
+	height: 396rpx;
+	margin-bottom: 64rpx;
+}
+
+.empty-text {
+	font-size: 56rpx;
+	color: #999999;
+}
+</style>

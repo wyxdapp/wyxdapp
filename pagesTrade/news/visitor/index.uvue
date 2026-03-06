@@ -1,0 +1,524 @@
+<template>
+	<view class="visitor-page">
+		<!-- 头部背景 -->
+		<!-- #ifndef H5 -->
+		<view class="header-bg" :style="{ height: (pageStatusBarHeight + 90) + 'px' }"></view>
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="header-bg" :style="{ height: '90px' }"></view>
+		<!-- #endif -->
+		
+		<!-- 标题栏 -->
+		<!-- #ifndef H5 -->
+		<view class="header-box" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="header-box">
+		<!-- #endif -->
+			<view class="header-content">
+				<view class="back-btn" @click="handleBack">
+					<view class="back-arrow"></view>
+				</view>
+				<text class="header-title">访客</text>
+				<view class="read-all-btn" @click="handleClearUnread">
+					<text class="btn-text">全部已读</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 内容区 -->
+		<scroll-view 
+			class="scroll-view" 
+			scroll-y
+			:show-scrollbar="false"
+			refresher-enabled
+			:refresher-triggered="refreshing"
+			@refresherrefresh="onRefresh"
+			@scrolltolower="loadMore"
+		>
+			<!-- 骨架屏 -->
+			<view v-if="loading == true && visitors.length == 0" class="skeleton-list">
+				<view class="skeleton-item">
+					<view class="skeleton-avatar"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+					</view>
+				</view>
+				<view class="skeleton-item">
+					<view class="skeleton-avatar"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+					</view>
+				</view>
+				<view class="skeleton-item">
+					<view class="skeleton-avatar"></view>
+					<view class="skeleton-content">
+						<view class="skeleton-title"></view>
+						<view class="skeleton-text"></view>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 空状态 -->
+			<ListStatus 
+				v-else-if="visitors.length == 0" 
+				status="empty" 
+				emptyText="最近还没有人来访"
+			/>
+			
+			<!-- 访客列表 -->
+			<view v-else class="visitor-list">
+				<view 
+					v-for="(visitor, index) in visitors" 
+					:key="index"
+					class="visitor-card"
+					@click="gotoUserProfile(index)"
+				>
+					<Avatar 
+						:url="getVisitorAvatar(index)"
+						:userId="getVisitorKid(index)"
+						:customSize="96"
+						clickMode="none"
+					/>
+					<view class="visitor-info">
+						<text class="visitor-name">{{ getVisitorName(index) }}</text>
+						<text class="visitor-desc">{{ getVisitorDesc(index) }}</text>
+					</view>
+					<text class="arrow-icon">›</text>
+				</view>
+			</view>
+			
+			<!-- 加载更多 -->
+			<view v-if="visitors.length >= 5" class="load-more">
+				<text class="load-text">{{ loadMoreText }}</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { getVisitors, markAllRead } from '@/common/services/visitorService.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { safeGetArray } from '@/utils/nullGuard.uts'
+
+// 访客数据类
+class VisitorData {
+	visitorKid: string = ''
+	nickname: string = ''
+	avatar: string = ''
+	count: number = 0
+	lastVisitTime: string = ''
+	time: string = ''
+}
+
+// 状态
+const page = ref<number>(1)
+const size = ref<number>(20)
+const total = ref<number>(0)
+const visitors = ref<Array<VisitorData>>([])
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const loadMoreText = ref<string>('上拉加载更多')
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+
+import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
+
+// 辅助函数：从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	return (val != null && val.toString() != '') ? val.toString() : ''
+}
+
+// 辅助函数：从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		return isNaN(num) == false ? num : 0
+	}
+	return 0
+}
+
+// 辅助函数：获取用户ID
+const getUserKid = (): string => {
+	try {
+		const userKidVal = uni.getStorageSync('userKid') as string
+		return (userKidVal != null && userKidVal != '') ? userKidVal : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 辅助函数：获取访客头像
+const getVisitorAvatar = (index: number): string => {
+	if (index < 0 || index >= visitors.value.length) return defaultAvatar
+	const avatar = visitors.value[index].avatar
+	return (avatar != null && avatar != '') ? avatar : defaultAvatar
+}
+
+// 辅助函数：获取访客 Kid
+const getVisitorKid = (index: number): string => {
+	if (index < 0 || index >= visitors.value.length) return ''
+	return visitors.value[index].visitorKid
+}
+
+// 辅助函数：获取访客名称
+const getVisitorName = (index: number): string => {
+	if (index < 0 || index >= visitors.value.length) return '访客'
+	const visitor = visitors.value[index]
+	if (visitor.visitorKid == '0') return '匿名访客'
+	if (visitor.nickname != null && visitor.nickname != '') return visitor.nickname
+	if (visitor.visitorKid != null && visitor.visitorKid != '' && visitor.visitorKid.length >= 4) {
+		return '访客' + visitor.visitorKid.substring(visitor.visitorKid.length - 4)
+	}
+	return '访客'
+}
+
+// 辅助函数：获取访客描述
+const getVisitorDesc = (index: number): string => {
+	if (index < 0 || index >= visitors.value.length) return ''
+	const visitor = visitors.value[index]
+	const count = (visitor.count != null && visitor.count > 0) ? visitor.count : 1
+	const time = (visitor.lastVisitTime != null && visitor.lastVisitTime != '') ? visitor.lastVisitTime : visitor.time
+	return 'Ta 查看了你的主页' + count.toString() + '次 · ' + time
+}
+
+// 更新加载更多文本
+const updateLoadMoreText = () => {
+	if (visitors.value.length >= total.value && total.value > 0) {
+		loadMoreText.value = '没有更多了'
+	} else if (loading.value == true) {
+		loadMoreText.value = '加载中...'
+	} else {
+		loadMoreText.value = '上拉加载更多'
+	}
+}
+
+// 标记所有访客为已读
+const clearUnread = async () => {
+	try {
+		const userKid = getUserKid()
+		if (userKid == '') return
+		
+		const params = {
+			userKid: userKid
+		} as UTSJSONObject
+		await markAllRead(params)
+	} catch (error: Error) {
+		handleSilentError(error, '标记已读')
+	}
+}
+
+// 点击全部已读按钮
+const handleClearUnread = () => {
+	clearUnread()
+}
+
+// 获取访客列表
+const fetchVisitors = async () => {
+	const userKid = getUserKid()
+	if (userKid == '') {
+		console.log('用户未登录')
+		return
+	}
+	
+	loading.value = true
+	updateLoadMoreText()
+	
+	try {
+		const params = {
+			userKid: userKid,
+			page: page.value,
+			size: size.value
+		} as UTSJSONObject
+		const res = await getVisitors(params)
+		
+		const resObj = toJsonObj(res)
+		const codeVal = getObjNumber(resObj, 'code')
+		
+		if (codeVal == 200) {
+			const dataVal = (resObj != null) ? resObj.get('data') : null
+			const dataObj = toJsonObj(dataVal)
+			
+			if (dataObj != null) {
+				// 获取列表数据 - 优先使用 items，其次使用 list
+				const itemsArray = safeGetArray(dataObj, 'items')
+				const listArray = safeGetArray(dataObj, 'list')
+				const finalArray = (itemsArray.length > 0) ? itemsArray : listArray
+				
+				// 获取总数
+				const totalVal = getObjNumber(dataObj, 'total')
+				total.value = totalVal
+				
+				// 解析访客列表
+				for (let i = 0; i < finalArray.length; i = i + 1) {
+					const itemObj = toJsonObj(finalArray[i])
+					if (itemObj != null) {
+						const visitorData = new VisitorData()
+						visitorData.visitorKid = getObjString(itemObj, 'visitorKid')
+						visitorData.nickname = getObjString(itemObj, 'nickname')
+						visitorData.avatar = getObjString(itemObj, 'avatar')
+						visitorData.count = getObjNumber(itemObj, 'count')
+						visitorData.lastVisitTime = getObjString(itemObj, 'lastVisitTime')
+						visitorData.time = getObjString(itemObj, 'time')
+						visitors.value.push(visitorData)
+					}
+				}
+			}
+		}
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取访客列表', loading)
+		} else {
+			loading.value = false
+		}
+	} finally {
+		loading.value = false
+		updateLoadMoreText()
+	}
+}
+
+// 刷新
+const refresh = async () => {
+	page.value = 1
+	visitors.value = []
+	await fetchVisitors()
+}
+
+// 下拉刷新
+const onRefresh = () => {
+	refreshing.value = true
+	refresh().then((): void => {
+		refreshing.value = false
+	}).catch((err: any | null): void => {
+		refreshing.value = false
+	})
+}
+
+// 加载更多
+const loadMore = () => {
+	if (loading.value == true) return
+	if (visitors.value.length >= total.value && total.value > 0) return
+	page.value = page.value + 1
+	fetchVisitors()
+}
+
+// 跳转用户主页
+const gotoUserProfile = (index: number) => {
+	if (index < 0 || index >= visitors.value.length) return
+	
+	const visitor = visitors.value[index]
+	// 匿名访客不能跳转
+	if (visitor.visitorKid == '' || visitor.visitorKid == '0') {
+		uni.showToast({
+			title: '匿名访客无法查看',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/persionInfo/index?id=' + visitor.visitorKid
+	})
+}
+
+// 返回上一页
+const handleBack = () => {
+	uni.navigateBack()
+}
+
+// 生命周期
+onMounted(() => {
+	// 初始化页面布局
+	initPageLayout()
+	
+	clearUnread()
+	fetchVisitors()
+})
+</script>
+
+<style>
+.visitor-page {
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	background-color: #667eea;
+}
+
+.header-box {
+	background-color: #667eea;
+	flex-direction: column;
+}
+
+.header-content {
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 28rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-arrow {
+	width: 20rpx;
+	height: 20rpx;
+	border-left-width: 4rpx;
+	border-left-style: solid;
+	border-left-color: #ffffff;
+	border-bottom-width: 4rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #ffffff;
+	transform: rotate(45deg);
+}
+
+.header-title {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.read-all-btn {
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	background-color: rgba(255, 255, 255, 0.2);
+	border-radius: 32rpx;
+	margin-left: 200rpx;
+}
+
+.btn-text {
+	font-size: 24rpx;
+	color: #ffffff;
+}
+
+.scroll-view {
+	flex: 1;
+	padding-top: 20rpx;
+}
+
+/* 骨架屏 */
+.skeleton-list {
+	padding: 0 28rpx;
+}
+
+.skeleton-item {
+	flex-direction: row;
+	align-items: center;
+	padding: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin-bottom: 20rpx;
+}
+
+.skeleton-avatar {
+	width: 96rpx;
+	height: 96rpx;
+	border-radius: 48rpx;
+	background-color: #f0f0f0;
+}
+
+.skeleton-content {
+	flex: 1;
+	margin-left: 20rpx;
+}
+
+.skeleton-title {
+	width: 200rpx;
+	height: 32rpx;
+	background-color: #f0f0f0;
+	border-radius: 4rpx;
+	margin-bottom: 16rpx;
+}
+
+.skeleton-text {
+	width: 300rpx;
+	height: 24rpx;
+	background-color: #f0f0f0;
+	border-radius: 4rpx;
+}
+
+/* 空状态 */
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 120rpx 0;
+}
+
+.empty-icon {
+	font-size: 120rpx;
+	margin-bottom: 20rpx;
+}
+
+/* 访客列表 */
+.visitor-list {
+	padding: 0 28rpx;
+}
+
+.visitor-card {
+	flex-direction: row;
+	align-items: center;
+	padding: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	margin-bottom: 20rpx;
+}
+
+.visitor-info {
+	flex: 1;
+	margin-left: 20rpx;
+	flex-direction: column;
+}
+
+.visitor-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.visitor-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.arrow-icon {
+	font-size: 48rpx;
+	color: #999999;
+}
+
+/* 加载更多 */
+.load-more {
+	padding: 32rpx 0;
+	flex-direction: row;
+	justify-content: center;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+</style>

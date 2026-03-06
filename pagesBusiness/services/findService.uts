@@ -1,0 +1,80 @@
+import { request } from '@/utils/request'
+
+interface GetTrendsListParams {
+	pageNumber: number
+	pageSize: number
+	userKid?: string
+	latitude?: number
+	longitude?: number
+}
+
+interface GetOnlineListParams {
+	pageNumber: number
+	pageSize: number
+}
+
+interface GetGrabOrderListParams {
+	pageNumber: number
+	pageSize: number
+}
+
+interface LikeTrendParams {
+	userKid: string
+	discoverKid: string
+}
+
+interface UnlikeTrendParams {
+	userKid: string
+	discoverKid: string
+}
+
+interface GrabOrderParams {
+	orderKid: string
+	guideKid: string
+}
+
+/**
+ * 获取动态列表
+ */
+export const getTrendsList = (params: GetTrendsListParams) => {
+  return request.post('/dynamic/v1/queryAllDynamic', params, false)
+}
+
+/**
+ * 获取在线列表
+ */
+export const getOnlineList = (params: GetOnlineListParams) => {
+  return request.post('/dynamic/recommendFollows', params, false)
+}
+
+/**
+ * 获取抢单列表
+ * 后端接口: POST /order/guide/queryGrabOrder
+ */
+export const getGrabOrderList = (params: GetGrabOrderListParams) => {
+  return request.post('/order/guide/queryGrabOrder', params, false)
+}
+
+/**
+ * 点赞动态
+ */
+export const likeTrend = (params: LikeTrendParams) => {
+  return request.post('/behavior/like/addLike', params, false)
+}
+
+/**
+ * 取消点赞
+ */
+export const unlikeTrend = (params: UnlikeTrendParams) => {
+  return request.post('/behavior/like/cancelLike', params, false)
+}
+
+/**
+ * 抢单操作
+ * 后端接口: POST /order/guide/grabOrder
+ * 将订单状态从5(待抢单)改为10(待付款)
+ */
+export const grabOrder = (params: GrabOrderParams) => {
+  return request.post('/order/guide/grabOrder', params, false)
+}
+

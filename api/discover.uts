@@ -1,0 +1,459 @@
+/**
+ * 发现页相关 API
+ * 对应Vue2: http.api.js 中的发现页接口
+ */
+
+import request from '@/utils/request'
+import {
+	GetAllTrendsParams,
+	GetRecommendFollowsParams,
+	GetTrendDetailParams,
+	AddCommentParams as AddCommentParamsType,
+	GetCommentListParams,
+	GetReplyListParams,
+	AddReplyParams as AddReplyParamsType,
+	GetCityListParams,
+	QueryAllForteParams,
+	QueryUserForteParams,
+	QueryAllSpecialityParams as QueryAllSpecialityParamsType,
+	DeleteUserLabelParams as DeleteUserLabelParamsType,
+	DeleteUserLanguageParams as DeleteUserLanguageParamsType
+} from './types/discoverTypes.uts'
+
+// Re-export types from discoverTypes for backward compatibility
+export { QueryAllSpecialityParamsType as QueryAllSpecialityParams }
+export { DeleteUserLabelParamsType as DeleteUserLabelParams }
+export { DeleteUserLanguageParamsType as DeleteUserLanguageParams }
+
+// 关注向导参数接口
+export interface AddGuideFocusParams {
+	userKid: string
+	focusUserKid: string
+}
+
+// 取消关注参数接口
+export interface CancelGuideFocusParams {
+	userKid: string
+	focusUserKid: string
+}
+
+// 动态点赞参数接口
+export interface AddLikeParams {
+	userKid: string
+	discoverKid?: string
+	dynamicKid?: string
+	kid?: string
+}
+
+// 取消动态点赞参数接口
+export interface CancelLikeParams {
+	userKid: string
+	discoverKid?: string
+	dynamicKid?: string
+	kid?: string
+}
+
+// 举报动态参数接口
+export interface ReportTrendParams {
+	userKid: string
+	reportedKid: string
+	reportType: number
+	reportContent?: string
+}
+
+// 发布动态参数接口
+export interface PublishTrendParams {
+	userKid: string
+	content: string
+	images?: string[]
+	location?: string
+	longitude?: number
+	latitude?: number
+}
+
+// 用户添加语言和标签参数接口
+export interface AddUserSpecialityParams {
+	userKid: string
+	labelKids?: string[]
+	languageKids?: string[]
+}
+
+// 添加/更新用户擅长标签参数接口
+export interface AddUserForteParams {
+	userKid: string
+	forteKids: string[]
+}
+
+// 删除用户擅长标签参数接口
+export interface DeleteUserForteParams {
+	userKid: string
+	forteKid: string
+}
+
+// 添加自定义标签参数接口
+export interface AddCustomLabelParams {
+	userKid: string
+	labelName: string
+}
+
+// 添加自定义语言参数接口
+export interface AddCustomLanguageParams {
+	userKid: string
+	languageName: string
+}
+
+/**
+ * 获取推荐动态列表
+ * POST /dynamic/v1/queryAllDynamic
+ * @param params { pageNumber?: number, pageSize?: number, userKid?: string }
+ */
+export const getAllTrends = (params: GetAllTrendsParams): Promise<UTSJSONObject> => {
+	const payload = {
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize,
+		userKid: params.userKid,
+		mediaType: params.mediaType
+	} as UTSJSONObject
+	return request.post('/dynamic/v1/queryAllDynamic', payload, true)
+}
+
+/**
+ * 获取在线列表（推荐关注）
+ * POST /dynamic/recommendFollows
+ * @param params { pageNumber?: number, pageSize?: number, userKid?: string }
+ */
+export const getRecommendFollows = (params: GetRecommendFollowsParams): Promise<UTSJSONObject> => {
+	const payload = {
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/dynamic/recommendFollows', payload, true)
+}
+
+/**
+ * 获取动态详情
+ * POST /dynamic/queryDynamicByDynamicKid
+ */
+export const getTrendDetail = (params: GetTrendDetailParams) => {
+	let id = ''
+	if (params.kid != '') {
+		id = params.kid
+	} else if (params.dynamicKid != '') {
+		id = params.dynamicKid
+	}
+	
+	const payload = {
+		dynamicKid: id
+	} as UTSJSONObject
+	if (params.userKid != '') {
+		payload['userKid'] = params.userKid
+	}
+	if (params.latitude != 0) {
+		payload['latitude'] = params.latitude
+	}
+	if (params.longitude != 0) {
+		payload['longitude'] = params.longitude
+	}
+	
+	return request.post('/dynamic/queryDynamicByDynamicKid', payload, true)
+}
+
+/**
+ * 关注向导
+ * POST /user/userFocus/addFocus
+ */
+export const addGuideFocus = (params: AddGuideFocusParams) => {
+	return request.post(
+		`/user/userFocus/addFocus?userKid=${encodeURIComponent(params.userKid)}&focusUserKid=${encodeURIComponent(params.focusUserKid)}`,
+		null,
+		true
+	)
+}
+
+/**
+ * 取消关注
+ * POST /user/userFocus/cancelFocus
+ */
+export const cancelGuideFocus = (params: CancelGuideFocusParams) => {
+	return request.post(
+		`/user/userFocus/cancelFocus?userKid=${encodeURIComponent(params.userKid)}&focusUserKid=${encodeURIComponent(params.focusUserKid)}`,
+		null,
+		true
+	)
+}
+
+/**
+ * 添加评论
+ * POST /behavior/comment/addComment
+ */
+export const addComment = (params: AddCommentParamsType) => {
+	const commentContent = params.commentContent.trim()
+	
+	// 参数校验
+	if (params.userKid == '' || params.contentKid == '') {
+		return Promise.reject(new Error('用户或内容ID不能为空')) as Promise<any>
+	}
+	if (commentContent == '') {
+		return Promise.reject(new Error('评论内容不能为空')) as Promise<any>
+	}
+	
+	const payload = {
+		userKid: params.userKid,
+		contentKid: params.contentKid,
+		commentContent: commentContent,
+		commentModule: params.commentModule
+	} as UTSJSONObject
+	
+	return request.post('/behavior/comment/addComment', payload, true) as Promise<any>
+}
+
+/**
+ * 获取评论列表
+ * POST /behavior/comment/v1/queryCommentList
+ */
+export const getCommentList = (params: GetCommentListParams) => {
+	let discoverKidValue = ''
+	if (params.discoverKid != '') {
+		discoverKidValue = params.discoverKid
+	} else if (params.contentKid != '') {
+		discoverKidValue = params.contentKid
+	} else if (params.dynamicKid != '') {
+		discoverKidValue = params.dynamicKid
+	} else if (params.kid != '') {
+		discoverKidValue = params.kid
+	}
+	
+	const url = `/behavior/comment/v1/queryCommentList?discoverKid=${encodeURIComponent(discoverKidValue)}&pageNumber=${params.pageNumber}&pageSize=${params.pageSize}&commentModule=${params.commentModule}`
+	
+	return request.post(url, null, true)
+}
+
+/**
+ * 获取回复列表
+ * POST /behavior/reply/replyList
+ */
+export const getReplyList = (params: GetReplyListParams) => {
+	const url = `/behavior/reply/replyList?commentKid=${encodeURIComponent(params.commentKid)}&pageNumber=${params.pageNumber}&pageSize=${params.pageSize}`
+	return request.post(url, null, true)
+}
+
+/**
+ * 添加回复
+ * POST /behavior/reply/addReply
+ */
+export const addReply = (params: AddReplyParamsType) => {
+	const payload = {
+		userKid: params.userKid,
+		commentKid: params.commentKid,
+		replyContent: params.replyContent.trim(),
+		parentReplyKid: params.parentReplyKid,
+		idempotencyKey: params.idempotencyKey
+	} as UTSJSONObject
+	
+	return request.post('/behavior/reply/addReply', payload, true)
+}
+
+/**
+ * 动态点赞
+ * POST /behavior/like/addLike
+ */
+export const addLike = (params: AddLikeParams) => {
+	const discoverKidValue = (params.discoverKid != null && params.discoverKid != '') ? params.discoverKid : 
+		((params.dynamicKid != null && params.dynamicKid != '') ? params.dynamicKid : 
+		((params.kid != null && params.kid != '') ? params.kid : ''))
+	const payload = {
+		userKid: params.userKid,
+		discoverKid: discoverKidValue
+	} as UTSJSONObject
+	
+	return request.post('/behavior/like/addLike', payload, true)
+}
+
+/**
+ * 取消动态点赞
+ * POST /behavior/like/cancelLike
+ */
+export const cancelLike = (params: CancelLikeParams) => {
+	const discoverKidValue = (params.discoverKid != null && params.discoverKid != '') ? params.discoverKid : 
+		((params.dynamicKid != null && params.dynamicKid != '') ? params.dynamicKid : 
+		((params.kid != null && params.kid != '') ? params.kid : ''))
+	const payload = {
+		userKid: params.userKid,
+		discoverKid: discoverKidValue
+	} as UTSJSONObject
+	
+	return request.post('/behavior/like/cancelLike', payload, true)
+}
+
+/**
+ * 举报动态
+ * POST /support/report/addReport
+ */
+export const reportTrend = (params: ReportTrendParams) => {
+	const payload = {
+		userKid: params.userKid,
+		reportedKid: params.reportedKid,
+		reportType: params.reportType
+	} as UTSJSONObject
+	if (params.reportContent != null) { payload['reportContent'] = params.reportContent }
+	return request.post('/support/report/addReport', payload, true)
+}
+
+/**
+ * 发布动态
+ * POST /dynamic/releaseDynamic
+ */
+export const publishTrend = (params: PublishTrendParams) => {
+	const payload = {
+		userKid: params.userKid,
+		content: params.content
+	} as UTSJSONObject
+	if (params.images != null) { payload['images'] = params.images }
+	if (params.location != null) { payload['location'] = params.location }
+	if (params.longitude != null) { payload['longitude'] = params.longitude }
+	if (params.latitude != null) { payload['latitude'] = params.latitude }
+	return request.post('/dynamic/releaseDynamic', payload, true)
+}
+
+/**
+ * 获取城市定位列表
+ * POST /support/location/cityList
+ */
+export const getCityList = (params: GetCityListParams | null) => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const cityType = (params != null) ? params.cityType : 10
+	const payload = {
+		cityType: cityType
+	} as UTSJSONObject
+	if (params != null && params.searchCondition != null) {
+		payload['searchCondition'] = params.searchCondition
+	}
+	return request.post('/support/location/cityList', payload, true)
+}
+
+/**
+ * 获取用户标签和语言
+ * GET /user/speciality/queryUserSpeciality
+ */
+export const getUserSpeciality = (userKid: string): Promise<UTSJSONObject> => {
+	// UTS 规范：request.get 第二个参数为 data（传 null），第三个参数为 showLoading
+	return request.get('/user/speciality/queryUserSpeciality?userKid=' + userKid, null, false)
+}
+
+/**
+ * 用户添加语言和标签
+ * POST /user/speciality/addUserSpeciality
+ */
+export const addUserSpeciality = (params: AddUserSpecialityParams) => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	if (params.labelKids != null) { payload['labelKids'] = params.labelKids }
+	if (params.languageKids != null) { payload['languageKids'] = params.languageKids }
+	return request.post('/user/speciality/addUserSpeciality', payload, true)
+}
+
+/**
+ * 查询所有擅长
+ * POST /user/userForte/queryAllForte
+ */
+export const queryAllForte = (params: QueryAllForteParams | null = null) => {
+	const payload = {} as UTSJSONObject
+	return request.post('/user/userForte/queryAllForte', payload, true)
+}
+
+/**
+ * 查询用户擅长（带选中状态）
+ * POST /user/userForte/queryUserForte
+ */
+export const queryUserForte = (params: QueryUserForteParams) => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/user/userForte/queryUserForte', payload, true)
+}
+
+/**
+ * 添加/更新用户擅长标签
+ * POST /user/userForte/addUserForte
+ */
+export const addUserForte = (params: AddUserForteParams) => {
+	const payload = {
+		userKid: params.userKid,
+		forteKids: params.forteKids
+	} as UTSJSONObject
+	return request.post('/user/userForte/addUserForte', payload, true)
+}
+
+/**
+ * 删除用户擅长标签
+ * POST /user/userForte/deleteUserForte
+ */
+export const deleteUserForte = (params: DeleteUserForteParams) => {
+	const payload = {
+		userKid: params.userKid,
+		forteKid: params.forteKid
+	} as UTSJSONObject
+	return request.post('/user/userForte/deleteUserForte', payload, true)
+}
+
+/**
+ * 查询所有标签和语言
+ * POST /user/speciality/queryAllSpeciality
+ * UTS 规范：API 函数参数使用类型定义，避免 Android ClassCastException
+ */
+export const queryAllSpeciality = (params: QueryAllSpecialityParamsType) => {
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/user/speciality/queryAllSpeciality', payload, true)
+}
+
+/**
+ * 添加自定义标签
+ * POST /user/speciality/addLabel
+ */
+export const addCustomLabel = (params: AddCustomLabelParams) => {
+	const payload = {
+		userKid: params.userKid,
+		labelName: params.labelName
+	} as UTSJSONObject
+	return request.post('/user/speciality/addLabel', payload, true)
+}
+
+/**
+ * 添加自定义语言
+ * POST /user/speciality/addLanguage
+ */
+export const addCustomLanguage = (params: AddCustomLanguageParams) => {
+	const payload = {
+		userKid: params.userKid,
+		languageName: params.languageName
+	} as UTSJSONObject
+	return request.post('/user/speciality/addLanguage', payload, true)
+}
+
+/**
+ * 删除标签
+ * POST /user/speciality/deleteLabel
+ */
+export const deleteUserLabel = (params: DeleteUserLabelParamsType) => {
+	const payload = {
+		userKid: params.userKid,
+		labelKid: params.labelKid
+	} as UTSJSONObject
+	return request.post('/user/speciality/deleteLabel', payload, true)
+}
+
+/**
+ * 删除语言
+ * POST /user/speciality/deleteLanguage
+ */
+export const deleteUserLanguage = (params: DeleteUserLanguageParamsType) => {
+	const payload = {
+		userKid: params.userKid,
+		languageKid: params.languageKid
+	} as UTSJSONObject
+	return request.post('/user/speciality/deleteLanguage', payload, true)
+}

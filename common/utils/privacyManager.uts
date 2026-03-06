@@ -1,0 +1,93 @@
+/**
+ * 隐私协议状态管理器
+ * 负责管理用户隐私协议同意状态，确保敏感 API 在用户同意前不被调用
+ * 
+ * Requirements: 1.1, 1.2, 1.3, 1.4, 6.5
+ */
+
+// 隐私协议状态存储 key
+const PRIVACY_AGREED_KEY = 'app_privacy_agreed'
+
+// 隐私同意事件名（用于通知各模块隐私已同意）
+export const PRIVACY_AGREED_EVENT = 'privacy:agreed'
+
+// 内存缓存（避免频繁读取 Storage）
+let privacyAgreedCache: boolean | null = null
+
+/**
+ * 检查用户是否已同意隐私政策
+ * @returns true 表示已同意，false 表示未同意
+ */
+export function isPrivacyAgreed(): boolean {
+	// 优先使用内存缓存
+	if (privacyAgreedCache != null) {
+		return privacyAgreedCache == true
+	}
+	
+	try {
+		const val = uni.getStorageSync(PRIVACY_AGREED_KEY)
+		// UTS 规范：显式判断
+		const agreed = (val != null && val.toString() == 'true')
+		privacyAgreedCache = agreed
+		return agreed
+	} catch (e) {
+		console.error('❌ [PrivacyManager] 读取隐私协议状态失败:', e)
+		return false
+	}
+}
+
+/**
+ * 设置用户已同意隐私政策
+ */
+export function setPrivacyAgreed(): void {
+	try {
+		uni.setStorageSync(PRIVACY_AGREED_KEY, 'true')
+		privacyAgreedCache = true
+	} catch (e) {
+		console.error('❌ [PrivacyManager] 保存隐私协议状态失败:', e)
+	}
+}
+
+/**
+ * 检查隐私协议状态，用于保护敏感 API 调用
+ * 在调用敏感 API 前调用此函数进行守卫
+ * @returns true 表示已同意，可以调用敏感 API；false 表示未同意，应跳过敏感调用
+ */
+export function checkPrivacyBeforeCall(): boolean {
+	const agreed = isPrivacyAgreed()
+	if (agreed == false) {
+		console.log('⚠️ [PrivacyManager] 用户未同意隐私政策，跳过敏感 API 调用')
+	}
+	return agreed
+}
+
+/**
+ * 重置隐私协议状态（用于测试或用户撤回同意）
+ */
+export function resetPrivacyAgreed(): void {
+	try {
+		uni.removeStorageSync(PRIVACY_AGREED_KEY)
+		privacyAgreedCache = null
+		console.log('🔄 [PrivacyManager] 隐私协议状态已重置')
+	} catch (e) {
+		console.error('❌ [PrivacyManager] 重置隐私协议状态失败:', e)
+	}
+}
+
+/**
+ * 刷新内存缓存（从 Storage 重新读取）
+ * 用于确保缓存与 Storage 同步
+ */
+export function refreshPrivacyCache(): void {
+	privacyAgreedCache = null
+	isPrivacyAgreed()
+}
+
+/**
+ * 广播隐私同意事件
+ * 通知所有延迟初始化的模块（如首页定位）隐私已同意，可以开始工作
+ */
+export function broadcastPrivacyAgreed(): void {
+	console.log('📢 [PrivacyManager] 广播隐私同意事件')
+	uni.$emit(PRIVACY_AGREED_EVENT)
+}

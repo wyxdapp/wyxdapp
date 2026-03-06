@@ -1,0 +1,501 @@
+/**
+ * 订单相关 API
+ * 对应Vue2: http.api.js 中的订单模块
+ */
+
+import request from '@/utils/request'
+import {
+	GetContactListParams,
+	AddTravelUserParams,
+	DelTravelUserParams,
+	UpdateTravelUserParams,
+	SetDefaultTravelUserParams,
+	CreateGrabOrderParams,
+	UpdateGrabOrderParams,
+	GetGrabOrderListParams,
+	GuiderGrabOrderParams,
+	GetExpenditureListParams,
+	GetIncomeListParams,
+	CreateGuiderOrderParams,
+	CreateRouteOrderParams,
+	OrderDetailsParams,
+	CancelOrderParams,
+	RemoveOrderParams,
+	CompleteOrderParams,
+	AcceptOrderParams,
+	RejectOrderParams,
+	UpdateOrderPriceParams,
+	AddEvaluateParams,
+	GuiderAcceptRefundParams,
+	GuiderRejectRefundParams,
+	GetGuideCommentListParams,
+	ApplyOrderRefundParams,
+	CancelRefundParams,
+	QueryRefundDetailParams
+} from './types/orderTypes.uts'
+
+// Re-export types for consumers that import from this file
+export {
+	GetContactListParams,
+	AddTravelUserParams,
+	DelTravelUserParams,
+	UpdateTravelUserParams,
+	SetDefaultTravelUserParams,
+	CreateGrabOrderParams,
+	UpdateGrabOrderParams,
+	GetGrabOrderListParams,
+	GuiderGrabOrderParams,
+	GetExpenditureListParams,
+	GetIncomeListParams,
+	CreateGuiderOrderParams,
+	CreateRouteOrderParams,
+	OrderDetailsParams,
+	CancelOrderParams,
+	RemoveOrderParams,
+	CompleteOrderParams,
+	AcceptOrderParams,
+	RejectOrderParams,
+	UpdateOrderPriceParams,
+	AddEvaluateParams,
+	GuiderAcceptRefundParams,
+	GuiderRejectRefundParams,
+	GetGuideCommentListParams,
+	ApplyOrderRefundParams,
+	CancelRefundParams,
+	QueryRefundDetailParams
+} from './types/orderTypes.uts'
+
+/**
+ * 获取联系信息列表
+ * POST /user/userTraveller/queryTraveller
+ */
+export const getContactList = (params: GetContactListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/user/userTraveller/queryTraveller', payload, true)
+}
+
+/**
+ * 添加联系人
+ * POST /user/userTraveller/addTraveller
+ */
+export const addTravelUser = (params: AddTravelUserParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		name: params.name,
+		phone: params.phone,
+		idcard: params.idcard,
+		is_default: params.is_default
+	} as UTSJSONObject
+	return request.post('/user/userTraveller/addTraveller', payload, true)
+}
+
+/**
+ * 删除联系人
+ * POST /user/userTraveller/removeTraveller
+ */
+export const delTravelUser = (params: DelTravelUserParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/user/userTraveller/removeTraveller', payload, true)
+}
+
+/**
+ * 编辑联系人
+ * POST /user/userTraveller/updateTraveller
+ */
+export const updateTravelUser = (params: UpdateTravelUserParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		kid: params.kid,
+		name: params.name,
+		phone: params.phone,
+		idcard: params.idcard,
+		is_default: params.is_default
+	} as UTSJSONObject
+	return request.post('/user/userTraveller/updateTraveller', payload, true)
+}
+
+/**
+ * 设置默认联系人
+ * POST /user/userTraveller/setDefault
+ */
+export const setDefaultTravelUser = (params: SetDefaultTravelUserParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/user/userTraveller/setDefault', payload, true)
+}
+
+/**
+ * 发布向导需求（创建抢单订单）
+ * POST /order/tourist/createGrabOrder
+ */
+export const createGrabOrder = (params: CreateGrabOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		guideKid: params.guideKid,
+		travelDate: params.travelDate,
+		serviceHours: params.serviceHours,
+		realname: params.realname,
+		phone: params.phone,
+		totalMoney: params.totalMoney,
+		orderRemarks: params.orderRemarks,
+		orderLocation: params.orderLocation,
+		orderSource: params.orderSource,
+		merchantKid: params.merchantKid,
+		adultNumber: params.adultNumber,
+		childrenNumber: params.childrenNumber,
+		idempotencyKey: params.idempotencyKey,
+		guideComment: params.guideComment
+	} as UTSJSONObject
+	return request.post('/order/tourist/createGrabOrder', payload, true)
+}
+
+/**
+ * 修改抢单
+ * POST /order/tourist/updateGrabOrder
+ */
+export const updateGrabOrder = (params: UpdateGrabOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		kid: params.kid,
+		orderTitle: params.orderTitle,
+		orderDescribe: params.orderDescribe,
+		startTime: params.startTime,
+		endTime: params.endTime,
+		peopleNum: params.peopleNum,
+		budget: params.budget,
+		destination: params.destination,
+		userKid: params.userKid,
+		travelDate: params.travelDate,
+		serviceHours: params.serviceHours,
+		realname: params.realname,
+		phone: params.phone,
+		totalMoney: params.totalMoney,
+		orderRemarks: params.orderRemarks,
+		orderLocation: params.orderLocation,
+		orderSource: params.orderSource
+	} as UTSJSONObject
+	return request.post('/order/tourist/updateGrabOrder', payload, true)
+}
+
+/**
+ * 抢单列表
+ * POST /order/guide/queryGrabOrder
+ */
+export const getGrabOrderList = (params: GetGrabOrderListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/order/guide/queryGrabOrder', payload, true)
+}
+
+/**
+ * 抢单
+ * POST /order/guide/grabOrder
+ */
+export const guiderGrabOrder = (params: GuiderGrabOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		guideKid: params.guideKid,
+		orderKid: params.orderKid
+	} as UTSJSONObject
+	return request.post('/order/guide/grabOrder', payload, true)
+}
+
+/**
+ * 获取支出订单列表
+ * POST /order/tourist/queryOrderList
+ */
+export const getExpenditureList = (params: GetExpenditureListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		orderStatus: params.orderStatus,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/order/tourist/queryOrderList', payload, true)
+}
+
+/**
+ * 获取收入订单列表
+ * POST /order/guide/queryGuideAcceptOrder
+ */
+export const getIncomeList = (params: GetIncomeListParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		guideKid: params.guideKid,
+		orderStatus: params.orderStatus,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/order/guide/queryGuideAcceptOrder', payload, true)
+}
+
+/**
+ * 创建向导订单
+ * POST /order/tourist/createFreeTravelOrder
+ * 
+ * 注意：
+ * - 已移除 serviceHours 参数，使用 travelTotalTime 代替
+ * - 已移除 cityName 参数，后端不支持
+ */
+export const createGuiderOrder = (params: CreateGuiderOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		guideKid: params.guideKid,
+		orderTitle: params.orderTitle,
+		travelDate: params.travelDate,
+		travelTotalTime: params.travelTotalTime,
+		orderRemarks: params.orderRemarks,
+		totalMoney: params.totalMoney,
+		phone: params.phone,
+		realname: params.realname,
+		orderSource: params.orderSource,
+		orderAddr: params.orderAddr,
+		idempotencyKey: params.idempotencyKey,
+		merchantKid: params.merchantKid,
+		adultNumber: params.adultNumber,
+		childrenNumber: params.childrenNumber
+	} as UTSJSONObject
+	return request.post('/order/tourist/createFreeTravelOrder', payload, true)
+}
+
+/**
+ * 创建定制订单
+ * POST /order/tourist/createOrder
+ */
+export const createRouteOrder = (params: CreateRouteOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		lineKid: params.lineKid,
+		guideKid: params.guideKid,
+		orderTitle: params.orderTitle,
+		travelDate: params.travelDate,
+		serviceHours: params.serviceHours,
+		orderRemarks: params.orderRemarks,
+		totalMoney: params.totalMoney,
+		phone: params.phone,
+		realname: params.realname,
+		adultNumber: params.adultNumber,
+		childrenNumber: params.childrenNumber
+	} as UTSJSONObject
+	return request.post('/order/tourist/createOrder', payload, true)
+}
+
+/**
+ * 获取订单详情
+ * POST /order/tourist/queryOrderDetails
+ */
+export const getGuiderOrderInfo = (params: OrderDetailsParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/order/tourist/queryOrderDetails', payload, true)
+}
+
+/**
+ * 取消订单（支出）
+ * POST /order/tourist/cancelOrder
+ * 
+ * 注意：后端接口需要body中包含orderKid和userKid（必需）
+ * 如果未传递userKid，需要在调用时从userStore获取
+ */
+export const cancelOrder = (params: CancelOrderParams): Promise<UTSJSONObject> => {
+	// 构建body
+	let cancelReason = ''
+	if (params.cancelReason != null && params.cancelReason != '') {
+		cancelReason = params.cancelReason
+	} else if (params.reason != null && params.reason != '') {
+		cancelReason = params.reason
+	}
+	
+	const body = {
+		orderKid: params.orderKid,
+		userKid: params.userKid,
+		cancelReason: cancelReason
+	} as UTSJSONObject
+	
+	return request.post('/order/tourist/cancelOrder?orderKid=' + params.orderKid, body, true)
+}
+
+/**
+ * 申请退款
+ * POST /order/refund/applyRefund
+ */
+export const applyOrderRefund = (params: ApplyOrderRefundParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		refundReason: params.refundReason,
+		refundAmount: params.refundAmount
+	} as UTSJSONObject
+	return request.post('/order/refund/applyRefund', payload, true)
+}
+
+/**
+ * 删除订单
+ * POST /order/tourist/deleteOrder
+ */
+export const delOrderInfo = (params: RemoveOrderParams): Promise<UTSJSONObject> => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/order/tourist/deleteOrder', payload, true)
+}
+
+/**
+ * 完成订单（支出）
+ * POST /order/tourist/completeOrder
+ */
+export const completeOrder = (params: CompleteOrderParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid
+	} as UTSJSONObject
+	return request.post('/order/tourist/completeOrder?orderKid=' + params.orderKid, payload, true)
+}
+
+/**
+ * 接受订单（收入）
+ * POST /order/guide/acceptTouristOrder
+ */
+export const guiderAcceptOrder = (params: AcceptOrderParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid
+	} as UTSJSONObject
+	return request.post('/order/guide/acceptTouristOrder?orderKid=' + params.orderKid, payload, true)
+}
+
+/**
+ * 拒绝订单（收入）
+ * POST /order/guide/refuseTouristOrder
+ */
+export const guiderRejectOrder = (params: RejectOrderParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid,
+		refuseReason: params.refuseReason
+	} as UTSJSONObject
+	return request.post('/order/guide/refuseTouristOrder?orderKid=' + params.orderKid, payload, true)
+}
+
+/**
+ * 评价
+ * POST /behavior/evaluate/addEvaluate
+ */
+export const addEvaluate = (params: AddEvaluateParams): Promise<UTSJSONObject> => {
+	const payload = {
+		userKid: params.userKid,
+		evaluatedKid: params.evaluatedKid,
+		orderKid: params.orderKid,
+		evaluateContent: params.evaluateContent,
+		evaluateScore: params.evaluateScore,
+		evaluateImages: params.evaluateImages
+	} as UTSJSONObject
+	return request.post('/behavior/evaluate/addEvaluate', payload, true)
+}
+
+/**
+ * 同意退款
+ * POST /order/refund/agreeTouristRefund
+ */
+export const guiderAcceptRefund = (params: GuiderAcceptRefundParams): Promise<UTSJSONObject> => {
+	const payload = {
+		refundKid: params.refundKid
+	} as UTSJSONObject
+	return request.post(`/order/refund/agreeTouristRefund?refundKid=${params.refundKid}`, payload, true)
+}
+
+/**
+ * 拒绝退款
+ * POST /order/refund/guideRefuseApplyRefund
+ */
+export const guiderRejectRefund = (params: GuiderRejectRefundParams): Promise<UTSJSONObject> => {
+	const reason = params.refuseReason != null ? params.refuseReason : ''
+	const payload = {
+		refundKid: params.refundKid,
+		refuseReason: reason
+	} as UTSJSONObject
+	return request.post(`/order/refund/guideRefuseApplyRefund?refundKid=${params.refundKid}&reason=${reason}`, payload, true)
+}
+
+/**
+ * 修改订单价格
+ * POST /order/guide/updateOrderPrice
+ * 
+ * 注意：参数名称需要与后端接口保持一致
+ * 旧项目使用：vm.$u.post('/order/guide/updateOrderPrice', data)
+ * data包含：orderKid, orderPrice 或 orderAmount
+ */
+export const updateGuiderOrderPrice = (params: UpdateOrderPriceParams): Promise<UTSJSONObject> => {
+	let orderPrice = params.orderPrice
+	let orderAmount = params.orderAmount
+	
+	// 如果 orderPrice 为 0，使用 orderAmount
+	if (orderPrice == 0 && orderAmount != 0) {
+		orderPrice = orderAmount
+	}
+	
+	const body = {
+		orderKid: params.orderKid,
+		orderPrice: orderPrice,
+		orderAmount: orderAmount
+	} as UTSJSONObject
+	
+	return request.post('/order/guide/updateOrderPrice', body, true)
+}
+
+/**
+ * 获取导游评价列表
+ * POST /behavior/evaluate/queryPrivateGuideEvaluateList
+ */
+export const getGuideCommentList = (params: GetGuideCommentListParams): Promise<UTSJSONObject> => {
+	const payload = {
+		guideKid: params.guideKid,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	return request.post('/behavior/evaluate/queryPrivateGuideEvaluateList', payload, true)
+}
+
+/**
+ * 撤销退款申请
+ * POST /order/refund/cancelRefund
+ */
+export const cancelRefund = (params: CancelRefundParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid,
+		userKid: params.userKid
+	} as UTSJSONObject
+	return request.post('/order/refund/cancelRefund', payload, true)
+}
+
+/**
+ * 查询退款详情（根据订单ID）
+ * POST /order/refund/queryRefundDetail
+ */
+export const queryRefundDetail = (params: QueryRefundDetailParams): Promise<UTSJSONObject> => {
+	const payload = {
+		orderKid: params.orderKid
+	} as UTSJSONObject
+	return request.post('/order/refund/queryRefundDetail', payload, true)
+}

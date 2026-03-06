@@ -1,0 +1,103 @@
+/**
+ * 金额格式化工具函数
+ * 使用整数运算（分）避免浮点精度问题
+ * 例如微信小程序中 100.00 显示为 100.06 的问题
+ */
+
+/**
+ * 将数值格式化为金额字符串（保留2位小数）
+ * 使用整数运算避免 toFixed(2) 的浮点精度问题
+ * @param value 金额数值（元）
+ * @returns 格式化后的字符串，如 "100.00"
+ */
+export function formatMoney(value : number) : string {
+	if (isNaN(value)) return '0.00'
+	// 转为分（整数），四舍五入
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+/**
+ * 金额乘法（如 单价 * 数量），使用整数运算避免浮点精度问题
+ * @param price 单价（元）
+ * @param quantity 数量（整数）
+ * @returns 格式化后的金额字符串
+ */
+export function multiplyMoney(price : number, quantity : number) : string {
+	const priceCents = Math.round(price * 100)
+	const totalCents = priceCents * quantity
+	if (totalCents <= 0) return '0.00'
+	const yuan = Math.floor(totalCents / 100)
+	const fen = totalCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	return yuan.toString() + '.' + fenStr
+}
+
+/**
+ * 金额乘以百分比（如 金额 * 费率），使用整数运算
+ * @param amount 金额（元）
+ * @param ratePercent 百分比值，如 2 表示 2%
+ * @returns 格式化后的金额字符串
+ */
+export function multiplyMoneyByRate(amount : number, ratePercent : number) : string {
+	// amount(元) -> 分, 再乘以 ratePercent, 除以 100 得到结果的分
+	const amountCents = Math.round(amount * 100)
+	const resultCents = Math.round(amountCents * ratePercent / 100)
+	const absResultCents = (resultCents < 0) ? -resultCents : resultCents
+	const yuan = Math.floor(absResultCents / 100)
+	const fen = absResultCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (resultCents < 0) ? ('-' + result) : result
+}
+
+/**
+ * 金额减法，使用整数运算
+ * @param a 被减数（元）
+ * @param b 减数（元）
+ * @returns 格式化后的金额字符串
+ */
+export function subtractMoney(a : number, b : number) : string {
+	const resultCents = Math.round(a * 100) - Math.round(b * 100)
+	const absResultCents = (resultCents < 0) ? -resultCents : resultCents
+	const yuan = Math.floor(absResultCents / 100)
+	const fen = absResultCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (resultCents < 0) ? ('-' + result) : result
+}
+
+/**
+ * 金额加法，使用整数运算
+ * @param a 加数1（元）
+ * @param b 加数2（元）
+ * @returns 格式化后的金额字符串
+ */
+export function addMoney(a : number, b : number) : string {
+	const resultCents = Math.round(a * 100) + Math.round(b * 100)
+	const absResultCents = (resultCents < 0) ? -resultCents : resultCents
+	const yuan = Math.floor(absResultCents / 100)
+	const fen = absResultCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (resultCents < 0) ? ('-' + result) : result
+}
+
+/**
+ * 分转元，格式化为字符串
+ * @param fen 金额（分，整数）
+ * @returns 格式化后的金额字符串（元）
+ */
+export function fen2yuan(fen : number) : string {
+	const absFen = (fen < 0) ? -fen : fen
+	const yuan = Math.floor(absFen / 100)
+	const remainder = absFen % 100
+	const fenStr = (remainder < 10) ? ('0' + remainder.toString()) : remainder.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (fen < 0) ? ('-' + result) : result
+}

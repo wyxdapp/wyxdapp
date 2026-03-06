@@ -1,0 +1,500 @@
+<template>
+	<view class="guider-card" @click="handleClick">
+		<!-- 左侧图片区域 -->
+		<view class="image-box">
+			<image 
+				:src="optimizedAvatar" 
+				class="avatar"
+				mode="aspectFill"
+			/>
+			
+			<!-- 在线状态角标 -->
+			<view v-if="props.isOnline == true" class="online-badge"></view>
+			
+			<!-- 已绑定标签 -->
+			<RecommendBadge 
+				v-if="isBound == true" 
+				type="bound" 
+				text="✓ 已绑定"
+				:showIcon="false"
+			/>
+			
+			<!-- 高匹配推荐标签 -->
+			<RecommendBadge 
+				v-else-if="isHighMatch == true" 
+				type="match" 
+				text="🌟 高度匹配"
+				:showIcon="false"
+			/>
+			
+			<!-- 推荐标签 -->
+			<RecommendBadge 
+				v-else-if="isRecommended == true" 
+				type="recommend" 
+				text="推荐"
+				:showIcon="true"
+			/>
+			
+			<!-- 官方推荐标签 -->
+			<RecommendBadge 
+				v-else-if="isOfficialTag == true" 
+				type="recommend" 
+				text="推荐"
+				:showIcon="true"
+			/>
+		</view>
+		
+		<!-- 右侧信息区域 -->
+		<view class="info-box">
+			<!-- 顶部：昵称 -->
+			<NicknameWithBadges
+				:nickname="nickname"
+				:vipType="vipType"
+				:giftLevel="giftLevel"
+				size="medium"
+			/>
+			
+			<!-- 年龄性别 + 认证图标行 -->
+			<view class="info-row">
+				<!-- 性别年龄组件 -->
+				<view class="gender-age-box">
+					<GenderAge :sex="sexValue" :age="age" />
+				</view>
+			
+				<!-- 官方认证 -->
+				<view v-if="isOfficialCert == true" class="official-certification">
+					<image src="https://jiasu.wyxdapp.com/iconimages/n_index_officialAuthor.png" class="cert-icon" mode="aspectFill" />
+				</view>
+				
+				<!-- 实名认证 -->
+				<view v-if="isRealNameAuth == true" class="name-authentication">
+					<image src="https://jiasu.wyxdapp.com/iconimages/n_index_realName.png" class="auth-icon" mode="aspectFill" />
+				</view>
+			</view>
+			
+			<!-- 中部：简介 -->
+			<text class="description">{{ description }}</text>
+			
+			<!-- 技能标签 -->
+			<view v-if="forteListLength > 0" class="tags">
+				<view v-for="(forte, index) in forteList" :key="index" class="card-tag-blue">
+					<text class="card-tag-blue-text">{{ getForteName(forte) }}</text>
+				</view>
+			</view>
+			
+			<!-- 底部：位置信息 + 佣金按钮 -->
+			<view class="bottom-row">
+				<LocationInfo 
+					:city="cityName" 
+					:distance="distanceValue"
+					textColor="default"
+				/>
+				<view v-if="showCommissionText != ''" class="commission-btn" @click.stop="handleShareClick">
+					<text class="commission-btn-text">{{ showCommissionText }}</text>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import GenderAge from '@/components/base/GenderAge.uvue'
+import RecommendBadge from '@/components/base/RecommendBadge.uvue'
+import LocationInfo from '@/components/base/LocationInfo.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import { getStringProp as safeGetStringProp, getBoolProp, isTrueValue, getArrayProp } from '@/common/utils/utsSafe.uts'
+
+// Props
+const props = defineProps({
+	data: { type: Object, required: true },
+	showCommission: { type: Boolean, default: false },
+	isOnline: { type: Boolean, default: false }
+})
+
+// Emits
+const emit = defineEmits(['click', 'share'])
+
+// ==================== 辅助函数 ====================
+
+// 安全获取属性（内部使用）
+const getDataProp = (key: string): any => {
+	const data = props.data
+	if (data == null) return ''
+	try {
+		const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+		const val = dataObj.get(key)
+		return val != null ? val : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 获取字符串属性（使用公共工具函数）
+const getStringProp = (key: string): string => {
+	return safeGetStringProp(props.data, key)
+}
+
+// 获取数字属性
+const getNumberProp = (key: string): number => {
+	const val = getDataProp(key)
+	if (val == null || val == '') return 0
+	const num = parseInt(val.toString())
+	if (isNaN(num) == true) return 0
+	return num
+}
+
+// 获取技能名称
+const getForteName = (forte: any): string => {
+	return safeGetStringProp(forte, 'labelName')
+}
+
+// ==================== 计算属性 ====================
+
+const isBound = computed((): boolean => {
+	return getBoolProp(props.data, 'isBound')
+})
+
+const isHighMatch = computed((): boolean => {
+	return getBoolProp(props.data, 'isHighMatch')
+})
+
+const isRecommended = computed((): boolean => {
+	return getBoolProp(props.data, 'isRecommended')
+})
+
+const isOfficialTag = computed((): boolean => {
+	const guideIdentity = getDataProp('guideIdentity')
+	
+	// 官方认证向导 (guideIdentity == '20')
+	const isGuide = guideIdentity != null && guideIdentity.toString() == '20'
+	
+	// 如果不是官方认证向导，不显示官方推荐标签
+	if (isGuide == false) return false
+	
+	// 如果已经有其他标签（已绑定、高匹配、推荐），不显示官方推荐
+	if (isBound.value == true) return false
+	if (isHighMatch.value == true) return false
+	if (isRecommended.value == true) return false
+	
+	return true
+})
+
+const nickname = computed((): string => {
+	const val = getStringProp('nickname')
+	return val != '' ? val : '未命名'
+})
+
+// VIP 类型（用于 NicknameWithBadges 组件）
+const vipType = computed((): string => {
+	const vip = getNumberProp('vip')
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (vip != 20) return ''
+	// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+	// 映射规则：VIP_TYPE_YEARLY（年卡）→ 'year'，其他 → 'normal'
+	const vipTypeNum = getNumberProp('vipType')
+	if (vipTypeNum == 20) return 'year'
+	return 'normal'
+})
+
+// 礼物等级（用于 NicknameWithBadges 组件）
+const giftLevel = computed((): number => {
+	return getNumberProp('giftLevel')
+})
+
+const sexValue = computed((): string => {
+	return getStringProp('sex')
+})
+
+const age = computed((): string => {
+	const val = getStringProp('age')
+	return val != '' ? val : '?'
+})
+
+const isOfficialCert = computed((): boolean => {
+	const v = getDataProp('guideIdentity')
+	return v != null && v.toString() == '20'
+})
+
+const isRealNameAuth = computed((): boolean => {
+	const v = getDataProp('idAuth')
+	return v != null && v.toString() == '20'
+})
+
+const description = computed((): string => {
+	const val = getStringProp('guideDescribe')
+	return val != '' ? val : '这个导游很懒，什么也没留下'
+})
+
+const forteList = computed((): Array<any> => {
+	const list = getDataProp('userFortes')
+	if (list != null && Array.isArray(list) == true) {
+		const listArr = list as Array<any>
+		const result: Array<any> = []
+		const maxCount = listArr.length > 3 ? 3 : listArr.length
+		for (let i = 0; i < maxCount; i = i + 1) {
+			if (listArr[i] != null) {
+				result.push(listArr[i])
+			}
+		}
+		return result
+	}
+	return []
+})
+
+const forteListLength = computed((): number => {
+	return forteList.value.length
+})
+
+// 城市名称
+const cityName = computed((): string => {
+	return getStringProp('userCity')
+})
+
+// 距离值（原始值，由 LocationInfo 组件格式化）
+const distanceValue = computed((): string => {
+	// 优先使用已格式化的 userLocation 字段
+	const userLocation = getStringProp('userLocation')
+	if (userLocation != '') {
+		return userLocation
+	}
+	
+	// 其次使用 distanceMeters 字段（原始米数）
+	const distanceMeters = getDataProp('distanceMeters')
+	if (distanceMeters != null && distanceMeters != '') {
+		return distanceMeters.toString()
+	}
+	
+	// 最后尝试 distance 字段
+	const distanceRaw = getDataProp('distance')
+	
+	if (distanceRaw == null || distanceRaw == '') return ''
+	
+	try {
+		// 如果是对象，尝试获取内部的 distance 字段
+		if (typeof distanceRaw == 'object') {
+			const distObj = JSON.parse(JSON.stringify(distanceRaw)) as UTSJSONObject
+			const distInner = distObj.get('distance')
+			if (distInner != null && distInner.toString() != '') {
+				return distInner.toString()
+			}
+		} else {
+			return distanceRaw.toString()
+		}
+	} catch (e) {}
+	
+	return ''
+})
+
+const optimizedAvatar = computed((): string => {
+	let url = getStringProp('imagePhoto')
+	if (url == '') {
+		url = getStringProp('guideImg')
+	}
+	
+	if (url == '') {
+		return '/static/images/default-avatar.png'
+	}
+	
+	if (url.indexOf('cos.') >= 0 || url.indexOf('myqcloud.com') >= 0) {
+		return url + '?imageMogr2/thumbnail/196x274/quality/70'
+	}
+	
+	return url
+})
+
+// 佣金显示文本（后端已格式化，前端直接展示）
+const showCommissionText = computed((): string => {
+	if (props.showCommission == false) return ''
+	const amount = getDataProp('commissionAmount')
+	if (amount == null || amount == '') return '推荐赚¥0'
+	const amountStr = amount.toString()
+	if (amountStr == '0' || amountStr == '0.00') return '推荐赚¥0'
+	return '推荐赚¥' + amountStr
+})
+
+// 获取向导 Kid
+const guideKid = computed((): string => {
+	return getStringProp('memberGuideKid')
+})
+
+// 获取向导昵称（用于分享）
+const guideNickname = computed((): string => {
+	return nickname.value
+})
+
+// 点击事件
+const handleClick = () => {
+	emit('click', props.data)
+}
+
+// 分享按钮点击
+const handleShareClick = () => {
+	const kid = guideKid.value
+	const name = guideNickname.value
+	const avatar = optimizedAvatar.value
+	
+	if (kid == '') {
+		uni.showToast({ title: '向导信息错误', icon: 'none' })
+		return
+	}
+	
+	// 触发分享事件，传递向导信息
+	emit('share', {
+		guideKid: kid,
+		nickname: name,
+		avatar: avatar,
+		data: props.data
+	})
+}
+</script>
+
+<style scoped>
+@import '@/common/styles/card.css';
+
+.guider-card {
+	flex-direction: row;
+	width: 694rpx;
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 0;
+	padding-right: 0;
+	background-color: transparent;
+	margin-bottom: 20rpx;
+	border-radius: 16rpx;
+}
+
+/* 左侧图片区域 */
+.image-box {
+	position: relative;
+	width: 196rpx;
+	height: 274rpx;
+	border-radius: 24rpx;
+}
+
+.avatar {
+	width: 196rpx;
+	height: 274rpx;
+	background-color: #F0F0F0;
+	border-radius: 24rpx;
+}
+
+/* 在线状态角标 */
+.online-badge {
+	position: absolute;
+	bottom: 8rpx;
+	right: 8rpx;
+	width: 24rpx;
+	height: 24rpx;
+	background-color: #52C41A;
+	border-radius: 12rpx;
+	border-width: 3rpx;
+	border-style: solid;
+	border-color: #FFFFFF;
+}
+
+/* 右侧信息区域 */
+.info-box {
+	flex: 1;
+	margin-left: 20rpx;
+	flex-direction: column;
+	justify-content: space-between;
+	padding-top: 10rpx;
+	padding-bottom: 10rpx;
+}
+
+.nickname {
+	font-size: 28rpx;
+	font-weight: bold;
+	color: #333333;
+	margin-bottom: 4rpx;
+}
+
+/* 年龄性别 + 认证图标行 */
+.info-row {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+/* 性别年龄组件容器 */
+.gender-age-box {
+	margin-right: 8rpx;
+}
+
+/* 认证图标 - 通过 margin-top 实现底部对齐 */
+/* GenderAge 高度约 44rpx，认证图标高度 34rpx，差值 10rpx */
+.official-certification {
+	position: relative;
+	width: 138rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+	margin-top: 10rpx;
+}
+
+.official-certification .cert-icon {
+	width: 138rpx;
+	height: 34rpx;
+}
+
+.name-authentication {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-top: 10rpx;
+}
+
+.name-authentication .auth-icon {
+	width: 140rpx;
+	height: 34rpx;
+}
+
+/* 简介 - 兼容 H5 和 APP 的多行省略 */
+.description {
+	font-size: 24rpx;
+	color: #666666;
+	line-height: 36rpx;
+	lines: 2;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	margin-top: 16rpx;
+	margin-bottom: 16rpx;
+	/* H5 多行省略兼容 */
+	max-height: 72rpx;
+}
+
+/* 技能标签容器 */
+.tags {
+	flex-direction: row;
+	flex-wrap: nowrap;
+	height: 44rpx;
+	margin-bottom: 12rpx;
+	align-items: center;
+	overflow: hidden;
+}
+
+/* 底部行：位置信息 + 佣金 */
+.bottom-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+/* 佣金按钮 */
+.commission-btn {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	background-color: #FF6B35;
+	border-radius: 20rpx;
+}
+
+.commission-btn-text {
+	font-size: 22rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+</style>

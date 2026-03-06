@@ -1,0 +1,70 @@
+/* ==================== Vue3 Uni-app X 文字样式 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：统一的文字样式类，使用 rpx 单位 */
+
+/* ==================== 字体大小（标准 6 级体系）==================== */
+.fs-xs { font-size: 20rpx; }    /* 特小 - 极小文字、角标 */
+.fs-sm { font-size: 24rpx; }    /* 小 - 辅助文字、说明 */
+.fs-md { font-size: 28rpx; }    /* 中 - 正文、按钮文字（默认）*/
+.fs-lg { font-size: 32rpx; }    /* 大 - 卡片标题、重要文字 */
+.fs-xl { font-size: 36rpx; }    /* 特大 - 页面主标题 */
+.fs-2xl { font-size: 48rpx; }   /* 超大 - 大标题、金额 */
+
+/* 特殊字号 */
+.fs-40 { font-size: 40rpx; }    /* 金额数字强调 */
+.fs-48 { font-size: 48rpx; }    /* 大标题 */
+.fs-56 { font-size: 56rpx; }    /* 超大标题 */
+.fs-64 { font-size: 64rpx; }    /* 特大数字 */
+
+/* 向后兼容（旧类名别名）*/
+.fs-36 { font-size: 36rpx; }
+.fs-32 { font-size: 32rpx; }
+.fs-28 { font-size: 28rpx; }
+.fs-24 { font-size: 24rpx; }
+.fs-20 { font-size: 20rpx; }
+
+/* ==================== 字体粗细 ==================== */
+.font-bold { font-weight: bold; }  /* ✅ 700 */
+.font-semibold { font-weight: bold; }  /* ✅ 修复：600 不支持，改为 bold(700) */
+.font-normal { font-weight: 400; }  /* ✅ 400 */
+.font-light { font-weight: 400; }  /* ✅ 修复：300 不支持，改为 400 */
+
+/* ==================== 文本对齐 ==================== */
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+
+/* ==================== 文本溢出 ==================== */
+.text-ellipsis {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+}
+
+/* 向后兼容 */
+.content_1 {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* ==================== 行高 ==================== */
+.leading-none { line-height: 1; }
+.leading-tight { line-height: 1.25; }
+.leading-normal { line-height: 1.5; }
+.leading-relaxed { line-height: 1.75; }
+.leading-loose { line-height: 2; }
+
+/* ==================== 文本装饰 ==================== */
+/* ❌ uni-app x 不支持 text-decoration，已移除下划线相关样式 */
+/* 如需下划线效果，请使用 border-bottom 实现 */
+
+/* ==================== 文本转换 ==================== */
+/* ❌ uni-app x 不支持 text-transform，已移除大小写转换样式 */
+/* 需在 JavaScript 中处理文本转换：toUpperCase()/toLowerCase() */

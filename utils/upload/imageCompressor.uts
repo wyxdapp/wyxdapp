@@ -1,0 +1,341 @@
+/**
+ * 图片压缩工具类
+ * 适配 uni-app x (uvue) 环境
+ * 使用 uni.compressImage 原生API
+ * 
+ * 🔧 重要：UTS 在 Android 上不支持 `as InterfaceType` 接口类型转换
+ * 必须使用类（class）而不是接口（interface）来定义数据结构
+ */
+
+import { getSceneCompressConfig } from './config.uts'
+import { toUTSJSON, getString, getNumber, getBoolean } from '@/common/utils/typeConverter'
+
+/**
+ * 压缩结果类（使用 class 而非 interface，避免 Android ClassCastException）
+ */
+export class CompressResult {
+	tempFilePath: string = ''
+	originalSize: number = 0
+	compressedSize: number = 0
+	compressionRatio: string = '0.0'
+	width: number = 0
+	height: number = 0
+	
+	constructor(
+		tempFilePath: string,
+		originalSize: number,
+		compressedSize: number,
+		compressionRatio: string,
+		width: number,
+		height: number
+	) {
+		this.tempFilePath = tempFilePath
+		this.originalSize = originalSize
+		this.compressedSize = compressedSize
+		this.compressionRatio = compressionRatio
+		this.width = width
+		this.height = height
+	}
+}
+
+/**
+ * 图片信息类（使用 class 而非 interface）
+ */
+class ImageInfoData {
+	width: number = 0
+	height: number = 0
+	size: number = 0
+	
+	constructor(width: number, height: number, size: number) {
+		this.width = width
+		this.height = height
+		this.size = size
+	}
+}
+
+/**
+ * 图片压缩类
+ */
+export class ImageCompressor {
+	
+	/**
+	 * 按场景压缩图片
+	 * @param filePath 图片路径
+	 * @param scene 场景名称
+	 */
+	async compressByScene(filePath: string, scene: string): Promise<CompressResult> {
+		const config = getSceneCompressConfig(scene)
+		console.log('🎬 [压缩] 场景:', scene, '配置:', config)
+		
+		// 🔧 修复：使用 UTSJSONObject.get() 安全访问配置属性
+		let targetWidth: number = 800
+		let quality: number = 80
+		let maxSize: number = 1024 * 1024
+		let format: string = 'jpg'
+		let keepOriginalIfSmaller: boolean = true
+		
+		// 优化：使用 toUTSJSON 替代 JSON.stringify + JSON.parse
+		try {
+			const configObj = toUTSJSON(config)
+			if (configObj != null) {
+				const tw = getNumber(configObj, 'targetWidth')
+				if (tw > 0) {
+					targetWidth = tw
+				}
+				
+				const q = getNumber(configObj, 'quality')
+				if (q > 0) {
+					quality = q
+				}
+				
+				const ms = getNumber(configObj, 'maxSize')
+				if (ms > 0) {
+					maxSize = ms
+				}
+				
+				const formatStr = getString(configObj, 'format')
+				if (formatStr != '') {
+					format = formatStr
+				}
+				
+				keepOriginalIfSmaller = getBoolean(configObj, 'keepOriginalIfSmaller')
+			}
+		} catch (e) {
+			console.error('🔧 [压缩] 解析配置失败:', e)
+		}
+		
+		return this.compressImageWithParams(filePath, targetWidth, quality, maxSize, format, keepOriginalIfSmaller)
+	}
+	
+	/**
+	 * 使用具体参数压缩图片
+	 */
+	private async compressImageWithParams(
+		filePath: string,
+		targetWidth: number,
+		quality: number,
+		maxSize: number,
+		format: string,
+		keepOriginalIfSmaller: boolean
+	): Promise<CompressResult> {
+		try {
+			// 获取图片信息（带容错）
+			let imgWidth: number = 1920
+			let imgHeight: number = 1080
+			let imgSize: number = 1024 * 1024
+			let gotImageInfo: boolean = false
+			
+			try {
+				const imageInfo = await this.getImageInfoData(filePath)
+				imgWidth = imageInfo.width
+				imgHeight = imageInfo.height
+				imgSize = imageInfo.size
+				gotImageInfo = true
+				console.log('🖼️ [压缩] 图片信息:', {
+					originalWidth: imgWidth,
+					originalHeight: imgHeight,
+					originalSize: (imgSize / 1024).toFixed(2) + 'KB',
+					targetWidth,
+					keepOriginalIfSmaller
+				})
+			} catch (infoError) {
+				console.warn('⚠️ [压缩] 获取图片信息失败，使用默认值:', infoError)
+			}
+			
+			// 如果开启keepOriginalIfSmaller且原图小于targetWidth
+			if (gotImageInfo == true && keepOriginalIfSmaller == true && imgWidth <= targetWidth) {
+				if (imgSize <= maxSize) {
+					return new CompressResult(filePath, imgSize, imgSize, '0.0', imgWidth, imgHeight)
+				}
+			}
+			
+			// 判断是否需要压缩
+			if (gotImageInfo == true && keepOriginalIfSmaller == false && imgWidth <= targetWidth && imgSize < maxSize) {
+				return new CompressResult(filePath, imgSize, imgSize, '0.0', imgWidth, imgHeight)
+			}
+			
+			// 计算压缩后的尺寸（绝不放大）
+			let compressWidth = targetWidth
+			let compressHeight = Math.round((targetWidth / imgWidth) * imgHeight)
+			
+			if (imgWidth < targetWidth) {
+				compressWidth = imgWidth
+				compressHeight = imgHeight
+				console.log('🔒 [压缩] 原图小于目标宽度，保持原尺寸不放大')
+			} else {
+				console.log('🔽 [压缩] 原图大于目标宽度，等比缩小到', compressWidth.toString() + 'px')
+			}
+			
+			// 保存变量供闭包使用
+			const originalSize = imgSize
+			const originalWidth = imgWidth
+			const originalHeight = imgHeight
+			
+			// 执行压缩
+			return new Promise<CompressResult>((resolve, reject) => {
+				// #ifdef H5
+				// H5环境使用Canvas压缩
+				const img = new Image()
+				img.src = filePath
+				img.onload = () => {
+					const canvas = document.createElement('canvas')
+					const ctx = canvas.getContext('2d')
+					if (ctx == null) {
+						resolve(new CompressResult(filePath, originalSize, originalSize, '0.0', originalWidth, originalHeight))
+						return
+					}
+
+					canvas.width = compressWidth
+					canvas.height = compressHeight
+					ctx.drawImage(img, 0, 0, compressWidth, compressHeight)
+					
+					const mimeType = format == 'webp' ? 'image/webp' : 'image/jpeg'
+					canvas.toBlob((blob) => {
+						if (blob != null) {
+							const compressedUrl = URL.createObjectURL(blob)
+							const compressedSize = blob.size
+							const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1)
+							resolve(new CompressResult(compressedUrl, originalSize, compressedSize, ratio, compressWidth, compressHeight))
+						} else {
+							resolve(new CompressResult(filePath, originalSize, originalSize, '0.0', originalWidth, originalHeight))
+						}
+					}, mimeType, quality / 100)
+				}
+				img.onerror = (e) => {
+					console.warn('H5图片加载失败，跳过压缩', e)
+					resolve(new CompressResult(filePath, originalSize, originalSize, '0.0', originalWidth, originalHeight))
+				}
+				return
+				// #endif
+
+				// APP 端使用 uni.compressImage
+				uni.compressImage({
+					src: filePath,
+					quality: quality,
+					width: compressWidth.toString() + 'px',
+					height: compressHeight.toString() + 'px',
+					success: (res) => {
+						// 获取压缩后的图片信息
+						uni.getImageInfo({
+							src: res.tempFilePath,
+							success: (info) => {
+								const compressedSize = this.getFileSize(res.tempFilePath)
+								const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1)
+								resolve(new CompressResult(res.tempFilePath, originalSize, compressedSize, ratio, info.width, info.height))
+							},
+							fail: (err) => {
+								console.warn('🔧 [压缩] 获取压缩后图片信息失败，使用默认值:', err)
+								// 获取info失败，仍返回压缩结果
+								resolve(new CompressResult(res.tempFilePath, originalSize, 0, '0.0', compressWidth, compressHeight))
+							}
+						})
+					},
+					fail: (err) => {
+						console.error('❌ [压缩] 图片压缩失败:', err)
+						// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+						let errMsg = '未知错误'
+						try {
+							const errObj = toUTSJSON(err)
+							const errMsgStr = getString(errObj, 'errMsg')
+							if (errMsgStr != '') {
+								errMsg = errMsgStr
+							}
+						} catch (e) {}
+						
+						// 🔧 修复：压缩失败时，尝试直接使用原图
+						console.warn('🔧 [压缩] 压缩失败，尝试使用原图:', filePath)
+						resolve(new CompressResult(filePath, originalSize, originalSize, '0.0', originalWidth, originalHeight))
+					}
+				})
+			})
+		} catch (error) {
+			console.error('❌ 压缩图片异常:', error)
+			throw error
+		}
+	}
+	
+	/**
+	 * 获取图片信息（返回类实例，避免接口类型转换）
+	 */
+	private getImageInfoData(filePath: string): Promise<ImageInfoData> {
+		return new Promise<ImageInfoData>((resolve, reject) => {
+			console.log('📷 [getImageInfo] 开始获取图片信息:', filePath)
+			
+			// 使用标志位防止重复回调
+			let resolved = false
+			
+			uni.getImageInfo({
+				src: filePath,
+				success: (res) => {
+					if (resolved == true) {
+						console.warn('📷 [getImageInfo] 已经处理过，忽略重复的 success 回调')
+						return
+					}
+					resolved = true
+					
+					console.log('📷 [getImageInfo] 获取成功:', {
+						width: res.width,
+						height: res.height
+					})
+					const size = this.getFileSize(filePath)
+					resolve(new ImageInfoData(res.width, res.height, size))
+				},
+				fail: (err) => {
+					if (resolved == true) {
+						console.warn('📷 [getImageInfo] 已经处理过，忽略重复的 fail 回调')
+						return
+					}
+					resolved = true
+					
+					console.error('📷 [getImageInfo] 获取失败:', JSON.stringify(err))
+					
+					// 优化：使用 toUTSJSON + getString 替代 JSON.stringify + JSON.parse
+					let errMsg = '未知错误'
+					try {
+						const errObj = toUTSJSON(err)
+						const errMsgStr = getString(errObj, 'errMsg')
+						if (errMsgStr != '') {
+							errMsg = errMsgStr
+						}
+					} catch (e) {}
+					reject(new Error('获取图片信息失败: ' + errMsg))
+				}
+			})
+		})
+	}
+	
+	/**
+	 * 获取文件大小（字节）
+	 */
+	private getFileSize(filePath: string): number {
+		try {
+			// #ifdef APP-PLUS || APP-ANDROID || APP-IOS
+			const fileManager = uni.getFileSystemManager()
+			const stats = fileManager.statSync(filePath, false)
+			return stats.size
+			// #endif
+			
+			// #ifdef H5
+			return 0
+			// #endif
+		} catch (error) {
+			console.warn('⚠️ 获取文件大小失败:', error)
+			return 0
+		}
+	}
+	
+	/**
+	 * 批量压缩图片
+	 */
+	async compressImages(filePaths: Array<string>, scene: string): Promise<Array<CompressResult>> {
+		const results: Array<CompressResult> = []
+		for (let i = 0; i < filePaths.length; i = i + 1) {
+			const result = await this.compressByScene(filePaths[i], scene)
+			results.push(result)
+		}
+		return results
+	}
+}
+
+// 导出单例
+export const imageCompressor = new ImageCompressor()

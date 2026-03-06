@@ -1,0 +1,478 @@
+<template>
+	<view class="book-page">
+		<!-- 向导信息 -->
+		<view class="guide-card">
+			<Avatar 
+				:url="guideInfo.avatar"
+				:customSize="100"
+				clickMode="none"
+			/>
+			<view class="guide-info">
+				<text class="guide-name">{{ guideInfo.nickname }}</text>
+				<view class="guide-rating"><UniIcons type="star-filled" :size="28" color="#FFB800" /> {{ guideInfo.score }}</view>
+			</view>
+		</view>
+		
+		<!-- 服务选择 -->
+		<view class="section-card">
+			<text class="section-title">选择服务</text>
+			<view 
+				v-for="item in serviceList" 
+				:key="item.id"
+				class="service-item"
+				:class="{ active: selectedService === item.id }"
+				@click="selectedService = item.id"
+			>
+				<view class="service-info">
+					<text class="service-name">{{ item.name }}</text>
+					<text class="service-desc">{{ item.description }}</text>
+				</view>
+				<text class="service-price">¥{{ item.price }}/天</text>
+			</view>
+		</view>
+		
+		<!-- 服务时间 -->
+		<view class="section-card">
+			<text class="section-title">服务时间</text>
+			<view class="form-item" @click="showDatePicker = true">
+				<text class="form-label">开始日期</text>
+				<text class="form-value">{{ startDate || '请选择' }}</text>
+			</view>
+			<view class="form-item">
+				<text class="form-label">服务天数</text>
+				<input 
+					class="form-input"
+					v-model="days"
+					type="number"
+					placeholder="请输入天数"
+				/>
+			</view>
+		</view>
+		
+		<!-- 服务人数 -->
+		<view class="section-card">
+			<text class="section-title">服务人数</text>
+			<view class="counter">
+				<view class="counter-btn" @click="decreasePeople">
+					<text>-</text>
+				</view>
+				<text class="counter-value">{{ peopleCount }}</text>
+				<view class="counter-btn" @click="increasePeople">
+					<text>+</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 联系方式 -->
+		<view class="section-card">
+			<text class="section-title">联系方式</text>
+			<Input 
+				v-model="phone"
+				type="tel"
+				placeholder="请输入手机号"
+				prefixIcon="📱"
+			/>
+		</view>
+		
+		<!-- 备注 -->
+		<view class="section-card">
+			<text class="section-title">备注</text>
+			<textarea 
+				class="remark-input"
+				v-model="remark"
+				placeholder="请输入备注信息（选填）"
+				:maxlength="200"
+			></textarea>
+		</view>
+		
+		<!-- 价格明细 -->
+		<view class="price-card">
+			<view class="price-row">
+				<text class="price-label">服务费用</text>
+				<text class="price-value">¥{{ totalPrice }}</text>
+			</view>
+		</view>
+		
+		<!-- 底部按钮 -->
+		<view class="footer-bar">
+			<view class="footer-price">
+				<text class="price-label">总计</text>
+				<text class="price-value">¥{{ totalPrice }}</text>
+			</view>
+			<Button type="primary" :loading="submitting" @click="handleSubmit">
+				{{ submitting ? '提交中...' : '提交预约' }}
+			</Button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import Button from '@/components/base/Button.uvue'
+import Input from '@/components/base/Input.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 响应式数据
+const kid = ref('')
+const submitting = ref(false)
+const showDatePicker = ref(false)
+
+const guideInfo = ref({
+	kid: '',
+	nickname: '',
+	avatar: '',
+	score: 0
+})
+
+const serviceList = ref([
+	{ id: '1', name: '一日游', description: '市内一日游服务', price: 300 },
+	{ id: '2', name: '多日游', description: '多日游服务', price: 280 },
+	{ id: '3', name: '摄影服务', description: '专业摄影服务', price: 500 }
+])
+
+const selectedService = ref('')
+const startDate = ref('')
+const days = ref('1')
+const peopleCount = ref(1)
+const phone = ref('')
+const remark = ref('')
+
+// 计算属性
+const totalPrice = computed(() => {
+	const service = serviceList.value.find(item => item.id === selectedService.value)
+	if (service == null) return 0
+	return service.price * parseInt(days.value || '1') * peopleCount.value
+})
+
+// 生命周期
+onLoad((options: UTSJSONObject) => {
+	const kidVal = options.get('kid')
+	kid.value = kidVal != null ? kidVal.toString() : ''
+	loadGuideInfo()
+})
+
+// 方法
+const loadGuideInfo = async () => {
+	try {
+		// TODO: 调用向导信息 API
+		guideInfo.value = {
+			kid: kid.value,
+			nickname: '张三',
+			avatar: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+			score: 4.8
+		}
+	} catch (error) {
+		handleSilentError(error, '加载向导信息')
+	}
+}
+
+const decreasePeople = () => {
+	if (peopleCount.value > 1) {
+		peopleCount.value--
+	}
+}
+
+const increasePeople = () => {
+	peopleCount.value++
+}
+
+const handleSubmit = async () => {
+	if (selectedService.value == null || selectedService.value == false || selectedService.value == '') {
+		uni.showToast({
+			title: '请选择服务',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (startDate.value == null || startDate.value == false || startDate.value == '') {
+		uni.showToast({
+			title: '请选择开始日期',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (phone.value == null || phone.value == false || phone.value == '') {
+		uni.showToast({
+			title: '请输入手机号',
+			icon: 'none'
+		})
+		return
+	}
+	
+	submitting.value = true
+	
+	try {
+		// TODO: 调用预约 API
+		await new Promise(resolve => safeSetTimeout(resolve, 2000))
+		
+		uni.showToast({
+			title: '预约成功',
+			icon: 'success'
+		})
+		
+		safeSetTimeout(() => {
+			uni.navigateTo({
+				url: '/pages/order/index'
+			})
+		}, 1500)
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '预约提交', null)
+		}
+	} finally {
+		submitting.value = false
+	}
+}
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+.book-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	padding-bottom: 120rpx;
+}
+
+.guide-card {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.guide-card :deep(.avatar-container) {
+	margin-right: 20rpx;
+}
+
+.guide-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.guide-name {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.guide-rating {
+	font-size: 24rpx;
+	color: #FF9800;
+}
+
+.section-card {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.section-title {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 24rpx;
+	display: block;
+}
+
+.service-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 24rpx;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 12rpx;
+	margin-bottom: 16rpx;
+}
+
+.service-item:last-child {
+	margin-bottom: 0;
+}
+
+.service-item.active {
+	border-color: #2EAEF2;
+	background-color: #E3F2FD;
+}
+
+.service-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.service-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.service-desc {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.service-price {
+	font-size: 28rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.form-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.form-item:last-child {
+	border-bottom: none;
+}
+
+.form-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.form-value {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.form-input {
+	flex: 1;
+	text-align: right;
+	font-size: 28rpx;
+}
+
+.counter {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.counter .counter-btn + .counter-btn,
+.counter .counter-btn + .counter-value,
+.counter .counter-value + .counter-btn {
+	margin-left: 40rpx;
+}
+
+.counter-btn {
+	width: 60rpx;
+	height: 60rpx;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 30rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.counter-btn text {
+	font-size: 36rpx;
+	color: #666666;
+}
+
+.counter-value {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+	min-width: 60rpx;
+	text-align: center;
+}
+
+.remark-input {
+	width: 100%;
+	min-height: 150rpx;
+	font-size: 26rpx;
+	line-height: 1.6;
+}
+
+.price-card {
+	background-color: #ffffff;
+	padding: 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.price-row {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.price-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.price-value {
+	font-size: 36rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+
+.footer-bar {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	flex-direction: row;
+	align-items: center;
+	box-shadow: 0 -2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.footer-bar .footer-price + .submit-btn,
+.footer-bar .submit-btn + .footer-price {
+	margin-left: 20rpx;
+}
+
+.footer-price {
+	flex-direction: column;
+}
+
+.footer-price .price-label {
+	font-size: 22rpx;
+	color: #999999;
+	margin-bottom: 6rpx;
+}
+
+.footer-price .price-value {
+	font-size: 32rpx;
+	color: #FF6B6B;
+	font-weight: bold;
+}
+</style>

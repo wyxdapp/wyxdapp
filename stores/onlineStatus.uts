@@ -1,0 +1,197 @@
+/**
+ * 用户在线状态管理 Store
+ * 使用 ref + 导出函数模式（避免 Android 端类型转换问题）
+ */
+
+import { ref } from 'vue'
+import { batchQueryOnlineStatus } from '@/api/onlineStatus'
+import { getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+import { getUserLoginStatus } from '@/stores/user'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+import { ONLINE_STATUS_CACHE_EXPIRE } from '@/common/config/timeoutConfig'
+
+// 在线状态项
+export class OnlineStatusItem {
+  userId: string = ''
+  isOnline: boolean = false
+  updateTime: number = 0
+}
+
+// 在线状态缓存，key 为 userId
+const onlineStatusMapRef = ref<Map<string, OnlineStatusItem>>(new Map())
+
+// 缓存过期时间（毫秒），默认 5 分钟
+const CACHE_EXPIRE_TIME: number = ONLINE_STATUS_CACHE_EXPIRE
+
+/**
+ * 获取单个用户的在线状态（从缓存）
+ * @param userId 用户ID
+ * @returns 是否在线
+ */
+export const getOnlineStatusDirect = (userId: string): boolean => {
+  if (userId == null || userId == '') {
+    return false
+  }
+  
+  const statusMap = onlineStatusMapRef.value
+  const item = statusMap.get(userId)
+  
+  if (item == null) {
+    return false
+  }
+  
+  // 检查缓存是否过期
+  const now = Date.now()
+  const isExpired = (now - item.updateTime) > CACHE_EXPIRE_TIME
+  if (isExpired == true) {
+    return false
+  }
+  
+  return item.isOnline
+}
+
+/**
+ * 设置单个用户的在线状态
+ * @param userId 用户ID
+ * @param isOnline 是否在线
+ */
+export const setOnlineStatusDirect = (userId: string, isOnline: boolean): void => {
+  if (userId == null || userId == '') {
+    return
+  }
+  
+  const statusMap = onlineStatusMapRef.value
+  const item = new OnlineStatusItem()
+  item.userId = userId
+  item.isOnline = isOnline
+  item.updateTime = Date.now()
+  
+  statusMap.set(userId, item)
+  console.log('[onlineStatus] 设置在线状态: userId=' + userId + ', isOnline=' + isOnline.toString())
+}
+
+/**
+ * 批量设置在线状态
+ * @param statusData UTSJSONObject，key 为 userId，value 为 boolean
+ * @param userIds 用户ID列表（用于遍历）
+ */
+export const batchSetOnlineStatusDirect = (statusData: UTSJSONObject, userIds: Array<string>): void => {
+  if (statusData == null) {
+    return
+  }
+  
+  const statusMap = onlineStatusMapRef.value
+  const now = Date.now()
+  let count = 0
+  
+  // UTS 规范：UTSJSONObject 没有 getNames() 方法，使用传入的 userIds 遍历
+  for (let i = 0; i < userIds.length; i = i + 1) {
+    const userId = userIds[i]
+    if (userId == null || userId == '') {
+      continue
+    }
+    
+    const isOnlineVal = statusData.getBoolean(userId)
+    const isOnline = isOnlineVal == true
+    
+    const item = new OnlineStatusItem()
+    item.userId = userId
+    item.isOnline = isOnline
+    item.updateTime = now
+    
+    statusMap.set(userId, item)
+    count = count + 1
+  }
+  
+  console.log('[onlineStatus] 批量设置在线状态: count=' + count.toString())
+}
+
+/**
+ * 批量查询并更新在线状态
+ * @param userIds 用户ID列表
+ */
+export const fetchOnlineStatus = (userIds: Array<string>): void => {
+  if (userIds == null || userIds.length == 0) {
+    console.log('[onlineStatus] fetchOnlineStatus: userIds 为空')
+    return
+  }
+  
+  // 检查用户登录状态，未登录时不发起请求（避免 401 错误）
+  const isLogin = getUserLoginStatus()
+  if (isLogin == false) {
+    console.log('[onlineStatus] fetchOnlineStatus: 用户未登录，跳过查询')
+    return
+  }
+  
+  // 过滤空值
+  const validUserIds: Array<string> = []
+  for (let i = 0; i < userIds.length; i = i + 1) {
+    const userId = userIds[i]
+    if (userId != null && userId != '') {
+      validUserIds.push(userId)
+    }
+  }
+  
+  if (validUserIds.length == 0) {
+    console.log('[onlineStatus] fetchOnlineStatus: 过滤后 userIds 为空')
+    return
+  }
+  
+  console.log('[onlineStatus] fetchOnlineStatus: 查询 ' + validUserIds.length.toString() + ' 个用户')
+  
+  batchQueryOnlineStatus(validUserIds).then((res: any) => {
+    const code = getResponseCode(res)
+    const dataObj = getResponseData(res)
+    
+    if (code == 200 && dataObj != null) {
+      batchSetOnlineStatusDirect(dataObj, validUserIds)
+      console.log('[onlineStatus] fetchOnlineStatus: 查询成功')
+    } else {
+      // 🔧 修复：401/403 错误静默处理，不打印错误日志
+      if (code == 401 || code == 403) {
+        console.log('[onlineStatus] fetchOnlineStatus: 认证失败，跳过')
+      } else {
+        console.error('[onlineStatus] fetchOnlineStatus: 查询失败, code=' + code.toString())
+      }
+    }
+  }).catch((error: any | null): void => {
+    // 🔧 修复：401 错误静默处理
+    if (error != null) {
+      const errorMsg = error.toString()
+      if (errorMsg.indexOf('401') >= 0 || errorMsg.indexOf('登录') >= 0) {
+        console.log('[onlineStatus] fetchOnlineStatus: 认证失败，跳过')
+        return
+      }
+    }
+    handleSilentError(error as any, '查询在线状态')
+  })
+}
+
+/**
+ * 清除所有在线状态缓存
+ */
+export const clearOnlineStatusCache = (): void => {
+  onlineStatusMapRef.value.clear()
+  console.log('[onlineStatus] 清除所有在线状态缓存')
+}
+
+/**
+ * 获取所有在线用户ID列表
+ * @returns 在线用户ID数组
+ */
+export const getOnlineUserIds = (): Array<string> => {
+  const result: Array<string> = []
+  const statusMap = onlineStatusMapRef.value
+  const now = Date.now()
+  
+  statusMap.forEach((item: OnlineStatusItem, userId: string) => {
+    // 检查缓存是否过期
+    const isExpired = (now - item.updateTime) > CACHE_EXPIRE_TIME
+    if (isExpired == false && item.isOnline == true) {
+      result.push(userId)
+    }
+  })
+  
+  return result
+}

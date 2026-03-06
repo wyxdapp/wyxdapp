@@ -1,0 +1,1396 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="goBack">
+					<Icon name="back" :size="44" />
+				</view>
+				<text class="nav-title">预约</text>
+				<view class="nav-share" @click="handleShare">
+					<Icon name="share" :size="44" />
+				</view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端滚动内容（需要留出导航栏空间） -->
+		<scroll-view class="scroll-view" :style="{ marginTop: (statusBarHeight + 44) + 'px' }" :scroll-y="true" :scroll-with-animation="true">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端滚动内容（无需额外 margin） -->
+		<scroll-view class="scroll-view-h5" :scroll-y="true" :scroll-with-animation="true">
+		<!-- #endif -->
+			
+			<!-- 日期天数 -->
+			<view class="section-card bg-white">
+				<view class="section-header">
+					<text class="fs-lg color-title font-bold">日期天数</text>
+					<view class="days-selector-inline">
+						<view class="number-btn" @click="decreaseDays">
+							<text class="btn-text">-</text>
+						</view>
+						<text class="days-value">{{formServiceHours}}</text>
+						<view class="number-btn" @click="increaseDays">
+							<text class="btn-text">+</text>
+						</view>
+					</view>
+				</view>
+				<DatePicker 
+					v-model="chooseDate"
+					:minDate="minDate"
+					:maxDate="maxDate"
+					@change="handleDateChange"
+				/>
+			</view>
+			
+			<!-- 联系方式 -->
+			<view class="section-card bg-white">
+				<view class="section-header">
+					<text class="fs-lg color-title font-bold">联系方式</text>
+					<view class="more-btn" @click="showContactSelector = true">
+						<text class="more-btn-text">新增</text>
+						<text class="arrow-icon">›</text>
+					</view>
+				</view>
+				
+				<!-- 联系人卡片列表 -->
+				<view class="contact-cards">
+					<view 
+						v-for="(contact, index) in displayContacts" 
+						:key="getContactKid(contact)"
+						class="contact-card"
+						:class="{ 'contact-card--active': isContactSelected(contact) }"
+						@click="selectContact(contact)"
+					>
+						<text class="contact-name">{{ getContactName(contact) }}</text>
+					</view>
+				</view>
+				
+				<!-- 已选联系人信息 -->
+				<view v-if="hasSelectedContact" class="selected-contact-info">
+					<view class="contact-detail">
+						<text class="label">游客</text>
+						<text class="info">{{ selectedContactName }} {{ selectedContactPhone }}</text>
+					</view>
+					<text class="delete-btn" @click="handleClearContact">删除</text>
+				</view>
+				
+				<!-- 备注输入 -->
+				<view class="remark-box">
+					<textarea 
+						v-model="formOrderRemarks"
+						class="remark-input"
+						placeholder="备注："
+						maxlength="20"
+						:auto-height="true"
+					/>
+					<text class="char-count">{{ orderRemarksLength }}/20</text>
+				</view>
+			</view>
+		</scroll-view>
+		
+		<!-- 固定底部 -->
+		<view class="footer-bar bg-white">
+			<view class="price-info">
+				<text class="price-label">费用：</text>
+				<text class="price-value">¥ {{ displayPrice }}</text>
+			</view>
+			<view 
+				class="submit-btn"
+				@click="handleSubmitOrder"
+			>
+				<text class="submit-text">确定</text>
+			</view>
+		</view>
+		
+
+		<!-- 联系人选择弹窗 -->
+		<ContactSelector 
+			:show="showContactSelector"
+			:contactList="contactListForSelector"
+			:selectedContactId="contactId"
+			@close="closeContactSelector"
+			@select="handleContactSelect"
+			@add="openAddContactPopup"
+			@update:show="closeContactSelector"
+		/>
+		
+		<!-- 分享弹窗 -->
+		<SharePopup 
+			:visity="showSharePopup"
+			:shareData="shareData"
+			@update:visity="closeSharePopup"
+		/>
+		
+		<!-- 新增联系人弹窗 -->
+		<view v-if="addContactVisity == true" class="add-contact-mask">
+			<view class="add-contact-popup" @click.stop>
+				<!-- 头部 -->
+				<view class="add-popup-header">
+					<text class="add-popup-title">新增联系人</text>
+					<view class="add-close-btn" @click="closeAddContactPopup">
+						<text class="add-close-icon">×</text>
+					</view>
+				</view>
+				
+				<!-- 表单 -->
+				<view class="add-form">
+					<view class="add-form-item">
+						<text class="add-form-label">姓名</text>
+						<input 
+							class="add-form-input"
+							type="text"
+							v-model="addFormName"
+							placeholder="请输入联系人姓名"
+							placeholder-class="placeholder"
+						/>
+					</view>
+					<view class="add-form-item">
+						<text class="add-form-label">手机号</text>
+						<input 
+							class="add-form-input"
+							type="number"
+							v-model="addFormPhone"
+							placeholder="请输入手机号码"
+							placeholder-class="placeholder"
+							maxlength="11"
+						/>
+					</view>
+				</view>
+				
+				<!-- 底部按钮 -->
+				<view class="add-popup-footer">
+					<view class="add-cancel-btn" @click="closeAddContactPopup">
+						<text class="add-cancel-text">取消</text>
+					</view>
+					<view class="add-confirm-btn" @click="confirmAddContact">
+						<text class="add-confirm-text">确定</text>
+					</view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { handlePageError } from '@/common/utils/errorHandler.uts'
+import Icon from '@/components/base/Icon.uvue'
+import DatePicker from '@/components/business/DatePicker.uvue'
+import ContactSelector from '@/components/business/ContactSelector.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { 
+	checkUserLoginReliable, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { 
+	getContactList, 
+	addTravelUser, 
+	updateTravelUser, 
+	delTravelUser, 
+	setDefaultTravelUser,
+	createGuiderOrder,
+	GetContactListParams,
+	AddTravelUserParams,
+	CreateGuiderOrderParams
+} from '@/api/order.uts'
+import { secureLog } from '@/common/utils/security/secureLogger.uts'
+import { checkBalancePayEnabled } from '@/utils/paymentRouter'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// 状态栏高度
+const statusBarHeight = ref<number>(44)
+
+// 联系人数据类
+class ContactItemData {
+	kid: string = ''
+	name: string = ''
+	phone: string = ''
+	is_default: number = 0
+	isDefault: number = 0
+	
+	constructor() {}
+}
+
+// 页面状态
+const chooseDate = ref<string>('')
+const showContactSelector = ref<boolean>(false)
+const showSharePopup = ref<boolean>(false)
+const minDate = ref<string>('2022-01-01')
+const maxDate = ref<string>('2050-01-01')
+
+// 辅助函数 - 获取用户ID（使用 loginHelper 可靠版本）
+const getCurrentUserKid = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 辅助函数 - 检查登录状态（使用 loginHelper 可靠版本）
+const checkUserLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+// 表单数据
+const formServiceHours = ref<number>(1)
+const formOrderRemarks = ref<string>('')
+const formPhone = ref<string>('')
+const formRealname = ref<string>('')
+const formTotalMoney = ref<number>(0)
+const serverPrice = ref<number>(0)
+
+// 联系人相关
+const contactList = ref<Array<ContactItemData>>([])
+const contactId = ref<string>('')
+const addContactVisity = ref<boolean>(false)
+const addFormName = ref<string>('')
+const addFormPhone = ref<string>('')
+
+// 页面参数
+const guiderKid = ref<string>('')
+const isLocalSubmitting = ref<boolean>(false)
+
+// 计算属性 - 联系人显示（最多显示3个）
+const displayContacts = computed((): Array<ContactItemData> => {
+	try {
+		const result: Array<ContactItemData> = []
+		const maxCount = 3
+		const listLen = contactList.value.length
+		let i = 0
+		while (i < listLen && i < maxCount) {
+			result.push(contactList.value[i])
+			i = i + 1
+		}
+		return result
+	} catch (e) {
+		return [] as Array<ContactItemData>
+	}
+})
+
+// 计算属性 - 转换为普通对象数组供 ContactSelector 使用
+const contactListForSelector = computed((): Array<UTSJSONObject> => {
+	try {
+		const result: Array<UTSJSONObject> = []
+		const listLen = contactList.value.length
+		let i = 0
+		while (i < listLen) {
+			const item = contactList.value[i]
+			const plainObj = {
+				kid: item.kid,
+				name: item.name,
+				phone: item.phone,
+				is_default: item.is_default,
+				isDefault: item.isDefault
+			} as UTSJSONObject
+			result.push(plainObj)
+			i = i + 1
+		}
+		return result
+	} catch (e) {
+		return [] as Array<UTSJSONObject>
+	}
+})
+
+// 是否有选中的联系人
+const hasSelectedContact = computed((): boolean => {
+	return formPhone.value != '' && formRealname.value != ''
+})
+
+// 选中联系人的名字
+const selectedContactName = computed((): string => {
+	return formRealname.value
+})
+
+// 选中联系人的电话
+const selectedContactPhone = computed((): string => {
+	return formPhone.value
+})
+
+// 备注长度
+const orderRemarksLength = computed((): number => {
+	return formOrderRemarks.value.length
+})
+
+// 显示价格（预约向导：单价 * 天数）
+// 使用整数运算（分）避免浮点精度问题，如微信小程序中100.00显示为100.06
+const displayPrice = computed((): string => {
+	try {
+		const price = serverPrice.value
+		const hours = formServiceHours.value
+		// 转为分（整数）进行计算，避免浮点乘法精度丢失
+		const priceCents = Math.round(price * 100)
+		const totalCents = priceCents * hours
+		if (totalCents > 0) {
+			const yuan = Math.floor(totalCents / 100)
+			const fen = totalCents % 100
+			const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+			return yuan.toString() + '.' + fenStr
+		}
+		return '0.00'
+	} catch (e) {
+		return '0.00'
+	}
+})
+
+// 辅助函数 - 获取联系人kid
+const getContactKid = (contact: ContactItemData | null): string => {
+	if (contact == null) return ''
+	return contact.kid
+}
+
+// 辅助函数 - 获取联系人名字
+const getContactName = (contact: ContactItemData | null): string => {
+	if (contact == null) return ''
+	return contact.name
+}
+
+// 辅助函数 - 获取联系人电话
+const getContactPhone = (contact: ContactItemData | null): string => {
+	if (contact == null) return ''
+	return contact.phone
+}
+
+// 关闭联系人选择器
+const closeContactSelector = () => {
+	showContactSelector.value = false
+}
+
+// 返回
+const goBack = () => {
+	uni.navigateBack()
+}
+
+// 初始化最小日期（今天）
+const initMinDate = () => {
+	const nowDate = new Date()
+	const monthNum = nowDate.getMonth() + 1
+	const dayNum = nowDate.getDate()
+	const nowMon = (monthNum < 10) ? ('0' + monthNum.toString()) : monthNum.toString()
+	const nowDay = (dayNum < 10) ? ('0' + dayNum.toString()) : dayNum.toString()
+	minDate.value = nowDate.getFullYear().toString() + '-' + nowMon + '-' + nowDay
+}
+
+// 初始化状态栏高度
+const initStatusBarHeight = () => {
+	// #ifndef H5
+	// APP端获取状态栏高度
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const systemInfoStr = JSON.stringify(systemInfo)
+		const systemInfoObj = JSON.parse(systemInfoStr) as UTSJSONObject
+		const statusBarVal = systemInfoObj.get('statusBarHeight')
+		if (statusBarVal != null) {
+			const sbHeight = parseInt(statusBarVal.toString())
+			if (isNaN(sbHeight) == false && sbHeight > 0) {
+				statusBarHeight.value = sbHeight
+			}
+		}
+	} catch (e) {
+		statusBarHeight.value = 44
+	}
+	// #endif
+}
+
+// 分享功能
+const handleShare = () => {
+	showSharePopup.value = true
+}
+
+// 关闭分享弹窗
+const closeSharePopup = () => {
+	showSharePopup.value = false
+}
+
+// 分享数据
+const shareData = computed((): UTSJSONObject => {
+	const data = {
+		title: '预约向导 - 网约向导趣游玩',
+		desc: '发现专业向导，定制专属行程',
+		summary: '发现专业向导，定制专属行程',
+		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		url: 'https://m.wyxdapp.com/#/pagesUser/persionInfo/submitOrder',
+		link: 'https://m.wyxdapp.com/#/pagesUser/persionInfo/submitOrder'
+	} as UTSJSONObject
+	return data
+})
+
+// 获取联系人列表
+const Get_contact_list = async () => {
+	const isLogin = checkUserLogin()
+	if (isLogin == false) {
+		return
+	}
+	
+	const userIdVal = getCurrentUserKid()
+	if (userIdVal == '') {
+		return
+	}
+	
+	try {
+		const params = new GetContactListParams()
+		params.userKid = userIdVal
+		const res = await getContactList(params)
+		
+		contactList.value = [] as Array<ContactItemData>
+		
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		
+		let entitiesArr: Array<UTSJSONObject> = []
+		const dataVal = resObj.get('data')
+		if (dataVal != null) {
+			if (Array.isArray(dataVal) == true) {
+				entitiesArr = dataVal as Array<UTSJSONObject>
+			} else {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const entitiesVal = dataObj.get('entities')
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entitiesArr = entitiesVal as Array<UTSJSONObject>
+				} else {
+					const innerDataVal = dataObj.get('data')
+					if (innerDataVal != null) {
+						if (Array.isArray(innerDataVal) == true) {
+							entitiesArr = innerDataVal as Array<UTSJSONObject>
+						} else {
+							const innerDataStr = JSON.stringify(innerDataVal)
+							const innerDataObj = JSON.parse(innerDataStr) as UTSJSONObject
+							const innerEntitiesVal = innerDataObj.get('entities')
+							if (innerEntitiesVal != null && Array.isArray(innerEntitiesVal) == true) {
+								entitiesArr = innerEntitiesVal as Array<UTSJSONObject>
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		const resultList: Array<ContactItemData> = []
+		const arrLen = entitiesArr.length
+		let idx = 0
+		while (idx < arrLen) {
+			const item = entitiesArr[idx]
+			if (item != null) {
+				const itemStr = JSON.stringify(item)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				
+				let kidResult = ''
+				const kidVal = itemObj.get('kid')
+				const idVal = itemObj.get('id')
+				if (kidVal != null && kidVal.toString() != '') {
+					kidResult = kidVal.toString()
+				} else if (idVal != null && idVal.toString() != '') {
+					kidResult = idVal.toString()
+				}
+				
+				let nameResult = ''
+				const nameVal = itemObj.get('name')
+				const realnameVal = itemObj.get('realname')
+				const realNameVal = itemObj.get('realName')
+				const travellerNameVal = itemObj.get('travellerName')
+				if (nameVal != null && nameVal.toString() != '') {
+					nameResult = nameVal.toString()
+				} else if (realnameVal != null && realnameVal.toString() != '') {
+					nameResult = realnameVal.toString()
+				} else if (realNameVal != null && realNameVal.toString() != '') {
+					nameResult = realNameVal.toString()
+				} else if (travellerNameVal != null && travellerNameVal.toString() != '') {
+					nameResult = travellerNameVal.toString()
+				}
+				
+				let phoneResult = ''
+				const phoneVal = itemObj.get('phone')
+				const phoneNumberVal = itemObj.get('phoneNumber')
+				const travellerPhoneVal = itemObj.get('travellerPhone')
+				const mobileVal = itemObj.get('mobile')
+				if (phoneVal != null && phoneVal.toString() != '') {
+					phoneResult = phoneVal.toString()
+				} else if (phoneNumberVal != null && phoneNumberVal.toString() != '') {
+					phoneResult = phoneNumberVal.toString()
+				} else if (travellerPhoneVal != null && travellerPhoneVal.toString() != '') {
+					phoneResult = travellerPhoneVal.toString()
+				} else if (mobileVal != null && mobileVal.toString() != '') {
+					phoneResult = mobileVal.toString()
+				}
+				
+				let defaultValue = 0
+				const isDefaultVal = itemObj.get('is_default')
+				const isDefaultVal2 = itemObj.get('isDefault')
+				let flagVal: string | number | boolean | UTSJSONObject | null = null
+				if (isDefaultVal != null) {
+					flagVal = isDefaultVal
+				} else if (isDefaultVal2 != null) {
+					flagVal = isDefaultVal2
+				}
+				if (flagVal != null) {
+					const flagNum = parseInt(flagVal.toString())
+					if (isNaN(flagNum) == false && flagNum == 10) {
+						defaultValue = 10
+					}
+				}
+				
+				if (kidResult != '' && nameResult != '' && phoneResult != '') {
+					const contactItem = new ContactItemData()
+					contactItem.kid = kidResult
+					contactItem.name = nameResult
+					contactItem.phone = phoneResult
+					contactItem.is_default = defaultValue
+					contactItem.isDefault = defaultValue
+					resultList.push(contactItem)
+				}
+			}
+			idx = idx + 1
+		}
+		
+		resultList.sort((a: ContactItemData, b: ContactItemData): number => {
+			const aIsDefault = (a.is_default == 10 || a.isDefault == 10)
+			const bIsDefault = (b.is_default == 10 || b.isDefault == 10)
+			const ad = (aIsDefault == true) ? 0 : 1
+			const bd = (bIsDefault == true) ? 0 : 1
+			return ad - bd
+		})
+		
+		contactList.value = resultList
+		
+		if (formPhone.value == '' && contactList.value.length > 0) {
+			const first = contactList.value[0]
+			formRealname.value = first.name
+			formPhone.value = first.phone
+			contactId.value = first.kid
+		}
+		
+		addContactVisity.value = false
+	} catch (error) {
+		handlePageError(error, '获取联系人列表', null)
+	}
+}
+
+// 初始化页面数据
+const initPageData = () => {
+	initStatusBarHeight()
+	formServiceHours.value = 1
+	formOrderRemarks.value = ''
+	formPhone.value = ''
+	formRealname.value = ''
+	initMinDate()
+	Get_contact_list()
+}
+
+// 页面加载
+onLoad((options: OnLoadOptions) => {
+	initPageData()
+	
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		console.log('📱 [submitOrder] onLoad options:', optionsStr)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		// 获取向导ID（支持 guiderKid 和 targetId 两种参数名）
+		const guiderKidVal = optionsObj.get('guiderKid')
+		const targetIdVal = optionsObj.get('targetId')
+		const guideKidVal = optionsObj.get('guideKid')
+		if (guiderKidVal != null && guiderKidVal.toString() != '') {
+			guiderKid.value = guiderKidVal.toString()
+			console.log('📱 [submitOrder] 获取到 guiderKid:', guiderKid.value)
+		} else if (targetIdVal != null && targetIdVal.toString() != '') {
+			guiderKid.value = targetIdVal.toString()
+			console.log('📱 [submitOrder] 获取到 targetId:', guiderKid.value)
+		} else if (guideKidVal != null && guideKidVal.toString() != '') {
+			guiderKid.value = guideKidVal.toString()
+			console.log('📱 [submitOrder] 获取到 guideKid:', guiderKid.value)
+		}
+		
+		// 获取价格 - 先解码再提取数字，兼容微信小程序URL参数可能包含中文的情况
+		const priceVal = optionsObj.get('price')
+		if (priceVal != null && priceVal.toString() != '') {
+			let priceRaw = priceVal.toString()
+			// 尝试解码（微信小程序可能传入编码后的中文字符）
+			try {
+				const decoded = decodeURIComponent(priceRaw)
+				if (decoded != null) {
+					priceRaw = decoded
+				}
+			} catch (decodeErr) {
+				// 解码失败则使用原始值
+			}
+			// 逐字符提取数字和小数点（避免regex replace在某些编译目标下被优化掉）
+			let cleanPrice = ''
+			let hasDot = false
+			let ci = 0
+			while (ci < priceRaw.length) {
+				const ch = priceRaw.charAt(ci)
+				if (ch >= '0' && ch <= '9') {
+					cleanPrice = cleanPrice + ch
+				} else if (ch == '.' && hasDot == false) {
+					cleanPrice = cleanPrice + ch
+					hasDot = true
+				}
+				ci = ci + 1
+			}
+			if (cleanPrice != '') {
+				const parsed = parseFloat(cleanPrice)
+				if (isNaN(parsed) == false && parsed > 0) {
+					// 四舍五入到分，避免浮点精度问题
+					serverPrice.value = Math.round(parsed * 100) / 100
+					formTotalMoney.value = serverPrice.value
+					secureLog('submitOrder', '获取到 price:', serverPrice.value)
+				}
+			}
+		}
+	}
+})
+
+// 页面显示时刷新联系人列表
+onShow(() => {
+	const isLogin = checkUserLogin()
+	if (isLogin == true) {
+		Get_contact_list()
+	}
+})
+
+// 联系人选择相关方法
+const isContactSelected = (contact: ContactItemData | null): boolean => {
+	const contactPhone = getContactPhone(contact)
+	const contactName = getContactName(contact)
+	return contactPhone == formPhone.value && contactName == formRealname.value
+}
+
+const selectContact = (contact: ContactItemData | null) => {
+	formPhone.value = getContactPhone(contact)
+	formRealname.value = getContactName(contact)
+	contactId.value = getContactKid(contact)
+}
+
+const handleClearContact = () => {
+	formPhone.value = ''
+	formRealname.value = ''
+	contactId.value = ''
+}
+
+const handleContactSelect = (contact: ContactItemData | null) => {
+	selectContact(contact)
+	showContactSelector.value = false
+}
+
+// 打开新增联系人弹窗
+const openAddContactPopup = () => {
+	const isLogin = checkUserLogin()
+	if (isLogin == false) {
+		uni.showModal({
+			title: '提示',
+			content: '请先登录后再添加联系人',
+			confirmText: '去登录',
+			cancelText: '取消',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					uni.navigateTo({
+						url: '/pagesUser/login/index'
+					})
+				}
+			}
+		})
+		return
+	}
+	
+	showContactSelector.value = false
+	addFormName.value = ''
+	addFormPhone.value = ''
+	addContactVisity.value = true
+}
+
+// 关闭新增联系人弹窗
+const closeAddContactPopup = () => {
+	addContactVisity.value = false
+}
+
+// 添加联系人
+const handleAddContact = async () => {
+	if (addFormName.value == '' || addFormPhone.value == '') {
+		uni.showToast({
+			title: '请填写完整信息',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const addPhoneRegex = /^1[3-9]\d{9}$/
+	if (addPhoneRegex.test(addFormPhone.value) == false) {
+		uni.showToast({
+			title: '手机号码不正确',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const userIdVal = getCurrentUserKid()
+	if (userIdVal == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		const addParams = new AddTravelUserParams()
+		addParams.userKid = userIdVal
+		addParams.name = addFormName.value
+		addParams.phone = addFormPhone.value
+		await addTravelUser(addParams)
+		
+		addContactVisity.value = false
+		
+		uni.showToast({
+			title: '添加成功',
+			icon: 'success'
+		})
+		
+		Get_contact_list()
+	} catch (error) {
+		handlePageError(error, '添加联系人', null)
+	}
+}
+
+// 确认新增联系人
+const confirmAddContact = () => {
+	handleAddContact()
+}
+
+// 日期变更处理
+const handleDateChange = (date: string) => {
+	chooseDate.value = date
+}
+
+// 减少天数
+const decreaseDays = () => {
+	if (formServiceHours.value > 1) {
+		formServiceHours.value = formServiceHours.value - 1
+	}
+}
+
+// 增加天数
+const increaseDays = () => {
+	if (formServiceHours.value < 30) {
+		formServiceHours.value = formServiceHours.value + 1
+	}
+}
+
+// 提交订单
+const handleSubmitOrder = async () => {
+	if (isLocalSubmitting.value == true) return
+	
+	const isLogin = checkUserLogin()
+	if (isLogin == false) {
+		uni.showModal({
+			title: '提示',
+			content: '请先登录后再预约向导',
+			confirmText: '去登录',
+			cancelText: '取消',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					uni.navigateTo({
+						url: '/pagesUser/login/index'
+					})
+				}
+			}
+		})
+		return
+	}
+	
+	const guiderKidVal = guiderKid.value
+	if (guiderKidVal == '') {
+		uni.showToast({
+			title: '向导信息不存在',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const userKid = getCurrentUserKid()
+	if (userKid == '') {
+		uni.showToast({
+			title: '请先登录',
+			icon: 'none'
+		})
+		return
+	}
+	
+	const dateVal = chooseDate.value
+	if (dateVal == '') {
+		uni.showToast({
+			title: '请选择日期',
+			icon: 'none'
+		})
+		return
+	}
+	
+	if (formPhone.value == '' || formRealname.value == '') {
+		uni.showToast({
+			title: '请选择联系人',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 验证价格
+	if (serverPrice.value <= 0) {
+		uni.showToast({
+			title: '向导服务价格信息不存在',
+			icon: 'none'
+		})
+		return
+	}
+	
+	isLocalSubmitting.value = true
+	
+	try {
+		// 计算总金额 = 单价 * 天数（使用整数运算避免浮点精度问题）
+		const priceCents = Math.round(serverPrice.value * 100)
+		const totalCents = priceCents * formServiceHours.value
+		const totalMoney = totalCents / 100
+		
+		// 构建游玩天数字符串（后端需要 travelTotalTime 格式如 "3天"）
+		const daysNum = formServiceHours.value
+		const travelTotalTimeStr = daysNum.toString() + '天'
+		
+		// 构建订单标题（后端必填字段）- 使用简单字符串
+		const orderTitleStr = '预约向导服务'
+		
+		console.log('📱 [submitOrder] 构建参数:')
+		console.log('  - userKid:', userKid)
+		console.log('  - guideKid:', guiderKidVal)
+		console.log('  - orderTitle:', orderTitleStr)
+		console.log('  - travelDate:', dateVal)
+		console.log('  - travelTotalTime:', travelTotalTimeStr)
+		console.log('  - totalMoney:', totalMoney)
+		
+		// 构建订单参数（注意：后端字段名是 guideKid，不是 guiderKid）
+		const orderParams = new CreateGuiderOrderParams()
+		orderParams.userKid = userKid
+		orderParams.guideKid = guiderKidVal
+		orderParams.orderTitle = orderTitleStr
+		orderParams.travelDate = dateVal
+		orderParams.travelTotalTime = travelTotalTimeStr
+		orderParams.realname = formRealname.value
+		orderParams.phone = formPhone.value
+		orderParams.totalMoney = totalMoney
+		orderParams.orderRemarks = formOrderRemarks.value
+		orderParams.orderSource = 20
+		
+		console.log('📱 [submitOrder] 提交订单参数:', JSON.stringify(orderParams))
+		
+		const res = await createGuiderOrder(orderParams)
+		
+		// 解析响应
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		let code = 0
+		if (codeVal != null) {
+			code = parseInt(codeVal.toString())
+		}
+		
+		if (code == 200) {
+			// 获取订单kid
+			let orderKidResult = ''
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const kidVal = dataObj.get('kid')
+				const orderKidVal = dataObj.get('orderKid')
+				if (kidVal != null && kidVal.toString() != '') {
+					orderKidResult = kidVal.toString()
+				} else if (orderKidVal != null && orderKidVal.toString() != '') {
+					orderKidResult = orderKidVal.toString()
+				}
+			}
+			
+			uni.showToast({
+				title: '预约成功',
+				icon: 'success'
+			})
+			
+			// 跳转到支付页面
+			if (orderKidResult != '') {
+				// 检查零钱支付资格
+				let balancePayFlag = false
+				try {
+					const balanceResult = await checkBalancePayEnabled(userKid, '', 30)
+					balancePayFlag = balanceResult.balancePayEnabled
+				} catch (e : Error) {
+					console.log('零钱支付资格检查失败', e)
+				}
+				
+				safeSetTimeout(() => {
+					uni.navigateTo({
+						url: '/pagesTrade/payment/payOrder/index?orderKid=' + orderKidResult + '&totalMoney=' + totalMoney.toString() + '&balancePayEnabled=' + (balancePayFlag ? '1' : '0')
+					})
+				}, 1500)
+			} else {
+				safeSetTimeout(() => {
+					uni.navigateBack()
+				}, 1500)
+			}
+		} else {
+			// 获取错误信息
+			let errMsg = '预约失败，请重试'
+			const msgVal = resObj.get('msg')
+			const messageVal = resObj.get('message')
+			if (msgVal != null && msgVal.toString() != '') {
+				errMsg = msgVal.toString()
+			} else if (messageVal != null && messageVal.toString() != '') {
+				errMsg = messageVal.toString()
+			}
+			uni.showToast({
+				title: errMsg,
+				icon: 'none'
+			})
+		}
+	} catch (error) {
+		handlePageError(error, '提交订单', null)
+	} finally {
+		isLocalSubmitting.value = false
+	}
+}
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style lang="scss" scoped>
+/* 页面容器 */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #f5f5f5;
+	position: relative;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-share {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-end;
+}
+/* #endif */
+
+/* APP端滚动区域 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	padding-bottom: 180rpx;
+	background-color: #f5f5f5;
+	width: 750rpx;
+}
+/* #endif */
+
+/* H5端滚动区域 */
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex: 1;
+	flex-direction: column;
+	padding-bottom: 180rpx;
+	background-color: #f5f5f5;
+	width: 750rpx;
+}
+/* #endif */
+
+.section-card {
+	margin-top: 24rpx;
+	margin-right: 32rpx;
+	margin-bottom: 24rpx;
+	margin-left: 32rpx;
+	padding: 32rpx;
+	border-radius: 24rpx;
+}
+
+.section-header {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.more-btn {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.more-btn-text {
+	font-size: 28rpx;
+	color: #37B1F2;
+}
+
+.arrow-icon {
+	font-size: 32rpx;
+	color: #37B1F2;
+}
+
+.days-selector-inline {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.number-btn {
+	width: 56rpx;
+	height: 56rpx;
+	background-color: #F5F5F5;
+	border-radius: 8rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #666666;
+	font-weight: normal;
+	line-height: 1;
+}
+
+.days-value {
+	min-width: 40rpx;
+	text-align: center;
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.contact-cards {
+	display: flex;
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 24rpx;
+}
+
+.contact-card {
+	padding: 20rpx 40rpx;
+	background-color: #F8F8F8;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #E0E0E0;
+	border-radius: 24rpx;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.contact-card--active {
+	background-color: #E6F7FF;
+	border-color: #37B1F2;
+}
+
+.contact-name {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.contact-card--active .contact-name {
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.selected-contact-info {
+	display: flex;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 24rpx 0;
+	border-top: 2rpx solid #F0F0F0;
+	margin-bottom: 24rpx;
+}
+
+.contact-detail {
+	display: flex;
+	flex-direction: row;
+}
+
+.label {
+	font-size: 28rpx;
+	color: #333333;
+	margin-right: 16rpx;
+}
+
+.info {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.delete-btn {
+	font-size: 28rpx;
+	color: #FF4D4F;
+}
+
+.remark-box {
+	position: relative;
+}
+
+.remark-input {
+	width: 100%;
+	min-height: 200rpx;
+	padding: 24rpx;
+	padding-bottom: 48rpx;
+	background-color: #F8F8F8;
+	border-radius: 16rpx;
+	font-size: 28rpx;
+	color: #333333;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: transparent;
+}
+
+.char-count {
+	position: absolute;
+	right: 24rpx;
+	bottom: 24rpx;
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.footer-bar {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 24rpx 32rpx;
+	box-shadow: 0 -2rpx 8rpx rgba(0, 0, 0, 0.06);
+	z-index: 100;
+}
+
+.price-info {
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+}
+
+.price-label {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.price-value {
+	font-size: 48rpx;
+	color: #FF4D4F;
+	font-weight: bold;
+}
+
+.submit-btn {
+	width: 400rpx;
+	height: 88rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: #37B1F2;
+	border-radius: 48rpx;
+	position: relative;
+	z-index: 1;
+}
+
+.submit-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+	pointer-events: none;
+}
+
+.placeholder {
+	color: #999999;
+}
+
+/* 新增联系人弹窗样式 */
+.add-contact-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1001;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.add-contact-popup {
+	width: 620rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	display: flex;
+	flex-direction: column;
+}
+
+.add-popup-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+	position: relative;
+}
+
+.add-popup-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.add-close-btn {
+	position: absolute;
+	right: 24rpx;
+	top: 24rpx;
+	width: 48rpx;
+	height: 48rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.add-close-icon {
+	font-size: 40rpx;
+	color: #999999;
+}
+
+.add-form {
+	padding: 32rpx;
+}
+
+.add-form-item {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+	padding-bottom: 24rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #F5F5F5;
+}
+
+.add-form-item:last-child {
+	margin-bottom: 0;
+	border-bottom-width: 0;
+}
+
+.add-form-label {
+	width: 140rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.add-form-input {
+	flex: 1;
+	height: 60rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.add-popup-footer {
+	display: flex;
+	flex-direction: row;
+	padding: 24rpx 32rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #EEEEEE;
+}
+
+.add-cancel-btn {
+	flex: 1;
+	height: 80rpx;
+	background-color: #F5F5F5;
+	border-radius: 40rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-right: 24rpx;
+}
+
+.add-cancel-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.add-confirm-btn {
+	flex: 1;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.add-confirm-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+</style>

@@ -1,0 +1,450 @@
+<template>
+	<view class="auth-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">认证中心</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		<view class="auth-list">
+			<!-- 实名认证 -->
+			<view class="auth-item" @click="navigateToAuth('realNameAuth')">
+				<view class="auth-left">
+					<view class="auth-icon-wrap">
+						<uni-icons type="auth" :size="22" color="#0187F5"></uni-icons>
+					</view>
+					<text class="auth-label">实名认证</text>
+				</view>
+				<view class="auth-right">
+					<text class="auth-status" :class="getStatusClass(authIdAuth)">
+						{{ getStatusText(authIdAuth) }}
+					</text>
+					<uni-icons type="right" :size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+			
+			<!-- 导游认证 -->
+			<view class="auth-item" @click="navigateToAuth('guide')">
+				<view class="auth-left">
+					<view class="auth-icon-wrap">
+						<uni-icons type="flag" :size="22" color="#0187F5"></uni-icons>
+					</view>
+					<text class="auth-label">导游认证</text>
+				</view>
+				<view class="auth-right">
+					<text class="auth-status" :class="getStatusClass(authGuideAuth)">
+						{{ getStatusText(authGuideAuth) }}
+					</text>
+					<uni-icons type="right" :size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+			
+			<!-- 驾照认证 -->
+			<view class="auth-item" @click="navigateToAuth('driver')">
+				<view class="auth-left">
+					<view class="auth-icon-wrap">
+						<uni-icons type="navigate" :size="22" color="#0187F5"></uni-icons>
+					</view>
+					<text class="auth-label">驾照认证</text>
+				</view>
+				<view class="auth-right">
+					<text class="auth-status" :class="getStatusClass(authDriverAuth)">
+						{{ getStatusText(authDriverAuth) }}
+					</text>
+					<uni-icons type="right" :size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+			
+		</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { useUserStore, initUserInfoAction } from '@/stores/user.uts'
+// 🔧 修复：使用 getUserProfile 替代直接调用 requestUserHomePage，避免 Android ClassCastException
+import { getUserProfile } from '@/common/composables/useUserProfileCache.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable 
+} from '@/common/utils/loginHelper.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+// 🔧 导入 utsSafe 工具函数用于安全访问属性
+import { getNumberProp } from '@/common/utils/utsSafe.uts'
+
+const userStore = useUserStore()
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+// 辅助函数 - 获取用户ID（使用 loginHelper 可靠版本）
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
+
+// 辅助函数 - 检查登录状态（使用 loginHelper 可靠版本）
+const checkIsLogin = (): boolean => {
+	return checkUserLoginReliable()
+}
+
+const authInfo = ref({
+	enterpriseAuth: 10,
+	idAuth: 10,
+	guideAuthenticatStatu: 10,
+	driverAuthenticatStatu: 10
+})
+
+// UTS-safe computed accessors for template usage
+const authEnterpriseAuth = computed((): number => {
+	try {
+		const j = JSON.stringify(authInfo.value)
+		if (j == null || j == '') return 10
+		const obj = JSON.parse(j) as UTSJSONObject
+		if (obj == null) return 10
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = obj.get('enterpriseAuth') } catch (e) {}
+		return (v != null && v != '') ? (typeof v === 'string' ? parseInt(v.toString()) : v as number) : 10
+	} catch (e) {}
+	return 10
+})
+
+const authIdAuth = computed((): number => {
+	try {
+		const j = JSON.stringify(authInfo.value)
+		if (j == null || j == '') return 10
+		const obj = JSON.parse(j) as UTSJSONObject
+		if (obj == null) return 10
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = obj.get('idAuth') } catch (e) {}
+		return (v != null && v != '') ? (typeof v === 'string' ? parseInt(v.toString()) : v as number) : 10
+	} catch (e) {}
+	return 10
+})
+
+const authGuideAuth = computed((): number => {
+	try {
+		const j = JSON.stringify(authInfo.value)
+		if (j == null || j == '') return 10
+		const obj = JSON.parse(j) as UTSJSONObject
+		if (obj == null) return 10
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = obj.get('guideAuthenticatStatu') } catch (e) {}
+		return (v != null && v != '') ? (typeof v === 'string' ? parseInt(v.toString()) : v as number) : 10
+	} catch (e) {}
+	return 10
+})
+
+const authDriverAuth = computed((): number => {
+	try {
+		const j = JSON.stringify(authInfo.value)
+		if (j == null || j == '') return 10
+		const obj = JSON.parse(j) as UTSJSONObject
+		if (obj == null) return 10
+		let v: string | number | boolean | UTSJSONObject | null = null
+		try { v = obj.get('driverAuthenticatStatu') } catch (e) {}
+		return (v != null && v != '') ? (typeof v === 'string' ? parseInt(v.toString()) : v as number) : 10
+	} catch (e) {}
+	return 10
+})
+
+const loadAuthInfo = async () => {
+	try {
+		// 🔧 使用统一的获取用户ID函数
+		const kid = getUserKidFromStore()
+		console.log('[ProveDetails] loadAuthInfo - kid:', kid)
+		
+		if (kid == null || kid == '') {
+			console.log('[ProveDetails] 未登录，显示未认证状态')
+			// 未登录时全部显示为未认证
+			authInfo.value = {
+				enterpriseAuth: 10,
+				idAuth: 10,
+				guideAuthenticatStatu: 10,
+				driverAuthenticatStatu: 10
+			}
+			return
+		}
+		
+		// 🔧 修复：使用 getUserProfile 替代直接调用 requestUserHomePage
+		// 这样可以避免 Android 端的 ClassCastException，并且复用缓存机制
+		const params = {
+			kid: kid,
+			focusUserkid: kid,
+			forceRefresh: false
+		} as UTSJSONObject
+		
+		console.log('[ProveDetails] 调用 getUserProfile，参数:', JSON.stringify(params))
+		const profile = await getUserProfile(params)
+		console.log('[ProveDetails] getUserProfile 返回:', JSON.stringify(profile))
+		
+		if (profile == null) {
+			console.log('[ProveDetails] profile 为空，显示未认证状态')
+			authInfo.value = {
+				enterpriseAuth: 10,
+				idAuth: 10,
+				guideAuthenticatStatu: 10,
+				driverAuthenticatStatu: 10
+			}
+			return
+		}
+		
+		// 🔧 使用 JSON 序列化方式安全访问属性（UTS 规范）
+		const profileStr = JSON.stringify(profile)
+		const profileObj = JSON.parse(profileStr) as UTSJSONObject
+		
+		// 获取各认证状态
+		let enterpriseVal = 10
+		let idAuthVal = 10
+		let guideAuthVal = 10
+		let driverAuthVal = 10
+		
+		const enterpriseAny = profileObj.get('enterpriseAuth')
+		if (enterpriseAny != null) {
+			const enterpriseNum = parseInt(enterpriseAny.toString())
+			if (isNaN(enterpriseNum) == false) {
+				enterpriseVal = enterpriseNum
+			}
+		}
+		
+		const idAuthAny = profileObj.get('idAuth')
+		if (idAuthAny != null) {
+			const idAuthNum = parseInt(idAuthAny.toString())
+			if (isNaN(idAuthNum) == false) {
+				idAuthVal = idAuthNum
+			}
+		}
+		
+		// 注意：后端返回的字段名是 guideAuthenticatStatu（不是 guideAuth）
+		const guideAuthAny = profileObj.get('guideAuthenticatStatu')
+		if (guideAuthAny != null) {
+			const guideAuthNum = parseInt(guideAuthAny.toString())
+			if (isNaN(guideAuthNum) == false) {
+				guideAuthVal = guideAuthNum
+			}
+		}
+		
+		// 注意：后端返回的字段名是 driverAuthenticatStatu（不是 driverAuth）
+		const driverAuthAny = profileObj.get('driverAuthenticatStatu')
+		if (driverAuthAny != null) {
+			const driverAuthNum = parseInt(driverAuthAny.toString())
+			if (isNaN(driverAuthNum) == false) {
+				driverAuthVal = driverAuthNum
+			}
+		}
+		
+		console.log('[ProveDetails] 认证状态 - enterprise:', enterpriseVal, 'idAuth:', idAuthVal, 'guideAuth:', guideAuthVal, 'driverAuth:', driverAuthVal)
+		
+		authInfo.value = {
+			enterpriseAuth: enterpriseVal,
+			idAuth: idAuthVal,
+			guideAuthenticatStatu: guideAuthVal,
+			driverAuthenticatStatu: driverAuthVal
+		}
+	} catch (error) {
+		handlePageError(error, '加载认证信息', null)
+		// 出错时显示未认证状态
+		authInfo.value = {
+			enterpriseAuth: 10,
+			idAuth: 10,
+			guideAuthenticatStatu: 10,
+			driverAuthenticatStatu: 10
+		}
+	}
+}
+
+onMounted(() => {
+	// 初始化页面布局
+	initPageLayout()
+	
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化
+	initUserInfoAction()
+	
+	// 🔧 修复 APP 端登录状态获取问题：等待 Store 初始化完成后再加载数据
+	// 原因：APP 端 Store 初始化是异步的，直接调用 loadAuthInfo 时 Store 可能尚未初始化完成
+	// H5 端可以通过 window.localStorage 降级读取，但 APP 端没有这个能力
+	waitForLoginStatus(2000).then((loginResult: number) => {
+		console.log('[ProveDetails] Store 初始化完成，登录状态:', loginResult)
+		loadAuthInfo()
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '[ProveDetails] 等待登录状态')
+		// 即使失败也尝试加载（可能显示未认证状态）
+		loadAuthInfo()
+	})
+})
+
+// 🎯 页面显示时刷新认证状态（支付成功返回后更新VIP状态）
+onShow(() => {
+	console.log('[ProveDetails] 页面显示，刷新认证状态')
+	loadAuthInfo()
+})
+
+const getStatusText = (status: number): string => {
+	switch(status) {
+		case 20:
+			return '审核中'
+		case 30:
+			return '已通过'
+		case 40:
+			return '未通过'
+		default:
+			return '未认证'
+	}
+}
+
+const getStatusClass = (status: number): string => {
+	switch(status) {
+		case 20:
+			return 'status-pending'
+		case 30:
+			return 'status-success'
+		case 40:
+			return 'status-failed'
+		default:
+			return 'status-none'
+	}
+}
+
+const navigateToAuth = (type: string) => {
+	uni.navigateTo({
+		url: `/pagesUser/my/proveDetails/${type}`
+	})
+}
+</script>
+
+<style scoped>
+.auth-page {
+	flex-direction: column;
+	flex: 1;
+	background-color: #f5f5f5;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.auth-list {
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+.auth-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding: 32rpx 28rpx;
+	border-bottom-width: 2rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.auth-left {
+	flex-direction: row;
+	align-items: center;
+}
+
+.auth-icon-wrap {
+	width: 48rpx;
+	height: 48rpx;
+	margin-right: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.auth-label {
+	font-size: 32rpx;
+	color: #333333;
+}
+
+.auth-right {
+	flex-direction: row;
+	align-items: center;
+}
+
+.auth-status {
+	font-size: 28rpx;
+	margin-right: 12rpx;
+}
+
+.status-none {
+	color: #999999;
+}
+
+.status-pending {
+	color: #FFB43F;
+}
+
+.status-success {
+	color: #2EAEF2;
+}
+
+.status-failed {
+	color: #FF5C5C;
+}
+</style>

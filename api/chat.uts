@@ -1,0 +1,136 @@
+/**
+ * 聊天相关 API
+ * 对应后端: ChatController.java
+ */
+
+import request from '@/utils/request'
+import {
+	GetHistoryParams,
+	GetConversationsParams,
+	MarkReadParams,
+	GetChatTokenParams,
+	DeleteConversationParams,
+	PinConversationParams,
+	ClearChatHistoryParams,
+	GetMessageReminderCountParams,
+	ResetMessageReminderParams
+} from './types/chatTypes.uts'
+
+// 重新导出类型，保持向后兼容
+export {
+	GetHistoryParams,
+	GetConversationsParams,
+	MarkReadParams,
+	GetChatTokenParams,
+	ClearChatHistoryParams,
+	GetMessageReminderCountParams,
+	ResetMessageReminderParams
+} from './types/chatTypes.uts'
+
+/**
+ * 获取聊天历史消息
+ * GET /chat/history
+ * 🔧 修复：对于 GET 请求，将参数拼接到 URL 中，避免 APP 端 data 参数序列化问题
+ */
+export const getHistoryMessages = (params: GetHistoryParams): Promise<UTSJSONObject> => {
+	// 将参数拼接到 URL 中，而不是作为 data 传递
+	let url = '/chat/history?fromUserId=' + params.fromUserId + '&toUserId=' + params.toUserId
+	url = url + '&page=' + params.page.toString()
+	url = url + '&size=' + params.size.toString()
+	// 后端支持 sinceTime 参数后，传递 clearAt 让服务端过滤
+	if (params.sinceTime > 0) {
+		url = url + '&sinceTime=' + params.sinceTime.toString()
+	}
+	return request.get(url, null, false)
+}
+
+/**
+ * 获取会话列表
+ * GET /chat/conversations
+ * 🔧 修复：对于 GET 请求，将参数拼接到 URL 中，避免 APP 端 data 参数序列化问题
+ */
+export const getConversations = (params: GetConversationsParams): Promise<UTSJSONObject> => {
+	// 将参数拼接到 URL 中，而不是作为 data 传递
+	const userIdVal = params.userId
+	const pageVal = params.page.toString()
+	const sizeVal = params.size.toString()
+	const url = '/chat/conversations?userId=' + userIdVal + '&page=' + pageVal + '&size=' + sizeVal
+	console.log('[chat.uts] getConversations URL:', url)
+	return request.get(url, null, false)
+}
+
+/**
+ * 标记会话已读
+ * POST /chat/read/conversation
+ * ⚠️ 后端使用 @RequestParam，需要将参数拼接到 URL 中
+ */
+export const markConversationRead = (params: MarkReadParams): Promise<UTSJSONObject> => {
+	// 将参数拼接到 URL 中，而不是放在 Request Body
+	// 🔧 修复：UTS 不支持模板字符串语法，使用字符串拼接
+	const fromUserIdVal = params.fromUserId
+	const toUserIdVal = params.toUserId
+	const url = '/chat/read/conversation?fromUserId=' + fromUserIdVal + '&toUserId=' + toUserIdVal
+	console.log('[chat.uts] markConversationRead URL:', url)
+	return request.post(url, null, false)
+}
+
+/**
+ * 获取聊天 Token
+ * GET /chat/token
+ * 🔧 修复：对于 GET 请求，将参数拼接到 URL 中，避免 APP 端 data 参数序列化问题
+ */
+export const getChatToken = (params: GetChatTokenParams): Promise<UTSJSONObject> => {
+	// 将参数拼接到 URL 中，而不是作为 data 传递
+	const url = '/chat/token?userId=' + params.userId
+	// 🔧 使用重试机制：聊天 Token 是关键接口，失败时自动重试
+	return request.getWithRetry(url, null, false, 3)
+}
+
+/**
+ * 删除会话
+ * POST /chat/conversation/delete
+ */
+export const deleteConversation = (params: DeleteConversationParams): Promise<UTSJSONObject> => {
+	return request.post('/chat/conversation/delete?userId=' + params.userId + '&conversationId=' + params.conversationId, null, false)
+}
+
+/**
+ * 置顶/取消置顶会话
+ * POST /chat/conversation/pin
+ */
+export const pinConversation = (params: PinConversationParams): Promise<UTSJSONObject> => {
+	return request.post('/chat/conversation/pin?userId=' + params.userId + '&targetUserId=' + params.targetUserId + '&pin=' + params.pin.toString(), null, false)
+}
+
+/**
+ * 清空聊天记录（软删除）
+ * POST /chat/messages/clear
+ * ⚠️ 后端使用 @RequestParam，需要将参数拼接到 URL 中
+ */
+export const clearChatHistory = (params: ClearChatHistoryParams): Promise<UTSJSONObject> => {
+	const url = '/chat/messages/clear?userId=' + params.userId + '&targetUserId=' + params.targetUserId
+	return request.post(url, null, false)
+}
+
+/**
+ * 获取消息提醒未读数（评论、点赞、关注、访客）
+ * POST /support/messageReminder/v1/queryReminderCount
+ */
+export const getMessageReminderCount = (params: GetMessageReminderCountParams): Promise<UTSJSONObject> => {
+	const requestParams = { userKid: params.userKid } as UTSJSONObject
+	return request.post('/support/messageReminder/v1/queryReminderCount', requestParams, false)
+}
+
+/**
+ * 重置消息提醒未读数
+ * POST /support/messageReminder/resetReminderCount
+ */
+export const resetMessageReminderCount = (params: ResetMessageReminderParams): Promise<UTSJSONObject> => {
+	// 🔧 修复：确保参数正确序列化传递
+	const requestParams = {
+		userKid: params.userKid,
+		reminderType: params.reminderType
+	} as UTSJSONObject
+	console.log('[API] resetMessageReminderCount - params:', JSON.stringify(requestParams))
+	return request.post('/support/messageReminder/resetReminderCount', requestParams, false)
+}

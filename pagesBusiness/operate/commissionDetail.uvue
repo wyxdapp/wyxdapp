@@ -1,0 +1,862 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">佣金明细</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- 内容区域 -->
+		<!-- #ifndef H5 -->
+		<view class="content-area" :style="{ marginTop: (statusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<view class="content-area">
+		<!-- #endif -->
+			<!-- 顶部统计卡片 -->
+			<view class="stats-card">
+				<view class="stats-item">
+					<text class="stats-value">¥{{ totalCommission }}</text>
+					<text class="stats-label">累计佣金</text>
+				</view>
+				<view class="stats-divider"></view>
+				<view class="stats-item">
+					<text class="stats-value">¥{{ monthCommission }}</text>
+					<text class="stats-label">本月佣金</text>
+				</view>
+			</view>
+
+			<!-- 筛选Tab -->
+			<view class="filter-tabs">
+				<view 
+					class="tab-item" 
+					:class="currentTab == 0 ? 'tab-active' : ''"
+					@click="switchTab(0)"
+				>
+					<text :class="currentTab == 0 ? 'tab-text-active' : 'tab-text'">全部</text>
+				</view>
+				<view 
+					class="tab-item" 
+					:class="currentTab == 1 ? 'tab-active' : ''"
+					@click="switchTab(1)"
+				>
+					<text :class="currentTab == 1 ? 'tab-text-active' : 'tab-text'">订单佣金</text>
+				</view>
+				<view 
+					class="tab-item" 
+					:class="currentTab == 2 ? 'tab-active' : ''"
+					@click="switchTab(2)"
+				>
+					<text :class="currentTab == 2 ? 'tab-text-active' : 'tab-text'">认证佣金</text>
+				</view>
+			</view>
+
+			<!-- 佣金明细列表 -->
+			<!-- #ifdef H5 -->
+			<scroll-view
+				class="scroll-view-h5"
+				:style="{ height: contentHeight + 'px' }"
+				scroll-y="true"
+				refresher-enabled="true"
+				:refresher-triggered="refreshing"
+				@refresherrefresh="handleRefresh"
+				@scrolltolower="handleLoadMore"
+			>
+			<!-- #endif -->
+			<!-- #ifndef H5 -->
+			<scroll-view
+				class="scroll-view"
+				scroll-y="true"
+				refresher-enabled="true"
+				:refresher-triggered="refreshing"
+				@refresherrefresh="handleRefresh"
+				@scrolltolower="handleLoadMore"
+			>
+			<!-- #endif -->
+				<!-- 加载中 -->
+				<view v-if="loading == true && listLength == 0" class="loading-box">
+					<text class="loading-text">加载中...</text>
+				</view>
+				
+				<!-- 空状态 -->
+				<view v-else-if="listLength == 0 && loading == false" class="empty-wrapper">
+					<text class="empty-text">暂无佣金记录</text>
+				</view>
+				
+				<!-- 佣金列表 -->
+				<view v-else class="list-content">
+					<view
+						v-for="(item, index) in commissionList"
+						:key="getItemKey(item, index)"
+						class="commission-item"
+						@click="handleItemClick(item)"
+					>
+						<view class="item-left">
+							<view class="item-title-row">
+								<text class="item-title">{{ getItemTitle(item) }}</text>
+								<text v-if="isCrossMerchant(item)" class="cross-merchant-tag">跨商户</text>
+							</view>
+							<text class="item-time">{{ getItemTime(item) }}</text>
+							<text class="item-order" v-if="getItemOrderType(item) != ''">{{ getItemOrderType(item) }}</text>
+							<text class="item-buyer" v-if="getItemBuyerNickname(item) != ''">下单用户: {{ getItemBuyerNickname(item) }}</text>
+							<text class="item-detail" v-if="getItemOrderAmount(item) != ''">订单金额: ¥{{ getItemOrderAmount(item) }}  费率: {{ getItemCommissionRate(item) }}%</text>
+							<text v-if="isCrossMerchant(item)" class="item-source-merchant">来源商户: {{ getSourceMerchant(item) }}</text>
+						</view>
+						<view class="item-right">
+							<text class="item-amount">+¥{{ getItemAmount(item) }}</text>
+							<text :class="getCommissionStatusClass(item)">{{ getCommissionStatus(item) }}</text>
+							<view v-if="isCrossMerchantPending(item)" class="withdraw-btn" @click.stop="handleCrossMerchantWithdraw(item)">
+								<text class="withdraw-btn-text">提现</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 加载状态 -->
+				<view v-if="listLength > 0" class="load-status">
+					<text class="load-text" v-if="loading == true">加载中...</text>
+					<text class="load-text" v-else-if="hasMore == false">没有更多了</text>
+				</view>
+			</scroll-view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { queryTutorCommission } from '@/pagesBusiness/api/operator.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus,
+	requireLoginReliable,
+	getCurrentUserIdReliable
+} from '@/common/utils/loginHelper.uts'
+import { 
+	getStatusBarHeight as getStatusBarHeightUtil, 
+	getWindowHeight as getWindowHeightUtil,
+	toJsonObj
+} from '@/common/utils/utsSafe.uts'
+
+// ========== 佣金类型常量 ==========
+const PROFIT_TYPE_ALL = 0           // 全部
+const PROFIT_TYPE_CERTIFICATION = 10 // 认证佣金收益
+const PROFIT_TYPE_ORDER = 20         // 订单佣金收益
+
+const ORDER_TYPE_LINE = 10           // 旅线订单
+const ORDER_TYPE_GUIDE = 20          // 私导订单
+
+// ========== JSON 辅助函数 ==========
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val == null) return ''
+	return val.toString()
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val == null) return 0
+	const num = parseFloat(val.toString())
+	if (isNaN(num) == true) return 0
+	return num
+}
+
+// 内联金额格式化（替代 money.uts）
+const formatMoney = (value: number): string => {
+	if (isNaN(value)) return '0.00'
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+// ========== 页面布局 ==========
+const statusBarHeight = ref<number>(44)
+const contentHeight = ref<number>(500)
+
+// ========== 响应式状态 ==========
+const commissionList = ref<Array<UTSJSONObject>>([])
+const pageNumber = ref<number>(1)
+const pageSize = ref<number>(10)
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const hasMore = ref<boolean>(true)
+const totalCommission = ref<string>('0.00')
+const monthCommission = ref<string>('0.00')
+const currentTab = ref<number>(0)  // 0=全部 1=订单佣金 2=认证佣金
+
+// ========== 计算属性 ==========
+const listLength = computed((): number => {
+	try {
+		const arr = commissionList.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// ========== 返回按钮处理 ==========
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+// ========== 辅助函数 ==========
+const getItemKey = (item: UTSJSONObject, index: number): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return index.toString()
+	const kid = getObjString(obj, 'kid')
+	if (kid != '') return kid
+	return index.toString()
+}
+
+// 获取佣金标题（根据收益类型）
+const getItemTitle = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '佣金收益'
+	const profitType = getObjNumber(obj, 'profitType')
+	if (profitType == PROFIT_TYPE_CERTIFICATION) {
+		const commissionType = getObjNumber(obj, 'commissionType')
+		if (commissionType == 10) return '认证佣金'
+		if (commissionType == 20) return '套餐佣金'
+		return '认证佣金'
+	}
+	if (profitType == PROFIT_TYPE_ORDER) {
+		return '订单佣金'
+	}
+	return '佣金收益'
+}
+
+// 获取佣金时间
+const getItemTime = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	let time = getObjString(obj, 'commissionTime')
+	if (time == '') time = getObjString(obj, 'createTime')
+	if (time != '' && time.length > 16) {
+		return time.substring(0, 16)
+	}
+	return time
+}
+
+// 获取订单类型文本（仅订单佣金显示）
+const getItemOrderType = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	const profitType = getObjNumber(obj, 'profitType')
+	if (profitType != PROFIT_TYPE_ORDER) return ''
+	
+	const orderType = getObjNumber(obj, 'orderType')
+	if (orderType == ORDER_TYPE_LINE) return '旅线订单'
+	if (orderType == ORDER_TYPE_GUIDE) return '私导订单'
+	return ''
+}
+
+// 获取佣金金额
+const getItemAmount = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '0.00'
+	const amount = getObjNumber(obj, 'commission')
+	if (amount == 0) {
+		// 兼容旧字段
+		const amountOld = getObjNumber(obj, 'commissionAmount')
+		return formatMoney(amountOld)
+	}
+	return formatMoney(amount)
+}
+
+// 获取下单用户昵称
+const getItemBuyerNickname = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	return getObjString(obj, 'buyerNickname')
+}
+
+// 获取订单金额
+const getItemOrderAmount = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	return getObjString(obj, 'orderAmount')
+}
+
+// 获取佣金费率
+const getItemCommissionRate = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	return getObjString(obj, 'commissionRate')
+}
+
+// ========== 跨商户佣金辅助函数 ==========
+
+// 判断是否为跨商户佣金
+const isCrossMerchant = (item: UTSJSONObject): boolean => {
+	const obj = toJsonObj(item)
+	if (obj == null) return false
+	const remainField5 = getObjString(obj, 'remainField5')
+	return remainField5 == 'cross_merchant' || remainField5 == 'cross_merchant_withdrawn'
+}
+
+// 判断是否为待提现的跨商户佣金
+const isCrossMerchantPending = (item: UTSJSONObject): boolean => {
+	const obj = toJsonObj(item)
+	if (obj == null) return false
+	const remainField5 = getObjString(obj, 'remainField5')
+	return remainField5 == 'cross_merchant'
+}
+
+// 获取佣金状态文本
+const getCommissionStatus = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return '已入余额'
+	const remainField5 = getObjString(obj, 'remainField5')
+	if (remainField5 == 'cross_merchant') return '待提现'
+	if (remainField5 == 'cross_merchant_withdrawn') return '已提现'
+	return '已入余额'
+}
+
+// 获取佣金状态样式类名
+const getCommissionStatusClass = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return 'status-settled'
+	const remainField5 = getObjString(obj, 'remainField5')
+	if (remainField5 == 'cross_merchant') return 'status-pending'
+	if (remainField5 == 'cross_merchant_withdrawn') return 'status-withdrawn'
+	return 'status-settled'
+}
+
+// 获取来源商户标识
+const getSourceMerchant = (item: UTSJSONObject): string => {
+	const obj = toJsonObj(item)
+	if (obj == null) return ''
+	const remainField4 = getObjString(obj, 'remainField4')
+	if (remainField4 == '') return '未知商户'
+	return remainField4
+}
+
+// 跨商户佣金提现处理
+const handleCrossMerchantWithdraw = (item: UTSJSONObject) => {
+	const obj = toJsonObj(item)
+	if (obj == null) return
+	const kid = getObjString(obj, 'kid')
+	if (kid == '') {
+		uni.showToast({ title: '佣金记录异常', icon: 'none' })
+		return
+	}
+	// 跳转到提现页面，携带跨商户佣金信息
+	const amount = getItemAmount(item)
+	const sourceMerchant = getSourceMerchant(item)
+	uni.navigateTo({
+		url: '/pagesUser/wallet/withdraw?crossMerchant=true&commissionKid=' + kid + '&amount=' + amount + '&sourceMerchant=' + encodeURIComponent(sourceMerchant)
+	})
+}
+
+// 获取当前筛选的 profitType
+const getCurrentProfitType = (): number => {
+	if (currentTab.value == 1) return PROFIT_TYPE_ORDER
+	if (currentTab.value == 2) return PROFIT_TYPE_CERTIFICATION
+	return PROFIT_TYPE_ALL
+}
+
+// ========== 数据加载 ==========
+const loadCommissionList = (refresh: boolean) => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		requireLoginReliable(true, '/pagesBusiness/operate/commissionDetail')
+		return
+	}
+
+	if (refresh == true) {
+		pageNumber.value = 1
+		commissionList.value = []
+		hasMore.value = true
+	}
+
+	if (loading.value == true) return
+	if (hasMore.value == false && refresh == false) return
+
+	loading.value = true
+	const userKid = getCurrentUserIdReliable()
+	
+	// 获取当前筛选的 profitType
+	const currentProfitType = getCurrentProfitType()
+
+	// 构建请求参数（使用 UTSJSONObject 支持动态属性）
+	const params = new UTSJSONObject()
+	params.set('userKid', userKid)
+	params.set('pageNumber', pageNumber.value)
+	params.set('pageSize', pageSize.value)
+	
+	// 添加筛选条件
+	if (currentProfitType != PROFIT_TYPE_ALL) {
+		params.set('profitType', currentProfitType)
+	}
+
+	queryTutorCommission(params).then((res: UTSJSONObject) => {
+		const resObj = toJsonObj(res)
+		if (resObj == null) {
+			loading.value = false
+			refreshing.value = false
+			return
+		}
+
+		const code = getObjString(resObj, 'code')
+		if (code != '200') {
+			loading.value = false
+			refreshing.value = false
+			uni.showToast({ title: '加载失败', icon: 'none' })
+			return
+		}
+
+		const dataVal = resObj.get('data')
+		if (dataVal == null) {
+			loading.value = false
+			refreshing.value = false
+			return
+		}
+
+		const dataObj = toJsonObj(dataVal)
+		if (dataObj == null) {
+			loading.value = false
+			refreshing.value = false
+			return
+		}
+
+		// 解析统计数据（仅在刷新时更新）
+		if (refresh == true) {
+			const totalVal = dataObj.get('totalCommission')
+			if (totalVal != null) {
+				const total = parseFloat(totalVal.toString())
+				if (isNaN(total) == false) {
+					totalCommission.value = formatMoney(total)
+				}
+			}
+
+			const monthVal = dataObj.get('monthCommission')
+			if (monthVal != null) {
+				const month = parseFloat(monthVal.toString())
+				if (isNaN(month) == false) {
+					monthCommission.value = formatMoney(month)
+				}
+			}
+		}
+
+		// 解析列表数据
+		const entitiesVal = dataObj.get('entities')
+		if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+			const entities = entitiesVal as Array<UTSJSONObject>
+			
+			if (refresh == true) {
+				commissionList.value = entities
+			} else {
+				for (let i = 0; i < entities.length; i = i + 1) {
+					commissionList.value.push(entities[i])
+				}
+			}
+
+			hasMore.value = entities.length >= pageSize.value
+		} else {
+			hasMore.value = false
+		}
+
+		loading.value = false
+		refreshing.value = false
+	}).catch((error: any | null): void => {
+		loading.value = false
+		refreshing.value = false
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '加载佣金明细', loading)
+		}
+	})
+}
+
+// ========== Tab 切换 ==========
+const switchTab = (tabIndex: number) => {
+	if (currentTab.value == tabIndex) return
+	currentTab.value = tabIndex
+	// 切换Tab时重新加载数据
+	loadCommissionList(true)
+}
+
+// ========== 事件处理 ==========
+const handleRefresh = () => {
+	refreshing.value = true
+	loadCommissionList(true)
+}
+
+const handleLoadMore = () => {
+	if (hasMore.value == true && loading.value == false) {
+		pageNumber.value = pageNumber.value + 1
+		loadCommissionList(false)
+	}
+}
+
+const handleItemClick = (item: UTSJSONObject) => {
+	// 点击佣金记录暂不跳转
+	console.log('点击佣金记录:', item)
+}
+
+// ========== 页面初始化 ==========
+const initPage = () => {
+	statusBarHeight.value = getStatusBarHeightUtil()
+	const windowHeight = getWindowHeightUtil()
+	// 头部高度 = 状态栏 + 导航栏(44) + 统计卡片(约120) + Tab(约50)
+	const headerHeight = statusBarHeight.value + 44 + 120 + 50
+	contentHeight.value = windowHeight - headerHeight
+
+	loadCommissionList(true)
+}
+
+// ========== 生命周期 ==========
+onMounted(() => {
+	waitForLoginStatus(2000).then((loginResult: number) => {
+		if (loginResult == 0) {
+			requireLoginReliable(true, '/pagesBusiness/operate/commissionDetail')
+			return
+		}
+		initPage()
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '等待登录状态初始化')
+	})
+})
+
+onShow(() => {
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == true && listLength.value == 0) {
+		loadCommissionList(true)
+	}
+})
+</script>
+
+<style scoped>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #f5f5f5;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex: 1;
+	flex-direction: column;
+}
+
+/* 统计卡片 */
+.stats-card {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 24rpx;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	margin-bottom: 24rpx;
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	background-color: #37B1F2;
+	border-radius: 16rpx;
+}
+
+.stats-item {
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+}
+
+.stats-value {
+	font-size: 44rpx;
+	font-weight: 700;
+	color: #ffffff;
+}
+
+.stats-label {
+	font-size: 24rpx;
+	color: rgba(255, 255, 255, 0.8);
+	margin-top: 8rpx;
+}
+
+.stats-divider {
+	width: 2rpx;
+	height: 60rpx;
+	background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 筛选Tab */
+.filter-tabs {
+	flex-direction: row;
+	align-items: center;
+	background-color: #ffffff;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	margin-bottom: 20rpx;
+	border-radius: 12rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+}
+
+.tab-item {
+	flex: 1;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+}
+
+.tab-active {
+	background-color: #E8F8F7;
+	border-radius: 8rpx;
+	margin-left: 8rpx;
+	margin-right: 8rpx;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.tab-text-active {
+	font-size: 28rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+/* APP 端滚动视图 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+}
+/* #endif */
+
+/* H5 端滚动视图 */
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex-direction: column;
+	width: 702rpx;
+	margin-left: 24rpx;
+	margin-right: 24rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+}
+/* #endif */
+
+/* 加载中和空状态 */
+.loading-box,
+.empty-wrapper {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+}
+
+.loading-text,
+.empty-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.list-content {
+	flex-direction: column;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+/* 佣金项 */
+.commission-item {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-top: 28rpx;
+	padding-bottom: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f5f5f5;
+}
+
+.item-left {
+	flex: 1;
+	flex-direction: column;
+}
+
+.item-title {
+	font-size: 28rpx;
+	font-weight: normal;
+	color: #333333;
+}
+
+.item-time {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.item-order {
+	font-size: 22rpx;
+	color: #bbbbbb;
+	margin-top: 4rpx;
+}
+
+.item-buyer {
+	font-size: 22rpx;
+	color: #666666;
+	margin-top: 4rpx;
+}
+
+.item-detail {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 4rpx;
+}
+
+.item-right {
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.item-amount {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #FF6B35;
+}
+
+/* 加载状态 */
+.load-status {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 佣金标题行（标题 + 跨商户标签） */
+.item-title-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+/* 跨商户标签 */
+.cross-merchant-tag {
+	font-size: 20rpx;
+	color: #ffffff;
+	background-color: #FF6B35;
+	border-radius: 6rpx;
+	padding-left: 10rpx;
+	padding-right: 10rpx;
+	padding-top: 2rpx;
+	padding-bottom: 2rpx;
+	margin-left: 12rpx;
+}
+
+/* 来源商户信息 */
+.item-source-merchant {
+	font-size: 22rpx;
+	color: #FF6B35;
+	margin-top: 4rpx;
+}
+
+/* 佣金状态文本 */
+.status-settled {
+	font-size: 22rpx;
+	color: #52C41A;
+	margin-top: 8rpx;
+}
+
+.status-pending {
+	font-size: 22rpx;
+	color: #FF6B35;
+	margin-top: 8rpx;
+}
+
+.status-withdrawn {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+/* 提现按钮 */
+.withdraw-btn {
+	margin-top: 12rpx;
+	background-color: #37B1F2;
+	border-radius: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.withdraw-btn-text {
+	font-size: 22rpx;
+	color: #ffffff;
+}
+</style>

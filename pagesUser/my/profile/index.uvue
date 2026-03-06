@@ -1,0 +1,1304 @@
+<template>
+	<view class="profile-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">个人资料</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+			<!-- 头像区域 -->
+			<view class="avatar-section">
+				<view class="profile-item" @click="handleAvatarEdit">
+					<text class="item-label">头像</text>
+					<view class="item-value">
+						<Avatar 
+							:url="avatarSrc"
+							:customSize="120"
+							clickMode="none"
+						/>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+			</view>
+			
+			<!-- 个人信息列表 -->
+			<view class="info-section">
+				<view class="profile-item" @click="handleEdit('nickname', displayNickname, '昵称')">
+					<text class="item-label">昵称</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayNickname }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="handleEdit('sex', displaySex, '性别')">
+					<text class="item-label">性别</text>
+					<view class="item-value">
+						<text class="value-text">{{ displaySex }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<picker mode="date" :value="formBirthDate" @change="onBirthDateChange" @cancel="onBirthDateCancel">
+					<view class="profile-item">
+						<text class="item-label">出生日期</text>
+						<view class="item-value">
+							<text class="value-text">{{ displayBirthDate }}</text>
+							<text class="arrow">›</text>
+						</view>
+					</view>
+				</picker>
+				
+				<view class="profile-item" @click="handleEdit('occupation', displayOccupation, '职业')">
+					<text class="item-label">职业</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayOccupation }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="handleEdit('education', displayEducation, '学历')">
+					<text class="item-label">学历</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayEducation }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="handleEdit('liveCity', displayLiveCity, '居住城市')">
+					<text class="item-label">居住城市</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayLiveCity }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="handleEdit('signature', displaySignature, '个性签名')">
+					<text class="item-label">个性签名</text>
+					<view class="item-value">
+						<text class="value-text">{{ displaySignature }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="handleContactEdit">
+					<text class="item-label">联系方式</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayContact }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 通用编辑弹窗 -->
+		<view v-if="showEditPopup == true" class="popup-mask" @click="closeEditPopup">
+			<view class="popup-container" @click.stop="">
+				<view class="popup-header">
+					<text class="popup-title">编辑{{ currentEditTitle }}</text>
+				</view>
+				
+				<view v-if="isTextInput == true" class="popup-content">
+					<input v-model="editValue" class="edit-input" :placeholder="'请输入' + currentEditTitle" :maxlength="getMaxLength()" />
+				</view>
+				
+				<view v-if="currentEditType == 'sex'" class="popup-content">
+					<view class="option-list">
+						<view class="option-item" :class="editValue == '男' ? 'active' : ''" @click="selectSex('男')">
+							<text>男</text>
+							<text v-if="editValue == '男'" class="check-icon">✓</text>
+						</view>
+						<view class="option-item" :class="editValue == '女' ? 'active' : ''" @click="selectSex('女')">
+							<text>女</text>
+							<text v-if="editValue == '女'" class="check-icon">✓</text>
+						</view>
+					</view>
+				</view>
+				
+				<view v-if="currentEditType == 'education'" class="popup-content">
+					<view class="option-list">
+						<view v-for="(item, index) in educationList" :key="index" class="option-item" :class="editValue == item ? 'active' : ''" @click="selectEducation(item)">
+							<text>{{ item }}</text>
+							<text v-if="editValue == item" class="check-icon">✓</text>
+						</view>
+					</view>
+				</view>
+				
+				<view class="popup-actions">
+					<view class="action-btn cancel-btn" @click="closeEditPopup">
+						<text class="cancel-btn-text">取消</text>
+					</view>
+					<view class="action-btn confirm-btn" @click="confirmEdit">
+						<text class="confirm-btn-text">确认</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 联系方式编辑弹窗 -->
+		<view v-if="showContactPopup == true" class="popup-mask" @click="cancelContactEdit">
+			<view class="popup-container" @click.stop="">
+				<view class="popup-header">
+					<text class="popup-title">编辑联系方式</text>
+				</view>
+				
+				<view class="popup-content contact-form">
+					<view class="form-item">
+						<text class="form-label">联系姓名</text>
+						<input v-model="contactFormRealname" class="form-input" placeholder="请输入联系姓名" maxlength="20" />
+					</view>
+					
+					<view class="form-item">
+						<text class="form-label">手机号码</text>
+						<input v-model="contactFormPhone" class="form-input" placeholder="请输入手机号码" type="number" maxlength="11" />
+					</view>
+					
+					<view class="form-item">
+						<text class="form-label">QQ号码</text>
+						<input v-model="contactFormQQ" class="form-input" placeholder="请输入QQ号码" type="number" maxlength="15" />
+					</view>
+					
+					<view class="form-item">
+						<text class="form-label">微信号</text>
+						<input v-model="contactFormWeixin" class="form-input" placeholder="请输入微信号" maxlength="30" />
+					</view>
+					
+					<view class="form-item">
+						<text class="form-label">邮箱</text>
+						<input v-model="contactFormEmail" class="form-input" placeholder="请输入邮箱地址" maxlength="50" />
+					</view>
+				</view>
+				
+				<view class="popup-actions">
+					<view class="action-btn cancel-btn" @click="cancelContactEdit">
+						<text class="cancel-btn-text">取消</text>
+					</view>
+					<view class="action-btn confirm-btn" @click="confirmContactEdit">
+						<text class="confirm-btn-text">确认</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { useUserStore } from '@/stores/user'
+import { getUserInfoFromStore as getStoreUserInfo, initUserInfoAction } from '@/stores/user'
+import { queryUserByKidAny, updateBaseInfoAny, updateContactInfoAny } from '@/pagesUser/services/profileService'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { checkUserLoginReliable, waitForLoginStatus, onLoginStatusChange, offLoginStatusChange, parseLoginStatusData, getIsLoginFromData, getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { saveToken } from '@/common/utils/security/tokenManager.uts'
+
+const userStore = useUserStore()
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/my_login_bg.png'
+
+const loading = ref<boolean>(false)
+const showEditPopup = ref<boolean>(false)
+const showContactPopup = ref<boolean>(false)
+const currentEditType = ref<string>('')
+const currentEditTitle = ref<string>('')
+const editValue = ref<string>('')
+const originalValue = ref<string>('')
+
+const formNickname = ref<string>('')
+const formSex = ref<string>('')
+const formBirthDate = ref<string>('')
+const formOccupation = ref<string>('')
+const formEducation = ref<string>('')
+const formLiveCity = ref<string>('')
+const formSignature = ref<string>('')
+const formRealname = ref<string>('')
+const formContactPhone = ref<string>('')
+const formQqNumber = ref<string>('')
+const formWeixinNumber = ref<string>('')
+const formEmail = ref<string>('')
+const formImage = ref<string>('')
+
+const contactFormRealname = ref<string>('')
+const contactFormPhone = ref<string>('')
+const contactFormQQ = ref<string>('')
+const contactFormWeixin = ref<string>('')
+const contactFormEmail = ref<string>('')
+
+const educationList = ref<Array<string>>(['小学', '初中', '高中', '中专', '大专', '本科', '硕士', '博士'])
+
+const getProp = (item: UTSJSONObject | null, key: string): string => {
+	if (item == null) return ''
+	try {
+		const val = item.get(key)
+		if (val != null) {
+			return val.toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+const getUserInfoFromStore = (): UTSJSONObject | null => {
+	// 方案1：优先使用 Store 导出的函数
+	try {
+		const storeInfo = getStoreUserInfo()
+		if (storeInfo != null) {
+			const kidVal = storeInfo.get('kid')
+			if (kidVal != null && kidVal.toString() != '') {
+				return storeInfo
+			}
+		}
+	} catch (e) {}
+	
+	// 方案2：从 Storage 直接读取
+	try {
+		const local = uni.getStorageSync('userInfo')
+		if (local != null && local != '') {
+			let localStr = ''
+			if (typeof local == 'string') {
+				localStr = local as string
+			} else {
+				localStr = JSON.stringify(local)
+			}
+			if (localStr != null && localStr != '' && localStr != 'null') {
+				const parsed = JSON.parse(localStr) as UTSJSONObject
+				const kidVal = parsed.get('kid')
+				if (kidVal != null && kidVal.toString() != '') {
+					return parsed
+				}
+			}
+		}
+	} catch (e) {}
+	
+	// 方案3：从 userStore 对象中提取（兼容旧逻辑）
+	try {
+		const storeObj = toJsonObj(userStore)
+		if (storeObj != null) {
+			const userInfoVal = storeObj.get('userInfo')
+			if (userInfoVal != null) {
+				const userInfoJson = JSON.stringify(userInfoVal)
+				if (userInfoJson != null && userInfoJson != '') {
+					return JSON.parse(userInfoJson) as UTSJSONObject
+				}
+			}
+		}
+	} catch (e) {}
+	return null
+}
+
+const callUserStoreAction = (actionName: string, payload: UTSJSONObject | null): boolean => {
+	try {
+		if (actionName == 'setUserInfo') {
+			const rawJson = (payload != null) ? JSON.stringify(payload) : ''
+			if (rawJson != null && rawJson != '') {
+				uni.setStorageSync('userInfo', rawJson)
+				try {
+					const mTok = rawJson.match(/"token"\s*:\s*"([^"]+)"/)
+					if (mTok != null && mTok[1] != null) {
+						saveToken(mTok[1].toString())
+					}
+				} catch (e) {}
+				return true
+			}
+		}
+	} catch (e) {}
+	return false
+}
+
+const avatarSrc = computed((): string => {
+	const v = formImage.value
+	return (v != null && v != '') ? v : defaultAvatar
+})
+
+const displayNickname = computed((): string => {
+	const v = formNickname.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displaySex = computed((): string => {
+	const v = formSex.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displayBirthDate = computed((): string => {
+	const v = formBirthDate.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displayOccupation = computed((): string => {
+	const v = formOccupation.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displayEducation = computed((): string => {
+	const v = formEducation.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displayLiveCity = computed((): string => {
+	const v = formLiveCity.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displaySignature = computed((): string => {
+	const v = formSignature.value
+	return (v != null && v != '') ? v : '未设置'
+})
+
+const displayContact = computed((): string => {
+	const phone = formContactPhone.value
+	const realname = formRealname.value
+	const qq = formQqNumber.value
+	const weixin = formWeixinNumber.value
+	const email = formEmail.value
+	// 优先显示手机号，其次显示其他已填写的联系方式
+	if (phone != null && phone != '') return phone
+	if (weixin != null && weixin != '') return '微信: ' + weixin
+	if (qq != null && qq != '') return 'QQ: ' + qq
+	if (realname != null && realname != '') return realname
+	if (email != null && email != '') return email
+	return '未设置'
+})
+
+const isTextInput = computed((): boolean => {
+	const t = currentEditType.value
+	if (t == 'sex') return false
+	if (t == 'education') return false
+	return true
+})
+
+const updateFormData = (data: UTSJSONObject | null) => {
+	if (data == null) {
+		console.log('📱 [Profile] updateFormData: data 为 null')
+		return
+	}
+	console.log('📱 [Profile] updateFormData: 开始更新表单数据')
+	
+	const nickname = getProp(data, 'nickname')
+	const nickName = getProp(data, 'nickName')
+	formNickname.value = (nickname != '') ? nickname : nickName
+	console.log('📱 [Profile] 昵称:', formNickname.value)
+	
+	formSex.value = getProp(data, 'sex')
+	console.log('📱 [Profile] 性别:', formSex.value)
+	
+	const birthDate = getProp(data, 'birthDate')
+	const birthdate = getProp(data, 'birthdate')
+	formBirthDate.value = (birthDate != '') ? birthDate : birthdate
+	
+	formOccupation.value = getProp(data, 'occupation')
+	
+	const education = getProp(data, 'education')
+	const educational = getProp(data, 'educational')
+	formEducation.value = (education != '') ? education : educational
+	
+	const liveCity = getProp(data, 'liveCity')
+	const livecity = getProp(data, 'livecity')
+	formLiveCity.value = (liveCity != '') ? liveCity : livecity
+	
+	formSignature.value = getProp(data, 'signature')
+	
+	const realname = getProp(data, 'realname')
+	const realName = getProp(data, 'realName')
+	formRealname.value = (realname != '') ? realname : realName
+	
+	const contactPhone = getProp(data, 'contactPhone')
+	const contact_phone = getProp(data, 'contact_phone')
+	formContactPhone.value = (contactPhone != '') ? contactPhone : contact_phone
+	
+	const qqNumber = getProp(data, 'qqNumber')
+	const qq = getProp(data, 'qq')
+	formQqNumber.value = (qqNumber != '') ? qqNumber : qq
+	
+	const weixinNumber = getProp(data, 'weixinNumber')
+	const weixin = getProp(data, 'weixin')
+	formWeixinNumber.value = (weixinNumber != '') ? weixinNumber : weixin
+	
+	formEmail.value = getProp(data, 'email')
+	
+	const image = getProp(data, 'image')
+	const avatar = getProp(data, 'avatar')
+	formImage.value = (image != '') ? image : avatar
+	console.log('📱 [Profile] 头像:', formImage.value)
+	
+	console.log('📱 [Profile] updateFormData: 表单数据更新完成')
+}
+
+// 从 API 响应中获取 code
+const getResponseCode = (res: UTSJSONObject | null): number => {
+	if (res == null) return 0
+	try {
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const codeVal = resObj.get('code')
+		if (codeVal != null) {
+			const codeNum = parseInt(codeVal.toString())
+			if (isNaN(codeNum) == false) {
+				return codeNum
+			}
+		}
+	} catch (e) {}
+	return 0
+}
+
+// 从 API 响应中获取 data 对象
+const getResponseData = (res: UTSJSONObject | null): UTSJSONObject | null => {
+	if (res == null) return null
+	try {
+		const resStr = JSON.stringify(res)
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		const dataVal = resObj.get('data')
+		if (dataVal != null) {
+			const dataStr = JSON.stringify(dataVal)
+			if (dataStr != null && dataStr != '' && dataStr != 'null') {
+				return JSON.parse(dataStr) as UTSJSONObject
+			}
+		}
+	} catch (e) {}
+	return null
+}
+
+async function getUserInfo(): Promise<void> {
+	loading.value = true
+	console.log('📱 [Profile] 开始获取用户信息...')
+	
+	try {
+		// 先尝试初始化 Store（确保 Store 已加载 Storage 数据）
+		try {
+			initUserInfoAction()
+			console.log('📱 [Profile] Store 初始化完成')
+		} catch (e) {
+			handleSilentError(e, '[Profile] Store 初始化')
+		}
+		
+		let userInfo: UTSJSONObject | null = getUserInfoFromStore()
+		console.log('📱 [Profile] 从 Store 获取用户信息:', userInfo != null ? '有数据' : '无数据')
+		
+		// 如果 Store 中没有，再尝试从 Storage 读取
+		if (userInfo == null) {
+			try {
+				const local = uni.getStorageSync('userInfo')
+				console.log('📱 [Profile] 从 Storage 读取:', local != null && local != '' ? '有数据' : '无数据')
+				if (local != null && local != '') {
+					let localStr = ''
+					if (typeof local == 'string') {
+						localStr = local as string
+					} else {
+						localStr = JSON.stringify(local)
+					}
+					if (localStr != null && localStr != '' && localStr != 'null') {
+						userInfo = JSON.parse(localStr) as UTSJSONObject
+						// 同步到 Store
+						callUserStoreAction('setUserInfo', userInfo)
+					}
+				}
+			} catch (e) {
+				handleSilentError(e, '[Profile] 从 Storage 读取用户信息')
+			}
+		}
+		
+		// 获取用户 kid
+		let userKid = ''
+		if (userInfo != null) {
+			userKid = getProp(userInfo, 'kid')
+			console.log('📱 [Profile] 从 userInfo 获取 kid:', userKid)
+		}
+		
+		// 如果还是没有 kid，尝试使用 loginHelper 的可靠方法
+		if (userKid == null || userKid == '') {
+			userKid = getCurrentUserIdReliable()
+			console.log('📱 [Profile] 从 loginHelper 获取 kid:', userKid)
+		}
+		
+		if (userKid != null && userKid != '') {
+			// 先用本地数据填充表单
+			if (userInfo != null) {
+				console.log('📱 [Profile] 使用本地数据预填充表单')
+				updateFormData(userInfo)
+			}
+			
+			// 然后从 API 获取最新数据
+			console.log('📱 [Profile] 调用 API 获取最新用户信息, kid:', userKid)
+			try {
+				const res = await queryUserByKidAny(userKid)
+				console.log('📱 [Profile] API 响应:', res != null ? '有数据' : '无数据')
+				
+				const code = getResponseCode(res)
+				console.log('📱 [Profile] API 响应 code:', code)
+				
+				if (code == 200) {
+					const detailData = getResponseData(res)
+					console.log('📱 [Profile] API 响应 data:', detailData != null ? '有数据' : '无数据')
+					
+					if (detailData != null) {
+						console.log('📱 [Profile] 使用 API 数据更新表单')
+						updateFormData(detailData)
+						callUserStoreAction('setUserInfo', detailData)
+					}
+				} else {
+					handleSilentError(new Error('API 返回非 200 状态码'), '[Profile] 获取用户信息')
+				}
+			} catch (e) {
+				handleSilentError(e, '[Profile] 获取详细用户信息')
+			}
+		} else {
+			// 真的没有登录信息
+			handleSilentError(new Error('未找到用户登录信息'), '[Profile] 获取用户信息')
+			uni.showToast({ title: '请先登录', icon: 'none' })
+			setTimeout(() => {
+				uni.navigateTo({ url: '/pagesUser/login/index' })
+			}, 1500)
+		}
+	} catch (error) {
+		handlePageError(error, '获取用户信息', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+const handleLoginStatusChange = (data: UTSJSONObject | null) => {
+	if (data == null) return
+	const dataObj = parseLoginStatusData(data)
+	if (dataObj == null) return
+	const isLogin = getIsLoginFromData(dataObj)
+	if (isLogin == true) {
+		getUserInfo()
+	}
+}
+
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+onMounted(() => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+	
+	// 注册登录状态变化监听
+	onLoginStatusChange(handleLoginStatusChange)
+	
+	// 等待登录状态确认后获取用户信息
+	waitForLoginStatus(2000).then((result: number) => {
+		console.log('📱 [Profile] waitForLoginStatus 结果:', result)
+		if (result == 1) {
+			getUserInfo()
+		} else {
+			// 即使 waitForLoginStatus 返回未登录，也尝试直接检查
+			// 因为可能是 Store 初始化超时但 Storage 中有数据
+			const storageLogin = checkUserLoginReliable()
+			console.log('📱 [Profile] 降级检查 Storage 登录状态:', storageLogin)
+			if (storageLogin == true) {
+				getUserInfo()
+			} else {
+				console.log('📱 [Profile] 用户未登录，跳转登录页')
+				uni.showToast({ title: '请先登录', icon: 'none' })
+				setTimeout(() => {
+					uni.navigateTo({ url: '/pagesUser/login/index' })
+				}, 1500)
+			}
+		}
+	})
+})
+
+onShow(() => {
+	console.log('📱 [Profile] onShow 触发')
+	const isLogin = checkUserLoginReliable()
+	console.log('📱 [Profile] onShow 登录状态:', isLogin)
+	if (isLogin == true) {
+		getUserInfo()
+	}
+})
+
+onUnmounted(() => {
+	offLoginStatusChange(handleLoginStatusChange)
+})
+
+const getMaxLength = (): number => {
+	const t = currentEditType.value
+	if (t == 'nickname') return 20
+	if (t == 'occupation') return 30
+	if (t == 'liveCity') return 20
+	if (t == 'signature') return 50
+	return 100
+}
+
+const handleEdit = (type: string, value: string, title: string) => {
+	currentEditType.value = type
+	currentEditTitle.value = title
+	const valueStr = (value != null && value != '' && value != '未设置') ? value : ''
+	editValue.value = valueStr
+	originalValue.value = valueStr
+	showEditPopup.value = true
+}
+
+const closeEditPopup = () => { showEditPopup.value = false }
+const selectSex = (sex: string) => { editValue.value = sex }
+const selectEducation = (edu: string) => { editValue.value = edu }
+const onBirthDateCancel = () => {
+	// 用户取消选择，无需处理
+}
+
+const validateInput = (): boolean => {
+	const raw = (editValue.value != null) ? editValue.value.toString() : ''
+	const value = (raw != null) ? raw.trim() : ''
+	const t = currentEditType.value
+	if (t == 'nickname') {
+		if (value == null || value == '') {
+			uni.showToast({ title: '昵称不能为空', icon: 'none' })
+			return false
+		}
+		if (value.length < 2 || value.length > 20) {
+			uni.showToast({ title: '昵称长度为2-20个字符', icon: 'none' })
+			return false
+		}
+	}
+	if (t == 'occupation' && value != null && value != '' && value.length > 30) {
+		uni.showToast({ title: '职业名称不能超过30个字符', icon: 'none' })
+		return false
+	}
+	if (t == 'liveCity' && value != null && value != '' && value.length > 20) {
+		uni.showToast({ title: '城市名称不能超过20个字符', icon: 'none' })
+		return false
+	}
+	if (t == 'signature' && value != null && value != '' && value.length > 50) {
+		uni.showToast({ title: '个性签名不能超过50个字符', icon: 'none' })
+		return false
+	}
+	return true
+}
+
+const submitUpdate = async () => {
+	if (loading.value == true) return
+	loading.value = true
+	uni.showLoading({ title: '保存中...' })
+	try {
+		const userInfo = getUserInfoFromStore()
+		const kidVal = (userInfo != null) ? getProp(userInfo, 'kid') : ''
+		const keyForUpdate = currentEditType.value
+		let updateJson = '{"kid":' + JSON.stringify(kidVal)
+		if (keyForUpdate != null && keyForUpdate != '') {
+			updateJson = updateJson + ',' + JSON.stringify(keyForUpdate) + ':' + JSON.stringify(editValue.value)
+		}
+		updateJson = updateJson + '}'
+		const updateData = JSON.parse(updateJson) as UTSJSONObject
+		const respAny = await updateBaseInfoAny(updateData)
+		const respJson = (respAny != null) ? JSON.stringify(respAny) : ''
+		let respCode = ''
+		try {
+			const m1 = respJson.match(/"code"\s*:\s*"([^"]+)"/)
+			if (m1 != null && m1[1] != null) {
+				respCode = m1[1].toString()
+			} else {
+				const m2 = respJson.match(/"code"\s*:\s*(\d+)/)
+				if (m2 != null && m2[1] != null) {
+					respCode = m2[1].toString()
+				}
+			}
+		} catch (e) {}
+		if (respCode == '200') {
+			const k = keyForUpdate
+			const v = editValue.value
+			if (k == 'nickname') formNickname.value = v
+			if (k == 'sex') formSex.value = v
+			if (k == 'birthDate') formBirthDate.value = v
+			if (k == 'occupation') formOccupation.value = v
+			if (k == 'education') formEducation.value = v
+			if (k == 'liveCity') formLiveCity.value = v
+			if (k == 'signature') formSignature.value = v
+			showEditPopup.value = false
+			uni.hideLoading()
+			uni.showToast({ title: '修改成功', icon: 'success' })
+		} else {
+			uni.hideLoading()
+			uni.showToast({ title: '修改失败', icon: 'none' })
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '更新个人信息', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+const onBirthDateChange = (e: UTSJSONObject | null) => {
+	try {
+		const raw = (e != null) ? JSON.stringify(e) : ''
+		if (raw != null && raw != '') {
+			const m = raw.match(/"value"\s*:\s*"([^"]+)"/)
+			if (m != null && m[1] != null) {
+				const newDate = m[1].toString()
+				if (newDate != formBirthDate.value) {
+					currentEditType.value = 'birthDate'
+					editValue.value = newDate
+					originalValue.value = formBirthDate.value
+					submitUpdate()
+				}
+			}
+		}
+	} catch (err) {}
+}
+
+const confirmEdit = async () => {
+	if (validateInput() == false) return
+	if (editValue.value == originalValue.value) {
+		showEditPopup.value = false
+		return
+	}
+	await submitUpdate()
+}
+
+const uploadAvatar = (tempFilePath: string) => {
+	console.log('📤 [头像上传] 开始上传:', tempFilePath)
+	uni.showLoading({ title: '上传中...' })
+	
+	cosUploader.uploadAvatar(tempFilePath, (progress: number) => {
+		console.log('📤 [头像上传] 进度:', progress.toString() + '%')
+	}).then((result: UTSJSONObject | null) => {
+		console.log('📤 [头像上传] COS上传完成，解析结果...')
+		let imageUrl = ''
+		let uploadError = ''
+		
+		if (result != null) {
+			console.log('📤 [头像上传] result:', JSON.stringify(result))
+			
+			const successVal = result.get('success')
+			const success = (successVal != null && successVal.toString() == 'true')
+			console.log('📤 [头像上传] success:', success)
+			
+			if (success == true) {
+				const dataVal = result.get('data')
+				if (dataVal != null) {
+					const dataObj = dataVal as UTSJSONObject
+					// 优先使用压缩后的URL
+					const compressedUrl = dataObj.get('compressedUrl')
+					const originalUrl = dataObj.get('originalUrl')
+					
+					if (compressedUrl != null && compressedUrl.toString() != '') {
+						imageUrl = compressedUrl.toString()
+						console.log('📤 [头像上传] 使用 compressedUrl:', imageUrl)
+					} else if (originalUrl != null && originalUrl.toString() != '') {
+						imageUrl = originalUrl.toString()
+						console.log('📤 [头像上传] 使用 originalUrl:', imageUrl)
+					}
+				}
+			} else {
+				// 获取错误信息
+				const errorVal = result.get('error')
+				if (errorVal != null && errorVal.toString() != '') {
+					uploadError = errorVal.toString()
+				}
+			}
+		} else {
+			uploadError = '上传返回空结果'
+		}
+		
+		if (imageUrl == '') {
+			uni.hideLoading()
+			const errMsg = (uploadError != '') ? uploadError : '上传失败'
+			handleSilentError(new Error(errMsg), '头像上传')
+			uni.showToast({ title: errMsg, icon: 'none' })
+			return
+		}
+		
+		console.log('📤 [头像上传] 图片URL:', imageUrl)
+		
+		// 更新用户头像
+		const userInfo = getUserInfoFromStore()
+		const kidVal = (userInfo != null) ? getProp(userInfo, 'kid') : ''
+		const updateData = { kid: kidVal, image: imageUrl } as UTSJSONObject
+		
+		console.log('📤 [头像上传] 更新用户信息...')
+		updateBaseInfoAny(updateData).then((respAny: UTSJSONObject) => {
+			const respJson = (respAny != null) ? JSON.stringify(respAny) : ''
+			console.log('📤 [头像上传] 更新响应:', respJson)
+			
+			let respCode = ''
+			try {
+				const m1 = respJson.match(/"code"\s*:\s*"([^"]+)"/)
+				if (m1 != null && m1[1] != null) {
+					respCode = m1[1].toString()
+				} else {
+					const m2 = respJson.match(/"code"\s*:\s*(\d+)/)
+					if (m2 != null && m2[1] != null) {
+						respCode = m2[1].toString()
+					}
+				}
+			} catch (e) {}
+			
+			uni.hideLoading()
+			if (respCode == '200') {
+				formImage.value = imageUrl
+				uni.showToast({ title: '头像修改成功', icon: 'success' })
+			} else {
+				uni.showToast({ title: '头像修改失败', icon: 'none' })
+			}
+		}).catch((error: any | null): void => {
+			uni.hideLoading()
+			if (!isAuthError(error as any)) {
+				handlePageError(error as any, '更新头像', null)
+			}
+		})
+	}).catch((error: any | null): void => {
+		uni.hideLoading()
+		let errMsg = '上传失败'
+		if (error != null) {
+			try {
+				const errorStr = JSON.stringify(error)
+				const errorObj = JSON.parse(errorStr) as UTSJSONObject
+				const messageVal = errorObj.get('message')
+				if (messageVal != null && messageVal.toString() != '') {
+					errMsg = messageVal.toString()
+				}
+			} catch (e) {
+				handleSilentError(error as any, '头像上传')
+			}
+		}
+		uni.showToast({ title: errMsg, icon: 'none' })
+	})
+}
+
+const doChooseAvatar = () => {
+	console.log('📷 [选择头像] 开始选择图片')
+	uni.chooseImage({
+		count: 1,
+		sizeType: ['compressed'],
+		sourceType: ['album', 'camera'],
+		success: (res: any | null) => {
+			console.log('📷 [选择头像] 选择成功:', res)
+			try {
+				// 🔧 修复：使用 JSON 序列化方式安全获取图片路径
+				let tempFilePath = ''
+				
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const paths = tempFilePathsVal as Array<UTSJSONObject>
+						if (paths.length > 0) {
+							const firstPath = paths[0]
+							if (firstPath != null && firstPath.toString() != '') {
+								tempFilePath = firstPath.toString()
+							}
+						}
+					}
+				}
+				
+				// 方式2：如果方式1失败，使用正则解析
+				if (tempFilePath == '') {
+					const raw = (res != null) ? JSON.stringify(res) : ''
+					if (raw != null && raw != '') {
+						console.log('📷 [选择头像] 原始响应:', raw)
+						const m = raw.match(/"tempFilePaths"\s*:\s*\[\s*"([^"]+)"/)
+						if (m != null && m[1] != null) {
+							tempFilePath = m[1].toString()
+						}
+					}
+				}
+				
+				if (tempFilePath != '') {
+					uploadAvatar(tempFilePath)
+				} else {
+					handleSilentError(new Error('无法获取图片路径'), '选择头像')
+					uni.showToast({ title: '获取图片失败', icon: 'none' })
+				}
+			} catch (e) {
+				handlePageError(e, '选择头像', null)
+			}
+		},
+		fail: (err: any | null) => {
+			handleSilentError(err as any, '选择头像')
+			// 用户取消选择不提示错误
+			let errMsg = ''
+			try {
+				const errJson = JSON.stringify(err)
+				if (errJson != null && errJson != '') {
+					const errObj = JSON.parse(errJson) as UTSJSONObject
+					const errMsgVal = errObj.get('errMsg')
+					if (errMsgVal != null) {
+						errMsg = errMsgVal.toString()
+					}
+				}
+			} catch (e) {}
+			
+			// 如果不是用户取消，显示错误提示
+			if (errMsg.indexOf('cancel') < 0 && errMsg.indexOf('取消') < 0) {
+				uni.showToast({ title: '选择图片失败', icon: 'none' })
+			}
+		}
+	})
+}
+
+const handleAvatarEdit = () => {
+	// 华为合规：先弹出权限说明（已确认过则自动跳过）
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed == true) {
+			doChooseAvatar()
+		}
+	})
+}
+const handleContactEdit = () => {
+	contactFormRealname.value = formRealname.value
+	contactFormPhone.value = formContactPhone.value
+	contactFormQQ.value = formQqNumber.value
+	contactFormWeixin.value = formWeixinNumber.value
+	contactFormEmail.value = formEmail.value
+	showContactPopup.value = true
+}
+
+
+const cancelContactEdit = () => {
+	showContactPopup.value = false
+}
+
+const validateContact = (): boolean => {
+	const phone = contactFormPhone.value
+	if (phone != null && phone != '') {
+		const phoneLen = phone.length
+		if (phoneLen != 11) {
+			uni.showToast({ title: '手机号码格式不正确', icon: 'none' })
+			return false
+		}
+	}
+	const qq = contactFormQQ.value
+	if (qq != null && qq != '') {
+		const qqLen = qq.length
+		if (qqLen < 5 || qqLen > 15) {
+			uni.showToast({ title: 'QQ号码格式不正确', icon: 'none' })
+			return false
+		}
+	}
+	const email = contactFormEmail.value
+	if (email != null && email != '') {
+		const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+		if (!emailRegex.test(email)) {
+			uni.showToast({ title: '邮箱格式不正确', icon: 'none' })
+			return false
+		}
+	}
+	return true
+}
+
+const confirmContactEdit = async () => {
+	if (validateContact() == false) return
+	if (loading.value == true) return
+	loading.value = true
+	uni.showLoading({ title: '保存中...' })
+	try {
+		const userInfo = getUserInfoFromStore()
+		const kidVal = (userInfo != null) ? getProp(userInfo, 'kid') : ''
+		const updateData = {
+			kid: kidVal,
+			realname: contactFormRealname.value,
+			contactPhone: contactFormPhone.value,
+			qqNumber: contactFormQQ.value,
+			weixinNumber: contactFormWeixin.value,
+			email: contactFormEmail.value
+		} as UTSJSONObject
+		const respAny = await updateContactInfoAny(updateData)
+		const respJson = (respAny != null) ? JSON.stringify(respAny) : ''
+		let respCode = ''
+		try {
+			const m1 = respJson.match(/"code"\s*:\s*"([^"]+)"/)
+			if (m1 != null && m1[1] != null) {
+				respCode = m1[1].toString()
+			} else {
+				const m2 = respJson.match(/"code"\s*:\s*(\d+)/)
+				if (m2 != null && m2[1] != null) {
+					respCode = m2[1].toString()
+				}
+			}
+		} catch (e) {}
+		if (respCode == '200') {
+			formRealname.value = contactFormRealname.value
+			formContactPhone.value = contactFormPhone.value
+			formQqNumber.value = contactFormQQ.value
+			formWeixinNumber.value = contactFormWeixin.value
+			formEmail.value = contactFormEmail.value
+			showContactPopup.value = false
+			uni.hideLoading()
+			uni.showToast({ title: '修改成功', icon: 'success' })
+		} else {
+			uni.hideLoading()
+			uni.showToast({ title: '修改失败', icon: 'none' })
+		}
+	} catch (error) {
+		uni.hideLoading()
+		handlePageError(error, '更新联系方式', null)
+	} finally {
+		loading.value = false
+	}
+}
+</script>
+
+<style scoped>
+.profile-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.avatar-section {
+	background-color: #ffffff;
+	margin-bottom: 20rpx;
+	flex-direction: column;
+}
+
+.info-section {
+	background-color: #ffffff;
+	flex-direction: column;
+}
+
+.profile-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.item-label {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.item-value {
+	flex-direction: row;
+	align-items: center;
+}
+
+.value-text {
+	font-size: 28rpx;
+	color: #999999;
+	margin-right: 10rpx;
+}
+
+.arrow {
+	font-size: 32rpx;
+	color: #cccccc;
+}
+
+.avatar {
+	width: 80rpx;
+	height: 80rpx;
+	border-radius: 40rpx;
+	margin-right: 10rpx;
+}
+
+.popup-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+}
+
+.popup-container {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	flex-direction: column;
+}
+
+.popup-header {
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+	flex-direction: row;
+	justify-content: center;
+}
+
+.popup-title {
+	font-size: 32rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.popup-content {
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	flex-direction: column;
+}
+
+.edit-input {
+	width: 540rpx;
+	height: 80rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 10rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	font-size: 28rpx;
+}
+
+.option-list {
+	flex-direction: column;
+}
+
+.option-item {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+	padding-top: 25rpx;
+	padding-bottom: 25rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.option-item.active {
+	background-color: #f8f8f8;
+}
+
+.check-icon {
+	color: #07c160;
+	font-size: 32rpx;
+}
+
+.popup-actions {
+	flex-direction: row;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.action-btn {
+	flex: 1;
+	height: 90rpx;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.cancel-btn {
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.cancel-btn-text {
+	font-size: 30rpx;
+	color: #666666;
+}
+
+.confirm-btn-text {
+	font-size: 30rpx;
+	color: #07c160;
+}
+
+.contact-form {
+	flex-direction: column;
+}
+
+.form-item {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.form-label {
+	width: 150rpx;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.form-input {
+	flex: 1;
+	height: 70rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 8rpx;
+	padding-left: 15rpx;
+	padding-right: 15rpx;
+	font-size: 26rpx;
+}
+</style>

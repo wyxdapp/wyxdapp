@@ -1,0 +1,31 @@
+// 跨平台安全存储封装模块
+// 需求: 4.1, 4.2, 4.3, 4.4
+
+/**
+ * 安全读取本地存储
+ * 内部 try-catch 包裹 uni.getStorageSync，异常时返回 null 并记录错误日志
+ */
+export function safeGetStorageSync(key : string) : string | null {
+	try {
+		const val = uni.getStorageSync(key)
+		if (val == null) return null
+		return val.toString()
+	} catch (e) {
+		console.error(`[Storage] getStorageSync 失败, key=${key}: ${(e as Error).message}`)
+		return null
+	}
+}
+
+/**
+ * 安全写入本地存储
+ * 内部 try-catch 包裹 uni.setStorageSync，异常时返回 false 并记录错误日志
+ */
+export function safeSetStorageSync(key : string, value : string) : boolean {
+	try {
+		uni.setStorageSync(key, value)
+		return true
+	} catch (e) {
+		console.error(`[Storage] setStorageSync 失败, key=${key}: ${(e as Error).message}`)
+		return false
+	}
+}

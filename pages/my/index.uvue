@@ -1,0 +1,1463 @@
+<template>
+	<view class="fix-page bg-light-base">
+		<!-- 顶部背景 -->
+		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill"></image>
+		
+		<!-- 用户信息区域 -->
+		<view class="login-box" :style="{ top: loginBoxTop + 'px' }">
+			<view class="no-login-bg" @click="handleAvatarClick">
+				<Avatar 
+					v-if="hasNickname == true"
+					:url="avatarUrl"
+					:customSize="176"
+					clickMode="none"
+				/>
+				<image
+					v-else
+					class="no-login"
+					src="https://jiasu.wyxdapp.com/iconimages/my_login_bg.png"
+					mode="aspectFit"
+					@click.stop="goToLogin"
+				></image>
+			</view>
+			
+			<view v-if="isLogin == false" class="login-text">
+				<view class="login-btn" @click="goToLogin">
+					<text class="login-btn-text">点击登录</text>
+				</view>
+			</view>
+			<view v-else class="user-info-box" @click="goProfile">
+				<NicknameWithBadges
+					:nickname="nicknameText"
+					:vipType="userVipType"
+					:giftLevel="userGiftLevel"
+					:targetUserKid="userKid"
+					size="large"
+					@vipClick="handleVipClick"
+					@giftClick="handleGiftIconClick"
+				/>
+				<!-- 短ID展示 -->
+				<view v-if="displayShortId != null && displayShortId != ''" class="extension-box" @click.stop="copyShortId">
+					<text class="extension-text">ID：{{ displayShortId }}</text>
+					<text class="copy-icon">{{ isCopying ? '✓' : '' }}</text>
+				</view>
+			</view>
+			
+			<!-- 主页链接 -->
+			<view v-if="hasPersonPage == true" class="person-page" @click.stop="goToPersonPage">
+				<text class="page-text">主页</text>
+				<text class="arrow-right">›</text>
+			</view>
+		</view>
+		
+		<!-- 统计数据卡片 -->
+		<view class="head-box" :style="{ top: headBoxTop + 'px' }">
+			<view class="head-box-content">
+				<view v-for="(item, index) in headList" :key="index" class="stat-item">
+					<text class="stat-value">{{ item.val }}</text>
+					<view class="stat-label-row">
+						<image class="stat-icon" :src="getIconUrl(item.icon)" mode="aspectFit"></image>
+						<text class="stat-label">{{ item.label }}</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 内容区域 -->
+		<view class="content-area" :style="{ marginTop: (headBoxTop + 80) + 'px' }">
+			<!-- Banner -->
+			<view class="banner-box">
+				<image class="banner-image" src="https://jiasu.wyxdapp.com/iconimages/my_tab_banner.png" mode="widthFix"></image>
+			</view>
+			
+			<!-- 第三方平台入口 -->
+			<view v-if="showThirdPartyCard == true" class="third-party-box">
+				<view 
+					v-for="(link, index) in thirdPartyLinks" 
+					:key="index"
+					class="third-party-item"
+					@click="handleThirdPartyClick(link)"
+				>
+					<uni-icons :type="link.icon" :size="24" :color="link.color"></uni-icons>
+					<text class="third-party-label">{{ link.label }}</text>
+				</view>
+			</view>
+			
+			<!-- 功能菜单网格 -->
+			<view class="item-box">
+				<view 
+					v-for="(item, index) in itemList" 
+					:key="index"
+					class="item-li"
+					@click="handleItemClick(item)"
+				>
+					<image class="item-icon" :src="getMenuIconUrl(item.icon)" mode="aspectFit"></image>
+					<text class="item-label">{{ item.label }}</text>
+				</view>
+			</view>
+			
+			<!-- 备案号 -->
+			<view class="icp-container" @click="goToIcpQuery">
+				<text class="icp-text">备案号：{{ ICP_RECORD_NUMBER }}</text>
+			</view>
+			
+			<!-- 隐私政策入口 -->
+			<view class="privacy-container" @click="openPrivacyPolicy">
+				<text class="privacy-text">隐私政策</text>
+			</view>
+		</view>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="selectedUserKid"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { getUserLoginStatus, getUserId, getUserNickname, getUserShortKid, getUserAvatar, getUserPhone, initUserInfoAction, updateUserInfoAction, getUserVipStatus, getUserVipExpireTime, getUserNumberProp } from '@/stores/user.uts'
+import { useChatStore } from '@/stores/chat.uts'
+import { getCurrentUserProfile, refreshCurrentUserProfile, hasValidCache, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
+import { onLoginStatusChange, onUserInfoUpdate } from '@/common/composables/useAuth.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { getSystemSettings } from '@/api/config.uts'
+import { VIP_NOT_ACTIVATED, VIP_ACTIVATED, VIP_TYPE_YEARLY } from '@/common/config/businessCodes.uts'
+import { LOGIN_BOX_TOP_MY, HEAD_BOX_TOP_DEFAULT, HEAD_BOX_OFFSET } from '@/common/config/uiConfig.uts'
+import { CTRIP_ALLIANCE_ID, ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+// 🔧 新增：导入功能开关
+import { 
+	loadFeatureToggles, 
+	isMemberFeatureEnabled,
+	parseBooleanConfig
+} from '@/common/composables/useFeatureToggles.uts'
+// 🔧 新增：导入统一的登录状态管理工具
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	requireLoginReliable,
+	onLoginStatusChange as registerLoginStatusChange,
+	offLoginStatusChange as unregisterLoginStatusChange,
+	getCurrentUserIdReliable,
+	parseLoginStatusData,
+	getIsLoginFromData,
+	getUserIdFromData
+} from '@/common/utils/loginHelper.uts'
+
+// ==================== 辅助函数（必须在使用前定义）====================
+import { toJsonObj, countArrayItems, getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+// 从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseFloat(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+// 从 storage 获取用户信息对象
+const getUserInfoObj = (): UTSJSONObject | null => {
+	try {
+		const userInfoStr = uni.getStorageSync('userInfo')
+		if (userInfoStr == null) return null
+		const userInfoStrVal = userInfoStr.toString()
+		if (userInfoStrVal == '') return null
+		
+		let jsonStr = ''
+		if (typeof userInfoStr === 'string') {
+			jsonStr = userInfoStr as string
+		} else {
+			jsonStr = JSON.stringify(userInfoStr)
+		}
+		
+		if (jsonStr == '') return null
+		return JSON.parse(jsonStr) as UTSJSONObject
+	} catch (e) {
+		return null
+	}
+}
+
+// 获取用户信息指定属性（使用统一的 store 函数）
+const getUserInfoProp = (key: string): string => {
+	// 优先从 store 获取
+	if (key == 'kid') {
+		return getUserId()
+	}
+	if (key == 'nickname') {
+		return getUserNickname()
+	}
+	if (key == 'shortKid') {
+		return getUserShortKid()
+	}
+	if (key == 'avatar') {
+		return getUserAvatar()
+	}
+	if (key == 'phone') {
+		return getUserPhone()
+	}
+	
+	// 其他属性从 storage 获取
+	const userInfoObj = getUserInfoObj()
+	if (userInfoObj == null) return ''
+	return getObjString(userInfoObj, key)
+}
+
+// ==================== Stores ====================
+const chatStore = useChatStore()
+
+// ==================== 布局相关 ====================
+const loginBoxTop = ref<number>(LOGIN_BOX_TOP_MY)
+const headBoxTop = ref<number>(HEAD_BOX_TOP_DEFAULT)
+
+// ==================== 登录状态监听取消函数 ====================
+let unsubscribeLoginStatus: (() => void) | null = null
+let unsubscribeUserInfo: (() => void) | null = null
+
+// ==================== 响应式数据 ====================
+const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/my_login_bg.png'
+const isCopying = ref<boolean>(false)
+const avatarLoading = ref<boolean>(false)
+const isLoadingHomeInfo = ref<boolean>(false)
+
+// 登录状态（使用 ref 以便在生命周期中更新）
+const isLoginValue = ref<boolean>(false)
+
+// 用户信息响应式数据（直接存储，避免每次从 storage 读取）
+const userNickname = ref<string>('')
+const userAvatar = ref<string>('')
+const userShortKid = ref<string>('')
+const userKid = ref<string>('')
+
+// 🎯 VIP 相关响应式数据（用于 VIP 图标显示）
+const userVipStatus = ref<number>(VIP_NOT_ACTIVATED)  // VIP_NOT_ACTIVATED 未开通, VIP_ACTIVATED 已开通, VIP_EXPIRED 已过期
+const userVipExpireTime = ref<string>('')
+const userVipTypeNum = ref<number>(0)  // VIP_TYPE_MONTHLY 月卡, VIP_TYPE_YEARLY 年卡
+
+// 🎯 礼物等级响应式数据（用于礼物图标显示）
+const userGiftLevelNum = ref<number>(0)
+
+// 🎯 礼物选择弹窗相关
+const showGiftSelector = ref<boolean>(false)
+const selectedUserKid = ref<string>('')
+
+// 🎯 第三方卡片显示开关（默认隐藏）
+const showThirdPartyCard = ref<boolean>(false)
+
+// 当前用户ID（用于礼物发送）
+const currentUserId = computed((): string => {
+	return userKid.value
+})
+
+// 统计数据类
+class HeadItem {
+	label: string = ''
+	val: number = 0
+	icon: string = ''
+	constructor(label: string, val: number, icon: string) {
+		this.label = label
+		this.val = val
+		this.icon = icon
+	}
+}
+
+// 菜单项类
+class MenuItem {
+	label: string = ''
+	icon: string = ''
+	constructor(label: string, icon: string) {
+		this.label = label
+		this.icon = icon
+	}
+}
+
+// 第三方链接项类
+class ThirdPartyLinkItem {
+	label: string = ''
+	icon: string = ''
+	color: string = ''
+	url: string = ''
+	title: string = ''
+	constructor(label: string, icon: string, color: string, url: string, title: string) {
+		this.label = label
+		this.icon = icon
+		this.color = color
+		this.url = url
+		this.title = title
+	}
+}
+
+const headList = ref<Array<HeadItem>>([
+	new HeadItem('关注', 0, 'icon-action'),
+	new HeadItem('粉丝', 0, 'icon-fans'),
+	new HeadItem('获赞', 0, 'icon-up'),
+	new HeadItem('喜欢', 0, 'icon-like')
+])
+
+// 🔧 修改：将 itemList 从 ref 改为 computed，根据功能开关动态过滤会员菜单项
+const itemList = computed((): Array<MenuItem> => {
+	const baseItems = [
+		new MenuItem('向导', 'icon-guider'),
+		new MenuItem('动态', 'icon-trends'),
+		new MenuItem('定制', 'icon-route'),
+		new MenuItem('钱包', 'icon-wallet'),
+		new MenuItem('运营', 'icon-bussiness'),
+		new MenuItem('认证', 'icon-auther'),
+		new MenuItem('会员', 'icon-vip'),
+		new MenuItem('设置', 'icon-setting')
+	]
+	
+	// 如果会员功能关闭，过滤掉会员项
+	if (isMemberFeatureEnabled() == false) {
+		const filteredItems: Array<MenuItem> = []
+		for (let i = 0; i < baseItems.length; i = i + 1) {
+			const item = baseItems[i]
+			if (item.label != '会员') {
+				filteredItems.push(item)
+			}
+		}
+		return filteredItems
+	}
+	
+	return baseItems
+})
+
+// 第三方平台链接配置
+const thirdPartyLinks = ref<Array<ThirdPartyLinkItem>>([
+	new ThirdPartyLinkItem(
+		'酒店',
+		'home-filled',
+		'#FF6B35',
+		'https://m.ctrip.com/webapp/hotel?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'酒店'
+	),
+	new ThirdPartyLinkItem(
+		'门票',
+		'flag-filled',
+		'#FF9800',
+		'https://m.ctrip.com/tangram/ticket?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'门票'
+	),
+	new ThirdPartyLinkItem(
+		'机票',
+		'paperplane-filled',
+		'#5B8DEF',
+		'https://m.ctrip.com/html5/flight/home?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'机票'
+	),
+	new ThirdPartyLinkItem(
+		'火车票',
+		'navigate-filled',
+		'#37B1F2',
+		'https://m.ctrip.com/webapp/train?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'火车票'
+	)
+])
+
+// 从 storage 加载用户信息到响应式数据（必须在响应式数据定义之后）
+const loadUserInfoFromStorage = () => {
+	console.log('[My] loadUserInfoFromStorage - 开始加载')
+	
+	// 优先从 store 的 ref 直接获取（更可靠）
+	const storeUserId = getUserId()
+	const storeNickname = getUserNickname()
+	const storeShortKid = getUserShortKid()
+	const storeAvatar = getUserAvatar()
+	
+	console.log('[My] loadUserInfoFromStorage - store data: userId:', storeUserId, 'nickname:', storeNickname, 'shortKid:', storeShortKid)
+	
+	if (storeUserId != null && storeUserId != '') {
+		userKid.value = storeUserId
+		if (storeNickname != null && storeNickname != '') {
+			userNickname.value = storeNickname
+		}
+		if (storeShortKid != null && storeShortKid != '') {
+			userShortKid.value = storeShortKid
+		}
+		if (storeAvatar != null && storeAvatar != '') {
+			userAvatar.value = storeAvatar
+		}
+		
+		// 🎯 修复：从 store 加载 VIP 数据
+		const storeVipStatus = getUserVipStatus()
+		userVipStatus.value = storeVipStatus
+		const storeVipExpireTime = getUserVipExpireTime()
+		if (storeVipExpireTime != null && storeVipExpireTime != '') {
+			userVipExpireTime.value = storeVipExpireTime
+		}
+		const storeVipType = getUserNumberProp('vipType')
+		userVipTypeNum.value = storeVipType
+		
+		// 🎯 修复：从 store 加载礼物等级数据
+		const storeGiftLevel = getUserNumberProp('giftLevel')
+		userGiftLevelNum.value = storeGiftLevel
+		
+		console.log('[My] loadUserInfoFromStorage - 从 store 加载成功')
+		console.log('[My] loadUserInfoFromStorage - VIP: status:', userVipStatus.value, 'expireTime:', userVipExpireTime.value, 'type:', userVipTypeNum.value)
+		console.log('[My] loadUserInfoFromStorage - giftLevel:', userGiftLevelNum.value)
+		return
+	}
+	
+	// 备用：从 storage 读取
+	console.log('[My] loadUserInfoFromStorage - store 为空，尝试从 storage 读取')
+	const userInfoObj = getUserInfoObj()
+	console.log('[My] loadUserInfoFromStorage - userInfoObj is null:', userInfoObj == null)
+	if (userInfoObj != null) {
+		userKid.value = getObjString(userInfoObj, 'kid')
+		userShortKid.value = getObjString(userInfoObj, 'shortKid')
+		userNickname.value = getObjString(userInfoObj, 'nickname')
+		userAvatar.value = getObjString(userInfoObj, 'image')
+		// 兼容 avatar 字段
+		if (userAvatar.value == '') {
+			userAvatar.value = getObjString(userInfoObj, 'avatar')
+		}
+		
+		// 🎯 修复：从 storage 加载 VIP 数据
+		const vipVal = getObjNumber(userInfoObj, 'vip')
+		userVipStatus.value = Math.floor(vipVal)
+		const vipExpireTimeVal = getObjString(userInfoObj, 'vipExpireTime')
+		if (vipExpireTimeVal != '') {
+			userVipExpireTime.value = vipExpireTimeVal
+		}
+		const vipTypeVal = getObjNumber(userInfoObj, 'vipType')
+		userVipTypeNum.value = Math.floor(vipTypeVal)
+		
+		// 🎯 修复：从 storage 加载礼物等级数据
+		const giftLevelVal = getObjNumber(userInfoObj, 'giftLevel')
+		userGiftLevelNum.value = Math.floor(giftLevelVal)
+		
+		console.log('[My] loadUserInfoFromStorage - 从 storage 加载: kid:', userKid.value, 'shortKid:', userShortKid.value, 'nickname:', userNickname.value)
+		console.log('[My] loadUserInfoFromStorage - VIP: status:', userVipStatus.value, 'expireTime:', userVipExpireTime.value, 'type:', userVipTypeNum.value)
+		console.log('[My] loadUserInfoFromStorage - giftLevel:', userGiftLevelNum.value)
+	} else {
+		console.log('[My] loadUserInfoFromStorage - storage 也为空')
+	}
+}
+
+// ==================== 计算属性 ====================
+const isLogin = computed((): boolean => {
+	// 使用响应式的 isLoginValue，确保 UI 能正确更新
+	return isLoginValue.value
+})
+
+const nicknameText = computed((): string => {
+	// 直接使用响应式数据
+	if (isLoginValue.value == false) {
+		return ''
+	}
+	return userNickname.value
+})
+
+// 用户VIP类型
+// 🎯 修复：使用响应式数据而非从 storage 读取，确保支付成功后立即更新
+const userVipType = computed((): string => {
+	if (isLoginValue.value == false) return ''
+	
+	// 使用响应式数据
+	const vip = userVipStatus.value
+	const vipExpireTimeStr = userVipExpireTime.value
+	const vipTypeNum = userVipTypeNum.value
+
+	// 检查VIP是否有效
+	if (vip == VIP_ACTIVATED) {
+		if (vipExpireTimeStr != '') {
+			const expireDate = new Date(vipExpireTimeStr)
+			const now = new Date()
+			if (expireDate > now) {
+				// 根据VIP类型返回图标类型
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				if (vipTypeNum == VIP_TYPE_YEARLY) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 没有到期时间，认为是永久有效的
+			// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+			if (vipTypeNum == VIP_TYPE_YEARLY) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+})
+
+// 用户礼物等级
+// 🎯 修复：使用响应式数据而非从 storage 读取，确保 API 返回后立即更新
+const userGiftLevel = computed((): number => {
+	if (isLoginValue.value == false) return 0
+	return userGiftLevelNum.value
+})
+
+const hasNickname = computed((): boolean => {
+	const name = nicknameText.value
+	return name != ''
+})
+
+const avatarUrl = computed((): string => {
+	// 直接使用响应式数据
+	if (isLoginValue.value == false) {
+		return defaultAvatar
+	}
+	const image = userAvatar.value
+	if (image != '') {
+		return image
+	}
+	return defaultAvatar
+})
+
+const hasPersonPage = computed((): boolean => {
+	const kid = userKid.value
+	return kid != ''
+})
+
+const displayShortId = computed((): string => {
+	// 直接使用响应式数据
+	const shortKid = userShortKid.value
+	if (shortKid != '') {
+		return shortKid
+	}
+	const kid = userKid.value
+	if (kid != '') {
+		return kid
+	}
+	return ''
+})
+
+// ==================== 方法（必须在生命周期之前定义）====================
+
+// 加载系统配置
+const loadSystemSettings = () => {
+	getSystemSettings().then((res: UTSJSONObject) => {
+		const code = getResponseCode(res)
+		const dataObj = getResponseData(res)
+		
+		if (code == 200 && dataObj != null) {
+			const showCardVal = getObjString(dataObj, 'show_third_party_card')
+			if (showCardVal != '') {
+				showThirdPartyCard.value = parseBooleanConfig(showCardVal)
+			}
+			console.log('[My] 第三方卡片显示状态:', showThirdPartyCard.value)
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '加载系统配置')
+		showThirdPartyCard.value = false
+	})
+}
+
+// 加载用户主页信息
+const loadUserHomePage = async (forceRefresh: boolean) => {
+	if (isLoadingHomeInfo.value == true) {
+		return
+	}
+
+	isLoadingHomeInfo.value = true
+	try {
+		const kid = getUserInfoProp('kid')
+		if (kid == '') {
+			console.error('用户ID不存在')
+			isLoadingHomeInfo.value = false
+			return
+		}
+		
+		console.log('========== 加载用户主页信息 ==========')
+		console.log('用户ID:', kid)
+		console.log('强制刷新:', forceRefresh)
+		
+		// 🎯 使用 getCurrentUserProfile 复用登录时预加载的缓存
+		const profile = await getCurrentUserProfile(forceRefresh)
+		console.log('获取到的用户资料:', JSON.stringify(profile))
+		
+		if (profile != null) {
+			const dataObj = toJsonObj(profile)
+			console.log('转换后的数据对象:', JSON.stringify(dataObj))
+			
+			if (dataObj != null) {
+				// 更新统计数据
+				const focusCount = getObjNumber(dataObj, 'focusCount')
+				const followerCount = getObjNumber(dataObj, 'followerCount')
+				const beLikedCount = getObjNumber(dataObj, 'beLikedCount')
+				const collectionCount = getObjNumber(dataObj, 'collectionCount')
+				
+				console.log('统计数据 - 关注:', focusCount, '粉丝:', followerCount, '获赞:', beLikedCount, '喜欢:', collectionCount)
+				
+				// UTS 规范：直接修改数组元素属性可能不触发响应式更新
+				// 使用重新创建数组的方式确保响应式更新
+				// 确保数字类型正确（使用 Math.floor 确保是整数）
+				const focusVal = Math.floor(focusCount)
+				const followerVal = Math.floor(followerCount)
+				const beLikedVal = Math.floor(beLikedCount)
+				const collectionVal = Math.floor(collectionCount)
+				
+				const newHeadList: Array<HeadItem> = [
+					new HeadItem('关注', focusVal, 'icon-action'),
+					new HeadItem('粉丝', followerVal, 'icon-fans'),
+					new HeadItem('获赞', beLikedVal, 'icon-up'),
+					new HeadItem('喜欢', collectionVal, 'icon-like')
+				]
+				headList.value = newHeadList
+				
+				console.log('更新后的 headList:', JSON.stringify(headList.value))
+				
+				// 更新用户信息 - 使用 UTSJSONObject
+				const updateInfo = new UTSJSONObject()
+				const nicknameVal = getObjString(dataObj, 'nickname')
+				if (nicknameVal != '') {
+					updateInfo.set('nickname', nicknameVal)
+				}
+				const imageVal = getObjString(dataObj, 'image')
+				if (imageVal != '') {
+					updateInfo.set('image', imageVal)
+				}
+				const backgroundVal = getObjString(dataObj, 'background')
+				if (backgroundVal != '') {
+					updateInfo.set('background', backgroundVal)
+				}
+				const shortKidVal = getObjString(dataObj, 'shortKid')
+				console.log('[My] loadUserHomePage - shortKidVal:', shortKidVal)
+				if (shortKidVal != '') {
+					updateInfo.set('shortKid', shortKidVal)
+				}
+				const vipVal = getObjNumber(dataObj, 'vip')
+				updateInfo.set('vip', vipVal)
+				
+				// 🎯 修复：添加 vipExpireTime 和 vipType 的更新
+				const vipExpireTimeVal = getObjString(dataObj, 'vipExpireTime')
+				if (vipExpireTimeVal != '') {
+					updateInfo.set('vipExpireTime', vipExpireTimeVal)
+				}
+				const vipTypeVal = getObjNumber(dataObj, 'vipType')
+				updateInfo.set('vipType', vipTypeVal)
+				
+				// 🎯 修复：添加 giftLevel 的更新
+				const giftLevelVal = getObjNumber(dataObj, 'giftLevel')
+				console.log('[My] API 返回 giftLevel:', giftLevelVal)
+				updateInfo.set('giftLevel', giftLevelVal)
+				
+				console.log('[My] 更新用户信息:', JSON.stringify(updateInfo))
+				updateUserInfoAction(updateInfo)
+				
+				// 直接更新响应式数据（不依赖 storage 同步）
+				if (nicknameVal != '') {
+					userNickname.value = nicknameVal
+				}
+				if (imageVal != '') {
+					userAvatar.value = imageVal
+				}
+				if (shortKidVal != '') {
+					userShortKid.value = shortKidVal
+				}
+				
+				// 🎯 修复：更新 VIP 相关响应式数据
+				userVipStatus.value = Math.floor(vipVal)
+				if (vipExpireTimeVal != '') {
+					userVipExpireTime.value = vipExpireTimeVal
+				}
+				userVipTypeNum.value = Math.floor(vipTypeVal)
+				
+				// 🎯 修复：更新礼物等级响应式数据
+				userGiftLevelNum.value = Math.floor(giftLevelVal)
+				
+				console.log('[My] 响应式数据已更新 - nickname:', userNickname.value, 'shortKid:', userShortKid.value)
+				console.log('[My] VIP 响应式数据已更新 - vip:', userVipStatus.value, 'vipExpireTime:', userVipExpireTime.value, 'vipType:', userVipTypeNum.value)
+				console.log('[My] 礼物等级响应式数据已更新 - giftLevel:', userGiftLevelNum.value)
+			}
+		} else {
+			console.error('获取用户资料返回 null')
+		}
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '获取用户主页信息', null)
+		}
+	} finally {
+		isLoadingHomeInfo.value = false
+	}
+}
+
+// 尝试加载用户主页
+const tryLoadUserHomePage = (force: boolean) => {
+	if (isLogin.value == false) {
+		return
+	}
+	const kid = getUserInfoProp('kid')
+	if (kid == '') {
+		return
+	}
+
+	if (isLoadingHomeInfo.value == true && force == false) {
+		return
+	}
+
+	// 🎯 优化：如果有有效缓存且不强制刷新，直接使用缓存
+	if (force == false && hasValidCache() == true) {
+		console.log('[My] tryLoadUserHomePage - 使用有效缓存')
+	}
+
+	loadUserHomePage(force)
+}
+
+// ========== 登录状态变化回调（必须在 loadUserInfoFromStorage 和 tryLoadUserHomePage 之后定义）==========
+const handleLoginStatusChangeFromHelper = (data: UTSJSONObject | null) => {
+	const dataObj = parseLoginStatusData(data)
+	if (dataObj == null) return
+	
+	const loginStatus = getIsLoginFromData(dataObj)
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = loginStatus
+	
+	console.log('[My] loginHelper 登录状态变化:', loginStatus, '之前状态:', wasLoggedIn)
+	
+	if (loginStatus == true) {
+		loadUserInfoFromStorage()
+		tryLoadUserHomePage(true)
+	} else {
+		// 清空用户信息
+		userNickname.value = ''
+		userAvatar.value = ''
+		userShortKid.value = ''
+		userKid.value = ''
+		// 重置统计数据
+		headList.value = [
+			new HeadItem('关注', 0, 'icon-action'),
+			new HeadItem('粉丝', 0, 'icon-fans'),
+			new HeadItem('获赞', 0, 'icon-up'),
+			new HeadItem('喜欢', 0, 'icon-like')
+		]
+	}
+}
+
+// 初始化页面布局
+const initPageLayout = () => {
+	// 使用 composable 初始化布局
+	initPageLayoutComposable()
+	
+	// APP端：状态栏高度 + 小间距；H5端：只需要小间距
+	// #ifndef H5
+	// APP端：状态栏高度 + 20px 间距
+	loginBoxTop.value = pageStatusBarHeight.value + 20
+	// #endif
+	// #ifdef H5
+	// H5端：不需要状态栏高度，只需要 20px 间距
+	loginBoxTop.value = 20
+	// #endif
+	
+	// 计算统计卡片顶部位置（登录框顶部 + 头像区域高度90px + 20px间距）
+	headBoxTop.value = loginBoxTop.value + HEAD_BOX_OFFSET
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+	initPageLayout()
+	
+	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化（解决 APP 端登录状态问题）
+	initUserInfoAction()
+	
+	// 🎯 加载系统配置
+	loadSystemSettings()
+	
+	// 🔧 新增：加载功能开关配置
+	loadFeatureToggles()
+	
+	// 🔧 优化：注册 loginHelper 的登录状态变化监听
+	registerLoginStatusChange(handleLoginStatusChangeFromHelper)
+	
+	// 🔧 优化：使用 waitForLoginStatus 等待 Store 初始化
+	// 返回 1=已登录，0=未登录
+	// UTS 规范：onMounted 不能是 async，使用 .then() 处理 Promise
+	waitForLoginStatus(2000).then((loginResult: number) => {
+		isLoginValue.value = (loginResult == 1)
+		
+		console.log('[My] onMounted - 登录状态:', isLoginValue.value)
+		
+		// 从 storage 加载用户信息到响应式数据
+		loadUserInfoFromStorage()
+		
+		// 如果已登录，加载用户主页信息
+		if (isLoginValue.value == true) {
+			tryLoadUserHomePage(false)
+		}
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '等待登录状态初始化')
+		// 失败时默认未登录
+		isLoginValue.value = false
+	})
+	
+	// 注册登录状态变化监听（来自 useAuth）
+	unsubscribeLoginStatus = onLoginStatusChange((loginStatus: boolean, uid: string) => {
+		console.log('[My] useAuth 登录状态变化:', loginStatus, uid)
+		isLoginValue.value = loginStatus
+		if (loginStatus == true) {
+			loadUserInfoFromStorage()
+			tryLoadUserHomePage(true)
+		} else {
+			// 清空用户信息
+			userNickname.value = ''
+			userAvatar.value = ''
+			userShortKid.value = ''
+			userKid.value = ''
+			// 重置统计数据
+			headList.value = [
+				new HeadItem('关注', 0, 'icon-action'),
+				new HeadItem('粉丝', 0, 'icon-fans'),
+				new HeadItem('获赞', 0, 'icon-up'),
+				new HeadItem('喜欢', 0, 'icon-like')
+			]
+		}
+	})
+	
+	// 注册用户信息更新监听
+	unsubscribeUserInfo = onUserInfoUpdate((userInfo: UTSJSONObject | null) => {
+		console.log('[My] 用户信息更新')
+		if (userInfo != null) {
+			const nicknameVal = getObjString(userInfo, 'nickname')
+			if (nicknameVal != '') {
+				userNickname.value = nicknameVal
+			}
+			const avatarVal = getObjString(userInfo, 'avatar')
+			if (avatarVal != '') {
+				userAvatar.value = avatarVal
+			}
+			const imageVal = getObjString(userInfo, 'image')
+			if (imageVal != '' && userAvatar.value == '') {
+				userAvatar.value = imageVal
+			}
+			const shortKidVal = getObjString(userInfo, 'shortKid')
+			if (shortKidVal != '') {
+				userShortKid.value = shortKidVal
+			}
+			
+			// 🎯 修复：添加 VIP 相关字段的更新
+			const vipVal = getObjNumber(userInfo, 'vip')
+			if (vipVal > 0) {
+				userVipStatus.value = Math.floor(vipVal)
+			}
+			const vipExpireTimeVal = getObjString(userInfo, 'vipExpireTime')
+			if (vipExpireTimeVal != '') {
+				userVipExpireTime.value = vipExpireTimeVal
+			}
+			const vipTypeVal = getObjNumber(userInfo, 'vipType')
+			if (vipTypeVal > 0) {
+				userVipTypeNum.value = Math.floor(vipTypeVal)
+			}
+			
+			// 🎯 修复：添加礼物等级字段的更新
+			const giftLevelVal = getObjNumber(userInfo, 'giftLevel')
+			if (giftLevelVal > 0) {
+				userGiftLevelNum.value = Math.floor(giftLevelVal)
+			}
+			
+			console.log('[My] VIP 状态已更新 - vip:', userVipStatus.value, 'vipExpireTime:', userVipExpireTime.value, 'vipType:', userVipTypeNum.value)
+			console.log('[My] 礼物等级已更新 - giftLevel:', userGiftLevelNum.value)
+		}
+	})
+})
+
+// 组件卸载时取消监听
+onUnmounted(() => {
+	// 🔧 优化：取消 loginHelper 的登录状态变化监听
+	unregisterLoginStatusChange(handleLoginStatusChangeFromHelper)
+	
+	// 🔧 优化：清理 useCurrentUserProfile 事件监听器，防止内存泄漏
+	destroyEventListeners()
+	
+	// UTS 规范：使用临时变量避免 smart cast 问题
+	const unsubLogin = unsubscribeLoginStatus
+	if (unsubLogin != null) {
+		unsubLogin()
+		unsubscribeLoginStatus = null
+	}
+	const unsubUserInfo = unsubscribeUserInfo
+	if (unsubUserInfo != null) {
+		unsubUserInfo()
+		unsubscribeUserInfo = null
+	}
+})
+
+onShow(() => {
+	// 🔧 优化：使用 checkUserLoginReliable 进行可靠的登录检查
+	const currentLoginStatus = checkUserLoginReliable()
+	const wasLoggedIn = isLoginValue.value
+	isLoginValue.value = currentLoginStatus
+	
+	// 从 storage 加载用户信息到响应式数据
+	loadUserInfoFromStorage()
+	
+	// 🎯 重新加载系统配置
+	loadSystemSettings()
+	
+	// 🔧 新增：重新加载功能开关配置
+	loadFeatureToggles()
+	
+	console.log('[My] onShow - 登录状态:', currentLoginStatus, '之前状态:', wasLoggedIn)
+	
+	if (currentLoginStatus == true) {
+		tryLoadUserHomePage(true)
+	}
+})
+
+// ==================== 事件处理函数 ====================
+const goToLogin = () => {
+	uni.navigateTo({
+		url: '/pagesUser/login/index'
+	})
+}
+
+// VIP图标点击 - 跳转VIP页面
+const handleVipClick = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+// 礼物图标点击 - 打开礼物选择面板
+const handleGiftIconClick = (targetUserKid: string) => {
+	if (requireLoginReliable(true, '/pages/my/index') == false) return
+	selectedUserKid.value = targetUserKid
+	showGiftSelector.value = true
+}
+
+// 处理选择礼物
+const handleSelectGift = (gift: UTSJSONObject | null) => {
+	showGiftSelector.value = false
+	if (gift != null) {
+		const giftObj = toJsonObj(gift)
+		if (giftObj != null) {
+			const giftIdVal = giftObj.get('id')
+			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
+			if (giftId != '' && selectedUserKid.value != '') {
+				const userId = currentUserId.value
+				const sendParams = {
+					userKid: userId,
+					receiveUserKid: selectedUserKid.value,
+					lotteryRecordKid: giftId
+				} as UTSJSONObject
+				sendGiftFromBag(sendParams).then(() => {
+					uni.showToast({
+						title: '礼物发送成功',
+						icon: 'success'
+					})
+				}).catch((error: any | null): void => {
+					if (!isAuthError(error as any)) {
+						handlePageError(error as any, '发送礼物', null)
+					}
+				})
+			}
+		}
+	}
+}
+
+const goToPersonPage = () => {
+	const kid = userKid.value
+	if (kid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + kid
+		})
+	}
+}
+
+// goProfile 必须在 handleAvatarClick 之前定义
+const goProfile = () => {
+	const kid = userKid.value
+	if (kid == '') {
+		goToLogin()
+		return
+	}
+	uni.navigateTo({
+		url: '/pagesUser/my/profile/index'
+	})
+}
+
+const handleAvatarClick = () => {
+	if (isLogin.value == false) {
+		goToLogin()
+		return
+	}
+	goProfile()
+}
+
+const copyShortId = () => {
+	const shortId = displayShortId.value
+	if (shortId == '') {
+		uni.showToast({
+			title: '短号不存在',
+			icon: 'none'
+		})
+		return
+	}
+
+	if (isCopying.value == true) return
+
+	isCopying.value = true
+
+	uni.setClipboardData({
+		data: shortId,
+		success: () => {
+			uni.showToast({
+				title: '短号已复制',
+				icon: 'success'
+			})
+			setTimeout(() => {
+				isCopying.value = false
+			}, 1500)
+		},
+		fail: () => {
+			uni.showToast({
+				title: '复制失败',
+				icon: 'none'
+			})
+			setTimeout(() => {
+				isCopying.value = false
+			}, 1000)
+		}
+	})
+}
+
+const handleItemClick = (item: MenuItem) => {
+	// 🔧 优化：使用统一的登录守卫
+	const isLoggedIn = requireLoginReliable(true, '/pages/my/index')
+	if (isLoggedIn == false) {
+		return
+	}
+	
+	const label = item.label
+	
+	if (label == '设置') {
+		uni.navigateTo({ url: '/pagesUser/my/setting/index' })
+	} else if (label == '向导') {
+		uni.navigateTo({ url: '/pagesBusiness/guideInfo/index' })
+	} else if (label == '定制') {
+		uni.navigateTo({ url: '/pagesUser/myRoutes/index' })
+	} else if (label == '动态') {
+		uni.navigateTo({ url: '/pagesUser/myTrends/index' })
+	} else if (label == '钱包') {
+		uni.navigateTo({ url: '/pagesUser/wallet/index' })
+	} else if (label == '认证') {
+		uni.navigateTo({ url: '/pagesUser/my/proveDetails/index' })
+	} else if (label == '会员') {
+		uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+	} else if (label == '运营') {
+		uni.navigateTo({ url: '/pagesBusiness/operate/index' })
+	}
+}
+
+// 打开隐私政策页面
+const openPrivacyPolicy = () => {
+	// 跳转到隐私设置页面（包含隐私政策和用户协议入口）
+	uni.navigateTo({
+		url: '/pagesUser/my/setting/privacy'
+	})
+}
+
+// 获取图标URL
+const getIconUrl = (icon: string): string => {
+	if (icon == 'icon-action') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_action_icon.png'
+	} else if (icon == 'icon-fans') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_fans_icon.png'
+	} else if (icon == 'icon-up') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_do_up.png'
+	} else if (icon == 'icon-like') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_like_icon.png'
+	}
+	return ''
+}
+
+const getMenuIconUrl = (icon: string): string => {
+	if (icon == 'icon-trends') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_trends.png'
+	} else if (icon == 'icon-guider') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_guider.png'
+	} else if (icon == 'icon-route') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_route.png'
+	} else if (icon == 'icon-wallet') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_wallet.png'
+	} else if (icon == 'icon-vip') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_vip.png'
+	} else if (icon == 'icon-auther') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_auther.png'
+	} else if (icon == 'icon-bussiness') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_business.png'
+	} else if (icon == 'icon-setting') {
+		return 'https://jiasu.wyxdapp.com/iconimages/my_tab_setting.png'
+	}
+	return ''
+}
+
+// 第三方链接点击处理
+const handleThirdPartyClick = (item: ThirdPartyLinkItem) => {
+	const url = encodeURIComponent(item.url)
+	const title = encodeURIComponent(item.title)
+	uni.navigateTo({
+		url: '/pagesTrade/webview/webview/index?url=' + url + '&title=' + title
+	})
+}
+
+// 跳转到ICP备案查询官网
+const goToIcpQuery = () => {
+	const icpUrl = 'https://beian.miit.gov.cn/'
+	// #ifdef H5
+	// H5端直接打开新窗口
+	window.open(icpUrl, '_blank')
+	// #endif
+	// #ifdef APP-PLUS
+	// APP端使用系统浏览器打开
+	plus.runtime.openURL(icpUrl)
+	// #endif
+	// #ifdef MP-WEIXIN
+	// 小程序端复制链接并提示
+	uni.setClipboardData({
+		data: icpUrl,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制，请在浏览器中打开',
+				icon: 'none',
+				duration: 2000
+			})
+		}
+	})
+	// #endif
+}
+</script>
+
+<style scoped>
+.fix-page {
+	width: 750rpx;
+	flex-direction: column;
+	position: relative;
+}
+
+/* 顶部背景图 - 使用全局样式，此处仅覆盖高度 */
+.bg-my-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 474rpx;
+	z-index: 1;
+}
+
+/* 登录区域 */
+.login-box {
+	width: 750rpx;
+	height: 176rpx;
+	z-index: 2;
+	position: fixed;
+	left: 0;
+	flex-direction: row;
+	align-items: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.no-login-bg {
+	width: 180rpx;
+	height: 180rpx;
+	background-color: rgba(255, 255, 255, 0.5);
+	border-radius: 200rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.avatar {
+	width: 176rpx;
+	height: 176rpx;
+	border-radius: 88rpx;
+}
+
+.no-login {
+	width: 176rpx;
+	height: 176rpx;
+}
+
+.login-text {
+	margin-left: 28rpx;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+}
+
+/* 登录按钮（蓝色底色，白色文字） */
+.login-btn {
+	width: 200rpx;
+	height: 72rpx;
+	background-color: #37B1F2;
+	border-radius: 36rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.login-btn-text {
+	font-size: 28rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.user-info-box {
+	margin-left: 28rpx;
+	flex-direction: column;
+}
+
+.nickname {
+	font-size: 36rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.extension-box {
+	margin-top: 12rpx;
+	background-color: rgba(255, 255, 255, 0.8);
+	border-radius: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.extension-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.copy-icon {
+	font-size: 24rpx;
+	margin-left: 8rpx;
+}
+
+.person-page {
+	position: absolute;
+	right: 22rpx;
+	top: 102rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.page-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.arrow-right {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+/* 统计数据卡片 */
+.head-box {
+	width: 750rpx;
+	height: 140rpx;
+	z-index: 2;
+	position: fixed;
+	left: 0;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.head-box-content {
+	width: 100%;
+	border-radius: 24rpx;
+	height: 140rpx;
+	background-color: #ffffff;
+	flex-direction: row;
+	justify-content: space-around;
+	align-items: center;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+}
+
+.stat-item {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.stat-value {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: normal;
+}
+
+.stat-label-row {
+	flex-direction: row;
+	align-items: center;
+	margin-top: 12rpx;
+}
+
+.stat-icon {
+	width: 32rpx;
+	height: 32rpx;
+	margin-right: 6rpx;
+}
+
+.stat-label {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+/* 内容区域 */
+.content-area {
+	width: 750rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	flex-direction: column;
+	position: relative;
+	z-index: 2;
+}
+
+/* Banner */
+.banner-box {
+	height: 146rpx;
+	width: 100%;
+	margin-top: 24rpx;
+}
+
+.banner-image {
+	width: 100%;
+	height: 146rpx;
+}
+
+/* 第三方平台入口 */
+.third-party-box {
+	margin-top: 24rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	justify-content: space-around;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.third-party-item {
+	width: 175rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.third-party-label {
+	font-size: 24rpx;
+	color: #333333;
+	margin-top: 12rpx;
+}
+
+/* 功能菜单网格 */
+.item-box {
+	margin-top: 24rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: flex-start;
+	padding-top: 32rpx;
+}
+
+.item-li {
+	width: 175rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 32rpx;
+}
+
+.item-icon {
+	width: 94rpx;
+	height: 94rpx;
+}
+
+.item-label {
+	font-size: 24rpx;
+	color: #333333;
+	margin-top: 24rpx;
+}
+
+/* 第三方平台入口 */
+.third-party-box {
+	margin-top: 24rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	justify-content: space-around;
+	align-items: center;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+.third-party-item {
+	width: 175rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.third-party-label {
+	font-size: 24rpx;
+	color: #333333;
+	margin-top: 12rpx;
+}
+
+/* 备案号样式 */
+.icp-container {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 48rpx;
+	margin-bottom: 16rpx;
+}
+
+.icp-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 隐私政策样式 */
+.privacy-container {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 32rpx;
+}
+
+.privacy-text {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+</style>

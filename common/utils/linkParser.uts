@@ -1,0 +1,722 @@
+/**
+ * 链接解析工具
+ * 用于识别文本中的 URL 链接和电话号码
+ * 
+ * @file linkParser.uts
+ * @description 聊天消息内容增强 - 链接解析器
+ */
+
+import { URL_DISPLAY_MAX_LENGTH } from '@/common/config/uiConfig.uts'
+import { CHAR_CODE_0, CHAR_CODE_3, CHAR_CODE_9, CHAR_CODE_A, CHAR_CODE_Z, CHAR_CODE_a, CHAR_CODE_z, CHINA_PHONE_NUMBER_LENGTH } from '@/common/config/charCodes.uts'
+
+// ========== 数据类型定义 ==========
+
+/**
+ * 解析结果段落类
+ * 表示文本解析后的一个片段
+ */
+export class ParsedSegment {
+	/** 段落类型: 'text' | 'url' | 'phone' */
+	type: string = ''
+	/** 原始内容 */
+	content: string = ''
+	/** 显示文本（URL 可能截断显示） */
+	displayText: string = ''
+	/** 完整 URL（仅 url 类型有值） */
+	url: string = ''
+	
+	constructor() {}
+}
+
+/**
+ * 匹配结果类
+ * 用于存储正则匹配的位置和内容
+ */
+class MatchResult {
+	/** 匹配的起始位置 */
+	start: number = 0
+	/** 匹配的结束位置 */
+	end: number = 0
+	/** 匹配的内容 */
+	content: string = ''
+	/** 匹配类型: 'url' | 'phone' */
+	type: string = ''
+	
+	constructor() {}
+}
+
+// ========== URL 解析相关 ==========
+
+/**
+ * 判断字符是否为 URL 合法字符
+ * URL 合法字符包括：字母、数字、以及特定符号
+ * 
+ * @param char 要检查的字符
+ * @returns 是否为 URL 合法字符
+ */
+const isUrlChar = (char: string): boolean => {
+	if (char == null || char == '') return false
+	
+	const code = char.charCodeAt(0)
+	if (code == null) return false
+	const charCode = code as number
+	
+	// 数字 0-9
+	if (charCode >= CHAR_CODE_0 && charCode <= CHAR_CODE_9) return true
+	// 大写字母 A-Z
+	if (charCode >= CHAR_CODE_A && charCode <= CHAR_CODE_Z) return true
+	// 小写字母 a-z
+	if (charCode >= CHAR_CODE_a && charCode <= CHAR_CODE_z) return true
+	
+	// URL 特殊字符：. / - _ ? = # & % + :
+	const urlChars = './-_?=#&%+:'
+	if (urlChars.indexOf(char) >= 0) return true
+	
+	return false
+}
+
+/**
+ * 判断字符是否为 URL 终止符
+ * 终止符包括：空白字符、中文标点、配对符号等
+ * 注意：点（.）不是终止符，因为它是域名的一部分
+ * 
+ * @param char 要检查的字符
+ * @returns 是否为 URL 终止符
+ */
+const isUrlTerminator = (char: string): boolean => {
+	if (char == null || char == '') return true
+	// 这些字符通常不是 URL 的一部分
+	// 注意：已移除英文句点（.），因为它是域名和文件扩展名的一部分
+	const endChars = '，。！？；：、）】》"\',!?;:)]\u3002\uff0c\uff01\uff1f\uff1b\uff1a'
+	return endChars.indexOf(char) >= 0
+}
+
+/**
+ * 验证 URL 格式是否有效
+ * 
+ * @param url URL 字符串
+ * @returns 是否为有效 URL
+ */
+const validateUrl = (url: string): boolean => {
+	if (url == null || url == '') return false
+	
+	// 移除协议部分进行验证
+	let urlToCheck = url
+	if (url.indexOf('http://') == 0) {
+		urlToCheck = url.substring(7)
+	} else if (url.indexOf('https://') == 0) {
+		urlToCheck = url.substring(8)
+	} else if (url.indexOf('www.') == 0) {
+		urlToCheck = url.substring(4)
+	}
+	
+	// 验证 1：至少包含一个点（域名分隔符）
+	if (urlToCheck.indexOf('.') < 0) return false
+	
+	// 验证 2：域名长度至少 4 个字符（如 a.co）
+	if (urlToCheck.length < 4) return false
+	
+	// 验证 3：不以点开头或结尾
+	if (urlToCheck.substring(0, 1) == '.') return false
+	if (urlToCheck.substring(urlToCheck.length - 1) == '.') return false
+	
+	// 验证 4：不包含连续的点
+	if (urlToCheck.indexOf('..') >= 0) return false
+	
+	// 验证 5：不是仅包含协议的无效 URL
+	if (url == 'http://' || url == 'https://') return false
+	
+	return true
+}
+
+/**
+ * 从文本中查找所有 URL
+ * 支持 http://、https://、www. 开头的链接
+ */
+const findUrls = (text: string): Array<MatchResult> => {
+	const results: Array<MatchResult> = []
+	if (text == null || text == '') return results
+	
+	const textLen = text.length
+	let i = 0
+	
+	while (i < textLen) {
+		let matchStart = -1
+		let matchType = ''
+		
+		// 检查 http:// 或 https://
+		if (i + 7 <= textLen) {
+			const sub7 = text.substring(i, i + 7)
+			if (sub7 == 'http://') {
+				matchStart = i
+				matchType = 'http'
+			}
+		}
+		if (matchStart < 0 && i + 8 <= textLen) {
+			const sub8 = text.substring(i, i + 8)
+			if (sub8 == 'https://') {
+				matchStart = i
+				matchType = 'https'
+			}
+		}
+		// 检查 www.
+		if (matchStart < 0 && i + 4 <= textLen) {
+			const sub4 = text.substring(i, i + 4)
+			if (sub4 == 'www.') {
+				matchStart = i
+				matchType = 'www'
+			}
+		}
+		
+		if (matchStart >= 0) {
+			// 找到 URL 开始，继续查找结束位置
+			let j = matchStart
+			if (matchType == 'http') {
+				j = j + 7
+			} else if (matchType == 'https') {
+				j = j + 8
+			} else {
+				j = j + 4
+			}
+			
+			// 继续读取直到遇到空白字符或 URL 终止符
+			while (j < textLen) {
+				const char = text.substring(j, j + 1)
+				// 空白字符结束
+				if (char == ' ' || char == '\n' || char == '\r' || char == '\t') {
+					break
+				}
+				// 中文标点等终止符
+				if (isUrlTerminator(char) == true) {
+					break
+				}
+				j = j + 1
+			}
+			
+			// 提取 URL
+			const urlContent = text.substring(matchStart, j)
+			// 验证 URL 格式
+			if (urlContent.length > 4 && validateUrl(urlContent) == true) {
+				const result = new MatchResult()
+				result.start = matchStart
+				result.end = j
+				result.content = urlContent
+				result.type = 'url'
+				results.push(result)
+			}
+			
+			i = j
+		} else {
+			i = i + 1
+		}
+	}
+	
+	return results
+}
+
+/**
+ * 为 URL 补全协议
+ * 
+ * @param url 原始 URL
+ * @returns 补全协议后的 URL
+ */
+const completeProtocol = (url: string): string => {
+	if (url == null || url == '') return url
+	
+	// 已有协议，保持不变
+	if (url.indexOf('http://') == 0 || url.indexOf('https://') == 0) {
+		return url
+	}
+	
+	// www. 开头，补全 http://
+	if (url.indexOf('www.') == 0) {
+		return 'http://' + url
+	}
+	
+	// 纯域名（包含点但无协议），补全 http://
+	// 注意：这里只处理已经通过 validateUrl 验证的 URL
+	if (url.indexOf('.') >= 0) {
+		return 'http://' + url
+	}
+	
+	return url
+}
+
+// ========== 电话号码解析相关 ==========
+
+/**
+ * 检查字符是否为数字
+ */
+const isDigit = (char: string): boolean => {
+	if (char == null || char == '') return false
+	const codeVal = char.charCodeAt(0)
+	if (codeVal == null) return false
+	const code = codeVal as number
+	return code >= CHAR_CODE_0 && code <= CHAR_CODE_9 // '0'-'9'
+}
+
+/**
+ * 从文本中查找所有电话号码
+ * 支持 11 位手机号和带区号的固定电话
+ */
+const findPhones = (text: string): Array<MatchResult> => {
+	const results: Array<MatchResult> = []
+	if (text == null || text == '') return results
+	
+	const textLen = text.length
+	let i = 0
+	
+	while (i < textLen) {
+		const char = text.substring(i, i + 1)
+		
+		// 检查是否是手机号开头（1开头）
+		if (char == '1' && i + CHINA_PHONE_NUMBER_LENGTH <= textLen) {
+			// 检查第二位是否是 3-9
+			const secondChar = text.substring(i + 1, i + 2)
+			const secondCodeVal = secondChar.charCodeAt(0)
+			if (secondCodeVal != null) {
+				const secondCode = secondCodeVal as number
+				if (secondCode >= CHAR_CODE_3 && secondCode <= CHAR_CODE_9) { // '3'-'9'
+					// 检查后续 9 位是否都是数字
+					let isValidPhone = true
+					let j = i + 2
+					while (j < i + CHINA_PHONE_NUMBER_LENGTH) {
+						const c = text.substring(j, j + 1)
+						if (isDigit(c) == false) {
+							isValidPhone = false
+							break
+						}
+						j = j + 1
+					}
+					
+					// 检查手机号后面不是数字（避免匹配更长的数字串）
+					if (isValidPhone == true && i + CHINA_PHONE_NUMBER_LENGTH < textLen) {
+						const nextChar = text.substring(i + CHINA_PHONE_NUMBER_LENGTH, i + CHINA_PHONE_NUMBER_LENGTH + 1)
+						if (isDigit(nextChar) == true) {
+							isValidPhone = false
+						}
+					}
+					
+					// 检查手机号前面不是数字
+					if (isValidPhone == true && i > 0) {
+						const prevChar = text.substring(i - 1, i)
+						if (isDigit(prevChar) == true) {
+							isValidPhone = false
+						}
+					}
+					
+					if (isValidPhone == true) {
+						const phoneContent = text.substring(i, i + CHINA_PHONE_NUMBER_LENGTH)
+						const result = new MatchResult()
+						result.start = i
+						result.end = i + CHINA_PHONE_NUMBER_LENGTH
+						result.content = phoneContent
+						result.type = 'phone'
+						results.push(result)
+						i = i + CHINA_PHONE_NUMBER_LENGTH
+						continue
+					}
+				}
+			}
+		}
+		
+		// 检查是否是固定电话（区号开头：0开头的3-4位数字）
+		if (char == '0' && i + 10 <= textLen) {
+			// 尝试匹配 3 位或 4 位区号
+			let areaCodeLen = 0
+			let phoneNumLen = 0
+			let hasSeparator = false
+			
+			// 检查区号（3位或4位）
+			let j = i + 1
+			while (j < i + 4 && j < textLen) {
+				const c = text.substring(j, j + 1)
+				if (isDigit(c) == false) break
+				j = j + 1
+			}
+			areaCodeLen = j - i
+			
+			if (areaCodeLen >= 3 && areaCodeLen <= 4) {
+				// 检查分隔符（- 或空格，可选）
+				if (j < textLen) {
+					const sepChar = text.substring(j, j + 1)
+					if (sepChar == '-' || sepChar == ' ') {
+						hasSeparator = true
+						j = j + 1
+					}
+				}
+				
+				// 检查电话号码（7-8位）
+				const phoneStart = j
+				while (j < textLen && j < phoneStart + 8) {
+					const c = text.substring(j, j + 1)
+					if (isDigit(c) == false) break
+					j = j + 1
+				}
+				phoneNumLen = j - phoneStart
+				
+				if (phoneNumLen >= 7 && phoneNumLen <= 8) {
+					// 检查后面不是数字
+					let isValid = true
+					if (j < textLen) {
+						const nextChar = text.substring(j, j + 1)
+						if (isDigit(nextChar) == true) {
+							isValid = false
+						}
+					}
+					// 检查前面不是数字
+					if (isValid == true && i > 0) {
+						const prevChar = text.substring(i - 1, i)
+						if (isDigit(prevChar) == true) {
+							isValid = false
+						}
+					}
+					
+					if (isValid == true) {
+						const phoneContent = text.substring(i, j)
+						const result = new MatchResult()
+						result.start = i
+						result.end = j
+						result.content = phoneContent
+						result.type = 'phone'
+						results.push(result)
+						i = j
+						continue
+					}
+				}
+			}
+		}
+		
+		i = i + 1
+	}
+	
+	return results
+}
+
+// ========== 综合解析函数 ==========
+
+/**
+ * 解析文本内容，识别 URL 和电话号码
+ * 返回分段数组，确保拼接后等于原文本
+ * 
+ * @param text 原始文本内容
+ * @returns ParsedSegment 数组
+ */
+export const parseTextContent = (text: string): Array<ParsedSegment> => {
+	const segments: Array<ParsedSegment> = []
+	
+	if (text == null || text == '') {
+		return segments
+	}
+	
+	// 查找所有 URL 和电话号码
+	const urlMatches = findUrls(text)
+	const phoneMatches = findPhones(text)
+	
+	// 合并所有匹配结果并按位置排序
+	const allMatches: Array<MatchResult> = []
+	for (let i = 0; i < urlMatches.length; i = i + 1) {
+		allMatches.push(urlMatches[i])
+	}
+	for (let i = 0; i < phoneMatches.length; i = i + 1) {
+		allMatches.push(phoneMatches[i])
+	}
+	
+	// 按起始位置排序（简单冒泡排序）
+	for (let i = 0; i < allMatches.length; i = i + 1) {
+		for (let j = i + 1; j < allMatches.length; j = j + 1) {
+			if (allMatches[j].start < allMatches[i].start) {
+				const temp = allMatches[i]
+				allMatches[i] = allMatches[j]
+				allMatches[j] = temp
+			}
+		}
+	}
+	
+	// 移除重叠的匹配（保留先出现的）
+	const filteredMatches: Array<MatchResult> = []
+	let lastEnd = 0
+	for (let i = 0; i < allMatches.length; i = i + 1) {
+		const match = allMatches[i]
+		if (match.start >= lastEnd) {
+			filteredMatches.push(match)
+			lastEnd = match.end
+		}
+	}
+	
+	// 构建分段结果
+	let currentPos = 0
+	for (let i = 0; i < filteredMatches.length; i = i + 1) {
+		const match = filteredMatches[i]
+		
+		// 添加匹配前的普通文本
+		if (match.start > currentPos) {
+			const textContent = text.substring(currentPos, match.start)
+			const textSegment = new ParsedSegment()
+			textSegment.type = 'text'
+			textSegment.content = textContent
+			textSegment.displayText = textContent
+			segments.push(textSegment)
+		}
+		
+		// 添加匹配的 URL 或电话
+		const matchSegment = new ParsedSegment()
+		matchSegment.type = match.type
+		matchSegment.content = match.content
+		
+		if (match.type == 'url') {
+			// URL 显示文本可能需要截断
+			let displayUrl = match.content
+			if (displayUrl.length > URL_DISPLAY_MAX_LENGTH) {
+				displayUrl = displayUrl.substring(0, URL_DISPLAY_MAX_LENGTH - 3) + '...'
+			}
+			matchSegment.displayText = displayUrl
+			// 补全 URL 协议
+			matchSegment.url = completeProtocol(match.content)
+		} else {
+			matchSegment.displayText = match.content
+		}
+		
+		segments.push(matchSegment)
+		currentPos = match.end
+	}
+	
+	// 添加最后的普通文本
+	if (currentPos < text.length) {
+		const textContent = text.substring(currentPos)
+		const textSegment = new ParsedSegment()
+		textSegment.type = 'text'
+		textSegment.content = textContent
+		textSegment.displayText = textContent
+		segments.push(textSegment)
+	}
+	
+	// 如果没有任何匹配，返回整个文本作为一个段落
+	if (segments.length == 0) {
+		const textSegment = new ParsedSegment()
+		textSegment.type = 'text'
+		textSegment.content = text
+		textSegment.displayText = text
+		segments.push(textSegment)
+	}
+	
+	return segments
+}
+
+
+// ========== 链接跳转处理 ==========
+
+/**
+ * 判断链接是否为应用内部路径
+ * 内部路径以 / 开头，或包含应用域名
+ * 
+ * @param url 链接地址
+ * @returns 是否为内部链接
+ */
+export const isInternalLink = (url: string): boolean => {
+	if (url == null || url == '') return false
+	
+	// 以 / 开头的是内部路径
+	if (url.substring(0, 1) == '/') {
+		return true
+	}
+	
+	// 包含应用域名的也是内部链接
+	const appDomains: Array<string> = [
+		'wyxdapp.com',
+		'www.wyxdapp.com',
+		'api.wyxdapp.com'
+	]
+	
+	for (let i = 0; i < appDomains.length; i = i + 1) {
+		const domain = appDomains[i]
+		if (url.indexOf(domain) >= 0) {
+			return true
+		}
+	}
+	
+	return false
+}
+
+/**
+ * 从 URL 中提取内部路径
+ * 
+ * @param url 完整 URL
+ * @returns 内部路径（如 /pages/index/index）
+ */
+const extractInternalPath = (url: string): string => {
+	if (url == null || url == '') return ''
+	
+	// 如果已经是内部路径，直接返回
+	if (url.substring(0, 1) == '/') {
+		return url
+	}
+	
+	// 尝试从 URL 中提取路径部分
+	// 格式：https://wyxdapp.com/pages/xxx 或 https://wyxdapp.com/#/pages/xxx
+	let path = ''
+	
+	// 查找 # 后的路径（hash 路由）
+	const hashIndex = url.indexOf('#')
+	if (hashIndex >= 0 && hashIndex + 1 < url.length) {
+		path = url.substring(hashIndex + 1)
+		// 移除开头的 /
+		if (path.substring(0, 1) == '/') {
+			return path
+		}
+		return '/' + path
+	}
+	
+	// 查找域名后的路径
+	const domainPatterns: Array<string> = [
+		'wyxdapp.com/',
+		'www.wyxdapp.com/',
+		'api.wyxdapp.com/'
+	]
+	
+	for (let i = 0; i < domainPatterns.length; i = i + 1) {
+		const pattern = domainPatterns[i]
+		const patternIndex = url.indexOf(pattern)
+		if (patternIndex >= 0) {
+			path = url.substring(patternIndex + pattern.length)
+			if (path != '' && path.substring(0, 1) != '/') {
+				path = '/' + path
+			}
+			return path
+		}
+	}
+	
+	return ''
+}
+
+/**
+ * 处理链接点击
+ * 内部链接使用 uni.navigateTo，外部链接使用系统浏览器
+ * 
+ * @param segment 解析后的链接段落
+ */
+export const handleLinkClick = (segment: ParsedSegment): void => {
+	if (segment == null) return
+	
+	const url = segment.url
+	if (url == null || url == '') {
+		// 如果 url 为空，尝试使用 content
+		const content = segment.content
+		if (content == null || content == '') return
+		handleUrlClick(content)
+		return
+	}
+	
+	handleUrlClick(url)
+}
+
+/**
+ * 处理 URL 点击
+ * 
+ * @param url 链接地址
+ */
+const handleUrlClick = (url: string): void => {
+	if (url == null || url == '') return
+	
+	// 判断是否为内部链接
+	if (isInternalLink(url) == true) {
+		// 内部链接：提取路径并跳转
+		const path = extractInternalPath(url)
+		if (path != '' && path != '/') {
+			uni.navigateTo({
+				url: path,
+				fail: (err: any) => {
+					console.error('页面跳转失败:', err)
+					uni.showToast({
+						title: '页面不存在',
+						icon: 'none'
+					})
+				}
+			})
+		} else {
+			// 如果是内部域名但没有路径，当作外部链接处理
+			openExternalUrl(url)
+		}
+	} else {
+		// 外部链接：使用系统浏览器打开
+		openExternalUrl(url)
+	}
+}
+
+/**
+ * 打开外部链接
+ * 
+ * @param url 链接地址
+ */
+const openExternalUrl = (url: string): void => {
+	// #ifdef APP-PLUS
+	plus.runtime.openURL(url, (err: any) => {
+		console.error('打开链接失败:', err)
+		uni.showToast({
+			title: '无法打开链接',
+			icon: 'none'
+		})
+	})
+	// #endif
+	
+	// #ifdef H5
+	try {
+		window.open(url, '_blank')
+	} catch (e) {
+		console.error('打开链接失败:', e)
+		uni.showToast({
+			title: '无法打开链接',
+			icon: 'none'
+		})
+	}
+	// #endif
+	
+	// #ifdef MP-WEIXIN
+	// 小程序环境：复制链接
+	uni.setClipboardData({
+		data: url,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制',
+				icon: 'success'
+			})
+		}
+	})
+	// #endif
+}
+
+/**
+ * 处理电话号码点击
+ * 调用系统拨号功能
+ * 
+ * @param phone 电话号码
+ */
+export const handlePhoneClick = (phone: string): void => {
+	if (phone == null || phone == '') return
+	
+	// 移除电话号码中的分隔符
+	let cleanPhone = ''
+	for (let i = 0; i < phone.length; i = i + 1) {
+		const char = phone.substring(i, i + 1)
+		if (char != '-' && char != ' ') {
+			cleanPhone = cleanPhone + char
+		}
+	}
+	
+	uni.makePhoneCall({
+		phoneNumber: cleanPhone,
+		fail: (err: any) => {
+			console.error('拨打电话失败:', err)
+			// 拨打失败时复制号码
+			uni.setClipboardData({
+				data: cleanPhone,
+				success: () => {
+					uni.showToast({
+						title: '号码已复制',
+						icon: 'success'
+					})
+				}
+			})
+		}
+	})
+}

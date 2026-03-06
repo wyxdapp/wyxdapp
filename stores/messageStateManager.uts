@@ -1,0 +1,693 @@
+/**
+ * 🌟 全新消息状态管理器
+ * 负责统一管理所有消息状态，确保单一数据源
+ */
+
+import { getAnyString } from '@/common/utils/messageHelper.uts'
+import { chatLocalStorageManager } from '@/common/services/chatLocalStorage.uts'
+import { SK_CHAT_MESSAGES } from '@/common/config/storageKeys.uts'
+import { RADIX_BASE36 } from '@/common/config/generatorConfig.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { deepCloneObject } from '@/utils/deepClone.uts'
+
+// 消息状态枚举
+export enum MessageStatus {
+  PENDING = 'pending',     // 待发送
+  SENDING = 'sending',     // 发送中
+  SENT = 'sent',          // 已发送
+  FAILED = 'failed',      // 发送失败
+  RECEIVED = 'received'   // 已接收（他人消息）
+}
+
+// 消息类型枚举
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+  VOICE = 'voice',
+  VIDEO = 'video',
+  SHARE = 'share',
+  GIFT = 'gift',
+  SYSTEM_NOTIFICATION = 'system_notification'
+}
+
+// 消息统计类
+export class MessageStats {
+  total: number = 0
+  pending: number = 0
+  sending: number = 0
+  sent: number = 0
+  failed: number = 0
+  received: number = 0
+}
+
+// 消息接口定义
+export class ChatMessage {
+  // 统一消息ID（临时消息使用UUID，确认后使用真实ID）
+  id: string = ''
+  // 临时ID映射（用于状态转换）
+  tempId?: string
+  // 消息内容
+  content: string = ''
+  // 消息类型
+  type: MessageType = MessageType.TEXT
+  // 发送者ID
+  senderId: string = ''
+  // 接收者ID
+  receiverId: string = ''
+  // 消息状态
+  status: MessageStatus = MessageStatus.PENDING
+  // 媒体URL（图片、语音、视频）
+  mediaUrl?: string
+  // 缩略图URL
+  thumbUrl?: string
+  // 时长（语音、视频）
+  duration?: number
+  // 创建时间
+  createTime: string = ''
+  // 发送时间
+  sendTime?: string
+  // 会话ID
+  conversationId: string = ''
+  // 重试次数
+  retryCount?: number
+  // 是否为临时消息
+  isTemp?: boolean
+}
+
+// 添加临时消息的参数类（UTS 不支持 Omit 工具类型）
+export class AddTempMessageParams {
+  content: string = ''
+  type: MessageType = MessageType.TEXT
+  senderId: string = ''
+  receiverId: string = ''
+  mediaUrl?: string
+  thumbUrl?: string
+  duration?: number
+  conversationId: string = ''
+  sendTime?: string
+}
+
+// 添加接收消息的参数类（UTS 不支持 Omit 工具类型）
+export class AddReceivedMessageParams {
+  id: string = ''
+  content: string = ''
+  type: MessageType = MessageType.TEXT
+  senderId: string = ''
+  receiverId: string = ''
+  mediaUrl?: string
+  thumbUrl?: string
+  duration?: number
+  createTime: string = ''
+  conversationId: string = ''
+  sendTime?: string
+}
+
+/**
+ * 消息状态管理器
+ */
+export class MessageStateManager {
+  // 消息存储（Map确保唯一性）
+  private messages: Map<string, ChatMessage> = new Map()
+  private stateListeners: Set<(messages: ChatMessage[]) => void> = new Set()
+  private tempToRealIdMap: Map<string, string> = new Map()  // 临时ID到真实ID的映射
+  private persistTimer: number | null = null  // 防抖定时器
+  private readonly PERSIST_DELAY = 500  // 500ms防抖延迟
+
+  /**
+   * 添加临时消息
+   */
+  addTempMessage(message: AddTempMessageParams): string {
+    // UTS 规范：不支持 substr，使用 substring；不支持 .to(36)，使用 toString(36)
+    const randomPart = Math.random().toString(RADIX_BASE36).substring(2, 11)
+    const tempId = `temp_${Date.now()}_${randomPart}`
+    
+    const tempMessage = new ChatMessage()
+    tempMessage.id = tempId
+    tempMessage.content = message.content
+    tempMessage.type = message.type
+    tempMessage.senderId = message.senderId
+    tempMessage.receiverId = message.receiverId
+    tempMessage.mediaUrl = message.mediaUrl
+    tempMessage.thumbUrl = message.thumbUrl
+    tempMessage.duration = message.duration
+    tempMessage.createTime = new Date().toISOString()
+    tempMessage.conversationId = message.conversationId
+    tempMessage.sendTime = message.sendTime
+    tempMessage.status = MessageStatus.PENDING
+    tempMessage.isTemp = true
+
+    this.messages.set(tempId, tempMessage)
+    this.notifyStateChange()
+    
+    console.log('📝 [MessageStateManager] 添加临时消息:', tempId)
+    return tempId
+  }
+
+  /**
+   * 更新消息状态
+   */
+  updateMessageStatus(messageId: string, status: MessageStatus, realId?: string): boolean {
+    const message = this.messages.get(messageId)
+    if (message == null) {
+      console.warn('⚠️ [MessageStateManager] 消息不存在:', messageId)
+      return false
+    }
+
+    // 🔄 创建新消息对象以确保Vue响应式检测
+    const updatedMessage = new ChatMessage()
+    updatedMessage.id = message.id
+    updatedMessage.tempId = message.tempId
+    updatedMessage.content = message.content
+    updatedMessage.type = message.type
+    updatedMessage.senderId = message.senderId
+    updatedMessage.receiverId = message.receiverId
+    updatedMessage.status = status
+    updatedMessage.mediaUrl = message.mediaUrl
+    updatedMessage.thumbUrl = message.thumbUrl
+    updatedMessage.duration = message.duration
+    updatedMessage.createTime = message.createTime
+    updatedMessage.sendTime = message.sendTime
+    updatedMessage.conversationId = message.conversationId
+    updatedMessage.retryCount = message.retryCount
+    updatedMessage.isTemp = message.isTemp
+    
+    // 如果提供了真实ID，进行ID映射（UTS 规范：可空类型需显式检查）
+    const hasRealId = realId != null && realId != '' && realId != messageId
+    if (hasRealId == true) {
+      const actualRealId = realId as string  // 类型断言
+      updatedMessage.id = actualRealId
+      updatedMessage.tempId = messageId
+      updatedMessage.isTemp = false
+      
+      // 移除旧消息，添加新消息
+      this.messages.delete(messageId)
+      this.messages.set(actualRealId, updatedMessage)
+      
+      // 记录ID映射
+      this.tempToRealIdMap.set(messageId, actualRealId)
+      
+      console.log('🔄 [MessageStateManager] 消息ID映射:', messageId, '->', actualRealId)
+    } else {
+      // 只更新状态，但仍创建新对象
+      this.messages.set(messageId, updatedMessage)
+    }
+
+    this.notifyStateChange()
+    return true
+  }
+
+  /**
+   * 添加接收到的消息
+   */
+  addReceivedMessage(message: AddReceivedMessageParams): boolean {
+    // 检查消息是否已存在
+    if (this.messages.has(message.id)) {
+      console.log('⏸️ [MessageStateManager] 消息已存在，跳过:', message.id)
+      return false
+    }
+
+    const receivedMessage = new ChatMessage()
+    receivedMessage.id = message.id
+    receivedMessage.content = message.content
+    receivedMessage.type = message.type
+    receivedMessage.senderId = message.senderId
+    receivedMessage.receiverId = message.receiverId
+    receivedMessage.mediaUrl = message.mediaUrl
+    receivedMessage.thumbUrl = message.thumbUrl
+    receivedMessage.duration = message.duration
+    receivedMessage.createTime = message.createTime
+    receivedMessage.sendTime = message.sendTime
+    receivedMessage.conversationId = message.conversationId
+    receivedMessage.status = MessageStatus.RECEIVED
+    receivedMessage.isTemp = false
+
+    this.messages.set(message.id, receivedMessage)
+    this.notifyStateChange()
+    
+    // ⭐ 新增：发射全局事件通知 News 页面有新消息到达
+    try {
+      // 将 MessageType 枚举转换为数字类型（与后端一致：1=文本, 2=图片, 3=语音, 4=视频）
+      let messageTypeNum = 1
+      if (message.type == MessageType.IMAGE) {
+        messageTypeNum = 2
+      } else if (message.type == MessageType.VOICE) {
+        messageTypeNum = 3
+      } else if (message.type == MessageType.VIDEO) {
+        messageTypeNum = 4
+      } else if (message.type == MessageType.SHARE) {
+        messageTypeNum = 6
+      } else if (message.type == MessageType.GIFT) {
+        messageTypeNum = 7
+      }
+      
+      uni.$emit('chat:newMessageReceived', {
+        messageId: message.id,
+        content: message.content,
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        conversationId: message.conversationId,
+        messageType: messageTypeNum,
+        createTime: message.createTime
+      })
+      console.log('📨 [MessageStateManager] 新消息事件已发射:', message.id)
+    } catch (e: any) {
+      handleSilentError(e, '发射新消息事件')
+    }
+    
+    console.log('📨 [MessageStateManager] 添加接收消息:', message.id)
+    return true
+  }
+
+  /**
+   * 获取所有消息（按时间排序）
+   */
+  getAllMessages(): ChatMessage[] {
+    // UTS 规范：Map.values() 返回 MutableCollection，不能用 Array.from
+    const result: ChatMessage[] = []
+    this.messages.forEach((value: ChatMessage, key: string) => {
+      result.push(value)
+    })
+    // UTS 规范：sort 回调需显式指定参数类型
+    result.sort((a: ChatMessage, b: ChatMessage): number => {
+      const timeA = new Date(a.createTime).getTime()
+      const timeB = new Date(b.createTime).getTime()
+      return timeA - timeB
+    })
+    return result
+  }
+
+  /**
+   * 获取指定会话的消息
+   */
+  getConversationMessages(conversationId: string): ChatMessage[] {
+    return this.getAllMessages()
+      .filter(msg => msg.conversationId === conversationId)
+  }
+
+  /**
+   * 根据临时ID查找真实消息
+   */
+  getMessageByTempId(tempId: string): ChatMessage | null {
+    const realId = this.tempToRealIdMap.get(tempId)
+    // UTS 规范：可空类型需显式检查
+    if (realId != null && realId != '') {
+      const msg = this.messages.get(realId)
+      if (msg != null) {
+        return msg
+      }
+    }
+    const directMsg = this.messages.get(tempId)
+    if (directMsg != null) {
+      return directMsg
+    }
+    return null
+  }
+
+  /**
+   * 清理会话消息
+   */
+  clearConversation(conversationId: string): void {
+    // UTS 规范：Map.entries() 不能用 Array.from，使用 forEach 遍历
+    const idsToDelete: string[] = []
+    this.messages.forEach((msg: ChatMessage, id: string) => {
+      if (msg.conversationId === conversationId) {
+        idsToDelete.push(id)
+      }
+    })
+    
+    for (let i = 0; i < idsToDelete.length; i++) {
+      this.messages.delete(idsToDelete[i])
+    }
+    
+    this.notifyStateChange()
+    console.log('🗑️ [MessageStateManager] 清理会话消息:', conversationId)
+  }
+
+  /**
+   * 清理指定用户之间的会话消息
+   */
+  clearConversationByUsers(userId1: string, userId2: string): void {
+    const idsToDelete: string[] = []
+    this.messages.forEach((msg: ChatMessage, id: string) => {
+      const isMatch = 
+        (msg.senderId === userId1 && msg.receiverId === userId2) ||
+        (msg.senderId === userId2 && msg.receiverId === userId1)
+      if (isMatch) {
+        idsToDelete.push(id)
+      }
+    })
+    
+    for (let i = 0; i < idsToDelete.length; i++) {
+      this.messages.delete(idsToDelete[i])
+    }
+    
+    if (idsToDelete.length > 0) {
+      this.notifyStateChange()
+      console.log('🗑️ [MessageStateManager] 清理用户会话消息:', userId1, '<->', userId2, '共', idsToDelete.length, '条')
+    }
+  }
+
+  /**
+   * 订阅状态变化
+   */
+  subscribe(listener: (messages: ChatMessage[]) => void): () => void {
+    this.stateListeners.add(listener)
+    
+    // 返回取消订阅函数
+    return () => {
+      this.stateListeners.delete(listener)
+    }
+  }
+
+  /**
+   * 防抖持久化到存储
+   */
+  private debouncedPersistToStorage(): void {
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const existingTimer = this.persistTimer
+    if (existingTimer != null) {
+      clearTimeout(existingTimer)
+    }
+    
+    // 设置新的定时器
+    this.persistTimer = setTimeout(() => {
+      this.persistToStorage()
+      this.persistTimer = null
+    }, this.PERSIST_DELAY)
+  }
+
+  /**
+   * 立即持久化（用于组件卸载等场景）
+   */
+  forcePersistToStorage(): void {
+    // UTS 规范：可变属性不能自动类型转换，先保存到局部变量
+    const existingTimer = this.persistTimer
+    if (existingTimer != null) {
+      clearTimeout(existingTimer)
+      this.persistTimer = null
+    }
+    
+    // 立即持久化
+    this.persistToStorage()
+  }
+
+  /**
+   * 通知状态变化
+   */
+  private notifyStateChange(): void {
+    const messages = this.getAllMessages()
+    this.stateListeners.forEach(listener => {
+      try {
+        listener(messages)
+      } catch (error: any) {
+        handleSilentError(error, '消息状态监听器')
+      }
+    })
+    
+    // 🌟 防抖持久化状态变化
+    try {
+      this.debouncedPersistToStorage()
+    } catch (error: any) {
+      handleSilentError(error, '防抖持久化消息')
+    }
+  }
+
+  /**
+   * 从存储恢复指定会话的消息
+   * 优先从新的分区存储加载，如果无数据则尝试旧格式
+   */
+  restoreFromStorage(userId1?: string, userId2?: string): void {
+    // 如果指定了会话用户，从分区存储加载
+    const hasUsers = userId1 != null && userId1 != '' && userId2 != null && userId2 != ''
+    if (hasUsers == true) {
+      try {
+        const u1 = userId1 as string
+        const u2 = userId2 as string
+        const messages = chatLocalStorageManager.loadConversationMessages(u1, u2)
+        if (messages.length > 0) {
+          // 将加载的消息添加到内存 Map
+          for (let i = 0; i < messages.length; i = i + 1) {
+            const item = messages[i]
+            const msgId = getAnyString(item, 'id')
+            if (msgId == '' || this.messages.has(msgId)) continue
+
+            const message = new ChatMessage()
+            message.id = msgId
+            message.content = getAnyString(item, 'content')
+            const typeStr = getAnyString(item, 'type')
+            if (typeStr == 'image') { message.type = MessageType.IMAGE }
+            else if (typeStr == 'voice') { message.type = MessageType.VOICE }
+            else if (typeStr == 'video') { message.type = MessageType.VIDEO }
+            else if (typeStr == 'share') { message.type = MessageType.SHARE }
+            else if (typeStr == 'gift') { message.type = MessageType.GIFT }
+            else { message.type = MessageType.TEXT }
+            message.senderId = getAnyString(item, 'senderId')
+            message.receiverId = getAnyString(item, 'receiverId')
+            const statusStr = getAnyString(item, 'status')
+            if (statusStr == 'sending') { message.status = MessageStatus.SENDING }
+            else if (statusStr == 'sent') { message.status = MessageStatus.SENT }
+            else if (statusStr == 'failed') { message.status = MessageStatus.FAILED }
+            else if (statusStr == 'received') { message.status = MessageStatus.RECEIVED }
+            else { message.status = MessageStatus.PENDING }
+            message.createTime = getAnyString(item, 'createTime')
+            message.conversationId = getAnyString(item, 'conversationId')
+
+            this.messages.set(msgId, message)
+          }
+          return
+        }      } catch (e: any) {
+        handleSilentError(e, '从分区存储恢复消息')
+      }
+    }
+
+    // 回退：从旧格式恢复（兼容未迁移的数据）
+    this.restoreFromOldStorage()
+  }
+
+  /**
+   * 从旧格式 chat_messages key 恢复（向后兼容）
+   */
+  private restoreFromOldStorage(): void {
+    try {
+      const storageData = uni.getStorageSync(SK_CHAT_MESSAGES)
+      // UTS 规范：Any? 不能直接用于条件判断，需显式检查
+      const hasData = storageData != null && storageData != ''
+      if (hasData == true) {
+        const dataStr = storageData as string
+        const parsed = JSON.parse(dataStr)
+        this.messages.clear()
+        
+        // 🔧 修复：使用 UTSJSONObject 避免 ClassCastException
+        if (parsed != null && Array.isArray(parsed) == true) {
+          const msgArray = parsed as Array<any>
+          for (let i = 0; i < msgArray.length; i = i + 1) {
+            const item = msgArray[i]
+            
+            try {
+              // 使用 deepCloneObject 安全访问属性
+              if (item == null) {
+                continue
+              }
+              const itemObj = deepCloneObject(item as UTSJSONObject)
+              
+              // 逐个提取属性构建 ChatMessage 对象
+              const message = new ChatMessage()
+              
+              const idVal = itemObj.get('id')
+              message.id = (idVal != null && idVal.toString() != '') ? idVal.toString() : ''
+              
+              const tempIdVal = itemObj.get('tempId')
+              if (tempIdVal != null && tempIdVal.toString() != '') {
+                message.tempId = tempIdVal.toString()
+              }
+              
+              const contentVal = itemObj.get('content')
+              message.content = (contentVal != null) ? contentVal.toString() : ''
+              
+              const typeVal = itemObj.get('type')
+              const typeStr = (typeVal != null) ? typeVal.toString() : 'text'
+              // 根据字符串设置枚举值
+              if (typeStr == 'image') {
+                message.type = MessageType.IMAGE
+              } else if (typeStr == 'voice') {
+                message.type = MessageType.VOICE
+              } else if (typeStr == 'video') {
+                message.type = MessageType.VIDEO
+              } else if (typeStr == 'share') {
+                message.type = MessageType.SHARE
+              } else if (typeStr == 'gift') {
+                message.type = MessageType.GIFT
+              } else {
+                message.type = MessageType.TEXT
+              }
+              
+              const senderIdVal = itemObj.get('senderId')
+              message.senderId = (senderIdVal != null) ? senderIdVal.toString() : ''
+              
+              const receiverIdVal = itemObj.get('receiverId')
+              message.receiverId = (receiverIdVal != null) ? receiverIdVal.toString() : ''
+              
+              const statusVal = itemObj.get('status')
+              const statusStr = (statusVal != null) ? statusVal.toString() : 'pending'
+              // 根据字符串设置枚举值
+              if (statusStr == 'sending') {
+                message.status = MessageStatus.SENDING
+              } else if (statusStr == 'sent') {
+                message.status = MessageStatus.SENT
+              } else if (statusStr == 'failed') {
+                message.status = MessageStatus.FAILED
+              } else if (statusStr == 'received') {
+                message.status = MessageStatus.RECEIVED
+              } else {
+                message.status = MessageStatus.PENDING
+              }
+              
+              const mediaUrlVal = itemObj.get('mediaUrl')
+              if (mediaUrlVal != null && mediaUrlVal.toString() != '') {
+                message.mediaUrl = mediaUrlVal.toString()
+              }
+              
+              const thumbUrlVal = itemObj.get('thumbUrl')
+              if (thumbUrlVal != null && thumbUrlVal.toString() != '') {
+                message.thumbUrl = thumbUrlVal.toString()
+              }
+              
+              const durationVal = itemObj.get('duration')
+              if (durationVal != null) {
+                const durationNum = parseInt(durationVal.toString())
+                if (isNaN(durationNum) == false) {
+                  message.duration = durationNum
+                }
+              }
+              
+              const createTimeVal = itemObj.get('createTime')
+              message.createTime = (createTimeVal != null) ? createTimeVal.toString() : ''
+              
+              const sendTimeVal = itemObj.get('sendTime')
+              if (sendTimeVal != null && sendTimeVal.toString() != '') {
+                message.sendTime = sendTimeVal.toString()
+              }
+              
+              const conversationIdVal = itemObj.get('conversationId')
+              message.conversationId = (conversationIdVal != null) ? conversationIdVal.toString() : ''
+              
+              const retryCountVal = itemObj.get('retryCount')
+              if (retryCountVal != null) {
+                const retryCountNum = parseInt(retryCountVal.toString())
+                if (isNaN(retryCountNum) == false) {
+                  message.retryCount = retryCountNum
+                }
+              }
+              
+              const isTempVal = itemObj.get('isTemp')
+              if (isTempVal != null) {
+                const isTempStr = isTempVal.toString()
+                message.isTemp = (isTempStr == 'true' || isTempStr == '1')
+              }
+              
+              // 添加到消息 Map
+              if (message.id != '') {
+                this.messages.set(message.id, message)
+              }
+            } catch (e) {
+              console.warn('⚠️ [MessageStateManager] 跳过无效消息项:', e)
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      handleSilentError(error, '从存储恢复消息')
+    }
+  }
+
+  /**
+   * 持久化消息到存储（按会话分区写入）
+   */
+  persistToStorage(): void {
+    try {
+      const messages = this.getAllMessages()
+      // 按会话分组：key = senderId+receiverId 对
+      const groups: Map<string, Array<any>> = new Map()
+      const keyToUsers: Map<string, Array<string>> = new Map()
+
+      for (let i = 0; i < messages.length; i = i + 1) {
+        const msg = messages[i]
+        const senderId = msg.senderId
+        const receiverId = msg.receiverId
+        if (senderId == '' || receiverId == '') continue
+
+        const convKey = chatLocalStorageManager.getConversationKey(senderId, receiverId)
+        if (convKey == '') continue
+
+        let group = groups.get(convKey)
+        if (group == null) {
+          group = []
+          groups.set(convKey, group)
+          let first = senderId
+          let second = receiverId
+          if (senderId > receiverId) {
+            first = receiverId
+            second = senderId
+          }
+          keyToUsers.set(convKey, [first, second])
+        }
+        // 转为普通对象以便 JSON 序列化
+        const msgObj = {
+          id: msg.id,
+          content: msg.content,
+          type: msg.type,
+          senderId: msg.senderId,
+          receiverId: msg.receiverId,
+          status: msg.status,
+          createTime: msg.createTime,
+          conversationId: msg.conversationId
+        } as UTSJSONObject
+        group.push(msgObj)
+      }
+
+      // 按会话分区写入
+      groups.forEach((msgList: Array<any>, convKey: string) => {
+        const users = keyToUsers.get(convKey)
+        if (users != null && users.length == 2) {
+          chatLocalStorageManager.saveMessages(users[0], users[1], msgList)
+        }
+      })
+    } catch (error: any) {
+      handleSilentError(error, '持久化消息')
+    }
+  }
+
+  /**
+   * 获取消息统计
+   */
+  getStats(): MessageStats {
+    const messages = this.getAllMessages()
+    
+    const stats = new MessageStats()
+    stats.total = messages.length
+    stats.pending = messages.filter(m => m.status === MessageStatus.PENDING).length
+    stats.sending = messages.filter(m => m.status === MessageStatus.SENDING).length
+    stats.sent = messages.filter(m => m.status === MessageStatus.SENT).length
+    stats.failed = messages.filter(m => m.status === MessageStatus.FAILED).length
+    stats.received = messages.filter(m => m.status === MessageStatus.RECEIVED).length
+    
+    return stats
+  }
+
+  /**
+   * 清理资源
+   */
+  cleanup(): void {
+    // 清理防抖定时器并立即持久化
+    this.forcePersistToStorage()
+    
+    // 清理监听器
+    this.stateListeners.clear()
+    this.tempToRealIdMap.clear()
+    
+    console.log('🧹 [MessageStateManager] 资源已清理')
+  }
+}
+
+// 创建全局单例
+export const messageStateManager = new MessageStateManager()

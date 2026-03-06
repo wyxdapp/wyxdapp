@@ -1,0 +1,342 @@
+/**
+ * 请求辅助工具
+ * 提供防抖、重试、取消等功能
+ */
+
+import { HTTP_OK, HTTP_UNAUTHORIZED, HTTP_FORBIDDEN, BUSINESS_BANNED } from '@/common/config/httpCodes.uts'
+
+// ==================== 防抖管理 ====================
+
+// 防抖定时器存储
+const debounceTimers: Map<string, number> = new Map()
+
+/**
+ * 防抖函数
+ * @param key 防抖标识
+ * @param delayMs 延迟时间（毫秒）
+ * @param callback 回调函数
+ */
+export function debounce(key: string, delayMs: number, callback: () => void): void {
+	// 清除已有定时器
+	const existingTimer = debounceTimers.get(key)
+	if (existingTimer != null && existingTimer != 0) {
+		clearTimeout(existingTimer)
+	}
+	
+	// 设置新定时器
+	const timerId = setTimeout(() => {
+		callback()
+		debounceTimers.delete(key)
+	}, delayMs)
+	
+	debounceTimers.set(key, timerId)
+}
+
+/**
+ * 取消防抖
+ * @param key 防抖标识
+ */
+export function cancelDebounce(key: string): void {
+	const timer = debounceTimers.get(key)
+	if (timer != null && timer != 0) {
+		clearTimeout(timer)
+		debounceTimers.delete(key)
+	}
+}
+
+/**
+ * 清除所有防抖定时器
+ */
+export function clearAllDebounce(): void {
+	debounceTimers.forEach((timer: number, key: string) => {
+		if (timer != 0) {
+			clearTimeout(timer)
+		}
+	})
+	debounceTimers.clear()
+}
+
+// ==================== 请求取消管理 ====================
+
+// 请求取消标记存储
+const cancelledRequests: Map<string, boolean> = new Map()
+
+/**
+ * 标记请求为已取消
+ * @param requestId 请求标识（通常为 URL）
+ */
+export function cancelRequest(requestId: string): void {
+	cancelledRequests.set(requestId, true)
+}
+
+/**
+ * 检查请求是否已取消
+ * @param requestId 请求标识
+ */
+export function isRequestCancelled(requestId: string): boolean {
+	const cancelled = cancelledRequests.get(requestId)
+	return cancelled == true
+}
+
+/**
+ * 清除请求取消标记
+ * @param requestId 请求标识
+ */
+export function clearCancelMark(requestId: string): void {
+	cancelledRequests.delete(requestId)
+}
+
+/**
+ * 取消所有请求
+ */
+export function cancelAllRequests(): void {
+	// 标记所有为已取消
+	cancelledRequests.forEach((value: boolean, key: string) => {
+		cancelledRequests.set(key, true)
+	})
+}
+
+/**
+ * 清除所有取消标记
+ */
+export function clearAllCancelMarks(): void {
+	cancelledRequests.clear()
+}
+
+// ==================== 请求缓存管理 ====================
+
+// 缓存数据结构
+class CacheItem {
+	data: UTSJSONObject | null = null
+	expireTime: number = 0
+	
+	constructor(data: UTSJSONObject | null, expireTime: number) {
+		this.data = data
+		this.expireTime = expireTime
+	}
+}
+
+// 请求缓存存储
+const requestCache: Map<string, CacheItem> = new Map()
+
+/**
+ * 获取缓存数据
+ * @param cacheKey 缓存键
+ * @returns 缓存数据或 null
+ */
+export function getCachedResponse(cacheKey: string): UTSJSONObject | null {
+	const item = requestCache.get(cacheKey)
+	if (item == null) {
+		return null
+	}
+	
+	const now = Date.now()
+	if (now > item.expireTime) {
+		// 缓存已过期
+		requestCache.delete(cacheKey)
+		return null
+	}
+	
+	return item.data
+}
+
+/**
+ * 设置缓存数据
+ * @param cacheKey 缓存键
+ * @param data 数据
+ * @param ttl 过期时间（毫秒）
+ */
+export function setCachedResponse(cacheKey: string, data: UTSJSONObject | null, ttl: number): void {
+	const expireTime = Date.now() + ttl
+	const item = new CacheItem(data, expireTime)
+	requestCache.set(cacheKey, item)
+}
+
+/**
+ * 删除缓存
+ * @param cacheKey 缓存键
+ */
+export function removeCachedResponse(cacheKey: string): void {
+	requestCache.delete(cacheKey)
+}
+
+/**
+ * 清除所有缓存
+ */
+export function clearAllCache(): void {
+	requestCache.clear()
+}
+
+/**
+ * 清除过期缓存
+ */
+export function clearExpiredCache(): void {
+	const now = Date.now()
+	const keysToDelete: Array<string> = []
+	
+	requestCache.forEach((item: CacheItem, key: string) => {
+		if (now > item.expireTime) {
+			keysToDelete.push(key)
+		}
+	})
+	
+	for (let i = 0; i < keysToDelete.length; i = i + 1) {
+		requestCache.delete(keysToDelete[i])
+	}
+}
+
+// ==================== 重试逻辑 ====================
+
+/**
+ * 延迟执行
+ * @param ms 毫秒数
+ */
+export function delayMs(ms: number): Promise<number> {
+	let timerId: number = 0
+	return new Promise<number>((resolve: (value: number) => void) => {
+		timerId = setTimeout(() => {
+			resolve(timerId)
+		}, ms)
+	})
+}
+
+/**
+ * 判断是否为网络错误（可重试）
+ * @param errorMsg 错误消息
+ */
+export function isNetworkError(errorMsg: string): boolean {
+	if (errorMsg == '') {
+		return false
+	}
+	
+	// 网络相关错误关键词
+	if (errorMsg.indexOf('timeout') >= 0) {
+		return true
+	}
+	if (errorMsg.indexOf('network') >= 0) {
+		return true
+	}
+	if (errorMsg.indexOf('Network') >= 0) {
+		return true
+	}
+	if (errorMsg.indexOf('fail') >= 0) {
+		return true
+	}
+	if (errorMsg.indexOf('ECONNREFUSED') >= 0) {
+		return true
+	}
+	if (errorMsg.indexOf('ETIMEDOUT') >= 0) {
+		return true
+	}
+	
+	return false
+}
+
+// ==================== 错误码常量 ====================
+
+/** 成功 */
+export const CODE_SUCCESS: number = HTTP_OK
+
+/** 未授权/登录过期 */
+export const CODE_UNAUTHORIZED: number = HTTP_UNAUTHORIZED
+
+/** 禁止访问 */
+export const CODE_FORBIDDEN: number = HTTP_FORBIDDEN
+
+/** 账号被封禁 */
+export const CODE_BANNED: number = BUSINESS_BANNED
+
+/** 业务错误 */
+export const CODE_BUSINESS_ERROR: number = 500
+
+/** 验证错误 */
+export const CODE_VALIDATION_ERROR: number = 2000
+
+// ==================== 错误消息处理 ====================
+
+/**
+ * 获取友好的错误消息
+ * @param code 错误码
+ * @param defaultMsg 默认消息
+ */
+export function getFriendlyErrorMessage(code: number, defaultMsg: string): string {
+	if (code == CODE_UNAUTHORIZED) {
+		return '登录已过期，请重新登录'
+	}
+	if (code == CODE_FORBIDDEN) {
+		return '没有访问权限'
+	}
+	if (code == CODE_BANNED) {
+		return getBannedMessage()
+	}
+	if (code == CODE_VALIDATION_ERROR) {
+		if (defaultMsg != '') {
+			return defaultMsg
+		}
+		return '参数校验失败'
+	}
+	if (code == CODE_BUSINESS_ERROR) {
+		if (defaultMsg != '') {
+			return defaultMsg
+		}
+		return '操作失败，请稍后重试'
+	}
+	
+	if (defaultMsg != '') {
+		return defaultMsg
+	}
+	return '请求失败，请稍后重试'
+}
+
+/**
+ * 获取封号提示消息
+ */
+export function getBannedMessage(): string {
+	return '您的账号已被封禁，如有疑问请联系客服'
+}
+
+/**
+ * 获取网络错误的友好消息
+ * @param errorMsg 原始错误消息
+ */
+export function getNetworkErrorMessage(errorMsg: string): string {
+	if (errorMsg.indexOf('timeout') >= 0) {
+		return '请求超时，请检查网络'
+	}
+	if (errorMsg.indexOf('ssl') >= 0 || errorMsg.indexOf('SSL') >= 0) {
+		return 'SSL证书错误'
+	}
+	if (errorMsg.indexOf('network') >= 0 || errorMsg.indexOf('Network') >= 0) {
+		return '网络连接失败，请检查网络'
+	}
+	if (errorMsg.indexOf('fail') >= 0) {
+		return '网络请求失败'
+	}
+	
+	return '网络异常，请稍后重试'
+}
+
+// ==================== 生成缓存键 ====================
+
+/**
+ * 生成请求缓存键
+ * @param url 请求URL
+ * @param method 请求方法
+ * @param data 请求数据
+ */
+export function generateCacheKey(url: string, method: string, data: any | null): string {
+	let key = method + ':' + url
+	
+	if (data != null) {
+		try {
+			const dataStr = JSON.stringify(data)
+			if (dataStr != '' && dataStr != '{}' && dataStr != 'null') {
+				key = key + ':' + dataStr
+			}
+		} catch (e) {
+			// 忽略序列化错误
+		}
+	}
+	
+	return key
+}

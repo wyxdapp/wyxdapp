@@ -1,0 +1,57 @@
+/**
+ * 空值安全访问工具
+ * 提供类型安全的 UTSJSONObject 属性访问
+ * 所有函数在键不存在或值为 null 时返回指定默认值
+ * 
+ * 需求: 6.1, 10.5
+ */
+
+/**
+ * 安全获取字符串值，返回默认值而非 null
+ */
+export function safeGetString(obj: UTSJSONObject, key: string, defaultValue: string = ''): string {
+  const val = obj.getString(key)
+  return (val != null) ? val : defaultValue
+}
+
+/**
+ * 安全获取数字值，返回默认值而非 null
+ */
+export function safeGetNumber(obj: UTSJSONObject, key: string, defaultValue: number = 0): number {
+  const val = obj.getNumber(key)
+  return (val != null) ? val : defaultValue
+}
+
+/**
+ * 安全获取布尔值，返回默认值而非 null
+ */
+export function safeGetBoolean(obj: UTSJSONObject, key: string, defaultValue: boolean = false): boolean {
+  const val = obj.getBoolean(key)
+  return (val != null) ? val : defaultValue
+}
+
+/**
+ * 安全获取嵌套对象，返回空 UTSJSONObject 而非 null
+ */
+export function safeGetObject(obj: UTSJSONObject, key: string): UTSJSONObject {
+  const val = obj.getAny(key)
+  if (val != null) {
+    try {
+      return JSON.parse(JSON.stringify(val)) as UTSJSONObject
+    } catch (e) {
+      return new UTSJSONObject()
+    }
+  }
+  return new UTSJSONObject()
+}
+
+/**
+ * 安全获取数组，返回空数组而非 null
+ */
+export function safeGetArray(obj: UTSJSONObject, key: string): Array<any> {
+  const val = obj.getAny(key)
+  if (val != null && Array.isArray(val)) {
+    return val as Array<any>
+  }
+  return [] as Array<any>
+}

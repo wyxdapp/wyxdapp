@@ -1,0 +1,335 @@
+<template>
+	<view class="feedback-page">
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">联系反馈</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端内容区域（需要留出导航栏空间） -->
+		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<!-- H5端内容区域（无需额外 margin） -->
+		<view class="content-area">
+		<!-- #endif -->
+		
+		<!-- 联系方式 -->
+		<view class="section">
+			<view class="section-header">
+				<text class="section-title">联系方式</text>
+			</view>
+			<view 
+				v-for="(item, index) in contactList" 
+				:key="index"
+				class="cell-item"
+				@click="handleContactClick(item)"
+			>
+				<view class="cell-left">
+					<text class="cell-label">{{ getProp(item, 'label') }}</text>
+					<text class="cell-desc">{{ getProp(item, 'value') }}</text>
+				</view>
+				<view class="cell-arrow">
+					<uni-icons type="right" size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+			<view class="cell-item" @click="handleEmailClick">
+				<view class="cell-left">
+					<text class="cell-label">邮箱反馈</text>
+					<text class="cell-desc">wyxdapp@qq.com</text>
+				</view>
+				<view class="cell-arrow">
+					<uni-icons type="right" size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+			<view class="cell-item" @click="goToIcpQuery">
+				<view class="cell-left">
+					<text class="cell-label">ICP备案号</text>
+					<text class="cell-desc">{{ ICP_RECORD_NUMBER }}</text>
+				</view>
+				<view class="cell-arrow">
+					<uni-icons type="right" size="16" color="#cccccc"></uni-icons>
+				</view>
+			</view>
+		</view>
+		
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, onMounted } from 'vue'
+import { handlePageError } from '@/common/utils/errorHandler.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
+
+const contactList = ref([
+	{ label: '微信公众号', value: '网约向导', type: 'wechat' },
+	{ label: '官方网址', value: 'www.wyxdapp.com', type: 'website', url: 'https://www.wyxdapp.com' },
+	{ label: '服务网址', value: 'm.wxydapp.com', type: 'website', url: 'https://m.wxydapp.com' },
+	{ label: '客服电话', value: '15581625362', type: 'phone' },
+	{ label: '客服微信', value: 'wyxdapp', type: 'wechat' }
+])
+
+// 安全获取任意字段的 helper（避免在 any 上直接点访问）
+const getProp = (item: UTSJSONObject | null, key: string): string => {
+	try {
+		const s = (item != null) ? JSON.stringify(item) : ''
+		if (s != null && s != '') {
+			const m = s.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]+)"'))
+			if (m != null && m[1] != null) return m[1].toString()
+		}
+	} catch (e) {}
+	return ''
+}
+
+// 打开网站（提前定义，使用 getProp 安全读取字段）
+const openWebsite = (item: UTSJSONObject | null) => {
+	try {
+		const url = encodeURIComponent(getProp(item, 'url'))
+		const title = encodeURIComponent(getProp(item, 'label'))
+		uni.navigateTo({
+			url: `/pagesTrade/webview/webview/index?url=${url}&title=${title}`,
+			fail: (_err) => {
+				uni.showToast({
+					title: '打开失败，请稍后重试',
+					icon: 'none'
+				})
+			}
+		})
+	} catch (error) {
+		handlePageError(error, '打开网站', null)
+	}
+}
+
+// 复制到剪贴板（提前定义，避免在使用前找不到名称）
+const copyToClipboard = (text: string, label: string) => {
+	try {
+		uni.setClipboardData({
+			data: text,
+			success: () => {
+				uni.showToast({
+					title: `${label}已复制到剪贴板`,
+					icon: 'success'
+				})
+			},
+			fail: (_err) => {
+				uni.showToast({
+					title: '复制失败，请手动复制',
+					icon: 'none'
+				})
+			}
+		})
+	} catch (e) {
+		try { uni.showToast({ title: '复制失败', icon: 'none' }) } catch (_) {}
+	}
+}
+
+const handleContactClick = (item: UTSJSONObject | null) => {
+	const typeVal = getProp(item, 'type')
+	const valueVal = getProp(item, 'value')
+	const labelVal = getProp(item, 'label')
+	if (typeVal == 'phone') {
+			uni.showActionSheet({
+				itemList: ['拨打电话', '复制号码'],
+				success: (res) => {
+					if (res.tapIndex == 0) {
+					uni.makePhoneCall({ phoneNumber: valueVal })
+					} else {
+					copyToClipboard(valueVal, labelVal)
+					}
+				}
+			})
+	} else if (typeVal == 'website') {
+			uni.showActionSheet({
+				itemList: ['打开网站', '复制网址'],
+				success: (res) => {
+					if (res.tapIndex == 0) {
+						openWebsite(item)
+					} else if (res.tapIndex == 1) {
+					copyToClipboard(valueVal, labelVal)
+					}
+				}
+			})
+	} else {
+		copyToClipboard(valueVal, labelVal)
+	}
+}
+
+const handleEmailClick = () => {
+	const email = 'wyxdapp@qq.com'
+	uni.showActionSheet({
+		itemList: ['复制邮箱地址', '发送邮件'],
+		success: (res) => {
+			if (res.tapIndex == 0) {
+				// 复制邮箱
+				copyToClipboard(email, '邮箱地址')
+			} else if (res.tapIndex == 1) {
+				// 发送邮件（uni-app x目前不支持plus API，提示用户使用邮件客户端）
+				copyToClipboard(email, '邮箱地址')
+				uni.showToast({
+					title: '请使用邮件客户端发送邮件',
+					icon: 'none',
+					duration: 2000
+				})
+			}
+		}
+	})
+}
+
+// 跳转到ICP备案查询官网
+const goToIcpQuery = () => {
+	const icpUrl = 'https://beian.miit.gov.cn/'
+	// #ifdef H5
+	// H5端直接打开新窗口
+	window.open(icpUrl, '_blank')
+	// #endif
+	// #ifdef APP-PLUS
+	// APP端使用系统浏览器打开
+	plus.runtime.openURL(icpUrl)
+	// #endif
+	// #ifdef MP-WEIXIN
+	// 小程序端复制链接并提示
+	uni.setClipboardData({
+		data: icpUrl,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制，请在浏览器中打开',
+				icon: 'none',
+				duration: 2000
+			})
+		}
+	})
+	// #endif
+}
+
+// 生命周期
+onMounted(() => {
+	// 初始化页面布局（获取状态栏高度）
+	initPageLayout()
+})
+</script>
+
+<style scoped>
+.feedback-page {
+	min-height: 2000rpx;
+	background-color: #f5f5f5;
+	flex-direction: column;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+}
+
+.section {
+	background-color: #ffffff;
+	margin-top: 20rpx;
+	flex-direction: column;
+}
+
+.section-header {
+	padding: 24rpx 28rpx 12rpx 28rpx;
+	flex-direction: row;
+}
+
+.section-title {
+	font-size: 26rpx;
+	color: #999999;
+}
+
+.cell-item {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 28rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.cell-item:last-child {
+	border-bottom-width: 0;
+}
+
+.cell-left {
+	flex: 1;
+	flex-direction: column;
+}
+
+.cell-label {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.cell-desc {
+	font-size: 24rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+.cell-arrow {
+	width: 40rpx;
+	height: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+</style>

@@ -1,0 +1,383 @@
+/**
+ * 当前登录用户信息缓存管理
+ * 
+ * 专门处理当前登录用户的信息缓存，基于 useUserProfileCache.uts 扩展
+ * 提供内存级别的快速访问，登出时自动清理
+ * 
+ * @author Kiro
+ * @since 2026-01-08
+ */
+
+import { getUserId, getUserLoginStatus, getUserShortKid, updateUserInfoAction } from '@/stores/user'
+import { getUserProfile, invalidateUserProfile } from './useUserProfileCache.uts'
+import { VIP_NOT_ACTIVATED, VIP_ACTIVATED } from '@/common/config/businessCodes.uts'
+
+// ===== 内存缓存变量 =====
+// 当前用户信息缓存（内存级别，更快访问）
+let currentUserProfileCache: any = ''
+let currentUserKid: string = ''
+
+// ===== 辅助函数（被调用的先定义）=====
+
+/**
+ * 从缓存对象中获取字符串属性
+ */
+const getProfilePropString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+/**
+ * 从缓存对象中获取数字属性
+ */
+const getProfilePropNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+/**
+ * 将缓存数据转换为 UTSJSONObject
+ */
+const getCacheAsJsonObj = (): UTSJSONObject | null => {
+	if (currentUserProfileCache == null || currentUserProfileCache == '') {
+		return null
+	}
+	try {
+		const profileStr = JSON.stringify(currentUserProfileCache)
+		if (profileStr == '' || profileStr == 'null' || profileStr == '""') {
+			return null
+		}
+		const profileObj = JSON.parse(profileStr) as UTSJSONObject
+		return profileObj
+	} catch (e) {
+		console.error('[useCurrentUserProfile] 解析缓存数据失败:', e)
+		return null
+	}
+}
+
+// ===== 导出函数 =====
+
+/**
+ * 获取当前登录用户的详细信息
+ * @param forceRefresh 是否强制刷新
+ * @returns Promise<any> 用户信息对象
+ */
+export function getCurrentUserProfile(forceRefresh: boolean): Promise<any> {
+	return new Promise<any>((resolve: (value: any) => void, reject: (error: any) => void) => {
+		const isLogin = getUserLoginStatus()
+		if (isLogin == false) {
+			console.log('[useCurrentUserProfile] 用户未登录')
+			resolve('')
+			return
+		}
+
+		const userKid = getUserId()
+		if (userKid == '' || userKid == null) {
+			console.log('[useCurrentUserProfile] 用户ID为空')
+			resolve('')
+			return
+		}
+		
+		// 如果用户切换了，清除旧缓存
+		if (currentUserKid != userKid) {
+			console.log('[useCurrentUserProfile] 用户切换，清除旧缓存')
+			currentUserProfileCache = ''
+			currentUserKid = userKid
+		}
+		
+		// 内存缓存命中且不强制刷新
+		if (currentUserProfileCache != null && currentUserProfileCache != '' && forceRefresh == false) {
+			console.log('[useCurrentUserProfile] 内存缓存命中')
+			resolve(currentUserProfileCache)
+			return
+		}
+		
+		// 调用通用缓存获取
+		const params = new UTSJSONObject()
+		params['kid'] = userKid
+		params['focusUserkid'] = userKid
+		params['forceRefresh'] = forceRefresh
+		
+		console.log('[useCurrentUserProfile] 调用 getUserProfile:', JSON.stringify(params))
+		
+		getUserProfile(params).then((profile: UTSJSONObject | null) => {
+			if (profile != null) {
+				currentUserProfileCache = profile
+				console.log('[useCurrentUserProfile] 缓存已更新')
+			}
+			resolve(profile as any)
+		}).catch((error: any | null): void => {
+			console.error('[useCurrentUserProfile] 获取用户信息失败:', error)
+			reject((error != null) ? error : '')
+		})
+	})
+}
+
+/**
+ * 获取当前登录用户的详细信息（无参版本）
+ * UTS 规范：匿名函数不能有默认参数，提供无参版本
+ */
+export function getCurrentUserProfileDefault(): Promise<any> {
+	return getCurrentUserProfile(false)
+}
+
+/**
+ * 获取当前用户的认证状态
+ * @returns 认证状态对象
+ */
+export function getCurrentUserAuthStatus(): any {
+	const defaultStatus = {
+		idAuth: 10,
+		guideAuthenticatStatu: 10,
+		driverAuthenticatStatu: 10,
+		officialAuth: 10,
+		enterpriseAuth: 10,
+		weixinAuth: 10
+	} as any
+	
+	const profileObj = getCacheAsJsonObj()
+	if (profileObj == null) {
+		console.log('[useCurrentUserProfile] 缓存为空，返回默认认证状态')
+		return defaultStatus
+	}
+	
+	const result = {
+		idAuth: getProfilePropNumber(profileObj, 'idAuth'),
+		guideAuthenticatStatu: getProfilePropNumber(profileObj, 'guideAuthenticatStatu'),
+		driverAuthenticatStatu: getProfilePropNumber(profileObj, 'driverAuthenticatStatu'),
+		officialAuth: getProfilePropNumber(profileObj, 'officialAuth'),
+		enterpriseAuth: getProfilePropNumber(profileObj, 'enterpriseAuth'),
+		weixinAuth: getProfilePropNumber(profileObj, 'weixinAuth')
+	} as any
+	
+	// 如果值为0，使用默认值10（未认证）
+	if (result.idAuth == 0) result.idAuth = 10
+	if (result.guideAuthenticatStatu == 0) result.guideAuthenticatStatu = 10
+	if (result.driverAuthenticatStatu == 0) result.driverAuthenticatStatu = 10
+	if (result.officialAuth == 0) result.officialAuth = 10
+	if (result.enterpriseAuth == 0) result.enterpriseAuth = 10
+	if (result.weixinAuth == 0) result.weixinAuth = 10
+	
+	return result
+}
+
+/**
+ * 获取当前用户的 VIP 状态
+ * @returns VIP 状态对象
+ */
+export function getCurrentUserVipStatus(): any {
+	const defaultStatus = {
+		vip: VIP_NOT_ACTIVATED,
+		vipExpireTime: '',
+		vipType: 0,
+		isVip: false
+	} as any
+	
+	const profileObj = getCacheAsJsonObj()
+	if (profileObj == null) {
+		console.log('[useCurrentUserProfile] 缓存为空，返回默认VIP状态')
+		return defaultStatus
+	}
+	
+	const vip = getProfilePropNumber(profileObj, 'vip')
+	const vipExpireTime = getProfilePropString(profileObj, 'vipExpireTime')
+	const vipType = getProfilePropNumber(profileObj, 'vipType')
+	
+	// 判断是否有效 VIP
+	let isVip = false
+	if (vip == VIP_ACTIVATED && vipExpireTime != '') {
+		try {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate.getTime() > now.getTime()) {
+				isVip = true
+			}
+		} catch (e) {
+			console.error('[useCurrentUserProfile] 解析VIP过期时间失败:', e)
+		}
+	}
+	
+	const result = {
+		vip: (vip == 0) ? VIP_NOT_ACTIVATED : vip,
+		vipExpireTime: vipExpireTime,
+		vipType: vipType,
+		isVip: isVip
+	} as any
+	
+	return result
+}
+
+/**
+ * 刷新当前用户信息缓存
+ * @returns Promise<any> 刷新后的用户信息
+ */
+export function refreshCurrentUserProfile(): Promise<any> {
+	console.log('[useCurrentUserProfile] 刷新用户信息缓存')
+	return getCurrentUserProfile(true)
+}
+
+/**
+ * 使当前用户缓存失效
+ */
+export function invalidateCurrentUserProfile(): void {
+	console.log('[useCurrentUserProfile] 使缓存失效')
+	const userKid = getUserId()
+	if (userKid != '' && userKid != null) {
+		invalidateUserProfile(userKid, userKid)
+	}
+	currentUserProfileCache = ''
+}
+
+/**
+ * 登出时清理缓存
+ */
+export function clearCurrentUserProfileOnLogout(): void {
+	console.log('[useCurrentUserProfile] 登出清理缓存')
+	currentUserProfileCache = ''
+	currentUserKid = ''
+}
+
+/**
+ * 获取缓存中的字符串属性
+ * @param key 属性名
+ * @returns 属性值
+ */
+export function getProfileStringProp(key: string): string {
+	const profileObj = getCacheAsJsonObj()
+	return getProfilePropString(profileObj, key)
+}
+
+/**
+ * 获取缓存中的数字属性
+ * @param key 属性名
+ * @returns 属性值
+ */
+export function getProfileNumberProp(key: string): number {
+	const profileObj = getCacheAsJsonObj()
+	return getProfilePropNumber(profileObj, key)
+}
+
+/**
+ * 获取缓存中的布尔属性
+ * @param key 属性名
+ * @returns 属性值
+ */
+export function getProfileBoolProp(key: string): boolean {
+	const profileObj = getCacheAsJsonObj()
+	if (profileObj == null) return false
+	const val = profileObj.get(key)
+	if (val != null) {
+		const valStr = val.toString()
+		if (valStr == 'true' || valStr == '1') {
+			return true
+		}
+	}
+	return false
+}
+
+/**
+ * 检查缓存是否有效
+ * @returns 缓存是否有效
+ */
+export function hasValidCache(): boolean {
+	if (currentUserProfileCache == null || currentUserProfileCache == '') {
+		return false
+	}
+	const userKid = getUserId()
+	if (userKid == '' || userKid == null) {
+		return false
+	}
+	if (currentUserKid != userKid) {
+		return false
+	}
+	return true
+}
+
+/**
+ * 获取当前缓存的用户ID
+ * @returns 缓存的用户ID
+ */
+export function getCachedUserKid(): string {
+	return currentUserKid
+}
+
+// ===== 事件监听器初始化 =====
+
+// 防止重复注册事件监听器的标志位
+let listenersInitialized = false
+
+/**
+ * 登录成功预加载事件处理函数（命名函数，便于 uni.$off 精确移除）
+ */
+const onLoginSuccessPreload = (data: any) => {
+	console.log('📥 [useCurrentUserProfile] 收到登录成功预加载事件')
+	getCurrentUserProfile(true).then((profile: any) => {
+		if (profile != null) {
+			// 🔧 修复：预加载成功后，同步 shortKid 到 userStore
+			// 解决APP端登录接口未返回 shortKid 导致分享链接缺少推荐短号的问题
+			try {
+				const existingShortKid = getUserShortKid()
+				if (existingShortKid == '') {
+					const profileObj = getCacheAsJsonObj()
+					if (profileObj != null) {
+						const shortKidVal = profileObj.get('shortKid')
+						if (shortKidVal != null && shortKidVal.toString() != '') {
+							updateUserInfoAction({ shortKid: shortKidVal.toString() } as UTSJSONObject)
+							console.log('📥 [useCurrentUserProfile] 已同步 shortKid 到 userStore:', shortKidVal.toString())
+						}
+					}
+				}
+			} catch (e) {
+				console.error('📥 [useCurrentUserProfile] 同步 shortKid 失败:', e)
+			}
+		}
+	}).catch((error: any | null): void => {
+		console.error('❌ [useCurrentUserProfile] 用户完整信息预加载失败:', error)
+	})
+}
+
+/**
+ * 登出清理缓存事件处理函数（命名函数，便于 uni.$off 精确移除）
+ */
+const onLogoutClearCache = (data: any) => {
+	console.log('📥 [useCurrentUserProfile] 收到登出清理缓存事件')
+	clearCurrentUserProfileOnLogout()
+}
+
+/**
+ * 初始化事件监听器
+ * 监听登录成功和登出事件，自动处理缓存
+ * 通过 listenersInitialized 标志位防止重复注册
+ */
+const initEventListeners = () => {
+	if (listenersInitialized) return
+	
+	uni.$on('user_login_success_preload', onLoginSuccessPreload)
+	uni.$on('user_logout_clear_cache', onLogoutClearCache)
+	
+	listenersInitialized = true
+}
+
+/**
+ * 销毁事件监听器，移除所有已注册的全局事件监听
+ * 应在页面组件的 onUnmounted 生命周期钩子中调用
+ */
+export function destroyEventListeners(): void {
+	uni.$off('user_login_success_preload', onLoginSuccessPreload)
+	uni.$off('user_logout_clear_cache', onLogoutClearCache)
+	listenersInitialized = false
+}
+
+// 模块加载时自动初始化事件监听器
+initEventListeners()

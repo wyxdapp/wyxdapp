@@ -1,0 +1,379 @@
+﻿/**
+ * 通知路由模块
+ * 处理推送消息的 payload 解析和页面跳转
+ * 
+ * Requirements: 2.3, 2.4
+ */
+
+import { goToHome, getHomePath } from '@/common/utils/utsSafe.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 通知载荷结构
+ */
+export class NotificationPayload {
+	type: string = ''           // 跳转类型: chat/order/notify/webview
+	targetPage: string = ''     // 目标页面路径
+	targetId: string = ''       // 目标 ID（会话ID/订单ID/通知ID等）
+	title: string = ''          // 通知标题
+	content: string = ''        // 通知内容
+	extra: string = ''          // 额外数据 JSON 字符串
+}
+
+/**
+ * 推送消息类型
+ */
+export const PushMessageType = {
+	CHAT: 1,        // 聊天消息
+	ORDER: 2,       // 订单通知
+	SYSTEM: 3,      // 系统通知
+	WEBVIEW: 4      // H5 页面
+} as const
+
+/**
+ * 跳转目标类型
+ */
+export const TargetType = {
+	CHAT: 'chat',           // 聊天页面
+	ORDER: 'order',         // 订单详情
+	NOTIFY: 'notify',       // 通知列表
+	WEBVIEW: 'webview',     // H5 页面
+	HOME: 'home'            // 首页
+} as const
+
+// ==================== 路由映射 ====================
+
+/**
+ * 路由映射表
+ * type -> 页面路径
+ */
+const routeMap: Map<string, string> = new Map()
+
+/**
+ * 初始化路由映射
+ */
+const initRouteMap = () => {
+	if (routeMap.size == 0) {
+		routeMap.set('chat', '/pagesTrade/chat/index')
+		routeMap.set('order', '/pagesTrade/order/detail')
+		routeMap.set('notify', '/pages/message/notification')
+		routeMap.set('webview', '/pages/webview/index')
+		routeMap.set('home', getHomePath())
+		// 订单列表
+		routeMap.set('order_list', '/pages/order/index')
+		// 用户详情
+		routeMap.set('user', '/pagesUser/user/detail')
+		// 钱包
+		routeMap.set('wallet', '/pagesUser/my/wallet/index')
+	}
+}
+
+// ==================== Payload 解析 ====================
+
+/**
+ * 解析推送消息的 payload
+ * @param payloadStr payload JSON 字符串
+ * @returns NotificationPayload 对象
+ */
+export const parsePayload = (payloadStr: string): NotificationPayload => {
+	const payload = new NotificationPayload()
+	
+	if (payloadStr == '') {
+		console.warn('⚠️ [NotificationRouter] payload 为空')
+		return payload
+	}
+	
+	try {
+		const payloadObj = JSON.parse(payloadStr) as UTSJSONObject
+		
+		// 解析 type
+		const typeVal = payloadObj.get('type')
+		if (typeVal != null && typeVal.toString() != '') {
+			payload.type = typeVal.toString()
+		}
+		
+		// 解析 targetPage
+		const targetPageVal = payloadObj.get('targetPage')
+		if (targetPageVal != null && targetPageVal.toString() != '') {
+			payload.targetPage = targetPageVal.toString()
+		}
+		
+		// 解析 targetId
+		const targetIdVal = payloadObj.get('targetId')
+		if (targetIdVal != null && targetIdVal.toString() != '') {
+			payload.targetId = targetIdVal.toString()
+		}
+		
+		// 兼容其他 ID 字段名
+		if (payload.targetId == '') {
+			const sessionIdVal = payloadObj.get('sessionId')
+			if (sessionIdVal != null && sessionIdVal.toString() != '') {
+				payload.targetId = sessionIdVal.toString()
+			}
+		}
+		if (payload.targetId == '') {
+			const orderIdVal = payloadObj.get('orderId')
+			if (orderIdVal != null && orderIdVal.toString() != '') {
+				payload.targetId = orderIdVal.toString()
+			}
+		}
+		if (payload.targetId == '') {
+			const kidVal = payloadObj.get('kid')
+			if (kidVal != null && kidVal.toString() != '') {
+				payload.targetId = kidVal.toString()
+			}
+		}
+		
+		// 解析 title
+		const titleVal = payloadObj.get('title')
+		if (titleVal != null && titleVal.toString() != '') {
+			payload.title = titleVal.toString()
+		}
+		
+		// 解析 content
+		const contentVal = payloadObj.get('content')
+		if (contentVal != null && contentVal.toString() != '') {
+			payload.content = contentVal.toString()
+		}
+		
+		// 解析 extra
+		const extraVal = payloadObj.get('extra')
+		if (extraVal != null) {
+			if (typeof extraVal === 'string') {
+				payload.extra = extraVal as string
+			} else {
+				payload.extra = JSON.stringify(extraVal)
+			}
+		}
+		
+	} catch (e) {
+		handleSilentError(e, '解析推送payload')
+	}
+	
+	return payload
+}
+
+/**
+ * 将 NotificationPayload 序列化为 JSON 字符串
+ * @param payload NotificationPayload 对象
+ * @returns JSON 字符串
+ */
+export const serializePayload = (payload: NotificationPayload): string => {
+	try {
+		const obj = {
+			type: payload.type,
+			targetPage: payload.targetPage,
+			targetId: payload.targetId,
+			title: payload.title,
+			content: payload.content,
+			extra: payload.extra
+		}
+		return JSON.stringify(obj)
+	} catch (e) {
+		handleSilentError(e, '序列化推送payload')
+		return ''
+	}
+}
+
+// ==================== 路由跳转 ====================
+
+/**
+ * 根据 type 获取目标页面路径
+ * @param type 跳转类型
+ * @returns 页面路径
+ */
+export const getTargetPageByType = (type: string): string => {
+	initRouteMap()
+	
+	const path = routeMap.get(type)
+	if (path != null) {
+		return path
+	}
+	
+	// 默认返回首页
+	console.warn('⚠️ [NotificationRouter] 未知的跳转类型:', type)
+	return getHomePath()
+}
+
+/**
+ * 构建带参数的页面 URL
+ * @param basePath 基础路径
+ * @param params 参数对象
+ * @returns 完整 URL
+ */
+const buildPageUrl = (basePath: string, params: Map<string, string>): string => {
+	if (params.size == 0) {
+		return basePath
+	}
+	
+	let url = basePath + '?'
+	let isFirst = true
+	
+	params.forEach((value: string, key: string) => {
+		if (isFirst == false) {
+			url = url + '&'
+		}
+		url = url + key + '=' + encodeURIComponent(value)
+		isFirst = false
+	})
+	
+	return url
+}
+
+/**
+ * 根据 payload 路由到对应页面
+ * @param payload 通知载荷
+ */
+export const routeToPage = (payload: NotificationPayload) => {
+	initRouteMap()
+	
+	const type = payload.type
+	const targetId = payload.targetId
+	
+	console.log('🚀 [NotificationRouter] 开始路由:', type, targetId)
+	
+	// 如果指定了 targetPage，直接使用
+	if (payload.targetPage != '') {
+		const params = new Map<string, string>()
+		if (targetId != '') {
+			params.set('kid', targetId)
+		}
+		const url = buildPageUrl(payload.targetPage, params)
+		console.log('🔗 [NotificationRouter] 跳转到指定页面:', url)
+		navigateToPage(url)
+		return
+	}
+	
+	// 根据 type 获取目标页面
+	const basePath = getTargetPageByType(type)
+	const params = new Map<string, string>()
+	
+	// 根据类型添加参数
+	if (type == 'chat') {
+		if (targetId != '') {
+			params.set('sessionId', targetId)
+		}
+	} else if (type == 'order') {
+		if (targetId != '') {
+			params.set('kid', targetId)
+		}
+	} else if (type == 'user') {
+		if (targetId != '') {
+			params.set('kid', targetId)
+		}
+	} else if (type == 'webview') {
+		// webview 需要 url 参数
+		if (payload.extra != '') {
+			try {
+				const extraObj = JSON.parse(payload.extra) as UTSJSONObject
+				const urlVal = extraObj.get('url')
+				if (urlVal != null && urlVal.toString() != '') {
+					params.set('url', urlVal.toString())
+				}
+			} catch (e) {
+			handleSilentError(e, '解析webview extra')
+		}
+		}
+	}
+	
+	const url = buildPageUrl(basePath, params)
+	console.log('🔗 [NotificationRouter] 跳转到:', url)
+	navigateToPage(url)
+}
+
+/**
+ * 执行页面跳转
+ * @param url 页面 URL
+ */
+const navigateToPage = (url: string) => {
+	if (url == '') {
+		console.warn('⚠️ [NotificationRouter] 跳转 URL 为空')
+		return
+	}
+	
+	// 判断是否是 tabBar 页面
+	const homePath = getHomePath()
+	const tabBarPages = [
+		homePath,
+		'/pages/news/index',
+		'/pages/message/index',
+		'/pages/order/index',
+		'/pages/my/index'
+	]
+	
+	let isTabBar = false
+	for (let i = 0; i < tabBarPages.length; i = i + 1) {
+		if (url.indexOf(tabBarPages[i]) == 0) {
+			isTabBar = true
+			break
+		}
+	}
+	
+	if (isTabBar == true) {
+		// tabBar 页面使用 switchTab
+		uni.switchTab({
+			url: url,
+			fail: (err: any) => {
+				console.error('❌ [NotificationRouter] switchTab 失败:', err)
+			}
+		})
+	} else {
+		// 普通页面使用 navigateTo
+		uni.navigateTo({
+			url: url,
+			fail: (err: any) => {
+				console.error('❌ [NotificationRouter] navigateTo 失败:', err)
+				// 失败时尝试 redirectTo
+				uni.redirectTo({
+					url: url,
+					fail: (err2: any) => {
+						console.error('❌ [NotificationRouter] redirectTo 也失败:', err2)
+						// 最后尝试跳转到首页
+						goToHome()
+					}
+				})
+			}
+		})
+	}
+}
+
+/**
+ * 验证 payload 是否有效
+ * @param payload 通知载荷
+ * @returns 是否有效
+ */
+export const isValidPayload = (payload: NotificationPayload): boolean => {
+	// 必须有 type 或 targetPage
+	if (payload.type == '' && payload.targetPage == '') {
+		return false
+	}
+	return true
+}
+
+/**
+ * 验证 payload 字符串是否有效
+ * @param payloadStr payload JSON 字符串
+ * @returns 是否有效
+ */
+export const isValidPayloadString = (payloadStr: string): boolean => {
+	if (payloadStr == '') {
+		return false
+	}
+	
+	try {
+		const payloadObj = JSON.parse(payloadStr) as UTSJSONObject
+		
+		// 检查必要字段
+		const typeVal = payloadObj.get('type')
+		const targetPageVal = payloadObj.get('targetPage')
+		
+		const hasType = (typeVal != null && typeVal.toString() != '')
+		const hasTargetPage = (targetPageVal != null && targetPageVal.toString() != '')
+		
+		return hasType == true || hasTargetPage == true
+	} catch (e) {
+		return false
+	}
+}

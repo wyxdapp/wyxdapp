@@ -1,0 +1,98 @@
+<template>
+	<view class="list-status-container">
+		<!-- 加载中 -->
+		<view v-if="status == 'loading'" class="list-status">
+			<text class="status-text">{{ loadingText }}</text>
+		</view>
+		
+		<!-- 空状态 -->
+		<view v-else-if="status == 'empty'" class="list-status list-status-empty">
+			<image 
+				v-if="showEmptyIcon == true" 
+				class="empty-icon" 
+				:src="emptyIcon" 
+				mode="aspectFit"
+			/>
+			<text class="status-text">{{ emptyText }}</text>
+		</view>
+		
+		<!-- 加载更多 -->
+		<view v-else-if="status == 'loadMore'" class="list-status">
+			<text class="load-more-text">{{ loadMoreText }}</text>
+		</view>
+		
+		<!-- 没有更多 -->
+		<view v-else-if="status == 'noMore'" class="list-status">
+			<text class="status-text">{{ noMoreText }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+/**
+ * 列表状态组件
+ * 用于显示列表的加载中、空状态、加载更多、没有更多等状态
+ * 
+ * @example
+ * <ListStatus status="loading" />
+ * <ListStatus status="empty" emptyText="暂无向导" />
+ * <ListStatus status="loadMore" />
+ * <ListStatus status="noMore" />
+ */
+
+// Props
+const props = defineProps({
+	// 状态：loading | empty | loadMore | noMore
+	status: { type: String, default: '' },
+	// 加载中文本
+	loadingText: { type: String, default: '加载中...' },
+	// 空状态文本
+	emptyText: { type: String, default: '暂无数据' },
+	// 加载更多文本
+	loadMoreText: { type: String, default: '上拉加载更多' },
+	// 没有更多文本
+	noMoreText: { type: String, default: '没有更多了' },
+	// 是否显示空状态图标
+	showEmptyIcon: { type: Boolean, default: false },
+	// 空状态图标
+	emptyIcon: { type: String, default: '/static/images/empty.png' }
+})
+</script>
+
+<style scoped>
+.list-status-container {
+	width: 750rpx;
+}
+
+.list-status {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 60rpx;
+	padding-bottom: 60rpx;
+	padding-left: 0;
+	padding-right: 0;
+}
+
+.list-status-empty {
+	flex-direction: column;
+	padding-top: 120rpx;
+	padding-bottom: 120rpx;
+}
+
+.empty-icon {
+	width: 200rpx;
+	height: 200rpx;
+	margin-bottom: 24rpx;
+}
+
+.status-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.load-more-text {
+	font-size: 24rpx;
+	color: #2EAEF2;
+}
+</style>

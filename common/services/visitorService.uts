@@ -1,0 +1,398 @@
+/**
+ * 访客服务 API
+ * UTS 规范重构版本
+ */
+import { request } from '@/utils/request'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+
+// 辅助函数：从对象获取字符串属性
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	return (val != null && val.toString() != '') ? val.toString() : ''
+}
+
+// 辅助函数：从对象获取数字属性
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		return isNaN(num) == false ? num : 0
+	}
+	return 0
+}
+
+// 辅助函数：从对象获取布尔属性
+const getObjBoolean = (obj: UTSJSONObject | null, key: string): boolean => {
+	if (obj == null) return false
+	const val = obj.get(key)
+	if (val != null) {
+		const valStr = val.toString().toLowerCase()
+		return valStr == 'true' || valStr == '1'
+	}
+	return false
+}
+
+// 辅助函数：从对象获取数组属性
+const getObjArray = (obj: UTSJSONObject | null, key: string): Array<any> => {
+	if (obj == null) return []
+	const val = obj.get(key)
+	if (val != null && Array.isArray(val) == true) {
+		return val as Array<any>
+	}
+	return []
+}
+
+/**
+ * 安全访问响应属性
+ */
+const getResponseCode = (resp: any): number => {
+	const respObj = toJsonObj(resp)
+	if (respObj == null) return 500
+	return getObjNumber(respObj, 'code')
+}
+
+const getResponseData = (resp: any): UTSJSONObject | null => {
+	const respObj = toJsonObj(resp)
+	if (respObj == null) return null
+	const dataVal = respObj.get('data')
+	return toJsonObj(dataVal)
+}
+
+const getResponseMsg = (resp: any): string => {
+	const respObj = toJsonObj(resp)
+	if (respObj == null) return ''
+	const msgVal = getObjString(respObj, 'msg')
+	if (msgVal != '') return msgVal
+	return getObjString(respObj, 'message')
+}
+
+const getListDataItems = (listData: UTSJSONObject | null): Array<any> => {
+	if (listData == null) return []
+	// 尝试 entities
+	const entitiesVal = listData.get('entities')
+	if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+		return entitiesVal as Array<any>
+	}
+	// 尝试 list
+	const listVal = listData.get('list')
+	if (listVal != null && Array.isArray(listVal) == true) {
+		return listVal as Array<any>
+	}
+	// 尝试 items
+	const itemsVal = listData.get('items')
+	if (itemsVal != null && Array.isArray(itemsVal) == true) {
+		return itemsVal as Array<any>
+	}
+	return []
+}
+
+const getListDataTotal = (listData: UTSJSONObject | null): number => {
+	if (listData == null) return 0
+	const countVal = getObjNumber(listData, 'count')
+	if (countVal > 0) return countVal
+	return getObjNumber(listData, 'total')
+}
+
+const getListDataPageNumber = (listData: UTSJSONObject | null, defaultPage: number): number => {
+	if (listData == null) return defaultPage
+	const pageNumberVal = getObjNumber(listData, 'pageNumber')
+	return (pageNumberVal > 0) ? pageNumberVal : defaultPage
+}
+
+const getListDataPageSize = (listData: UTSJSONObject | null, defaultSize: number): number => {
+	if (listData == null) return defaultSize
+	const pageSizeVal = getObjNumber(listData, 'pageSize')
+	return (pageSizeVal > 0) ? pageSizeVal : defaultSize
+}
+
+/**
+ * 映射访客数据行
+ * 适配新的 trip_visitor_summary 表结构
+ */
+const mapVisitorRow = (row: any): UTSJSONObject => {
+	const rowObj = toJsonObj(row)
+	
+	// 默认值
+	let visitorKid = ''
+	let nickname = ''
+	let avatar = ''
+	let historyVisitCount = 0
+	let newVisitCount = 0
+	let totalVisitCount = 0
+	let lastVisitTime = ''
+	let unread = false
+	let isNewVisitor = false
+	let visitType = 'profile'
+	let visitTypeName = '主页'
+	let targetKid = ''
+	// VIP 和礼物等级字段
+	let vip = 10
+	let vipType = 0
+	let giftLevel = 0
+	
+	if (rowObj != null) {
+		// visitorKid
+		visitorKid = getObjString(rowObj, 'visitorKid')
+		if (visitorKid == '') {
+			visitorKid = getObjString(rowObj, 'kid')
+		}
+		
+		// nickname
+		nickname = getObjString(rowObj, 'visitorNickname')
+		if (nickname == '') {
+			nickname = getObjString(rowObj, 'nickname')
+		}
+		
+		// avatar
+		avatar = getObjString(rowObj, 'visitorImage')
+		if (avatar == '') {
+			avatar = getObjString(rowObj, 'image')
+		}
+		if (avatar == '') {
+			avatar = getObjString(rowObj, 'avatar')
+		}
+		
+		// ⭐ 新字段：historyVisitCount、newVisitCount、totalVisitCount
+		historyVisitCount = getObjNumber(rowObj, 'historyVisitCount')
+		newVisitCount = getObjNumber(rowObj, 'newVisitCount')
+		totalVisitCount = getObjNumber(rowObj, 'totalVisitCount')
+		
+		// 兼容旧字段
+		if (totalVisitCount == 0) {
+			const visitCount = getObjNumber(rowObj, 'visitCount')
+			if (visitCount > 0) {
+				totalVisitCount = visitCount
+			} else {
+				totalVisitCount = historyVisitCount + newVisitCount
+			}
+		}
+		
+		// lastVisitTime
+		lastVisitTime = getObjString(rowObj, 'lastVisitTimeFormatted')
+		if (lastVisitTime == '') {
+			lastVisitTime = getObjString(rowObj, 'lastVisitTime')
+		}
+		if (lastVisitTime == '') {
+			lastVisitTime = getObjString(rowObj, 'createtime')
+		}
+		if (lastVisitTime == '') {
+			lastVisitTime = getObjString(rowObj, 'createTime')
+		}
+		if (lastVisitTime == '') {
+			lastVisitTime = getObjString(rowObj, 'time')
+		}
+		
+		// ⭐ unread：优先使用 isUnread，或根据 newVisitCount > 0 判断
+		unread = getObjBoolean(rowObj, 'isUnread')
+		if (unread == false && newVisitCount > 0) {
+			unread = true
+		}
+		
+		// isNewVisitor
+		isNewVisitor = getObjBoolean(rowObj, 'isNewVisitor')
+		
+		// visitType
+		const visitTypeVal = getObjString(rowObj, 'visitType')
+		if (visitTypeVal != '') {
+			visitType = visitTypeVal
+		}
+		
+		// visitTypeName
+		const visitTypeNameVal = getObjString(rowObj, 'visitTypeName')
+		if (visitTypeNameVal != '') {
+			visitTypeName = visitTypeNameVal
+		}
+		
+		// targetKid
+		targetKid = getObjString(rowObj, 'targetKid')
+		
+		// VIP 和礼物等级字段
+		vip = getObjNumber(rowObj, 'vip')
+		if (vip == 0) {
+			vip = 10 // 默认值
+		}
+		vipType = getObjNumber(rowObj, 'vipType')
+		giftLevel = getObjNumber(rowObj, 'giftLevel')
+	}
+	
+	// 构建返回对象
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('visitorKid', visitorKid)
+	result.set('nickname', nickname)
+	result.set('avatar', avatar)
+	result.set('historyVisitCount', historyVisitCount)
+	result.set('newVisitCount', newVisitCount)
+	result.set('totalVisitCount', totalVisitCount)
+	result.set('count', totalVisitCount)  // 兼容旧字段
+	result.set('typeVisitCount', totalVisitCount)  // 兼容旧字段
+	result.set('lastVisitTime', lastVisitTime)
+	result.set('unread', unread)
+	result.set('isNewVisitor', isNewVisitor)
+	result.set('visitType', visitType)
+	result.set('visitTypeName', visitTypeName)
+	result.set('targetKid', targetKid)
+	// VIP 和礼物等级字段
+	result.set('vip', vip)
+	result.set('vipType', vipType)
+	result.set('giftLevel', giftLevel)
+	
+	return result
+}
+
+/**
+ * 获取访客列表
+ * 对应后端接口：POST /behavior/visitor/queryVisitor
+ */
+export const getVisitors = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	const paramsObj = toJsonObj(params)
+	const userKid = getObjString(paramsObj, 'userKid')
+	const pageNum = getObjNumber(paramsObj, 'page')
+	const sizeNum = getObjNumber(paramsObj, 'size')
+	
+	const url = '/behavior/visitor/queryVisitor?userKid=' + encodeURIComponent(userKid) + '&pageNumber=' + pageNum.toString() + '&pageSize=' + sizeNum.toString()
+	const resp = await request.post(url, {}, false)
+	
+	const code = getResponseCode(resp)
+	const ok = (code == 200)
+	const respData = ok == true ? getResponseData(resp) : null
+	const items = getListDataItems(respData)
+	
+	const mappedItems: Array<UTSJSONObject> = []
+	for (let i = 0; i < items.length; i = i + 1) {
+		const item = items[i]
+		if (item != null) {
+			mappedItems.push(mapVisitorRow(item))
+		}
+	}
+	
+	const total = getListDataTotal(respData)
+	const pageResult = getListDataPageNumber(respData, pageNum)
+	const sizeResult = getListDataPageSize(respData, sizeNum)
+	
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('code', ok == true ? 200 : code)
+	result.set('items', mappedItems)
+	result.set('total', total)
+	result.set('page', pageResult)
+	result.set('size', sizeResult)
+	
+	return result
+}
+
+/**
+ * 获取未读访客数量
+ * 对应后端接口：POST /behavior/visitor/getVisitorUnreadCount
+ */
+export const getUnreadCount = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	const paramsObj = toJsonObj(params)
+	const userKid = getObjString(paramsObj, 'userKid')
+	
+	const url = '/behavior/visitor/getVisitorUnreadCount?userKid=' + encodeURIComponent(userKid)
+	const resp = await request.post(url, {}, false)
+	
+	const code = getResponseCode(resp)
+	const ok = (code == 200)
+	let count = 0
+	
+	if (ok == true) {
+		const respData = getResponseData(resp)
+		if (respData != null) {
+			count = getObjNumber(respData, 'count')
+		}
+	}
+	
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('code', ok == true ? 200 : code)
+	result.set('count', count)
+	
+	return result
+}
+
+/**
+ * 标记所有访客为已读
+ * 对应后端接口：POST /behavior/visitor/markVisitorAsRead
+ */
+export const markAllRead = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	const paramsObj = toJsonObj(params)
+	const userKid = getObjString(paramsObj, 'userKid')
+	
+	const url = '/behavior/visitor/markVisitorAsRead?userKid=' + encodeURIComponent(userKid)
+	const resp = await request.post(url, {}, false)
+	
+	const code = getResponseCode(resp)
+	const ok = (code == 200)
+	
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('code', ok == true ? 200 : code)
+	
+	return result
+}
+
+/**
+ * 添加访客记录（支持访问类型）
+ * 对应后端接口：POST /behavior/visitor/addVisitor
+ */
+export const addVisitor = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	const paramsObj = toJsonObj(params)
+	const userKid = getObjString(paramsObj, 'userKid')
+	const visitUserKid = getObjString(paramsObj, 'visitUserKid')
+	const visitType = getObjString(paramsObj, 'visitType')
+	const targetKid = getObjString(paramsObj, 'targetKid')
+	
+	const visitTypeStr = (visitType != '') ? visitType : 'profile'
+	
+	const url = '/behavior/visitor/addVisitor?userKid=' + encodeURIComponent(userKid) + '&visitUserKid=' + encodeURIComponent(visitUserKid) + '&visitType=' + visitTypeStr + '&targetKid=' + encodeURIComponent(targetKid)
+	const resp = await request.post(url, {}, false)
+	
+	const code = getResponseCode(resp)
+	const ok = (code == 200)
+	const msg = getResponseMsg(resp)
+	
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('code', ok == true ? 200 : code)
+	result.set('msg', msg)
+	
+	return result
+}
+
+/**
+ * 获取访客列表（含访问类型）
+ * 对应后端接口：POST /behavior/visitor/queryVisitorWithType
+ */
+export const getVisitorsWithType = async (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	const paramsObj = toJsonObj(params)
+	const userKid = getObjString(paramsObj, 'userKid')
+	const pageNum = getObjNumber(paramsObj, 'page')
+	const sizeNum = getObjNumber(paramsObj, 'size')
+	
+	const url = '/behavior/visitor/queryVisitorWithType?userKid=' + encodeURIComponent(userKid) + '&pageNumber=' + pageNum.toString() + '&pageSize=' + sizeNum.toString()
+	const resp = await request.post(url, {}, false)
+	
+	const code = getResponseCode(resp)
+	const ok = (code == 200)
+	const respData = ok == true ? getResponseData(resp) : null
+	const items = getListDataItems(respData)
+	
+	const mappedItems: Array<UTSJSONObject> = []
+	for (let i = 0; i < items.length; i = i + 1) {
+		const item = items[i]
+		if (item != null) {
+			mappedItems.push(mapVisitorRow(item))
+		}
+	}
+	
+	const total = getListDataTotal(respData)
+	const pageResult = getListDataPageNumber(respData, pageNum)
+	const sizeResult = getListDataPageSize(respData, sizeNum)
+	
+	const result = JSON.parse('{}') as UTSJSONObject
+	result.set('code', ok == true ? 200 : code)
+	result.set('items', mappedItems)
+	result.set('total', total)
+	result.set('page', pageResult)
+	result.set('size', sizeResult)
+	
+	return result
+}

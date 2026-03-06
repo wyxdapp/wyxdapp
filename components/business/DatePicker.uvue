@@ -1,0 +1,520 @@
+<template>
+	<view class="date-picker">
+		<!-- 快捷日期选择 -->
+		<view class="quick-dates">
+			<view 
+				v-for="(item, index) in (quickDates as Array<any>)" 
+				:key="index"
+				class="date-item"
+				:class="{ 'date-item--active': isQuickDateSelected(index) }"
+				@click="handleQuickSelect(index)"
+			>
+				<text class="date-text">{{ getItemDate(item) }}</text>
+				<text v-if="getItemLabel(item) != ''" class="date-label">{{ getItemLabel(item) }}</text>
+			</view>
+			<!-- 更多按钮 -->
+			<view 
+				class="date-item date-item--more"
+				@click="openDatePicker"
+			>
+				<text class="date-text">更多</text>
+			</view>
+		</view>
+		
+		<!-- 日期选择器弹窗 -->
+		<view v-if="showPicker == true" class="picker-mask" @click="closePicker">
+			<view class="picker-popup" @click.stop>
+				<view class="picker-header">
+					<text class="picker-cancel" @click="closePicker">取消</text>
+					<text class="picker-title">选择日期</text>
+					<text class="picker-confirm" @click="confirmPicker">确定</text>
+				</view>
+				
+				<!-- 滚动选择器 -->
+				<view class="picker-body">
+					<!-- 年份选择 -->
+					<scroll-view 
+						class="picker-column"
+						:scroll-y="true"
+						:scroll-into-view="yearScrollId"
+					>
+						<view 
+							v-for="(year, yIndex) in (yearList as Array<number>)" 
+							:key="yIndex"
+							:id="'year-' + year.toString()"
+							class="picker-item"
+							:class="{ 'picker-item--active': tempYear == year }"
+							@click="selectYear(year)"
+						>
+							<text class="picker-item-text">{{ year }}年</text>
+						</view>
+					</scroll-view>
+					
+					<!-- 月份选择 -->
+					<scroll-view 
+						class="picker-column"
+						:scroll-y="true"
+						:scroll-into-view="monthScrollId"
+					>
+						<view 
+							v-for="(month, mIndex) in (monthList as Array<number>)" 
+							:key="mIndex"
+							:id="'month-' + month.toString()"
+							class="picker-item"
+							:class="{ 'picker-item--active': tempMonth == month }"
+							@click="selectMonth(month)"
+						>
+							<text class="picker-item-text">{{ month }}月</text>
+						</view>
+					</scroll-view>
+					
+					<!-- 日期选择 -->
+					<scroll-view 
+						class="picker-column"
+						:scroll-y="true"
+						:scroll-into-view="dayScrollId"
+					>
+						<view 
+							v-for="(day, dIndex) in (dayList as Array<number>)" 
+							:key="dIndex"
+							:id="'day-' + day.toString()"
+							class="picker-item"
+							:class="{ 'picker-item--active': tempDay == day }"
+							@click="selectDay(day)"
+						>
+							<text class="picker-item-text">{{ day }}日</text>
+						</view>
+					</scroll-view>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, watch } from 'vue'
+
+// 快捷日期项类型
+class QuickDateItem {
+	value: string = ''
+	date: string = ''
+	label: string = ''
+	constructor() {}
+}
+
+// Props - 运行时声明
+const props = defineProps({
+	modelValue: { type: String, default: '' },
+	minDate: { type: String, default: '' },
+	maxDate: { type: String, default: '2050-12-31' }
+})
+
+// Emits
+const emit = defineEmits<{
+	'update:modelValue': [value: string]
+	change: [value: string]
+}>()
+
+// 数据
+const showPicker = ref<boolean>(false)
+const quickDates = ref<Array<QuickDateItem>>([])
+const selectedQuickIndex = ref<number>(-1)
+
+// 年月日列表
+const yearList = ref<Array<number>>([])
+const monthList = ref<Array<number>>([])
+const dayList = ref<Array<number>>([])
+
+// 临时选中值
+const tempYear = ref<number>(2025)
+const tempMonth = ref<number>(1)
+const tempDay = ref<number>(1)
+
+// 滚动定位ID
+const yearScrollId = ref<string>('')
+const monthScrollId = ref<string>('')
+const dayScrollId = ref<string>('')
+
+// 安全访问辅助函数
+const getItemValue = (item: any): string => {
+	try {
+		const obj = item as QuickDateItem
+		const value = obj.value
+		return value
+	} catch (e) {}
+	return ''
+}
+
+const getItemDate = (item: any): string => {
+	try {
+		const obj = item as QuickDateItem
+		const date = obj.date
+		return date
+	} catch (e) {}
+	return ''
+}
+
+const getItemLabel = (item: any): string => {
+	try {
+		const obj = item as QuickDateItem
+		const label = obj.label
+		return label
+	} catch (e) {}
+	return ''
+}
+
+// 判断快捷日期是否选中
+const isQuickDateSelected = (index: number): boolean => {
+	return selectedQuickIndex.value == index
+}
+
+// 选择日期 - 先定义，供其他函数调用
+const handleSelect = (value: string) => {
+	emit('update:modelValue', value)
+	emit('change', value)
+}
+
+// 快捷日期选择
+const handleQuickSelect = (index: number) => {
+	selectedQuickIndex.value = index
+	if (index >= 0 && index < quickDates.value.length) {
+		const item = quickDates.value[index]
+		handleSelect(item.value)
+	}
+}
+
+// 获取某月的天数 - 必须在 initDayList 之前定义
+const getDaysInMonth = (year: number, month: number): number => {
+	// 月份从0开始，所以传入month时不需要减1
+	// new Date(year, month, 0) 获取上个月的最后一天
+	const date = new Date(year, month, 0)
+	return date.getDate()
+}
+
+// 初始化年份列表 - 必须在 openDatePicker 之前定义
+const initYearList = () => {
+	const years: Array<number> = []
+	const currentYear = new Date().getFullYear()
+	let i = currentYear
+	while (i <= currentYear + 5) {
+		years.push(i)
+		i = i + 1
+	}
+	yearList.value = years
+}
+
+// 初始化月份列表 - 必须在 openDatePicker 之前定义
+const initMonthList = () => {
+	const months: Array<number> = []
+	let i = 1
+	while (i <= 12) {
+		months.push(i)
+		i = i + 1
+	}
+	monthList.value = months
+}
+
+// 初始化日期列表（根据年月计算）- 必须在 openDatePicker、selectYear、selectMonth 之前定义
+const initDayList = () => {
+	const days: Array<number> = []
+	const daysInMonth = getDaysInMonth(tempYear.value, tempMonth.value)
+	let i = 1
+	while (i <= daysInMonth) {
+		days.push(i)
+		i = i + 1
+	}
+	dayList.value = days
+}
+
+// 打开日期选择器
+const openDatePicker = () => {
+	// 初始化年月日列表
+	initYearList()
+	initMonthList()
+	
+	// 解析当前选中的日期
+	const currentValue = props.modelValue
+	if (currentValue != '') {
+		const parts = currentValue.split('-')
+		if (parts.length >= 3) {
+			const yearPart = parts[0]
+			const monthPart = parts[1]
+			const dayPart = parts[2]
+			const y = parseInt(yearPart)
+			if (isNaN(y) == false) tempYear.value = y
+			const m = parseInt(monthPart)
+			if (isNaN(m) == false) tempMonth.value = m
+			const d = parseInt(dayPart)
+			if (isNaN(d) == false) tempDay.value = d
+		}
+	} else {
+		// 默认今天
+		const today = new Date()
+		tempYear.value = today.getFullYear()
+		tempMonth.value = today.getMonth() + 1
+		tempDay.value = today.getDate()
+	}
+	
+	// 初始化日期列表
+	initDayList()
+	
+	// 设置滚动位置
+	yearScrollId.value = 'year-' + tempYear.value.toString()
+	monthScrollId.value = 'month-' + tempMonth.value.toString()
+	dayScrollId.value = 'day-' + tempDay.value.toString()
+	
+	selectedQuickIndex.value = -1
+	showPicker.value = true
+}
+
+// 关闭选择器
+const closePicker = () => {
+	showPicker.value = false
+}
+
+// 确认选择
+const confirmPicker = () => {
+	const monthStr = (tempMonth.value < 10) ? ('0' + tempMonth.value.toString()) : tempMonth.value.toString()
+	const dayStr = (tempDay.value < 10) ? ('0' + tempDay.value.toString()) : tempDay.value.toString()
+	const dateValue = tempYear.value.toString() + '-' + monthStr + '-' + dayStr
+	
+	handleSelect(dateValue)
+	showPicker.value = false
+}
+
+// 选择年份
+const selectYear = (year: number) => {
+	tempYear.value = year
+	initDayList()
+	// 检查日期是否超出范围
+	if (tempDay.value > dayList.value.length) {
+		tempDay.value = dayList.value.length
+	}
+}
+
+// 选择月份
+const selectMonth = (month: number) => {
+	tempMonth.value = month
+	initDayList()
+	// 检查日期是否超出范围
+	if (tempDay.value > dayList.value.length) {
+		tempDay.value = dayList.value.length
+	}
+}
+
+// 选择日期
+const selectDay = (day: number) => {
+	tempDay.value = day
+}
+
+// 生成快捷日期（今天、明天、后天）
+const initQuickDates = () => {
+	const dates: Array<QuickDateItem> = []
+	const labels: Array<string> = ['今天', '明天', '后天']
+	
+	let i = 0
+	while (i < 3) {
+		const date = new Date()
+		date.setDate(date.getDate() + i)
+		
+		const year = date.getFullYear()
+		const monthNum = date.getMonth() + 1
+		const monthStr = (monthNum < 10) ? ('0' + monthNum.toString()) : monthNum.toString()
+		const dayNum = date.getDate()
+		const dayStr = (dayNum < 10) ? ('0' + dayNum.toString()) : dayNum.toString()
+		
+		const labelVal = (i < labels.length) ? labels[i] : ''
+		
+		const dateItem = new QuickDateItem()
+		dateItem.value = year.toString() + '-' + monthStr + '-' + dayStr
+		dateItem.date = monthStr + '-' + dayStr
+		dateItem.label = labelVal
+		dates.push(dateItem)
+		
+		i = i + 1
+	}
+	
+	quickDates.value = dates
+	
+	// 默认选中今天
+	if (props.modelValue == '' && dates.length > 0) {
+		selectedQuickIndex.value = 0
+		const firstDate = dates[0]
+		handleSelect(firstDate.value)
+	}
+}
+
+// 监听 modelValue 变化，更新快捷日期选中状态
+watch(
+	(): string => props.modelValue,
+	(newVal: string) => {
+		if (newVal == '') {
+			selectedQuickIndex.value = -1
+			return
+		}
+		
+		// 检查是否匹配快捷日期
+		let found = false
+		let idx = 0
+		while (idx < quickDates.value.length) {
+			const item = quickDates.value[idx]
+			if (item.value == newVal) {
+				selectedQuickIndex.value = idx
+				found = true
+				break
+			}
+			idx = idx + 1
+		}
+		
+		if (found == false) {
+			selectedQuickIndex.value = -1
+		}
+	}
+)
+
+// 初始化
+onMounted(() => {
+	initQuickDates()
+})
+</script>
+
+<style scoped>
+.date-picker {
+	width: 100%;
+}
+
+.quick-dates {
+	display: flex;
+	flex-direction: row;
+}
+
+.date-item {
+	flex: 1;
+	height: 120rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #F8F8F8;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #E0E0E0;
+	border-radius: 16rpx;
+	margin-right: 16rpx;
+}
+
+.date-item:last-child {
+	margin-right: 0;
+}
+
+.date-item--active {
+	background-color: #E6F7FF;
+	border-color: #37B1F2;
+}
+
+.date-text {
+	font-size: 28rpx;
+	color: #333333;
+	margin-bottom: 8rpx;
+}
+
+.date-item--active .date-text {
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.date-label {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.date-item--active .date-label {
+	color: #37B1F2;
+}
+
+.date-item--more {
+	border-style: dashed;
+}
+
+/* 选择器弹窗 */
+.picker-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.picker-popup {
+	width: 750rpx;
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+}
+
+.picker-header {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.picker-cancel {
+	font-size: 30rpx;
+	color: #999999;
+}
+
+.picker-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.picker-confirm {
+	font-size: 30rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.picker-body {
+	display: flex;
+	flex-direction: row;
+	height: 400rpx;
+}
+
+.picker-column {
+	flex: 1;
+	height: 400rpx;
+}
+
+.picker-item {
+	height: 80rpx;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.picker-item--active {
+	background-color: #E6F7FF;
+}
+
+.picker-item-text {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.picker-item--active .picker-item-text {
+	color: #37B1F2;
+	font-weight: bold;
+}
+</style>

@@ -1,0 +1,251 @@
+/**
+ * 订单构建器工具函数
+ * 统一构建不同类型的订单数据
+ */
+import { toUTSJSON, getString, getObject } from '@/common/utils/typeConverter'
+
+// 向导订单参数类
+export class GuiderOrderParams {
+	userKid: string = ''
+	guideKid: string = ''
+	travelDate: string = ''
+	serviceHours: number = 1
+	phone: string = ''
+	realname: string = ''
+	totalMoney: number = 0
+	orderRemarks: string = ''
+	orderTitle: string = ''
+	idempotencyKey: string = ''
+	cityName: string = ''
+	
+	constructor(
+		userKid: string,
+		guideKid: string,
+		travelDate: string,
+		serviceHours: number,
+		phone: string,
+		realname: string,
+		totalMoney: number,
+		orderRemarks: string
+	) {
+		this.userKid = userKid
+		this.guideKid = guideKid
+		this.travelDate = travelDate
+		this.serviceHours = serviceHours
+		this.phone = phone
+		this.realname = realname
+		this.totalMoney = totalMoney
+		this.orderRemarks = orderRemarks
+	}
+}
+
+// 抢单订单参数
+export interface GrabOrderParams {
+	userKid: string
+	travelDate: string
+	serviceHours: number
+	phone: string
+	realname: string
+	totalMoney: number
+	orderRemarks?: string
+	orderLocation?: string
+	orderSource?: number
+}
+
+// 订单数据接口（UTS 不支持索引签名，需要明确定义所有字段）
+export interface OrderData {
+	userKid: string
+	travelDate: string
+	serviceHours?: number
+	phone: string
+	realname: string
+	totalMoney: number
+	orderRemarks?: string
+	// 向导订单字段
+	guideKid?: string
+	orderTitle?: string
+	travelTotalTime?: string
+	orderSource?: number
+	orderAddr?: string
+	idempotencyKey?: string
+	merchantKid?: string
+	adultNumber?: number
+	childrenNumber?: number
+	cityName?: number | string
+	// 抢单订单字段
+	orderLocation?: string
+}
+
+/**
+ * 构建订单标题
+ * @param date 日期
+ * @param hours 天数
+ * @returns 订单标题
+ */
+export function buildOrderTitle(date: string, hours: number): string {
+	return `向导预约-${date}-${hours}天`
+}
+
+/**
+ * 构建幂等性 Key
+ * @param userKid 用户ID
+ * @param guideKid 向导ID
+ * @param date 日期
+ * @param hours 天数
+ * @returns 幂等性 Key
+ */
+export function buildIdempotencyKey(userKid: string, guideKid: string, date: string, hours: number): string {
+	const uid = (userKid != null && userKid != '') ? userKid : 'guest'
+	const gid = (guideKid != null && guideKid != '') ? guideKid : 'guide'
+	const dateVal = (date != null && date != '') ? date : ''
+	const hoursVal = (hours != null && hours > 0) ? hours : 1
+	return `${uid}-${gid}-${dateVal}-${hoursVal}`
+}
+
+/**
+ * 构建向导订单数据
+ * @param params 订单参数
+ * @returns 订单数据
+ */
+export function buildGuiderOrderData(params: GuiderOrderParams): OrderData {
+	const serviceHoursVal = (params.serviceHours != null && params.serviceHours > 0) ? params.serviceHours : 1
+	const travelTotalTime = `${serviceHoursVal}天`
+	const orderTitle = (params.orderTitle != null && params.orderTitle != '') 
+		? params.orderTitle 
+		: buildOrderTitle(params.travelDate, serviceHoursVal)
+	const idempotencyKey = (params.idempotencyKey != null && params.idempotencyKey != '') 
+		? params.idempotencyKey 
+		: buildIdempotencyKey(params.userKid, params.guideKid, params.travelDate, serviceHoursVal)
+	
+	const totalMoneyVal = (params.totalMoney != null) ? parseFloat(params.totalMoney.toString()) : 0
+	const orderRemarksVal = (params.orderRemarks != null && params.orderRemarks != '') 
+		? params.orderRemarks.toString() 
+		: ''
+	
+	// 确定 cityName 值
+	const cityNameVal = params.cityName
+	
+	// 使用 as any 再转接口类型，符合 UTS 规范
+	let orderDataRaw: any
+	if (cityNameVal != null) {
+		orderDataRaw = {
+			userKid: params.userKid,
+			guideKid: params.guideKid,
+			orderTitle: orderTitle,
+			travelDate: params.travelDate,
+			travelTotalTime: travelTotalTime,
+			serviceHours: serviceHoursVal,
+			orderRemarks: orderRemarksVal,
+			totalMoney: totalMoneyVal,
+			phone: params.phone,
+			realname: params.realname,
+			orderSource: 20,
+			orderAddr: '',
+			idempotencyKey: idempotencyKey,
+			merchantKid: '',
+			adultNumber: 1,
+			childrenNumber: 0,
+			cityName: cityNameVal
+		} as any
+	} else {
+		orderDataRaw = {
+			userKid: params.userKid,
+			guideKid: params.guideKid,
+			orderTitle: orderTitle,
+			travelDate: params.travelDate,
+			travelTotalTime: travelTotalTime,
+			serviceHours: serviceHoursVal,
+			orderRemarks: orderRemarksVal,
+			totalMoney: totalMoneyVal,
+			phone: params.phone,
+			realname: params.realname,
+			orderSource: 20,
+			orderAddr: '',
+			idempotencyKey: idempotencyKey,
+			merchantKid: '',
+			adultNumber: 1,
+			childrenNumber: 0
+		} as any
+	}
+	const orderData = orderDataRaw as OrderData
+	
+	return orderData
+}
+
+/**
+ * 构建抢单订单数据
+ * @param params 订单参数
+ * @returns 订单数据
+ */
+export function buildGrabOrderData(params: GrabOrderParams): OrderData {
+	const totalMoneyVal = (params.totalMoney != null) ? parseFloat(params.totalMoney.toString()) : 0
+	const remarksVal = (params.orderRemarks != null && params.orderRemarks != '') 
+		? params.orderRemarks.toString() 
+		: ''
+	const orderLocationVal = (params.orderLocation != null && params.orderLocation != '' && params.orderLocation != '全部') 
+		? params.orderLocation.toString() 
+		: ''
+	const orderSourceVal = (params.orderSource != null) ? params.orderSource : 1
+	
+	// 使用 as any 再转接口类型，符合 UTS 规范
+	const orderDataRaw = {
+		userKid: params.userKid,
+		travelDate: params.travelDate,
+		serviceHours: params.serviceHours,
+		realname: params.realname,
+		phone: params.phone,
+		totalMoney: totalMoneyVal,
+		orderRemarks: remarksVal,
+		orderLocation: orderLocationVal,
+		orderSource: orderSourceVal
+	} as any
+	const orderData = orderDataRaw as OrderData
+	
+	return orderData
+}
+
+// 响应接口定义
+interface OrderResponseData {
+	orderKid?: string | null
+	kid?: string | null
+}
+
+interface OrderResponse {
+	data?: OrderResponseData | null
+	orderKid?: string | null
+	kid?: string | null
+}
+
+/**
+ * 从响应中提取订单ID
+ * @param response API响应
+ * @returns 订单ID
+ */
+export function extractOrderKid(response: UTSJSONObject | null): string {
+	if (response == null) return ''
+	
+	// 一次性转换 response 为 UTSJSONObject，替代 6 处重复的 JSON.stringify + JSON.parse
+	const responseObj = toUTSJSON(response)
+	if (responseObj == null) return ''
+	
+	// 尝试从 response.data.orderKid / response.data.kid 获取
+	const dataObj = getObject(responseObj, 'data')
+	if (dataObj != null) {
+		const orderKidFromData = getString(dataObj, 'orderKid')
+		if (orderKidFromData != '') return orderKidFromData
+		
+		const kidFromData = getString(dataObj, 'kid')
+		if (kidFromData != '') return kidFromData
+	}
+	
+	// 尝试从 response.orderKid 获取
+	const orderKidFromResponse = getString(responseObj, 'orderKid')
+	if (orderKidFromResponse != '') return orderKidFromResponse
+	
+	// 尝试从 response.kid 获取
+	const kidFromResponse = getString(responseObj, 'kid')
+	if (kidFromResponse != '') return kidFromResponse
+	
+	return ''
+}
+

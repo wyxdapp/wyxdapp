@@ -1,0 +1,165 @@
+/**
+ * Cool Unix 主题配置
+ * 
+ * 本文件定义了项目使用 cool-unix 组件库时的主题色配置
+ * 与 uni.scss 中的颜色变量保持一致
+ * 
+ * @author WYXD Team
+ * @date 2025-12-27
+ */
+
+// ==================== 主题色配置 ====================
+
+/**
+ * 主色调 - 项目品牌色
+ */
+export const PRIMARY_COLOR = '#37B1F2'
+
+/**
+ * 成功色 - 用于成功状态、微信登录按钮等
+ */
+export const SUCCESS_COLOR = '#07C160'
+
+/**
+ * 警告色 - 用于警告提示
+ */
+export const WARNING_COLOR = '#FF9800'
+
+/**
+ * 错误色 - 用于错误提示、删除操作等
+ */
+export const ERROR_COLOR = '#F44336'
+
+/**
+ * 信息色 - 用于一般信息提示
+ */
+export const INFO_COLOR = '#909399'
+
+// ==================== 文字颜色配置 ====================
+
+/**
+ * 主要文字颜色 - 标题、重要内容
+ */
+export const TEXT_PRIMARY = '#333333'
+
+/**
+ * 次要文字颜色 - 正文、描述
+ */
+export const TEXT_SECONDARY = '#666666'
+
+/**
+ * 占位符颜色 - 输入框占位文字
+ */
+export const TEXT_PLACEHOLDER = '#999999'
+
+/**
+ * 禁用文字颜色
+ */
+export const TEXT_DISABLED = '#CCCCCC'
+
+/**
+ * 反色文字 - 深色背景上的文字
+ */
+export const TEXT_INVERSE = '#FFFFFF'
+
+// ==================== 背景颜色配置 ====================
+
+/**
+ * 主背景色 - 页面主背景
+ */
+export const BG_PRIMARY = '#FFFFFF'
+
+/**
+ * 次要背景色 - 卡片、输入框背景
+ */
+export const BG_SECONDARY = '#F5F5F5'
+
+/**
+ * 悬停背景色 - 点击态
+ */
+export const BG_HOVER = '#F1F1F1'
+
+/**
+ * 遮罩背景色
+ */
+export const BG_MASK = 'rgba(0, 0, 0, 0.5)'
+
+// ==================== 边框颜色配置 ====================
+
+/**
+ * 边框颜色 - 分割线、边框
+ */
+export const BORDER_COLOR = '#EEEEEE'
+
+/**
+ * 聚焦边框颜色
+ */
+export const BORDER_FOCUS = '#37B1F2'
+
+// ==================== 主题配置对象 ====================
+
+/**
+ * 主题配置接口
+ */
+interface ThemeConfig {
+	primaryColor: string
+	successColor: string
+	warningColor: string
+	errorColor: string
+	infoColor: string
+	textPrimary: string
+	textSecondary: string
+	textPlaceholder: string
+	textDisabled: string
+	textInverse: string
+	bgPrimary: string
+	bgSecondary: string
+	bgHover: string
+	bgMask: string
+	borderColor: string
+	borderFocus: string
+}
+
+/**
+ * 获取主题配置对象
+ * @returns ThemeConfig 主题配置
+ */
+export function getThemeConfig(): ThemeConfig {
+	const config: ThemeConfig = {
+		primaryColor: PRIMARY_COLOR,
+		successColor: SUCCESS_COLOR,
+		warningColor: WARNING_COLOR,
+		errorColor: ERROR_COLOR,
+		infoColor: INFO_COLOR,
+		textPrimary: TEXT_PRIMARY,
+		textSecondary: TEXT_SECONDARY,
+		textPlaceholder: TEXT_PLACEHOLDER,
+		textDisabled: TEXT_DISABLED,
+		textInverse: TEXT_INVERSE,
+		bgPrimary: BG_PRIMARY,
+		bgSecondary: BG_SECONDARY,
+		bgHover: BG_HOVER,
+		bgMask: BG_MASK,
+		borderColor: BORDER_COLOR,
+		borderFocus: BORDER_FOCUS
+	}
+	return config
+}
+
+// ==================== TailwindCSS 颜色映射 ====================
+
+/**
+ * 获取 TailwindCSS 类名对应的颜色值
+ * @param colorName 颜色名称（如 'primary', 'success' 等）
+ * @returns 颜色值
+ */
+export function getTailwindColor(colorName: string): string {
+	if (colorName == 'primary') return PRIMARY_COLOR
+	if (colorName == 'success') return SUCCESS_COLOR
+	if (colorName == 'warning' || colorName == 'warn') return WARNING_COLOR
+	if (colorName == 'error' || colorName == 'danger') return ERROR_COLOR
+	if (colorName == 'info') return INFO_COLOR
+	if (colorName == 'light') return TEXT_INVERSE
+	if (colorName == 'dark') return TEXT_PRIMARY
+	return ''
+}

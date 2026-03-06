@@ -1,0 +1,228 @@
+<template>
+	<view v-if="show" class="wy-modal">
+		<view class="wy-modal__mask" @click="handleMaskClick"></view>
+		<view class="wy-modal__container" :class="`wy-modal--${position}`">
+			<view class="wy-modal__content">
+				<!-- 标题 -->
+				<view v-if="title || $slots.title" class="wy-modal__header">
+					<slot name="title">
+						<text class="wy-modal__title">{{ title }}</text>
+					</slot>
+					<view v-if="showClose" class="wy-modal__close" @click="handleClose">
+						<text>✕</text>
+					</view>
+				</view>
+				
+				<!-- 内容 -->
+				<view class="wy-modal__body">
+					<slot></slot>
+				</view>
+				
+				<!-- 底部 -->
+				<view v-if="showFooter || $slots.footer" class="wy-modal__footer">
+					<slot name="footer">
+						<view class="wy-modal__actions">
+							<view v-if="showCancel" class="wy-modal__button wy-modal__button--cancel" @click="handleCancel">
+								<text>{{ cancelText }}</text>
+							</view>
+							<view class="wy-modal__button wy-modal__button--confirm" @click="handleConfirm">
+								<text>{{ confirmText }}</text>
+							</view>
+						</view>
+					</slot>
+				</view>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+// 根据规范，defineProps 和 defineEmits 是编译宏，不需要导入
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	title: { type: String, default: '' },
+	position: { type: String, default: 'center' },
+	showClose: { type: Boolean, default: true },
+	showFooter: { type: Boolean, default: true },
+	showCancel: { type: Boolean, default: true },
+	cancelText: { type: String, default: '取消' },
+	confirmText: { type: String, default: '确定' },
+	maskClosable: { type: Boolean, default: true }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+	cancel: []
+	confirm: []
+}>()
+
+// Methods
+const handleMaskClick = () => {
+	if (props.maskClosable) {
+		handleClose()
+	}
+}
+
+const handleClose = () => {
+	emit('close')
+}
+
+const handleCancel = () => {
+	emit('cancel')
+	emit('close')
+}
+
+const handleConfirm = () => {
+	emit('confirm')
+}
+</script>
+
+<style scoped>
+.wy-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9998;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.wy-modal__mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	animation: fade-in 0.3s;
+}
+
+.wy-modal__container {
+	position: relative;
+	z-index: 1;
+	width: 1200rpx;
+	max-height: 1000rpx;
+	animation: slide-in 0.3s;
+}
+
+.wy-modal--center {
+	animation: zoom-in 0.3s;
+}
+
+.wy-modal--top {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	width: 100%;
+	animation: slide-down 0.3s;
+}
+
+.wy-modal--bottom {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	width: 100%;
+}
+
+.wy-modal__content {
+	background-color: #ffffff;
+	border-radius: 32rpx;
+	overflow: hidden;
+}
+
+.wy-modal--top .wy-modal__content,
+.wy-modal--bottom .wy-modal__content {
+	border-radius: 0;
+}
+
+.wy-modal--bottom .wy-modal__content {
+	border-top-left-radius: 64rpx;
+	border-top-right-radius: 64rpx;
+}
+
+.wy-modal__header {
+	position: relative;
+	padding: 64rpx 64rpx 48rpx;
+	border-bottom: 2rpx solid #f0f0f0;
+}
+
+.wy-modal__title {
+	font-size: 64rpx;
+	color: #333333;
+	font-weight: bold;
+	text-align: center;
+}
+
+.wy-modal__close {
+	position: absolute;
+	top: 64rpx;
+	right: 64rpx;
+	width: 96rpx;
+	height: 96rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.wy-modal__close text {
+	font-size: 72rpx;
+	color: #999999;
+}
+
+.wy-modal__body {
+	padding: 64rpx;
+	max-height: 800rpx;
+	overflow-y: auto;
+}
+
+.wy-modal__footer {
+	padding: 48rpx 64rpx 64rpx;
+	border-top: 2rpx solid #f0f0f0;
+}
+
+.wy-modal__actions {
+	display: flex;
+	flex-direction: row;
+	margin-right: 40rpx;
+	margin-left: 40rpx;
+}
+
+.wy-modal__button {
+	flex: 1;
+	height: 144rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 16rpx;
+}
+
+.wy-modal__button text {
+	font-size: 56rpx;
+}
+
+.wy-modal__button--cancel {
+	background-color: #f5f5f5;
+	color: #666666;
+}
+
+.wy-modal__button--cancel text {
+	color: #666666;
+}
+
+.wy-modal__button--confirm {
+	background-color: #2EAEF2;
+	color: #ffffff;
+}
+
+.wy-modal__button--confirm text {
+	color: #ffffff;
+}
+</style>

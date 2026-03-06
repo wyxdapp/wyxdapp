@@ -1,0 +1,1631 @@
+<template>
+	<view class="login-page">
+		<!-- 背景 -->
+		<image class="bg-image" src="https://jiasu.wyxdapp.com/iconimages/login_bg.jpg" mode="aspectFill"></image>
+		
+		<!-- 返回按钮 -->
+		<view class="back-btn" @click="handleBack">
+			<image class="back-icon" src="https://jiasu.wyxdapp.com/iconimages/fanhui.png" mode="aspectFit"></image>
+		</view>
+		
+		<!-- 登录方式选择 -->
+		<view v-if="loginType == 'select'" class="login-select">
+			<view class="login-buttons">
+				<!-- 微信登录 -->
+				<view v-if="showWechatLogin == true" class="login-btn wechat-btn" @click="handleWechatLogin">
+					<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/login_wechat.png" mode="aspectFit"></image>
+					<text class="btn-text">微信登录</text>
+				</view>
+				
+				<!-- 手机登录 -->
+				<view class="login-btn phone-btn" @click="switchToPhoneLogin">
+					<image class="btn-icon" src="https://jiasu.wyxdapp.com/iconimages/login_mobile.png" mode="aspectFit"></image>
+					<text class="btn-text">手机登录</text>
+				</view>
+			</view>
+			
+			<view class="agreement-check" @click="toggleAgreement">
+				<view :class="agreementChecked == true ? 'checkbox-checked' : 'checkbox-unchecked'">
+					<text v-if="agreementChecked == true" class="checkbox-icon">✓</text>
+				</view>
+				<text class="agreement-text">我已阅读并同意</text>
+				<text class="agreement-link" @click.stop="goToAgreement('user')">《用户协议》</text>
+				<text class="agreement-text">和</text>
+				<text class="agreement-link" @click.stop="goToAgreement('privacy')">《隐私政策》</text>
+			</view>
+			
+			<!-- 备案号 -->
+			<view class="icp-container" @click="goToIcpQuery">
+				<text class="icp-text">备案号：{{ ICP_RECORD_NUMBER }}</text>
+			</view>
+		</view>
+		
+		<!-- 手机号登录 -->
+		<view v-if="loginType == 'phone'" class="login-form">
+			<view class="form-title">
+				<text class="form-title-text">手机号登录</text>
+			</view>
+			
+			<view class="form-content">
+				<!-- 登录方式切换 Tab -->
+				<view class="login-mode-tabs">
+					<view 
+						:class="loginModeIndex == 0 ? 'tab-item tab-active' : 'tab-item'"
+						@click="switchLoginMode(0)"
+					>
+						<text :class="loginModeIndex == 0 ? 'tab-text tab-text-active' : 'tab-text'">密码登录</text>
+					</view>
+					<view 
+						:class="loginModeIndex == 1 ? 'tab-item tab-active' : 'tab-item'"
+						@click="switchLoginMode(1)"
+					>
+						<text :class="loginModeIndex == 1 ? 'tab-text tab-text-active' : 'tab-text'">验证码登录</text>
+					</view>
+				</view>
+
+				<!-- 手机号输入 -->
+				<view class="input-wrapper">
+					<input
+						class="login-input"
+						type="number"
+						v-model="phone"
+						placeholder="请输入手机号"
+						:maxlength="11"
+						placeholder-class="input-placeholder"
+					/>
+				</view>
+
+				<!-- 验证码输入 -->
+				<view v-if="loginMode == 'code'" class="code-input-container">
+					<view class="input-wrapper code-input-wrapper">
+						<input
+							class="code-input"
+							type="number"
+							v-model="code"
+							placeholder="请输入验证码"
+							:maxlength="4"
+							placeholder-class="input-placeholder"
+						/>
+					</view>
+					<view 
+						:class="countdown > 0 ? 'send-code-btn send-code-btn-disabled' : 'send-code-btn'"
+						@click="handleSendCode"
+					>
+						<text class="send-code-text">{{ sendCodeBtnText }}</text>
+					</view>
+				</view>
+				
+				<!-- 密码输入 -->
+				<view v-if="loginMode == 'password'" class="input-wrapper">
+					<input
+						class="login-input"
+						:type="showPassword == true ? 'text' : 'password'"
+						v-model="password"
+						placeholder="请输入密码"
+						placeholder-class="input-placeholder"
+					/>
+					<view class="password-toggle" @click="togglePasswordVisible">
+						<text class="password-toggle-text">{{ showPassword == true ? '隐藏' : '显示' }}</text>
+					</view>
+				</view>
+				
+				<!-- 隐私协议 -->
+				<view class="agreement-check" @click="toggleAgreement">
+					<view :class="agreementChecked == true ? 'checkbox-checked' : 'checkbox-unchecked'">
+						<text v-if="agreementChecked == true" class="checkbox-icon">✓</text>
+					</view>
+					<text class="agreement-text">我已阅读并同意</text>
+					<text class="agreement-link" @click.stop="goToAgreement('user')">《用户协议》</text>
+					<text class="agreement-text">和</text>
+					<text class="agreement-link" @click.stop="goToAgreement('privacy')">《隐私政策》</text>
+				</view>
+				
+				<!-- 登录按钮 -->
+				<view 
+					:class="canSubmit == true ? 'submit-btn' : 'submit-btn submit-btn-disabled'"
+					@click="handleLogin"
+				>
+					<text class="submit-btn-text">{{ submitBtnText }}</text>
+				</view>
+				
+				<!-- 备案号 -->
+				<view class="icp-container-form" @click="goToIcpQuery">
+					<text class="icp-text">备案号：{{ ICP_RECORD_NUMBER }}</text>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 加载遮罩 -->
+		<view v-if="loading == true" class="loading-mask">
+			<view class="loading-content">
+				<view class="loading-spinner"></view>
+				<text class="loading-text">{{ loadingText }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { initUserInfoAction } from '@/stores/user'
+import { wxLogin, WxLoginParams } from '@/pagesUser/services/authService'
+import { request } from '@/utils/request'
+import { getLoginType } from '@/common/utils/systemInfo'
+import { showToast, showErrorToast, showSuccessToast } from '@/common/utils/coolUnixUtils'
+import { goToHome, getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { triggerMarketingPopup, TRIGGER_TYPE_LOGIN_SUCCESS } from '@/common/services/marketingPopupService.uts'
+import { getSystemSettings } from '@/api/config.uts'
+import { parseBooleanConfig } from '@/common/composables/useFeatureToggles.uts'
+import { saveToken } from '@/common/utils/security/tokenManager.uts'
+import { ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
+import { safeSetStorageSync } from '@/common/utils/storageHelper'
+
+// 导入平台检测工具
+import { getCurrentPlatform, isAppPlatform, isH5Platform, isMpWeixinPlatform } from '@/common/utils/utsSafe.uts'
+
+// 导入登录工具函数
+import { 
+	parseApiResponseCode, 
+	clearWxCodeCache, 
+	getWxCodeFromCache, 
+	isWxCodeUsed, 
+	setWxCodeUsed,
+	saveWxCodeToCache,
+	saveUserInfoToStorage, 
+	saveTokenToStorage,
+	saveAgreementStatus,
+	isAgreementAccepted,
+	isWxCodeError
+} from '@/common/utils/loginUtils'
+
+// APP 端微信登录服务（标准基座下为占位实现，自定义基座下可用）
+import { initWeChatSDK as initWeChatSDKApp, getWechatAuthCode as getWechatAuthCodeApp, cleanupWeChatSDK } from '@/pagesUser/services/wechatLogin/wechatLoginApp'
+
+// H5 端微信登录服务
+import { getWechatAuthCode as getWechatAuthCodeH5 } from '@/pagesUser/services/wechatLogin/wechatLoginH5'
+
+// 微信小程序端微信登录服务
+import { getWechatAuthCode as getWechatAuthCodeMp } from '@/common/services/wechatLogin/wechatLoginMp'
+
+// ========== 类型定义 ==========
+interface WxLoginResponse {
+	status?: string | boolean
+	code?: string | number
+	msg?: string
+	data?: UTSJSONObject | null
+}
+
+interface UserInfo {
+	kid?: string
+	bindingPhone?: number
+	firstLogin?: number
+	isNewUser?: boolean
+	token?: string
+	phone?: string
+	nickname?: string
+	nickName?: string
+	image?: string
+	avatarUrl?: string
+	phoneWebToken?: string
+	username?: string
+	sex?: string
+	signature?: string
+	background?: string
+}
+
+// ========== 响应式数据 ==========
+const loginType = ref<string>('select')
+const loginMode = ref<string>('password')
+const loginModeIndex = ref<number>(0)
+const phone = ref<string>('')
+const code = ref<string>('')
+const password = ref<string>('')
+const showPassword = ref<boolean>(false)
+const countdown = ref<number>(0)
+const loading = ref<boolean>(false)
+const agreementChecked = ref<boolean>(false)
+const isWxLoginProcessing = ref<boolean>(false)
+const loadingText = ref<string>('登录中...')
+
+// 🆕 微信登录显示开关（默认隐藏）
+const showWechatLogin = ref<boolean>(false)
+
+// ========== 内存泄漏修复：资源跟踪变量 ==========
+// 组件挂载状态，用于防止异步操作更新已销毁组件
+const isMounted = ref<boolean>(false)
+// H5 端待处理的自动登录标志（用于解决 onLoad 时组件未挂载的问题）
+const pendingAutoLogin = ref<boolean>(false)
+// 定时器 ID 跟踪
+let countdownTimerId: number = 0
+let navigationTimerId: number = 0
+
+// ========== 计算属性 ==========
+const sendCodeBtnText = computed(() => {
+	if (countdown.value > 0) {
+		return countdown.value.toString() + 's'
+	}
+	return '发送验证码'
+})
+
+const canSubmit = computed(() => {
+	if (agreementChecked.value == false) return false
+	if (loading.value == true) return false
+	return true
+})
+
+const submitBtnText = computed(() => {
+	if (loading.value == true) return '登录中...'
+	return '登录'
+})
+
+// ========== 简单事件处理 ==========
+function toggleAgreement() {
+	agreementChecked.value = (agreementChecked.value == false)
+}
+
+function togglePasswordVisible() {
+	showPassword.value = (showPassword.value == false)
+}
+
+function switchToPhoneLogin() {
+	loginType.value = 'phone'
+}
+
+function switchLoginMode(index: number) {
+	loginModeIndex.value = index
+	loginMode.value = (index == 0) ? 'password' : 'code'
+}
+
+// ========== 工具函数 ==========
+
+// 🆕 从对象获取字符串属性（修复：添加 try-catch 防止迭代 null 对象）
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	try {
+		// 先序列化为 UTSJSONObject
+		const jsonObj = JSON.parse(JSON.stringify(obj)) as UTSJSONObject
+		const val = jsonObj.get(key)
+		if (val != null && val.toString() != '') {
+			return val.toString()
+		}
+	} catch (e) {
+		handleSilentError(e, '[getObjString] 获取属性: ' + key)
+	}
+	return ''
+}
+
+// 🆕 加载系统配置（修复：增强错误处理，防止渲染错误）
+const loadSystemSettings = () => {
+	try {
+		getSystemSettings().then((res) => {
+			if (isMounted.value == false) {
+				console.log('[Login] 组件已卸载，跳过配置加载')
+				return
+			}
+			
+			try {
+				const code = getResponseCode(res)
+				const dataObj = getResponseData(res)
+				
+				if (code == 200 && dataObj != null) {
+					const showLoginVal = getObjString(dataObj, 'show_wechat_login')
+					if (showLoginVal != '') {
+						showWechatLogin.value = parseBooleanConfig(showLoginVal)
+					}
+					console.log('[Login] 微信登录显示状态:', showWechatLogin.value)
+				} else {
+					console.log('[Login] 系统配置响应码:', code)
+					showWechatLogin.value = false
+				}
+			} catch (parseError) {
+				handleSilentError(parseError, '[Login] 解析系统配置')
+				showWechatLogin.value = false
+			}
+		}).catch((error) => {
+			handleSilentError(error as any, '[Login] 加载系统配置')
+			showWechatLogin.value = false
+		})
+	} catch (outerError) {
+		handleSilentError(outerError, '[Login] loadSystemSettings 外层异常')
+		showWechatLogin.value = false
+	}
+}
+
+// 🔧 内存泄漏修复：清理所有定时器
+function clearAllTimers() {
+	console.log('🧹 [LOGIN] 清理所有定时器')
+	try {
+		if (countdownTimerId != 0) {
+			clearInterval(countdownTimerId)
+			countdownTimerId = 0
+		}
+	} catch (e) {
+		handleSilentError(e, '清理倒计时定时器')
+		countdownTimerId = 0
+	}
+	
+	try {
+		if (navigationTimerId != 0) {
+			clearTimeout(navigationTimerId)
+			navigationTimerId = 0
+		}
+	} catch (e) {
+		handleSilentError(e, '清理导航定时器')
+		navigationTimerId = 0
+	}
+}
+
+// 🔧 内存泄漏修复：统一资源清理函数
+function performCleanup() {
+	console.log('🧹 [LOGIN] 执行资源清理')
+	
+	// 1. 清理定时器
+	clearAllTimers()
+	
+	// 2. 重置异步操作状态
+	isWxLoginProcessing.value = false
+	loading.value = false
+	
+	// 3. 重置倒计时
+	countdown.value = 0
+}
+
+// 检查协议是否已勾选
+function checkAgreement() {
+	if (agreementChecked.value == null || agreementChecked.value == false) {
+		showToast('请先阅读并同意用户协议和隐私政策')
+		return false
+	}
+	return true
+}
+
+// 保存用户信息到 Storage
+function saveUserInfo(userInfoRaw: UTSJSONObject) {
+	try {
+		const rawJson = (userInfoRaw != null) ? JSON.stringify(userInfoRaw) : ''
+		if (rawJson != null && rawJson != '') {
+			safeSetStorageSync('userInfo', rawJson)
+			const mTok = rawJson.match(/"token"\s*:\s*"([^"]+)"/)
+			if (mTok != null && mTok[1] != null) {
+				saveToken(mTok[1].toString())
+			}
+		}
+	} catch (e) {
+		handleSilentError(e, '保存用户信息')
+	}
+}
+
+// 初始化 WebSocket（通过 Storage 触发）
+function initWebSocketByStorage(kid: string) {
+	try {
+		if (kid != null && kid != '') {
+			safeSetStorageSync('pending_ws_kid', kid)
+		}
+	} catch (e) {
+		handleSilentError(e, '保存WebSocket kid')
+	}
+}
+
+// ========== 导航处理 ==========
+function navigateAfterLogin() {
+	console.log('[LOGIN] 执行登录后导航')
+	
+	// 触发登录成功营销弹窗事件
+	triggerMarketingPopup(TRIGGER_TYPE_LOGIN_SUCCESS)
+	
+	try {
+		const redirectUrl = uni.getStorageSync('login_redirect_url')
+		const redirectUrlVal = (redirectUrl != null && redirectUrl != '') ? redirectUrl.toString() : ''
+		if (redirectUrlVal != '') {
+			console.log('🔄 [LOGIN] 跳转到指定页面:', redirectUrlVal)
+			uni.removeStorageSync('login_redirect_url')
+			uni.redirectTo({ 
+				url: redirectUrlVal,
+				fail: () => { goToHome() }
+			})
+		} else {
+			// 使用全局工具函数跳转首页
+			goToHome()
+		}
+	} catch (error) {
+		handleSilentError(error, '导航处理')
+		// 使用全局工具函数跳转首页
+		goToHome()
+	}
+}
+
+// ========== 微信 SDK 初始化 ==========
+function initWeChatSDKWrapper() {
+	const platform = getCurrentPlatform()
+	console.log('📱 [WX-SDK] 初始化微信SDK，平台:', platform)
+	
+	if (isAppPlatform() == true) {
+		// APP 端：初始化 tt-wechat-pro 插件
+		console.log('🌐 [WX-SDK] APP端初始化 tt-wechat-pro 插件')
+		initWeChatSDKApp()
+	} else {
+		console.log('🌐 [WX-SDK] 非APP端，跳过SDK初始化')
+	}
+}
+
+// ========== 获取微信授权 code ==========
+function getWechatAuthCodeWrapper(onSuccess: (code: string) => void, onError: (msg: string) => void) {
+	const platform = getCurrentPlatform()
+	console.log('📱 [WX-AUTH] 获取微信授权code，平台:', platform)
+	
+	uni.removeStorageSync('wxCode')
+	
+	if (isAppPlatform() == true) {
+		// APP 端：使用 tt-wechat-pro 插件（需要自定义基座）
+		console.log('📱 [WX-AUTH] APP端使用 tt-wechat-pro 插件')
+		getWechatAuthCodeApp(onSuccess, onError)
+	} else if (isMpWeixinPlatform() == true) {
+		// 微信小程序端：使用 uni.login 获取 code
+		console.log('📱 [WX-AUTH] 小程序端，调用 getWechatAuthCodeMp')
+		getWechatAuthCodeMp(onSuccess, onError)
+	} else if (isH5Platform() == true) {
+		// H5 端：使用微信网页授权
+		getWechatAuthCodeH5(onSuccess, onError)
+	} else {
+		onError('当前平台不支持微信登录')
+	}
+}
+
+// ========== 微信登录核心逻辑 ==========
+const handleWechatLoginInternal = async () => {
+	if (isWxLoginProcessing.value) {
+		console.log('⚠️ [微信登录] 已在处理中，跳过重复调用')
+		return
+	}
+	
+	// 🔧 内存泄漏修复：检查组件是否仍然挂载
+	if (isMounted.value == false) {
+		console.log('⚠️ [微信登录] 组件已卸载，跳过登录操作')
+		return
+	}
+	
+	try {
+		isWxLoginProcessing.value = true
+		console.log('🔍 [微信登录] 开始内部登录流程')
+		
+		const wxCode = getWxCodeFromCache()
+		if (wxCode == '') {
+			throw new Error('获取微信授权code失败')
+		}
+		
+		// 获取登录类型 - APP 端直接使用 10，避免函数调用问题
+		// 重要说明：
+		// - type=10: APP 登录（使用微信开放平台）
+		// - type=20: 公众号登录（微信浏览器内 H5，使用公众号 AppID）
+		// - type=30: 小程序登录
+		// - type=40: H5 网页登录（非微信浏览器，使用开放平台扫码）
+		// 
+		// H5 端使用公众号 AppID (wx428774d18f12e2b1) 获取 code，
+		// 所以必须使用 type=20，否则后端会用错误的 AppID 导致 invalid code
+		let type = 20 // 默认 H5 公众号登录
+		// #ifdef APP-PLUS || APP-ANDROID || APP-IOS
+		type = 10 // APP 登录
+		console.log('📱 [LOGIN-TYPE] APP环境，type=10')
+		// #endif
+		// #ifdef MP-WEIXIN
+		type = 30 // 小程序登录
+		console.log('📱 [LOGIN-TYPE] 小程序环境，type=30')
+		// #endif
+		// #ifdef H5
+		type = 20 // H5 公众号登录（微信浏览器内，使用公众号 AppID）
+		console.log('📱 [LOGIN-TYPE] H5环境，type=20（公众号登录）')
+		// #endif
+		
+		setWxCodeUsed()
+		
+		// 构建登录参数 - 不使用 as WxLoginParams 类型转换，避免 Android ClassCastException
+		const loginParams = {
+			code: wxCode,
+			type: type.toString()
+		} as UTSJSONObject
+		const res = await wxLogin(loginParams)
+		
+		// 使用 UTSJSONObject 方式解析响应，避免 ClassCastException
+		const resStr = (res != null) ? JSON.stringify(res) : ''
+		if (resStr == '' || resStr == '{}') {
+			throw new Error('登录接口返回空响应')
+		}
+		const resObj = JSON.parse(resStr) as UTSJSONObject
+		
+		// 获取响应字段
+		const statusVal = resObj.get('status')
+		const codeVal = resObj.get('code')
+		const msgVal = resObj.get('msg')
+		const dataVal = resObj.get('data')
+		
+		console.log('📥 微信登录接口响应:', { 
+			status: statusVal, 
+			code: codeVal, 
+			msg: msgVal, 
+			hasData: (dataVal != null) 
+		})
+		
+		// 检查响应状态
+		if (statusVal == null || statusVal == false || statusVal.toString() == '' || statusVal.toString() == 'false') {
+			const errMsg = (msgVal != null && msgVal.toString() != '') ? msgVal.toString() : '登录接口返回失败'
+			throw new Error(errMsg)
+		}
+		
+		if (dataVal != null) {
+			// 解析 data 对象
+			const dataStr = JSON.stringify(dataVal)
+			const dataObj = JSON.parse(dataStr) as UTSJSONObject
+			
+			// 获取用户信息字段
+			const kidVal = dataObj.get('kid')
+			const bindingPhoneVal = dataObj.get('bindingPhone')
+			const firstLoginVal = dataObj.get('firstLogin')
+			const isNewUserVal = dataObj.get('isNewUser')
+			
+			const kidStr = (kidVal != null) ? kidVal.toString() : ''
+			
+			if (kidStr == '') {
+				// 检查是否需要绑定手机号
+				const bindingPhone = (bindingPhoneVal != null) ? parseInt(bindingPhoneVal.toString()) : 0
+				const firstLogin = (firstLoginVal != null) ? parseInt(firstLoginVal.toString()) : 0
+				const isNewUser = (isNewUserVal != null && isNewUserVal.toString() == 'true')
+				
+				if (bindingPhone == 20 || firstLogin == 10 || isNewUser == true) {
+					console.log('🔍 新用户需要绑定手机号')
+					
+					// ⭐ 保存微信用户信息到 storage（用于绑定页面获取昵称/头像）
+					const nicknameVal = dataObj.get('nickname')
+					const headimgurlVal = dataObj.get('headimgurl')
+					const imageVal = dataObj.get('image')
+					const avatarUrlVal = dataObj.get('avatarUrl')
+					
+					// 获取昵称（优先 nickname）
+					let wxNickname = ''
+					if (nicknameVal != null && nicknameVal.toString() != '') {
+						wxNickname = nicknameVal.toString()
+					}
+					
+					// 获取头像（优先 headimgurl，其次 image，最后 avatarUrl）
+					let wxHeadimgurl = ''
+					if (headimgurlVal != null && headimgurlVal.toString() != '') {
+						wxHeadimgurl = headimgurlVal.toString()
+					} else if (imageVal != null && imageVal.toString() != '') {
+						wxHeadimgurl = imageVal.toString()
+					} else if (avatarUrlVal != null && avatarUrlVal.toString() != '') {
+						wxHeadimgurl = avatarUrlVal.toString()
+					}
+					
+					// 保存微信用户信息
+					if (wxNickname != '' || wxHeadimgurl != '') {
+						const wechatUserInfoJson = JSON.stringify({
+							nickname: wxNickname,
+							headimgurl: wxHeadimgurl
+						})
+						safeSetStorageSync('wechatUserInfo', wechatUserInfoJson)
+					}
+					
+					safeSetStorageSync('wx_bind_code', wxCode)
+					safeSetStorageSync('wx_bind_type', type.toString())
+					uni.navigateTo({
+						url: '/pagesUser/login/bindMobile/index?code=' + encodeURIComponent(wxCode) + '&type=' + type.toString(),
+						fail: () => { showErrorToast('跳转失败，请重试') }
+					})
+					return
+				}
+				throw new Error('登录返回的用户信息不完整')
+			}
+
+			// 构建用户信息对象
+			const tokenVal = dataObj.get('token')
+			const phoneVal = dataObj.get('phone')
+			const nicknameVal = dataObj.get('nickname')
+			const nickNameVal = dataObj.get('nickName')
+			const imageVal = dataObj.get('image')
+			const avatarUrlVal = dataObj.get('avatarUrl')
+			const phoneWebTokenVal = dataObj.get('phoneWebToken')
+			const usernameVal = dataObj.get('username')
+			const sexVal = dataObj.get('sex')
+			const signatureVal = dataObj.get('signature')
+			const backgroundVal = dataObj.get('background')
+			
+			// 处理昵称（优先 nickname，其次 nickName）
+			let nickname = ''
+			if (nicknameVal != null && nicknameVal.toString() != '') {
+				nickname = nicknameVal.toString()
+			} else if (nickNameVal != null && nickNameVal.toString() != '') {
+				nickname = nickNameVal.toString()
+			}
+			
+			// 处理头像（优先 image，其次 avatarUrl）
+			let image = ''
+			if (imageVal != null && imageVal.toString() != '') {
+				image = imageVal.toString()
+			} else if (avatarUrlVal != null && avatarUrlVal.toString() != '') {
+				image = avatarUrlVal.toString()
+			}
+			
+			const userInfoRaw = {
+				kid: kidStr,
+				token: (tokenVal != null) ? tokenVal.toString() : '',
+				phone: (phoneVal != null) ? phoneVal.toString() : '',
+				nickname: nickname,
+				image: image,
+				phoneWebToken: (phoneWebTokenVal != null) ? phoneWebTokenVal.toString() : '',
+				username: (usernameVal != null) ? usernameVal.toString() : '',
+				sex: (sexVal != null) ? sexVal.toString() : '',
+				signature: (signatureVal != null) ? signatureVal.toString() : '',
+				background: (backgroundVal != null) ? backgroundVal.toString() : ''
+			} as UTSJSONObject
+			
+			// 🔒 认证关键数据空值检查：token 为空时触发重新登录
+			const tokenStr = (tokenVal != null) ? tokenVal.toString() : ''
+			if (tokenStr == '') {
+				console.warn('⚠️ [LOGIN] 微信登录返回的 token 为空，触发重新登录')
+				clearWxCodeCache()
+				showErrorToast('登录凭证获取失败，请重新登录')
+				return
+			}
+			
+			saveUserInfo(userInfoRaw)
+		
+		clearWxCodeCache()
+			
+			// 🔧 内存泄漏修复：检查组件是否仍然挂载后再导航
+			if (isMounted.value == true) {
+				navigateAfterLogin()
+			}
+			return
+		}
+		
+		clearWxCodeCache()
+		throw new Error('微信登录失败，请重试')
+	} catch (error) {
+		handleSilentError(error, '微信登录')
+		
+		let errorMsg = '微信登录失败'
+		if (error != null && error.message != null && error.message != '') {
+			errorMsg = error.message.toString()
+		}
+		
+		// 检查是否是"首次登录需要绑定手机号"的错误
+		if (errorMsg.indexOf('首次登录需要绑定手机号') != -1 || errorMsg.indexOf('绑定手机号') != -1) {
+			console.log('🔍 检测到需要绑定手机号，跳转到绑定页面')
+			// 获取当前的 wxCode
+			const wxCode = getWxCodeFromCache()
+			if (wxCode != '') {
+				// 获取登录类型（与上面的 type 保持一致）
+				let bindType = 20 // 默认 H5 公众号登录
+				// #ifdef APP-PLUS || APP-ANDROID || APP-IOS
+				bindType = 10
+				// #endif
+				// #ifdef MP-WEIXIN
+				bindType = 30
+				// #endif
+				// #ifdef H5
+				bindType = 20 // H5 公众号登录
+				// #endif
+				
+				// ⭐ 注意：在错误处理中，我们没有响应数据，无法获取微信用户信息
+				// 微信用户信息将由后端缓存提供，或者使用默认值
+				console.log('⚠️ 错误处理中跳转，无法获取微信用户信息，将依赖后端缓存')
+				
+				safeSetStorageSync('wx_bind_code', wxCode)
+				safeSetStorageSync('wx_bind_type', bindType.toString())
+				uni.navigateTo({
+					url: '/pagesUser/login/bindMobile/index?code=' + encodeURIComponent(wxCode) + '&type=' + bindType.toString(),
+					fail: () => { 
+						showErrorToast('跳转失败，请重试') 
+						clearWxCodeCache()
+					}
+				})
+				return
+			}
+		}
+		
+		clearWxCodeCache()
+		
+		if (isWxCodeError(errorMsg) == true) {
+			errorMsg = '微信授权已失效，请重新授权'
+		}
+		
+		showErrorToast(errorMsg)
+	} finally {
+		loading.value = false
+		isWxLoginProcessing.value = false
+	}
+}
+
+// ========== APP 端微信登录处理 ==========
+function doWxLoginWithCodeForApp(wxCode: string) {
+	safeSetStorageSync('wxCode', wxCode)
+	void handleWechatLoginInternal()
+}
+
+function handleWxLoginErrorForApp(error: string) {
+	console.error('❌ [APP] 微信授权失败:', error)
+	clearWxCodeCache()
+	// 🔧 内存泄漏修复：登录失败时清理 SDK 状态
+	cleanupWeChatSDK()
+	showErrorToast(error)
+	loading.value = false
+	isWxLoginProcessing.value = false
+}
+
+function handleWechatLoginForAppImpl() {
+	if (loading.value == true || isWxLoginProcessing.value == true) {
+		showToast('登录正在进行中，请稍候')
+		return
+	}
+	
+	if (checkAgreement() == false) return
+	saveAgreementStatus()
+	
+	if (isWxCodeUsed() == true && getWxCodeFromCache() != '') {
+		clearWxCodeCache()
+	}
+	
+	const currentWxCode = getWxCodeFromCache()
+	loading.value = true
+	loadingText.value = '微信登录中...'
+	
+	if (currentWxCode != '') {
+		void handleWechatLoginInternal()
+	} else {
+		getWechatAuthCodeWrapper(
+			(wxCode: string) => { doWxLoginWithCodeForApp(wxCode) },
+			(error: string) => { handleWxLoginErrorForApp(error) }
+		)
+	}
+}
+
+// ========== H5/小程序端微信登录处理 ==========
+const handleWechatLoginForWebImpl = async () => {
+	if (loading.value == true || isWxLoginProcessing.value == true) {
+		showToast('登录正在进行中，请稍候')
+		return
+	}
+	
+	if (checkAgreement() == false) return
+	saveAgreementStatus()
+	
+	if (isWxCodeUsed() == true && getWxCodeFromCache() != '') {
+		clearWxCodeCache()
+	}
+	
+	const currentWxCode = getWxCodeFromCache()
+	
+	try {
+		loading.value = true
+		loadingText.value = '微信登录中...'
+		
+		if (currentWxCode != '') {
+			await handleWechatLoginInternal()
+		} else {
+			getWechatAuthCodeWrapper(
+				(wxCode: string) => {
+					saveWxCodeToCache(wxCode)
+					void handleWechatLoginInternal()
+				},
+				(error: string) => {
+					showErrorToast(error)
+					loading.value = false
+				}
+			)
+		}
+	} catch (error) {
+		handleSilentError(error, '微信登录(Web)')
+		let errorMsg = '微信登录失败'
+		if (error != null && error.message != null && error.message != '') {
+			errorMsg = error.message.toString()
+		}
+		
+		if (isWxCodeError(errorMsg) == true) {
+			clearWxCodeCache()
+			getWechatAuthCodeWrapper(
+				(wxCode: string) => { saveWxCodeToCache(wxCode); void handleWechatLoginInternal() },
+				(err: string) => { showErrorToast(err); loading.value = false }
+			)
+		} else {
+			showErrorToast(errorMsg)
+		}
+	} finally {
+		loading.value = false
+	}
+}
+
+// ========== 微信登录统一入口 ==========
+function handleWechatLogin() {
+	const platform = getCurrentPlatform()
+	console.log('🔍 [LOGIN] 当前平台:', platform)
+	
+	if (isAppPlatform() == true) {
+		handleWechatLoginForAppImpl()
+	} else {
+		void handleWechatLoginForWebImpl()
+	}
+}
+
+// ========== 发送验证码 ==========
+const handleSendCode = async () => {
+	if (countdown.value > 0) return
+	
+	if (phone.value == null || phone.value == '') {
+		showToast('请输入手机号')
+		return
+	}
+	
+	const phoneRegex = /^1[3-9]\d{9}$/
+	if (phoneRegex.test(phone.value) == false) {
+		showToast('手机号格式不正确')
+		return
+	}
+	
+	if (checkAgreement() == false) return
+	
+	try {
+		loading.value = true
+		loadingText.value = '发送验证码中...'
+		
+		const paramsObj = new UTSJSONObject()
+		paramsObj.set('phone', phone.value.toString().trim())
+		
+		const res = await request.post('/user/baseInfo/getCode', paramsObj as UTSJSONObject, false) as UTSJSONObject
+		const resCode = parseApiResponseCode(res)
+		
+		if (resCode == 200) {
+			showSuccessToast('验证码已发送')
+			countdown.value = 60
+			
+			// 🔧 内存泄漏修复：使用 setInterval 替代递归 setTimeout，并跟踪定时器 ID
+			// 先清理可能存在的旧定时器
+			if (countdownTimerId != 0) {
+				clearInterval(countdownTimerId)
+				countdownTimerId = 0
+			}
+			
+			countdownTimerId = setInterval(() => {
+				// 检查组件是否仍然挂载
+				if (isMounted.value == false) {
+					if (countdownTimerId != 0) {
+						clearInterval(countdownTimerId)
+						countdownTimerId = 0
+					}
+					return
+				}
+				
+				if (countdown.value > 0) {
+					countdown.value = countdown.value - 1
+				}
+				
+				// 倒计时结束，清理定时器
+				if (countdown.value <= 0) {
+					if (countdownTimerId != 0) {
+						clearInterval(countdownTimerId)
+						countdownTimerId = 0
+					}
+				}
+			}, 1000)
+		} else {
+			showErrorToast('发送失败，请重试')
+		}
+	} catch (error) {
+		handlePageError(error, '发送验证码', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+// ========== 表单验证 ==========
+function validateForm() {
+	const phoneVal = phone.value
+	if (phoneVal == null || phoneVal == '') {
+		showToast('请输入手机号')
+		return false
+	}
+	
+	const phoneStr = phoneVal.toString().trim()
+	const phoneRegex = /^1[3-9]\d{9}$/
+	if (phoneRegex.test(phoneStr) == false) {
+		showToast('手机号格式不正确')
+		return false
+	}
+	
+	if (loginMode.value == 'code') {
+		const codeVal = code.value
+		if (codeVal == null || codeVal == '') {
+			showToast('请输入验证码')
+			return false
+		}
+		
+		// 🔧 修复：清理非数字字符（支持短信复制粘贴）
+		const cleanCode = codeVal.toString().replace(/\D/g, '')
+		
+		// 检查清理后的验证码
+		if (cleanCode.length != 4) {
+			showToast('验证码格式不正确，请输入4位数字')
+			return false
+		}
+		
+		// 更新验证码值为清理后的值
+		code.value = cleanCode
+	} else {
+		const passwordVal = password.value
+		if (passwordVal == null || passwordVal == '') {
+			showToast('请输入密码')
+			return false
+		}
+		if (passwordVal.length < 6) {
+			showToast('密码长度不能少于6位')
+			return false
+		}
+	}
+	
+	return true
+}
+
+// ========== 手机号登录处理 ==========
+const handleLogin = async () => {
+	// 🔧 修复：防止重复提交
+	if (loading.value == true) {
+		console.log('⚠️ [LOGIN] 登录正在进行中，忽略重复点击')
+		return
+	}
+	
+	if (checkAgreement() == false) return
+	if (validateForm() == false) return
+	
+	try {
+		loading.value = true
+		loadingText.value = (loginMode.value == 'code') ? '验证码登录中...' : '密码登录中...'
+		
+		let res: UTSJSONObject | null = null
+		const phoneStr = phone.value.toString().trim()
+		
+		if (loginMode.value == 'code') {
+			const paramsObj = new UTSJSONObject()
+			paramsObj.set('phone', phoneStr)
+			paramsObj.set('code', code.value.toString().trim())
+			res = await request.post('/user/baseInfo/loginByCode', paramsObj as UTSJSONObject, false) as UTSJSONObject
+		} else {
+			const paramsObj = new UTSJSONObject()
+			paramsObj.set('phone', phoneStr)
+			paramsObj.set('password', password.value.toString())
+			res = await request.post('/user/baseInfo/loginByPassword', paramsObj as UTSJSONObject, false) as UTSJSONObject
+		}
+		
+		const resCode = parseApiResponseCode(res)
+		
+		if (resCode == 200) {
+			const resJson = (res != null) ? JSON.stringify(res) : ''
+			let kidVal = ''
+			let tokenVal = ''
+			let phoneVal = ''
+			let nicknameVal = ''
+			
+			try {
+				if (resJson != null && resJson != '') {
+					const mKid = resJson.match(/"kid"\s*:\s*"([^"]+)"/)
+					const mToken = resJson.match(/"token"\s*:\s*"([^"]+)"/)
+					const mPhone = resJson.match(/"phone"\s*:\s*"([^"]+)"/)
+					const mNick1 = resJson.match(/"nickname"\s*:\s*"([^"]+)"/)
+					const mNick2 = resJson.match(/"nickName"\s*:\s*"([^"]+)"/)
+					
+					if (mKid != null && mKid[1] != null) kidVal = mKid[1].toString()
+					if (mToken != null && mToken[1] != null) tokenVal = mToken[1].toString()
+					if (mPhone != null && mPhone[1] != null) phoneVal = mPhone[1].toString()
+					if (mNick1 != null && mNick1[1] != null) nicknameVal = mNick1[1].toString()
+					else if (mNick2 != null && mNick2[1] != null) nicknameVal = mNick2[1].toString()
+				}
+			} catch (e) {
+				handleSilentError(e, '解析登录响应数据')
+			}
+			
+			if (kidVal == '') {
+				throw new Error('登录返回数据不完整，请重试')
+			}
+			
+			// 🔒 认证关键数据空值检查：token 为空时触发重新登录
+			if (tokenVal == '') {
+				console.warn('⚠️ [LOGIN] 手机登录返回的 token 为空，触发重新登录')
+				showErrorToast('登录凭证获取失败，请重新登录')
+				return
+			}
+			
+			const userInfo = { kid: kidVal, token: tokenVal, phone: phoneVal, nickname: nicknameVal } as UTSJSONObject
+			saveUserInfo(userInfo)
+			
+			try { initUserInfoAction() } catch (e) {
+				handleSilentError(e, '初始化用户信息')
+			}
+			
+			initWebSocketByStorage(kidVal)
+			
+			safeSetStorageSync('login_privacy_agreed', 'true')
+			
+			// 🔧 修复：清空表单数据，防止重复提交
+			phone.value = ''
+			code.value = ''
+			password.value = ''
+			
+			showSuccessToast('登录成功')
+			
+			// 🔧 修复：直接跳转到首页，不使用 navigateBack
+			// 先清理可能存在的旧定时器
+			if (navigationTimerId != 0) {
+				clearTimeout(navigationTimerId)
+				navigationTimerId = 0
+			}
+			
+			navigationTimerId = setTimeout(() => {
+				// 检查组件是否仍然挂载
+				if (isMounted.value == false) {
+					navigationTimerId = 0
+					return
+				}
+				
+				navigationTimerId = 0
+				// 🔧 修复：始终跳转到首页或指定页面，不返回上一页
+				navigateAfterLogin()
+			}, 500)
+		} else {
+			throw new Error('登录失败，请检查账号密码')
+		}
+	} catch (error) {
+		handlePageError(error, '登录', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+// ========== 页面导航 ==========
+function handleBack() {
+	console.log('🔙 [LOGIN] 点击返回按钮，当前登录类型:', loginType.value)
+	
+	// 如果在手机号登录页面，返回到登录方式选择页面
+	if (loginType.value == 'phone') {
+		loginType.value = 'select'
+		console.log('🔙 [LOGIN] 从手机登录返回到选择页面')
+		return
+	}
+	
+	// 否则返回上一页
+	try {
+		const pages = getCurrentPages()
+		console.log('🔙 [LOGIN] 当前页面栈长度:', pages.length)
+		
+		if (pages.length > 1) {
+			// 有上一页，执行返回
+			console.log('🔙 [LOGIN] 执行 navigateBack')
+			uni.navigateBack({
+				fail: (err) => {
+					console.error('❌ [LOGIN] navigateBack 失败:', err)
+					// 返回失败时，尝试跳转到首页
+					uni.switchTab({
+						url: '/pages/index/index',
+						fail: () => {
+							console.error('❌ [LOGIN] switchTab 也失败，尝试 reLaunch')
+							uni.reLaunch({ url: '/pages/index/index' })
+						}
+					})
+				}
+			})
+		} else {
+			// 没有上一页，跳转到首页
+			console.log('🔙 [LOGIN] 没有上一页，跳转到首页')
+			uni.switchTab({
+				url: '/pages/index/index',
+				fail: () => {
+					console.error('❌ [LOGIN] switchTab 失败，尝试 reLaunch')
+					uni.reLaunch({ url: '/pages/index/index' })
+				}
+			})
+		}
+	} catch (error) {
+		handleSilentError(error, 'handleBack')
+		// 异常情况下，尝试跳转到首页
+		uni.reLaunch({ url: '/pages/index/index' })
+	}
+}
+
+function goToAgreement(type: string) {
+	uni.navigateTo({ url: '/pagesUser/my/agreement/index?type=' + type })
+}
+
+// 跳转到ICP备案查询官网
+function goToIcpQuery() {
+	const icpUrl = 'https://beian.miit.gov.cn/'
+	// #ifdef H5
+	// H5端直接打开新窗口
+	window.open(icpUrl, '_blank')
+	// #endif
+	// #ifdef APP-PLUS
+	// APP端使用系统浏览器打开
+	plus.runtime.openURL(icpUrl)
+	// #endif
+	// #ifdef MP-WEIXIN
+	// 小程序端复制链接并提示
+	uni.setClipboardData({
+		data: icpUrl,
+		success: () => {
+			uni.showToast({
+				title: '链接已复制，请在浏览器中打开',
+				icon: 'none',
+				duration: 2000
+			})
+		}
+	})
+	// #endif
+}
+
+// ========== 生命周期 ==========
+onLoad((options: OnLoadOptions) => {
+	console.log('🔍 [LOGIN] 页面加载，检查自动登录条件，isMounted:', isMounted.value)
+	
+	const wxCode = getWxCodeFromCache()
+	const hasCode = (wxCode != '')
+	const agreed = isAgreementAccepted()
+	const codeUsed = isWxCodeUsed()
+	
+	if (agreed == true) {
+		agreementChecked.value = true
+	}
+	
+	console.log('🔍 [LOGIN] 检查结果:', { hasCode: hasCode, agreed: agreed, codeUsed: codeUsed })
+	
+	if (hasCode == true && agreed == true && codeUsed == false) {
+		// #ifdef H5
+		// H5 端：设置待处理标志，在 onMounted 中执行（解决组件未挂载问题）
+		pendingAutoLogin.value = true
+		// #endif
+		
+		// #ifndef H5
+		// 非 H5 端（APP/小程序）：保持原有逻辑
+		// 注意：APP 端不会从 URL 获取 code，所以这个分支实际上不会触发
+		console.log('🎉 [LOGIN] 非H5端：检测到微信授权code且协议已同意，开始自动登录')
+		if (isWxLoginProcessing.value == false) {
+			void handleWechatLoginInternal()
+		}
+		// #endif
+	} else if (hasCode == true && agreed == true && codeUsed == true) {
+		console.log('⚠️ [LOGIN] wxCode已被使用，清理')
+		clearWxCodeCache()
+	} else if (hasCode == true && agreed == false) {
+		console.log('⚠️ [LOGIN] 需要用户勾选协议')
+	} else {
+		console.log('ℹ️ [LOGIN] 等待用户手动登录')
+	}
+})
+
+onMounted(() => {
+	// 🔧 关键修复：第一行设置挂载状态，确保后续操作能正确执行
+	isMounted.value = true
+	console.log('📱 [LOGIN] 页面挂载完成，isMounted:', isMounted.value)
+	
+	// 🔧 新增：记录设备信息用于诊断
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		if (systemInfo != null) {
+			const systemInfoObj = JSON.parse(JSON.stringify(systemInfo)) as UTSJSONObject
+			
+			const platformVal = systemInfoObj.get('platform')
+			const systemVal = systemInfoObj.get('system')
+			const modelVal = systemInfoObj.get('model')
+			const versionVal = systemInfoObj.get('version')
+			const sdkVersionVal = systemInfoObj.get('SDKVersion')
+			const appVersionVal = systemInfoObj.get('appVersion')
+			
+			console.log('📱 [LOGIN] 设备信息:', {
+				platform: (platformVal != null) ? platformVal.toString() : 'unknown',
+				system: (systemVal != null) ? systemVal.toString() : 'unknown',
+				model: (modelVal != null) ? modelVal.toString() : 'unknown',
+				version: (versionVal != null) ? versionVal.toString() : 'unknown',
+				sdkVersion: (sdkVersionVal != null) ? sdkVersionVal.toString() : 'unknown',
+				appVersion: (appVersionVal != null) ? appVersionVal.toString() : 'unknown'
+			})
+		}
+	} catch (e) {
+		handleSilentError(e, '获取设备信息')
+	}
+	
+	// 🆕 加载系统配置（在组件挂载后执行，避免渲染错误）
+	try {
+		loadSystemSettings()
+	} catch (e) {
+		handleSilentError(e, '调用 loadSystemSettings')
+		// 确保有默认值
+		showWechatLogin.value = false
+	}
+	
+	// 初始化微信 SDK
+	try {
+		initWeChatSDKWrapper()
+	} catch (e) {
+		handleSilentError(e, '初始化微信SDK')
+	}
+	
+	// #ifdef H5
+	// H5 端：检查并执行待处理的自动登录
+	if (pendingAutoLogin.value == true) {
+		console.log('🚀 [LOGIN] H5端：执行待处理的自动登录（从 onMounted 触发）')
+		pendingAutoLogin.value = false
+		if (isWxLoginProcessing.value == false) {
+			void handleWechatLoginInternal()
+		}
+	}
+	// #endif
+})
+
+// 🔧 内存泄漏修复：添加 onUnmounted 生命周期钩子
+onUnmounted(() => {
+	console.log('📱 [LOGIN] 页面卸载，执行资源清理')
+	// 设置卸载状态
+	isMounted.value = false
+	// 执行统一清理
+	performCleanup()
+})
+</script>
+
+<style scoped>
+.login-page {
+	position: relative;
+	width: 750rpx;
+	height: 100%;
+	overflow: hidden;
+	background-color: transparent;
+}
+
+.bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	width: 750rpx;
+	height: 100%;
+}
+
+.back-btn {
+	position: absolute;
+	top: 88rpx;
+	left: 32rpx;
+	width: 84rpx;
+	height: 84rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+}
+
+.back-icon {
+	width: 48rpx;
+	height: 48rpx;
+}
+
+.login-select {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-left: 60rpx;
+	padding-right: 60rpx;
+}
+
+.login-buttons {
+	width: 100%;
+	flex-direction: column;
+	margin-bottom: 60rpx;
+}
+
+.login-btn {
+	width: 100%;
+	height: 96rpx;
+	margin-bottom: 32rpx;
+	border-radius: 48rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-icon {
+	width: 44rpx;
+	height: 44rpx;
+	margin-right: 16rpx;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+
+.wechat-btn {
+	background-color: #07C160;
+}
+
+.apple-btn {
+	background-color: #000000;
+}
+
+.phone-btn {
+	background-color: #1890ff;
+	margin-bottom: 0;
+}
+
+.agreement-check {
+	flex-direction: row;
+	align-items: center;
+	flex-wrap: wrap;
+	justify-content: center;
+	margin-top: 24rpx;
+	margin-bottom: 32rpx;
+}
+
+.checkbox-unchecked {
+	width: 36rpx;
+	height: 36rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #cccccc;
+	border-radius: 6rpx;
+	margin-right: 12rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #ffffff;
+}
+
+.checkbox-checked {
+	width: 36rpx;
+	height: 36rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #1890ff;
+	border-radius: 6rpx;
+	margin-right: 12rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: #1890ff;
+}
+
+.checkbox-icon {
+	font-size: 24rpx;
+	color: #ffffff;
+}
+
+.agreement-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.agreement-link {
+	font-size: 24rpx;
+	color: #2EAEF2;
+	margin-left: 4rpx;
+	margin-right: 4rpx;
+	font-weight: 400;
+}
+
+.login-form {
+	position: absolute;
+	top: 25%;
+	left: 0;
+	right: 0;
+	flex-direction: column;
+	padding-left: 64rpx;
+	padding-right: 64rpx;
+}
+
+.form-title {
+	margin-bottom: 80rpx;
+}
+
+.form-title-text {
+	font-size: 64rpx;
+	color: #ffffff;
+	font-weight: bold;
+	letter-spacing: 2rpx;
+	line-height: 1.2;
+}
+
+.form-content {
+	flex-direction: column;
+}
+
+.login-mode-tabs {
+	flex-direction: row;
+	margin-bottom: 56rpx;
+	background-color: #F5F7FA;
+	border-radius: 28rpx;
+	padding-left: 8rpx;
+	padding-right: 8rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+}
+
+.tab-item {
+	flex: 1;
+	height: 72rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-radius: 20rpx;
+}
+
+.tab-active {
+	background-color: #ffffff;
+}
+
+.tab-text {
+	font-size: 28rpx;
+	color: #666666;
+}
+
+.tab-text-active {
+	color: #1890ff;
+	font-weight: bold;
+}
+
+.input-wrapper {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 32rpx;
+	background-color: rgba(255, 255, 255, 0.95);
+	border-radius: 16rpx;
+	height: 96rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+}
+
+.login-input {
+	flex: 1;
+	height: 96rpx;
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.input-placeholder {
+	color: #999999;
+	font-size: 30rpx;
+}
+
+.password-toggle {
+	padding-left: 16rpx;
+	padding-right: 16rpx;
+}
+
+.password-toggle-text {
+	font-size: 26rpx;
+	color: #1890ff;
+}
+
+.code-input-container {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 32rpx;
+}
+
+.code-input-wrapper {
+	flex: 1;
+	margin-bottom: 0;
+}
+
+.code-input {
+	flex: 1;
+	height: 96rpx;
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.send-code-btn {
+	flex-shrink: 0;
+	min-width: 200rpx;
+	height: 96rpx;
+	margin-left: 16rpx;
+	background-color: #1890ff;
+	border-radius: 16rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.send-code-btn-disabled {
+	background-color: #cccccc;
+}
+
+.send-code-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+.submit-btn {
+	width: 100%;
+	height: 96rpx;
+	margin-top: 16rpx;
+	background-color: #1890ff;
+	border-radius: 48rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn-disabled {
+	background-color: #cccccc;
+}
+
+.submit-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: normal;
+}
+
+.loading-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-content {
+	flex-direction: column;
+	align-items: center;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	padding-top: 48rpx;
+	padding-bottom: 48rpx;
+	background-color: rgba(0, 0, 0, 0.8);
+	border-radius: 16rpx;
+}
+
+.loading-spinner {
+	width: 64rpx;
+	height: 64rpx;
+	border-width: 4rpx;
+	border-style: solid;
+	border-color: rgba(255, 255, 255, 0.3);
+	border-top-color: #ffffff;
+	border-radius: 32rpx;
+	margin-bottom: 24rpx;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+/* 备案号样式 */
+.icp-container {
+	position: absolute;
+	bottom: 60rpx;
+	left: 0;
+	right: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.icp-container-form {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-top: 48rpx;
+}
+
+.icp-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+</style>

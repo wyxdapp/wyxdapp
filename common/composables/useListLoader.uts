@@ -1,0 +1,273 @@
+/**
+ * 通用列表加载 Composable
+ * 封装列表加载、刷新、分页等通用逻辑
+ * 
+ * @example
+ * const { list, loading, hasMore, loadList, refresh, loadMore } = useListLoader(
+ *   getTrendsList,
+ *   10,
+ *   () => ({ userKid: userKid.value })
+ * )
+ */
+
+import { ref, computed } from 'vue'
+import { 
+	getResponseCode, 
+	getResponseData, 
+	getEntities, 
+	getDataCount 
+} from '@/common/utils/utsSafe.uts'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 列表加载器返回值类型
+ */
+export interface ListLoaderResult {
+	// 状态
+	list: any
+	page: any
+	total: any
+	loading: any
+	refreshing: any
+	hasMore: any
+	
+	// 计算属性
+	listLength: any
+	isEmpty: any
+	
+	// 方法
+	loadList: (refresh: boolean) => Promise<void>
+	refresh: () => Promise<void>
+	loadMore: () => void
+	reset: () => void
+}
+
+// ==================== 主函数 ====================
+
+/**
+ * 创建列表加载器
+ * @param apiFn API 函数，接收 params 返回 Promise
+ * @param pageSize 每页数量，默认 10
+ * @param getParams 获取额外参数的函数（可选）
+ * @returns 列表加载器对象
+ */
+export function useListLoader(
+	apiFn: (params: any) => Promise<any>,
+	pageSize: number = 10,
+	getParams: (() => any) | null = null
+): ListLoaderResult {
+	
+	// ==================== 响应式状态 ====================
+	
+	const list = ref<Array<any>>([])
+	const page = ref<number>(1)
+	const total = ref<number>(0)
+	const loading = ref<boolean>(false)
+	const refreshing = ref<boolean>(false)
+	const hasMore = ref<boolean>(true)
+	
+	// ==================== 计算属性 ====================
+	
+	const listLength = computed((): number => {
+		try {
+			const arr = list.value
+			if (arr != null && Array.isArray(arr) == true) {
+				return (arr as Array<any>).length
+			}
+		} catch (e) {}
+		return 0
+	})
+	
+	const isEmpty = computed((): boolean => {
+		return listLength.value == 0
+	})
+	
+	// ==================== 内部方法 ====================
+	
+	/**
+	 * 解析 API 响应
+	 */
+	const parseResponse = (res: any): { entities: Array<any>, count: number } => {
+		try {
+			const code = getResponseCode(res)
+			if (code != 200) {
+				return { entities: [], count: 0 }
+			}
+			
+			const dataObj = getResponseData(res)
+			if (dataObj == null) {
+				return { entities: [], count: 0 }
+			}
+			
+			const entities = getEntities(dataObj)
+			const count = getDataCount(dataObj)
+			
+			return { entities: entities, count: count }
+		} catch (e: any) {
+			handleSilentError(e, '解析列表响应数据')
+			return { entities: [], count: 0 }
+		}
+	}
+	
+	/**
+	 * 构建请求参数
+	 */
+	const buildParams = (): any => {
+		const params = {
+			pageNumber: page.value,
+			pageSize: pageSize
+		} as any
+		
+		// 合并额外参数
+		if (getParams != null) {
+			try {
+				const extraParams = getParams()
+				if (extraParams != null) {
+					const extraStr = JSON.stringify(extraParams)
+					const extraObj = JSON.parse(extraStr) as UTSJSONObject
+					const keys = extraObj.getNames()
+					for (let i = 0; i < keys.length; i = i + 1) {
+						const key = keys[i]
+						const val = extraObj.get(key)
+						if (val != null) {
+							params[key] = val
+						}
+					}
+				}
+			} catch (e: any) {
+				handleSilentError(e, '获取列表额外参数')
+			}
+		}
+		
+		return params
+	}
+	
+	// ==================== 公开方法 ====================
+	
+	/**
+	 * 加载列表数据
+	 * @param isRefresh 是否刷新（重置分页）
+	 */
+	const loadList = async (isRefresh: boolean): Promise<void> => {
+		// 刷新时重置状态
+		if (isRefresh == true) {
+			page.value = 1
+			list.value = []
+		}
+		
+		// 防止重复加载
+		if (loading.value == true) return
+		loading.value = true
+		
+		try {
+			const params = buildParams()
+			console.log('📋 [useListLoader] 加载列表, page:', page.value, 'params:', JSON.stringify(params))
+			
+			const res = await apiFn(params)
+			const parsed = parseResponse(res)
+			const entities = parsed.entities
+			const count = parsed.count
+			
+			console.log('📋 [useListLoader] 响应数据, entities:', entities.length, 'count:', count)
+			
+			// 更新总数
+			total.value = count
+			
+			// 更新列表
+			if (isRefresh == true) {
+				list.value = entities
+			} else {
+				// 追加数据（使用 for 循环，符合 UTS 规范）
+				for (let i = 0; i < entities.length; i = i + 1) {
+					list.value.push(entities[i])
+				}
+			}
+			
+			// 更新 hasMore 状态
+			const currentLength = list.value.length
+			hasMore.value = currentLength < total.value
+			
+			console.log('📋 [useListLoader] 列表更新完成, length:', currentLength, 'hasMore:', hasMore.value)
+			
+		} catch (error: any) {
+			const errorOptions = new ErrorHandleOptions()
+			errorOptions.showToast = false
+			errorOptions.rethrow = false
+			handleError(error, '列表数据加载', errorOptions)
+			throw error
+		} finally {
+			loading.value = false
+			refreshing.value = false
+		}
+	}
+	
+	/**
+	 * 刷新列表（下拉刷新）
+	 */
+	const refresh = async (): Promise<void> => {
+		refreshing.value = true
+		await loadList(true)
+	}
+	
+	/**
+	 * 加载更多（上拉加载）
+	 */
+	const loadMore = (): void => {
+		if (loading.value == true) return
+		if (hasMore.value == false) return
+		
+		page.value = page.value + 1
+		loadList(false)
+	}
+	
+	/**
+	 * 重置列表状态
+	 */
+	const reset = (): void => {
+		list.value = []
+		page.value = 1
+		total.value = 0
+		loading.value = false
+		refreshing.value = false
+		hasMore.value = true
+	}
+	
+	// ==================== 返回结果 ====================
+	
+	return {
+		// 状态
+		list: list,
+		page: page,
+		total: total,
+		loading: loading,
+		refreshing: refreshing,
+		hasMore: hasMore,
+		
+		// 计算属性
+		listLength: listLength,
+		isEmpty: isEmpty,
+		
+		// 方法
+		loadList: loadList,
+		refresh: refresh,
+		loadMore: loadMore,
+		reset: reset
+	}
+}
+
+// ==================== 导出便捷函数 ====================
+
+/**
+ * 创建列表加载器（简化版，无额外参数）
+ * @param apiFn API 函数
+ * @param pageSize 每页数量
+ * @returns 列表加载器对象
+ */
+export function useSimpleListLoader(
+	apiFn: (params: any) => Promise<any>,
+	pageSize: number = 10
+): ListLoaderResult {
+	return useListLoader(apiFn, pageSize, null)
+}

@@ -1,0 +1,288 @@
+<template>
+	<view class="guide-card-item" @click="handleClick">
+		<!-- 头像 -->
+		<view class="avatar-box">
+			<Avatar
+				:url="avatar"
+				:userId="guideKid"
+				:customSize="120"
+				clickMode="none"
+			/>
+			<RecommendBadge 
+				v-if="isRecommended == true" 
+				type="recommend" 
+				text="推荐" 
+			/>
+		</view>
+		
+		<!-- 信息区域 -->
+		<view class="info-box">
+			<view class="name-row">
+				<NicknameWithBadges
+					:nickname="nickname"
+					:vipType="vipType"
+					:giftLevel="giftLevel"
+					size="medium"
+				/>
+				<GenderAge :sex="sex" :age="age" />
+			</view>
+			
+			<view class="tags-row">
+				<view v-for="(tag, index) in tagList" :key="index" class="tag-item">
+					<text class="tag-text">{{ tag }}</text>
+				</view>
+			</view>
+			
+			<view class="location-row">
+				<LocationInfo :city="city" :distance="distance" />
+			</view>
+			
+			<view class="desc-row">
+				<text class="desc-text">{{ description }}</text>
+			</view>
+		</view>
+		
+		<!-- 价格区域 -->
+		<view class="price-box">
+			<text class="price-label">参考价</text>
+			<text class="price-value">¥{{ price }}</text>
+			<text class="price-unit">/天</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed } from 'vue'
+import { getStringProp, getNumberProp, getArrayProp } from '@/common/utils/utsSafe.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import GenderAge from '@/components/base/GenderAge.uvue'
+import LocationInfo from '@/components/base/LocationInfo.uvue'
+import RecommendBadge from '@/components/base/RecommendBadge.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+
+// Props
+const props = defineProps({
+	data: { type: Object, required: true }
+})
+
+// Emits
+const emit = defineEmits(['click'])
+
+// 辅助函数
+const getDataProp = (key: string): string => {
+	return getStringProp(props.data, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return getNumberProp(props.data, key)
+}
+
+// 计算属性
+const guideKid = computed((): string => {
+	const kid = getDataProp('memberGuideKid')
+	if (kid != '') return kid
+	return getDataProp('kid')
+})
+
+const avatar = computed((): string => {
+	let img = getDataProp('guideImg')
+	if (img != '') return img
+	img = getDataProp('imagePhoto')
+	if (img != '') return img
+	img = getDataProp('avatar')
+	return img
+})
+
+const nickname = computed((): string => {
+	const name = getDataProp('nickname')
+	return (name != '') ? name : '向导'
+})
+
+const sex = computed((): number => {
+	return getDataNumberProp('sex')
+})
+
+const age = computed((): number => {
+	return getDataNumberProp('age')
+})
+
+const city = computed((): string => {
+	const userCity = getDataProp('userCity')
+	if (userCity != '') return userCity
+	return getDataProp('city')
+})
+
+const distance = computed((): string => {
+	const userLocation = getDataProp('userLocation')
+	if (userLocation != '') return userLocation
+	return getDataProp('distance')
+})
+
+const description = computed((): string => {
+	const desc = getDataProp('guideDescribe')
+	if (desc != '') return desc
+	return getDataProp('signature')
+})
+
+const price = computed((): string => {
+	const servicePrice = getDataProp('servicePrice')
+	if (servicePrice != '') return servicePrice
+	const priceNum = getDataNumberProp('price')
+	if (priceNum > 0) return priceNum.toString()
+	return '面议'
+})
+
+const isRecommended = computed((): boolean => {
+	const recommend = getDataNumberProp('isRecommended')
+	return recommend == 1
+})
+
+const vipType = computed((): string => {
+	// 获取VIP状态
+	const vip = getDataNumberProp('vip')
+	const vipExpireTime = getDataProp('vipExpireTime')
+
+	// 检查VIP是否有效（vip=VIP_ACTIVATED 表示已开通）
+	if (vip == 20) {
+		if (vipExpireTime != '') {
+			const expireDate = new Date(vipExpireTime)
+			const now = new Date()
+			if (expireDate > now) {
+				// 根据VIP类型返回图标类型
+				// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+				const vipTypeNum = getDataNumberProp('vipType')
+				if (vipTypeNum == 20) return 'year'
+				return 'normal'
+			}
+		} else {
+			// 没有到期时间，认为是永久有效的
+			// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+			const vipTypeNum = getDataNumberProp('vipType')
+			if (vipTypeNum == 20) return 'year'
+			return 'normal'
+		}
+	}
+	return ''
+})
+
+const giftLevel = computed((): number => {
+	return getDataNumberProp('giftLevel')
+})
+
+const tagList = computed((): Array<string> => {
+	const tags: Array<string> = []
+	const userFortes = getArrayProp(props.data, 'userFortes')
+	if (userFortes.length > 0) {
+		const limit = userFortes.length < 3 ? userFortes.length : 3
+		for (let i = 0; i < limit; i = i + 1) {
+			const forte = userFortes[i]
+			if (forte != null) {
+				const forteStr = JSON.stringify(forte)
+				const forteObj = JSON.parse(forteStr) as UTSJSONObject
+				const labelName = forteObj.get('labelName')
+				if (labelName != null && labelName.toString() != '') {
+					tags.push(labelName.toString())
+				}
+			}
+		}
+	}
+	return tags
+})
+
+// 事件处理
+const handleClick = () => {
+	emit('click', props.data)
+}
+</script>
+
+<style scoped>
+.guide-card-item {
+	flex-direction: row;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding: 24rpx;
+}
+
+.avatar-box {
+	position: relative;
+	margin-right: 20rpx;
+}
+
+.info-box {
+	flex: 1;
+	flex-direction: column;
+}
+
+.name-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.nickname {
+	font-size: 30rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-right: 12rpx;
+}
+
+.tags-row {
+	flex-direction: row;
+	flex-wrap: wrap;
+	margin-bottom: 8rpx;
+}
+
+.tag-item {
+	background-color: #E3F2FD;
+	border-radius: 8rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	margin-right: 8rpx;
+	margin-bottom: 8rpx;
+}
+
+.tag-text {
+	font-size: 22rpx;
+	color: #2196F3;
+}
+
+.location-row {
+	margin-bottom: 8rpx;
+}
+
+.desc-row {
+	flex-direction: row;
+}
+
+.desc-text {
+	font-size: 24rpx;
+	color: #999999;
+	lines: 1;
+	text-overflow: ellipsis;
+}
+
+.price-box {
+	flex-direction: column;
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.price-label {
+	font-size: 22rpx;
+	color: #999999;
+	margin-bottom: 8rpx;
+}
+
+.price-value {
+	font-size: 32rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.price-unit {
+	font-size: 22rpx;
+	color: #999999;
+}
+</style>

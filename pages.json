@@ -1,0 +1,595 @@
+{
+    "pages":  [
+                  {
+                      "path":  "pages/index/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "首页",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "消息",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/order/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "订单",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/my/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "我的",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/index/components/addTrends",
+                      "style":  {
+                                    "navigationBarTitleText":  "发布动态",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/index/components/addGuide",
+                      "style":  {
+                                    "navigationBarTitleText":  "向导入驻",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/index/components/addRoute",
+                      "style":  {
+                                    "navigationBarTitleText":  "发布定制",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/notify/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "通知",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/notify/settings",
+                      "style":  {
+                                    "navigationBarTitleText":  "通知设置",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/fans/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "关注/粉丝",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/comment/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "评价",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/news/visitor/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "访客",
+                                    "navigationStyle":  "custom"
+                                }
+                  },
+                  {
+                      "path":  "pages/videoPlayer/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "",
+                                    "navigationStyle":  "custom",
+                                    "app-plus": {
+                                        "titleNView": false,
+                                        "statusBar": {
+                                            "style": "light"
+                                        }
+                                    }
+                                }
+                  },
+                  {
+                      "path":  "pages/webview/index",
+                      "style":  {
+                                    "navigationBarTitleText":  "微信授权",
+                                    "navigationStyle":  "custom"
+                                }
+                  }
+              ],
+    "subPackages":  [
+                        {
+                            "root": "pagesUser",
+                            "name":  "user",
+                            "pages":  [
+                                          {
+                                              "path":  "wallet/withdraw",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "提现",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/setting/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "设置",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/setting/notification",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "推送设置",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/setting/privacy",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "隐私设置",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/agreement/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "协议",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/profile/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "个人资料",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/profile/tags",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "个人标签",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/profile/fortes",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "擅长标签",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/security/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "账户安全",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/feedback/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "联系反馈",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "认证中心",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/vip",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "会员认证",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/lottery",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "幸运抽奖",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/realNameAuth",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "实名认证",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/guide",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "导游认证",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "my/proveDetails/driver",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "司机认证",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+
+                                          {
+                                              "path":  "login/bindMobile/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "绑定手机号",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "wallet/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "我的钱包",
+                                                            "enablePullDownRefresh":  true,
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "login/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "登录",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "submitOrder/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "找向导",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "persionInfo/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "个人主页",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "persionInfo/submitOrder",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "预约",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "myTrends/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "我的动态",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "myRoutes/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "我的定制",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "guideComments/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "评价列表",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          }
+                                      ]
+                        },
+                        {
+                            "root": "pagesBusiness",
+                            "name":  "business",
+                            "pages":  [
+                                          {
+                                              "path":  "citySelect/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "城市选择",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+
+                                          {
+                                              "path":  "search/search",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "搜索",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "search/searchResult",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "搜索",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "运营中心",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/signContract",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "用户管理",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/userPromotion",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "用户推广",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/userPromotionManage",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "推广用户管理",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/signRecord",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "签约记录",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "operate/massMessage",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "群发消息",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+
+                                          {
+                                              "path":  "operate/commissionDetail",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "佣金明细",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "promotion/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "邀请加入",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "routeInfo/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "定制详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "routeInfo/submitOrder",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "路线预约",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "guideInfo/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "向导信息",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "commend/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "动态详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "videoFeed/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "",
+                                                            "navigationStyle":  "custom",
+                                                            "app-plus": {
+                                                                "titleNView": false,
+                                                                "statusBar": {
+                                                                    "style": "light"
+                                                                }
+                                                            }
+                                                        }
+                                          },
+
+                                          {
+                                              "path":  "find/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "发现",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          }
+                                      ]
+                        },
+                        {
+                            "root": "pagesTrade",
+                            "name":  "tools",
+                            "pages":  [
+                                          {
+                                              "path":  "payment/payOrder/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "订单支付",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "payment/payOrderSuccess/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "支付成功",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "payment/payResult/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "支付结果",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "payment/applyRefound/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "申请退款",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "webview/webview/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "网页浏览",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "orderDetails/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "订单详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "appraise/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "评价",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "appraise/detail",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "评价详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "news/detail",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "聊天详情",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "news/forward",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "转发消息",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "news/order-notifications/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "订单通知",
+                                                            "enablePullDownRefresh":  true,
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "news/visitor/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "访客",
+                                                            "enablePullDownRefresh":  true,
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          },
+                                          {
+                                              "path":  "giftSend/index",
+                                              "style":  {
+                                                            "navigationBarTitleText":  "选择赠送对象",
+                                                            "navigationStyle":  "custom"
+                                                        }
+                                          }
+                                      ]
+                        }
+                    ],
+    "globalStyle":  {
+                        "navigationBarTextStyle":  "black",
+                        "navigationBarTitleText":  "网约向导",
+                        "navigationBarBackgroundColor":  "#FFFFFF",
+                        "backgroundColor":  "#FFFFFF"
+                    },
+    "tabBar":  {
+                   "color":  "#666666",
+                   "selectedColor":  "#2EAEF2",
+                   "borderStyle":  "white",
+                   "backgroundColor":  "#ffffff",
+                   "list":  [
+                                {
+                                    "pagePath":  "pages/index/index",
+                                    "iconPath":  "static/images/icon/n_icon_home.png",
+                                    "selectedIconPath":  "static/images/icon/n_icon_home_active.png",
+                                    "text":  "首页"
+                                },
+                                {
+                                    "pagePath":  "pages/news/index",
+                                    "iconPath":  "static/images/icon/n_icon_news.png",
+                                    "selectedIconPath":  "static/images/icon/n_icon_news_active.png",
+                                    "text":  "消息"
+                                },
+                                {
+                                    "pagePath":  "pages/order/index",
+                                    "iconPath":  "static/images/icon/n_icon_order.png",
+                                    "selectedIconPath":  "static/images/icon/n_icon_order_active.png",
+                                    "text":  "订单"
+                                },
+                                {
+                                    "pagePath":  "pages/my/index",
+                                    "iconPath":  "static/images/icon/n_icon_my.png",
+                                    "selectedIconPath":  "static/images/icon/n_icon_my_active.png",
+                                    "text":  "我的"
+                                }
+                            ]
+               },
+    "preloadRule":  {
+                        "pages/news/index":  {
+                                                 "network":  "all",
+                                                 "packages":  ["user"]
+                                             },
+                        "pages/order/index":  {
+                                                  "network":  "wifi",
+                                                  "packages":  ["business"]
+                                              },
+                        "pages/my/index":  {
+                                               "network":  "all",
+                                               "packages":  ["user"]
+                                           },
+                        "pages/index/index":  {
+                                                     "network":  "all",
+                                                     "packages":  ["business"]
+                                                 }
+                    },
+    "uniIdRouter":  {
+
+                    },
+	"condition" : { //模式配置，仅开发期间生效
+		"current": 0, //当前激活的模式(list 的索引项)
+		"list": [
+			{
+				"name": "", //模式名称
+				"path": "", //启动页面，必选
+				"query": "" //启动参数，在页面的onLoad函数里面得到
+			}
+		]
+	}
+}

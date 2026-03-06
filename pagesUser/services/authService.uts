@@ -1,0 +1,223 @@
+/**
+ * 登录认证服务 API
+ * 统一认证服务，从 pagesUser/services/authService.ts 迁移
+ */
+import { request } from '@/utils/request'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+// 定义接口类型（符合 UTS 规范）
+export interface WxLoginParams {
+  code: string
+  type?: string  // 登录类型：web/app/small
+  phone?: string
+  smsCode?: string  // 短信验证码（首次登录需要）
+  nickname?: string
+  image?: string
+  encryptedData?: string
+  iv?: string
+  skipPhoneBinding?: boolean  // 是否跳过手机号绑定（首次登录时）
+}
+
+export interface CountLoginParams {
+  phone: string
+  password: string
+}
+
+export interface CodeLoginParams {
+  phone: string
+  code: string
+}
+
+export interface AuthGetMobileCodeParams {
+  phone: string
+  captcha?: string
+  captchaKey?: string
+}
+
+export interface RequestMobileCodeParams {
+  phone: string
+  captcha?: string
+  captchaKey?: string
+}
+
+export interface CheckCodeParams {
+  phone: string
+  code: string
+}
+
+export interface BindUserPhoneParams {
+  phone: string
+  code: string
+  userKid?: string
+}
+
+export interface ChangePhoneParams {
+  oldPhone: string
+  newPhone: string
+  code: string
+  userKid: string
+}
+
+export interface RetrievePasswordParams {
+  phone: string
+  code: string
+  newPassword: string
+}
+
+export interface SetPayPasswordParams {
+  userKid: string
+  password: string
+  confirmPassword: string
+}
+
+export interface UpdatePayPasswordParams {
+  userKid: string
+  oldPassword: string
+  newPassword: string
+}
+
+export interface UpdatePayPasswordBySmsParams {
+  userKid: string
+  phone: string
+  code: string
+  newPassword: string
+}
+
+export interface CheckLoginPasswordParams {
+  userKid: string
+  password: string
+}
+
+/**
+ * 微信登录
+ * UTS 规范：API 函数参数使用 UTSJSONObject 类型
+ */
+export const wxLogin = (data: UTSJSONObject) => {
+  return request.post('/third/thirdLogin/wxLogin', data, false)
+}
+
+/**
+ * 账号密码登录
+ */
+export const countLogin = (data: CountLoginParams) => {
+  return request.post('/user/baseInfo/loginByPassword', data, false)
+}
+
+/**
+ * 验证码登录
+ */
+export const codeLogin = (data: CodeLoginParams) => {
+  return request.post('/user/baseInfo/loginByCode', data, false)
+}
+
+/**
+ * 获取手机验证码
+ */
+export const getMobileCode = (data: AuthGetMobileCodeParams) => {
+  return request.post('/user/baseInfo/getCode', data, false)
+}
+
+/**
+ * 获取图形验证码
+ */
+export const getCaptcha = () => {
+  return request.get('/user/baseInfo/captcha', null, false)
+}
+
+/**
+ * 智能发码（失败且需要图形验证码时返回captcha信息）
+ */
+export const requestMobileCode = async (data: RequestMobileCodeParams) => {
+  try {
+    const res = await getMobileCode(data)
+    const resCode = (res != null && res.code != null) ? res.code : ''
+    if (((res != null) && (res != false)) && ((resCode === 200) || (resCode === '200'))) {
+      return res
+    }
+    
+    // 需要图形验证码的场景：安全提取消息并检查
+    let msg = ''
+    try {
+      if (res != null) {
+        if (res.msg != null && res.msg != '') msg = res.msg
+        else if (res.message != null && res.message != '') msg = res.message
+      }
+    } catch (e) {
+      handleSilentError(e, '提取响应消息')
+    }
+    if (msg != null && msg != '' && msg.toString().indexOf('图形验证码') >= 0) {
+      const cap = await getCaptcha()
+      const captchaData = (cap != null && cap.data != null) ? cap.data : null
+      return {
+        code: 10021,
+        needCaptcha: true,
+        captcha: captchaData
+      }
+    }
+    
+    return res
+  } catch (error) {
+    const errorOptions = new ErrorHandleOptions()
+    errorOptions.showToast = false
+    errorOptions.rethrow = false
+    handleError(error, '请求手机验证码', errorOptions)
+    throw error
+  }
+}
+
+/**
+ * 校验验证码
+ */
+export const checkCode = (data: CheckCodeParams) => {
+  return request.post('/user/baseInfo/checkCode', data, false)
+}
+
+/**
+ * 绑定手机号
+ */
+export const bindUserPhone = (data: BindUserPhoneParams) => {
+  return request.post('/user/baseInfo/registerByPhone', data, false)
+}
+
+/**
+ * 更换手机号
+ */
+export const changePhone = (data: ChangePhoneParams) => {
+  return request.post('/user/baseInfo/changePhone', data, false)
+}
+
+/**
+ * 找回密码
+ */
+export const retrievePassword = (data: RetrievePasswordParams) => {
+  return request.post('/user/baseInfo/retrievePassword', data, false)
+}
+
+/**
+ * 设置支付密码
+ */
+export const setPayPassword = (data: SetPayPasswordParams) => {
+  return request.post('/user/userWallet/setPayPassword', data, false)
+}
+
+/**
+ * 修改支付密码（原密码验证）
+ */
+export const updatePayPassword = (data: UpdatePayPasswordParams) => {
+  return request.post('/user/userWallet/updatePayPassword', data, false)
+}
+
+/**
+ * 通过短信验证码修改支付密码
+ */
+export const updatePayPasswordBySms = (data: UpdatePayPasswordBySmsParams) => {
+  return request.post('/user/userWallet/updatePayPasswordBySms', data, false)
+}
+
+/**
+ * 校验登录密码
+ */
+export const checkLoginPassword = (data: CheckLoginPasswordParams) => {
+  return request.post('/user/baseInfo/checkPassword', data, false)
+}
+

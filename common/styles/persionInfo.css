@@ -1,0 +1,803 @@
+/* 引入公共 Tab 栏样式 */
+@import '@/common/styles/tabs.css';
+/* 引入公共卡片样式（包含蓝色标签样式） */
+@import '@/common/styles/card.css';
+
+/* ===== H5顶部导航栏 ===== */
+.h5-top-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 90rpx;
+	background-color: #ffffff;
+	z-index: 999;
+	box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+}
+
+.top-bar-content {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 100%;
+	padding: 0 24rpx;
+}
+
+.logo-section {
+	display: flex;
+	align-items: center;
+}
+
+.logo-img {
+	width: 60rpx;
+	height: 60rpx;
+}
+
+.app-name {
+	color: #333333;
+	font-weight: 400;
+}
+
+.open-app-btn {
+	padding: 12rpx 28rpx;
+	background: linear-gradient(90deg, #2DCAC2 0%, #0187F5 100%);
+	border-radius: 28rpx;
+	height: 56rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-text {
+	color: #ffffff;
+}
+
+/* ===== 基础样式 ===== */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	height: 100%;
+	background-color: #f5f5f5;
+}
+
+/* 整页滚动容器 - APP端需要明确高度 */
+.page-scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+}
+
+/* H5端滚动容器 - 需要减去顶部导航栏高度 */
+.page-scroll-view-h5 {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+/* 固定在顶部的返回按钮 */
+.page-back-fixed {
+	position: fixed;
+	left: 20rpx;
+	width: 68rpx;
+	height: 68rpx;
+	border-radius: 34rpx;
+	background-color: transparent;
+	z-index: 100;
+}
+
+/* 固定在顶部的分享按钮 */
+.share-btn-fixed {
+	position: fixed;
+	right: 20rpx;
+	width: 68rpx;
+	height: 68rpx;
+	border-radius: 34rpx;
+	background-color: transparent;
+	z-index: 100;
+}
+
+/* 列表容器 */
+.list-container {
+	flex-direction: column;
+	width: 750rpx;
+	min-height: 200rpx;
+}
+
+/* 空状态 */
+.empty-state {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 750rpx;
+	padding: 64rpx 0;
+}
+
+/* 底部占位 */
+.footer-placeholder {
+	height: 140rpx;
+	width: 750rpx;
+}
+
+.bg-base {
+	background-color: #f5f5f5;
+}
+
+
+.relative {
+	position: relative;
+}
+
+.absolute {
+	position: absolute;
+}
+
+/* ===== 背景图区域 ===== */
+.head-bg {
+	width: 100%;
+	height: 400rpx;
+	position: relative;
+	z-index: 0;
+}
+
+.head-bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 1;
+}
+
+.page-back,
+.share-btn {
+	position: absolute;
+	top: 44rpx;
+	width: 68rpx;
+	height: 68rpx;
+	border-radius: 34rpx;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	z-index: 10;
+}
+
+.page-back {
+	left: 20rpx;
+}
+
+.share-btn {
+	right: 20rpx;
+}
+
+.nav-icon {
+	width: 44rpx;
+	height: 44rpx;
+}
+
+.tips {
+	bottom: 20rpx;
+	left: 20rpx;
+	right: 20rpx;
+	height: 80rpx;
+	border-radius: 16rpx;
+}
+
+.logo {
+	width: 40rpx;
+	height: 40rpx;
+	background-color: #2EAEF2;
+	border-radius: 8rpx;
+}
+
+.app-btn {
+	background: linear-gradient(90deg, #2DCAC2 0%, #0187F5 100%);
+	border-radius: 28rpx;
+	height: 60rpx;
+}
+
+.background-upload-tip {
+	top: 20rpx;
+	right: 20rpx;
+	width: 60rpx;
+	height: 60rpx;
+}
+
+.upload-tip-content {
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.3);
+	border-radius: 34rpx;
+}
+
+.background-loading-tip {
+	top: 20rpx;
+	right: 20rpx;
+	width: 60rpx;
+	height: 60rpx;
+}
+
+.loading-tip-content {
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.3);
+	border-radius: 34rpx;
+}
+
+/* ===== 用户信息区域 ===== */
+.user-info-container {
+	background-color: transparent; /* 使用背景图 */
+	border-top-left-radius: 35rpx;
+	border-top-right-radius: 35rpx;
+	margin-top: -28rpx;
+	padding: 28rpx 32rpx;
+	position: relative;
+	z-index: 10;
+	/* box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1); */ /* 背景图可能有自带阴影或设计不需要 */
+}
+
+.user-info-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 0;
+	border-top-left-radius: 35rpx;
+	border-top-right-radius: 35rpx;
+}
+
+.z-10 {
+	z-index: 10;
+}
+
+/* ===== 个人主页头像容器（避免与 Avatar 组件内部类名冲突） ===== */
+.profile-avatar-wrapper {
+	width: 160rpx;
+	height: 160rpx;
+	position: relative;
+	margin-right: 0;
+	flex-shrink: 0;
+}
+
+.avatar-loading-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.3);
+	border-radius: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.auth-tag {
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+	padding: 4rpx 12rpx;
+	border-radius: 8rpx;
+	border-width: 1rpx;
+	border-style: solid;
+	border-color: #EBEBEB;
+	background-color: rgba(255, 255, 255, 0.6);
+}
+
+.auth-icon {
+	width: 28rpx;
+	height: 28rpx;
+	margin-right: 8rpx;
+}
+
+.auth-img {
+	height: 34rpx;
+	/* width: auto; aspectFit/heightFix handles width */
+}
+
+.nick-name {
+	color: #333333;
+	max-width: 400rpx;
+}
+
+.action-button {
+	height: 56rpx;
+	min-width: 120rpx;
+	padding: 0 32rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.action-btn-icon {
+	font-size: 24rpx;
+	margin-right: 6rpx;
+	font-weight: normal;
+	line-height: 1;
+}
+
+/* 保留原有的 action-btn 样式作为备用 */
+.action-btn {
+	background: #2EAEF2;
+	border-radius: 28rpx;
+	color: #ffffff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 56rpx;
+	min-width: 120rpx;
+}
+
+.girl {
+	/* 女生样式 */
+}
+
+.boy {
+	/* 男生样式 */
+}
+
+.pink {
+	color: #FF6B9D;
+}
+
+.purple {
+	color: #9C27B0;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.light-green {
+	color: #4CAF50;
+}
+
+/* ===== 性别年龄组件（使用背景图，与首页向导列表一致） ===== */
+.age-sex-bg {
+	position: relative;
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+	justify-content: flex-end;
+	margin-right: 16rpx;
+}
+
+.age-sex-bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: -1;
+}
+
+.age-sex-bg.girl {
+	width: 98rpx;
+	height: 44rpx;
+}
+
+.age-sex-bg.boy {
+	width: 96rpx;
+	height: 38rpx;
+	margin-top: 8rpx;
+}
+
+.age-text {
+	padding-bottom: 6rpx;
+	padding-right: 12rpx;
+	text-align: right;
+}
+
+.age-text.pink {
+	color: #FF69B4;
+}
+
+.age-text.purple {
+	color: #9370DB;
+}
+
+/* ===== 性别年龄 + 认证图标行（与首页向导列表一致） ===== */
+.info-row {
+	flex-direction: row;
+	align-items: flex-start;
+}
+
+.gender-age-box {
+	margin-right: 8rpx;
+}
+
+/* ===== 认证标签（使用背景图，与向导列表一致） ===== */
+.certification-tags-container {
+	flex-direction: row;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	margin-bottom: 0;
+}
+
+.official-certification {
+	position: relative;
+	width: 138rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+	margin-top: 10rpx;
+}
+
+.official-certification .cert-icon {
+	width: 138rpx;
+	height: 34rpx;
+}
+
+.name-authentication {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-top: 10rpx;
+}
+
+.name-authentication .auth-icon {
+	width: 140rpx;
+	height: 34rpx;
+}
+
+.tour-guide-certification {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+}
+
+.mobile-certification {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+}
+
+.wechat-certification {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+}
+
+.driver-certification {
+	position: relative;
+	width: 140rpx;
+	height: 34rpx;
+	margin-right: 8rpx;
+}
+
+.certification-bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: -1;
+}
+
+/* ===== 个性标签 ===== */
+
+.profile-tags-block {
+	width: 100%;
+	padding: 0 0 8rpx;
+}
+
+.speciality-section {
+	margin-bottom: 0;
+}
+
+.speciality-tags {
+	display: flex;
+	flex-wrap: wrap;
+	flex-direction: row;
+	margin: 0;
+	align-items: flex-start;
+}
+
+.speciality-chip {
+	position: relative;
+	margin: 0 8rpx 12rpx 0;
+	height: 34rpx;
+	padding: 0 20rpx;
+	border-radius: 17rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 22rpx;
+	font-weight: 400;
+	color: #2EAEF2;
+	border: none;
+	background: #E6F4FF;
+	box-shadow: none;
+}
+
+.speciality-chip.language {
+	color: #2EAEF2;
+	background: #E6F4FF;
+}
+
+.speciality-chip.label {
+	color: #2EAEF2;
+	background: #E6F4FF;
+}
+
+.speciality-chip.custom {
+	color: #2EAEF2;
+	background: #E6F4FF;
+	border: none;
+}
+
+.chip-text {
+	font-size: 22rpx;
+	text-align: center;
+	line-height: 34rpx;
+}
+
+.add-chip {
+	border-width: 1rpx;
+	border-style: dashed;
+	border-color: #2196F3;
+	background-color: transparent;
+	padding-top: 6rpx;
+	padding-bottom: 6rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	border-radius: 6rpx;
+	margin-right: 12rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.speciality-add-icon {
+	font-size: 20rpx;
+	color: #2196F3;
+}
+
+.tag-loading,
+.tag-empty-tip {
+	width: 100%;
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.bg-white {
+	background-color: #ffffff;
+}
+
+.text-blue {
+	color: #2EAEF2;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.bg-light-blue {
+	background-color: #2EAEF2;
+}
+
+.white {
+	color: #ffffff;
+}
+
+.add-tag-tip {
+	display: flex;
+	align-items: center;
+}
+
+.add-icon {
+	/* 使用 .fs-28 类 */
+}
+
+.edit-tag-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* ===== 统计信息 ===== */
+.info-item {
+	padding-right: 16rpx;
+	margin-right: 16rpx;
+	border-right: 2rpx solid #f0f0f0;
+}
+
+/* ===== 服务信息图标 ===== */
+.service-icon {
+	width: 34rpx;
+	height: 34rpx;
+	flex-shrink: 0;
+}
+
+.arrow-icon {
+	width: 24rpx;
+	height: 24rpx;
+	flex-shrink: 0;
+}
+
+/* 查看更多样式 */
+.view-more-text {
+	font-size: 24rpx;
+	color: #37B1F2;
+	margin-right: 8rpx;
+}
+
+.view-more-arrow {
+	font-size: 24rpx;
+	color: #37B1F2;
+}
+
+.info-item:last-child {
+	border-right: none;
+}
+
+/* ===== 服务信息 ===== */
+.bg-white {
+	background-color: #ffffff;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.special {
+	align-self: flex-start;
+	padding-top: 8rpx;
+}
+
+.border-line {
+	height: 20rpx;
+}
+
+/* ===== Tab和列表区域 ===== */
+.tabs-container {
+	position: relative;
+	z-index: 10;
+	width: 750rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+}
+
+/* 动态列表 */
+.trends-list {
+	flex-direction: column;
+	width: 750rpx;
+}
+
+.zoom-box {
+	height: 200rpx;
+	width: 750rpx;
+}
+
+/* ===== 底部操作栏 ===== */
+.footer-box {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 120rpx;
+	background-color: transparent;
+	/* border-top: 2rpx solid #f0f0f0; Removed border */
+	padding: 0 32rpx;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	z-index: 999; /* Ensure buttons are on top */
+}
+
+.btn {
+	flex: 1;
+	height: 88rpx; /* Slightly taller to match visual */
+	border-radius: 44rpx;
+	padding: 0 32rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.btn-subscribe {
+	background-color: #E6F4FF; /* Visible light blue to match image, ensuring it doesn't look white */
+	border: none;
+	margin-right: 16rpx;
+}
+
+.btn-chat {
+	background-color: #2EAEF2;
+	margin-left: 16rpx;
+}
+
+.btn-icon {
+	width: 36rpx;
+	height: 36rpx;
+}
+
+.bg-light-blue {
+	background-color: #E3F2FD;
+}
+
+.chat {
+	background-color: #2EAEF2;
+}
+
+.chat-btn-text {
+	color: #ffffff;
+}
+
+.publish-btn-wrapper {
+	flex: 1;
+	width: 100%;
+}
+
+.publish-button {
+	/* 使用标准按钮样式，通过类覆盖高度和圆角 */
+}
+
+.publish-button :deep(.wy-button-standard--single) {
+	height: 80rpx;
+	border-radius: 40rpx;
+	box-shadow: 0 4rpx 12rpx 0 rgba(1, 135, 245, 0.3);
+	font-size: 32rpx;
+	color: #ffffff;
+}
+
+.publish-button :deep(.wy-button-standard__text) {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+/* ===== 字体大小 ===== */
+/* 使用全局样式 common/styles/index.css 中的 .fs-* 类（typography.css） */
+
+/* ===== 颜色类 ===== */
+.white {
+	color: #ffffff;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.font-bold {
+	font-weight: bold;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.light-green {
+	color: #4CAF50;
+}
+
+/* 重复的全局颜色类已移除，使用 common/styles/components.css 中的全局样式 */
+
+.pink {
+	color: #FF69B4;
+}
+
+.purple {
+	color: #9C27B0;
+}
+
+/* ===== 文本样式 ===== */
+.u-line-1 {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.u-line-2 {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: flex;
+}
+
+/* ===== 背景遮罩 ===== */
+.bg-mask {
+	background-color: rgba(0, 0, 0, 0.3);
+}
+
+
+
+/* ===== 定制列表 - 双列瀑布流布局 ===== */
+.route-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	width: 750rpx;
+	padding-top: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+}

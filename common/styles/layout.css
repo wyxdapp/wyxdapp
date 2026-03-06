@@ -1,0 +1,102 @@
+/* ==================== Vue3 Uni-app X 布局样式 ==================== */
+/* 创建时间：2025-12-10 */
+/* 说明：Flex 布局、尺寸、圆角等布局相关样式 */
+
+/* ==================== Flex 布局 ==================== */
+/* 基础 Flex */
+.flex { display: flex; }
+
+/* 方向 */
+.flex-row { display: flex; flex-direction: row; }
+.flex-column { display: flex; flex-direction: column; }
+
+/* 主轴对齐（justify-content）*/
+.justify-start { justify-content: flex-start; }
+.justify-center { justify-content: center; }
+.justify-end { justify-content: flex-end; }
+.justify-between { justify-content: space-between; }
+.justify-around { justify-content: space-around; }
+
+/* 交叉轴对齐（align-items）*/
+.items-start { align-items: flex-start; }
+.items-center { align-items: center; }
+.items-end { align-items: flex-end; }
+.items-stretch { align-items: stretch; }
+
+/* Flex 伸缩 */
+.flex-1 { flex: 1; }
+.flex-2 { flex: 2; }
+.flex-4 { flex: 4; }
+.flex-shrink-0 { flex-shrink: 0; }
+.flex-grow-0 { flex-grow: 0; }
+
+/* Flex 换行 */
+.flex-wrap { flex-wrap: wrap; }
+.flex-nowrap { flex-wrap: nowrap; }
+
+/* ==================== 向后兼容（旧类名别名）==================== */
+.flex-center { justify-content: center; }
+.flex-start { justify-content: flex-start; }
+.flex-end { justify-content: flex-end; }
+.space-between { justify-content: space-between; }
+.space-around { justify-content: space-around; }
+.align-start { align-items: flex-start; }
+.align-center { align-items: center; }
+.align-end { align-items: flex-end; }
+
+/* ==================== 尺寸 ==================== */
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+.w100 { width: 100%; }
+.h100 { height: 100%; }
+
+/* ==================== 圆角 ==================== */
+.radius-sm { border-radius: 8rpx; }
+.radius-md { border-radius: 16rpx; }
+.radius-lg { border-radius: 24rpx; }
+.radius-full { border-radius: 9999rpx; }
+
+/* 向后兼容 */
+.border-radius-16 { border-radius: 16rpx; }
+.border-radius-24 { border-radius: 24rpx; }
+.border-radius-26 { border-radius: 26rpx; }
+.border-radius-35 { border-radius: 35rpx; }
+
+/* 特定圆角 */
+.br-blr-24 { 
+  border-bottom-left-radius: 24rpx; 
+  border-bottom-right-radius: 24rpx; 
+}
+.br-tl-35 { border-top-left-radius: 35rpx; }
+.br-tr-35 { border-top-right-radius: 35rpx; }
+.no-br { border-radius: 0rpx; }
+
+/* ==================== 定位 ==================== */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.fixed { position: fixed; }
+
+/* ==================== 显示 ==================== */
+.hidden { display: none; }
+.visible { display: flex; }
+
+/* ==================== 溢出 ==================== */
+.overflow-hidden { overflow: hidden; }
+/* ❌ uni-app x 不支持 overflow: auto，已移除 .overflow-auto */
+/* 如需滚动效果，请使用 <scroll-view> 组件 */
+
+/* ==================== 分割线 ==================== */
+.divider {
+  height: 1rpx;
+  background-color: #EEEEEE;
+}
+
+.divider-dashed {
+  border: none;
+  border-bottom: 2rpx dashed #EEEEEE;
+}
+
+.dashed {
+  border: none;
+  border-bottom: 2rpx dashed #EEEEEE;
+}

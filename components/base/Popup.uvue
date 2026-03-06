@@ -1,0 +1,159 @@
+<template>
+	<view v-if="show == true" class="wy-popup">
+		<view class="wy-popup__mask" @click="handleMaskClick"></view>
+		<view class="wy-popup__content" :class="`wy-popup--${position}`" :style="contentStyle">
+			<view v-if="showClose == true" class="wy-popup__close" @click="handleClose">
+				<text class="wy-popup__close-text">✕</text>
+			</view>
+			<slot></slot>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { defineProps, defineEmits, computed } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	position: { type: String, default: 'bottom' },
+	round: { type: Boolean, default: true },
+	closeable: { type: Boolean, default: true },
+	maskClosable: { type: Boolean, default: true },
+	zIndex: { type: Number, default: 9998 },
+	customStyle: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+}>()
+
+// Computed
+const contentStyle = computed((): string => {
+	let style = `z-index: ${props.zIndex + 1};`
+	// 只检查非空字符串（customStyle 有默认值，不会为 null）
+	if (props.customStyle != '') {
+		style += props.customStyle
+	}
+	return style
+})
+
+const showClose = computed((): boolean => {
+	// ✅ 修复：显式布尔类型转换
+	const isCloseable = props.closeable == true
+	const isCenter = props.position === 'center'
+	return isCloseable && isCenter
+})
+
+// Methods - 先定义会被调用的函数
+const handleClose = () => {
+	emit('close')
+}
+
+const handleMaskClick = () => {
+	// ✅ 修复：显式布尔比较
+	if (props.maskClosable == true) {
+		handleClose()
+	}
+}
+</script>
+
+<style scoped>
+.wy-popup {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9998;
+}
+
+.wy-popup__mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	/* animation: fade-in 0.3s; */
+}
+
+.wy-popup__content {
+	position: absolute;
+	background-color: #ffffff;
+	/* animation: slide-in 0.3s; */
+}
+
+/* Position - Top */
+.wy-popup--top {
+	top: 0;
+	left: 0;
+	right: 0;
+	border-bottom-left-radius: 64rpx;
+	border-bottom-right-radius: 64rpx;
+	/* animation: slide-down 0.3s; */
+}
+
+/* Position - Bottom */
+.wy-popup--bottom {
+	bottom: 0;
+	left: 0;
+	right: 0;
+	border-top-left-radius: 64rpx;
+	border-top-right-radius: 64rpx;
+	/* animation: slide-up 0.3s; */
+}
+
+/* Position - Left */
+.wy-popup--left {
+	top: 0;
+	left: 0;
+	bottom: 0;
+	width: 80%;
+	max-width: 1200rpx;
+	border-top-right-radius: 64rpx;
+	border-bottom-right-radius: 64rpx;
+	/* animation: slide-right 0.3s; */
+}
+
+/* Position - Right */
+.wy-popup--right {
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 80%;
+	max-width: 1200rpx;
+	border-top-left-radius: 64rpx;
+	border-bottom-left-radius: 64rpx;
+	/* animation: slide-left 0.3s; */
+}
+
+/* Position - Center */
+.wy-popup--center {
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 1200rpx;
+	max-width: 180rpx;
+	border-radius: 32rpx;
+	/* animation: zoom-in 0.3s; */
+}
+
+.wy-popup__close {
+	position: absolute;
+	top: 48rpx;
+	right: 48rpx;
+	width: 96rpx;
+	height: 96rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1;
+}
+
+.wy-popup__close-text {
+	font-size: 72rpx;
+	color: #999999;
+}
+</style>

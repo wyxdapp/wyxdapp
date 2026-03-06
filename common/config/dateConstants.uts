@@ -1,0 +1,24 @@
+/**
+ * 日期时间计算常量模块
+ * 定义毫秒转换和时间单位常量，消除 60000、3600000 等魔法数字
+ */
+
+// === 基础时间单位（毫秒） ===
+/** 每秒毫秒数 */
+export const MS_PER_SECOND = 1000
+/** 每分钟毫秒数 */
+export const MS_PER_MINUTE = 60000
+/** 每小时毫秒数 */
+export const MS_PER_HOUR = 3600000
+/** 每天毫秒数 */
+export const MS_PER_DAY = 86400000
+/** 每周毫秒数 */
+export const MS_PER_WEEK = 604800000
+
+// === 时间转换因子 ===
+/** 每分钟秒数 */
+export const SECONDS_PER_MINUTE = 60
+/** 每小时分钟数 */
+export const MINUTES_PER_HOUR = 60
+/** 每天小时数 */
+export const HOURS_PER_DAY = 24

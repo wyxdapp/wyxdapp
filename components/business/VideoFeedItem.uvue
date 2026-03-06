@@ -1,0 +1,793 @@
+<template>
+	<view class="video-feed-item">
+		<!-- 视频播放器：统一使用一个 video 元素，通过动态样式适配不同比例 -->
+		<view class="video-wrapper" :class="needsContainMode == true ? 'video-contain-wrapper' : ''" @click="onVideoClick">
+			<video 
+				:id="'video-feed-' + videoKid"
+				:class="needsContainMode == true ? 'video-player-fitted' : 'video-player'"
+				:style="needsContainMode == true ? { width: fittedVideoWidth + 'rpx', height: fittedVideoHeight + 'rpx' } : {}"
+				:src="isNearby == true ? videoUrl : ''"
+				:poster="videoPoster"
+				:autoplay="isActive == true"
+				:loop="true"
+				:show-center-play-btn="false"
+				:show-play-btn="false"
+				:show-fullscreen-btn="false"
+				:show-progress="false"
+				:show-loading="false"
+				:controls="false"
+				:enable-progress-gesture="false"
+				:object-fit="needsContainMode == true ? 'fill' : 'cover'"
+				@play="onVideoPlay"
+				@pause="onVideoPause"
+				@ended="onVideoEnded"
+				@timeupdate="onTimeUpdate"
+				@error="onVideoError"
+				@loadedmetadata="onVideoLoadedMetadata"
+			></video>
+		</view>
+		
+		<!-- 暂停图标 -->
+		<view v-if="isPaused == true" class="pause-overlay" @click="onVideoClick">
+			<view class="pause-icon-box">
+				<text class="pause-icon-text">▶</text>
+			</view>
+		</view>
+		
+		<!-- 错误状态 -->
+		<view v-if="hasError == true" class="error-overlay" @click="retryLoad">
+			<UniIcons type="info-filled" :size="48" color="#FF9800" />
+			<text class="error-text">视频加载失败，点击重试</text>
+		</view>
+		
+		<!-- 双击点赞动画 -->
+		<view v-if="showLikeAnimation == true" class="like-animation">
+			<UniIcons type="heart-filled" :size="120" color="#FF4757" />
+		</view>
+		
+		<!-- 底部信息区域 -->
+		<view class="bottom-info" :style="{ bottom: needsContainMode == true ? '20rpx' : '120rpx' }">
+			<!-- 左侧用户信息 -->
+			<VideoUserInfoPanel 
+				:item="item"
+				:isFollowed="isFollowedValue"
+				@user-click="onUserClick"
+				@follow="onFollow"
+				@location-click="onLocationClick"
+			/>
+			
+			<!-- 右侧互动面板 -->
+			<VideoInteractionPanel 
+				:item="item"
+				:isLiked="isLikedValue"
+				:likeCount="likeCountValue"
+				:commentCount="commentCountValue"
+				:isFollowed="isFollowedValue"
+				:hideLike="hideInteraction"
+				:hideComment="hideInteraction"
+				@like="onLike"
+				@comment="onComment"
+				@share="onShare"
+				@follow="onFollow"
+				@user-click="onUserClick"
+			/>
+		</view>
+		
+		<!-- 底部进度条 -->
+		<view class="progress-bar">
+			<view class="progress-fill" :style="{ width: progressWidth }" :class="isPlaying == true ? 'progress-animating' : ''"></view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { getStringProp as safeGetStringProp, getNumberProp as safeGetNumberProp } from '@/common/utils/utsSafe.uts'
+import VideoInteractionPanel from './VideoInteractionPanel.uvue'
+import VideoUserInfoPanel from './VideoUserInfoPanel.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+
+// 定时器生命周期管理
+let timerHandles: number[] = []
+
+function safeSetTimeout(callback: () => void, ms: number): number {
+	const handle = setTimeout(callback, ms)
+	timerHandles.push(handle)
+	return handle
+}
+
+function clearAllTimers(): void {
+	for (const handle of timerHandles) {
+		clearTimeout(handle)
+	}
+	timerHandles = []
+}
+
+// ==================== Props ====================
+const props = defineProps({
+	item: {
+		type: Object,
+		required: true
+	},
+	isActive: {
+		type: Boolean,
+		default: false
+	},
+	// 是否在当前视频附近（前后各1个），用于预加载
+	isNearby: {
+		type: Boolean,
+		default: false
+	},
+	index: {
+		type: Number,
+		default: 0
+	},
+	// 隐藏互动按钮（点赞、评论），用于简化模式
+	hideInteraction: {
+		type: Boolean,
+		default: false
+	}
+})
+
+// ==================== Emits ====================
+const emit = defineEmits(['play', 'pause', 'like', 'comment', 'share', 'follow', 'user-click', 'double-tap'])
+
+// ==================== 状态 ====================
+const isPlaying = ref<boolean>(false)
+const isPaused = ref<boolean>(false)
+const hasError = ref<boolean>(false)
+const progress = ref<number>(0)
+const duration = ref<number>(0)
+const currentTime = ref<number>(0)
+const showLikeAnimation = ref<boolean>(false)
+
+// 视频实际宽高（从元数据获取，用于回退判断）
+const actualVideoWidth = ref<number>(0)
+const actualVideoHeight = ref<number>(0)
+
+// 双击检测
+const lastTapTime = ref<number>(0)
+const doubleTapDelay = 300
+
+// ==================== 辅助函数 ====================
+const getDataProp = (key: string): string => {
+	return safeGetStringProp(props.item, key)
+}
+
+const getDataNumberProp = (key: string): number => {
+	return safeGetNumberProp(props.item, key)
+}
+
+// ==================== 计算属性 ====================
+
+// 视频 Kid
+const videoKid = computed((): string => {
+	return getDataProp('kid')
+})
+
+// 视频 URL
+const videoUrl = computed((): string => {
+	return getDataProp('mediaName')
+})
+
+// 视频封面
+const videoPoster = computed((): string => {
+	let poster = getDataProp('videoPic')
+	if (poster == '') {
+		poster = getDataProp('coverImage')
+	}
+	return poster
+})
+
+// 视频宽度
+const videoWidth = computed((): number => {
+	return getDataNumberProp('videoWidth')
+})
+
+// 视频高度
+const videoHeight = computed((): number => {
+	return getDataNumberProp('videoHeight')
+})
+
+// 是否为横屏视频（宽 > 高），支持回退到视频元数据实际宽高
+const isLandscapeVideo = computed((): boolean => {
+	const width = videoWidth.value
+	const height = videoHeight.value
+	// 优先使用后端返回的宽高数据
+	if (width > 0 && height > 0) {
+		return width > height
+	}
+	// 回退使用视频元数据加载后的实际宽高
+	if (actualVideoWidth.value > 0 && actualVideoHeight.value > 0) {
+		return actualVideoWidth.value > actualVideoHeight.value
+	}
+	// 两组数据都不可用时，默认竖屏
+	return false
+})
+
+// 获取有效的视频宽高（优先后端数据，回退元数据）
+const effectiveVideoWidth = computed((): number => {
+	const w = videoWidth.value
+	if (w > 0) return w
+	return actualVideoWidth.value
+})
+
+const effectiveVideoHeight = computed((): number => {
+	const h = videoHeight.value
+	if (h > 0) return h
+	return actualVideoHeight.value
+})
+
+// 屏幕宽高比（rpx 容器宽度 750，高度通过系统获取）
+// 标准手机屏幕约 9:16 = 0.5625
+const screenAspectRatio = computed((): number => {
+	return 0.5625
+})
+
+// 视频宽高比
+const videoAspectRatio = computed((): number => {
+	const vw = effectiveVideoWidth.value
+	const vh = effectiveVideoHeight.value
+	if (vw > 0 && vh > 0) {
+		return vw * 1.0 / vh
+	}
+	return 0
+})
+
+// 是否需要 contain 模式（视频宽高比与屏幕差异超过阈值）
+// 当视频比屏幕"更宽"（如 3:4 vs 9:16）或横屏时，用 cover 会裁切左右
+// 阈值 0.15：允许约 15% 的宽高比差异，超过则用 contain
+const needsContainMode = computed((): boolean => {
+	const vRatio = videoAspectRatio.value
+	if (vRatio <= 0) return false  // 无宽高数据时默认 cover
+	const sRatio = screenAspectRatio.value
+	// 视频比屏幕宽（vRatio > sRatio），cover 会裁切左右
+	// 视频比屏幕窄（vRatio < sRatio），cover 会裁切上下（极少见）
+	const diff = vRatio - sRatio
+	const absDiff = diff < 0 ? (0 - diff) : diff
+	return absDiff > 0.15
+})
+
+// 适配后的视频容器尺寸（rpx）
+// 在 750rpx 宽 × 屏幕高 的容器内，按视频宽高比计算最大不超出的尺寸
+// 屏幕高度用 750 / screenAspectRatio 近似（约 1333rpx）
+const fittedVideoWidth = computed((): number => {
+	const vw = effectiveVideoWidth.value
+	const vh = effectiveVideoHeight.value
+	if (vw <= 0 || vh <= 0) return 750
+	
+	const containerW = 750.0
+	const containerH = 1333.0  // 约 750 / 0.5625
+	
+	// 按宽度适配
+	const fitByWidth_w = containerW
+	const fitByWidth_h = containerW * vh / vw
+	
+	// 按高度适配
+	const fitByHeight_h = containerH
+	const fitByHeight_w = containerH * vw / vh
+	
+	// 选择不超出容器的方案
+	if (fitByWidth_h <= containerH) {
+		return Math.round(fitByWidth_w)
+	}
+	return Math.round(fitByHeight_w)
+})
+
+const fittedVideoHeight = computed((): number => {
+	const vw = effectiveVideoWidth.value
+	const vh = effectiveVideoHeight.value
+	if (vw <= 0 || vh <= 0) return 1333
+	
+	const containerW = 750.0
+	const containerH = 1333.0
+	
+	const fitByWidth_h = containerW * vh / vw
+	
+	if (fitByWidth_h <= containerH) {
+		return Math.round(fitByWidth_h)
+	}
+	return Math.round(containerH)
+})
+
+// 是否已点赞
+const isLikedValue = computed((): boolean => {
+	const isLike = getDataNumberProp('isLike')
+	return isLike == 10
+})
+
+// 点赞数
+const likeCountValue = computed((): number => {
+	const likeNum = getDataNumberProp('likeNum')
+	if (likeNum > 0) return likeNum
+	return getDataNumberProp('likeCount')
+})
+
+// 评论数
+const commentCountValue = computed((): number => {
+	const commentNum = getDataNumberProp('commentNum')
+	if (commentNum > 0) return commentNum
+	return getDataNumberProp('commentCount')
+})
+
+// 是否已关注
+const isFollowedValue = computed((): boolean => {
+	const isFollow = getDataNumberProp('isFollow')
+	return isFollow == 10
+})
+
+// 进度条宽度
+const progressWidth = computed((): string => {
+	if (duration.value <= 0) return '0rpx'
+	const percent = (currentTime.value / duration.value) * 750
+	return percent.toString() + 'rpx'
+})
+
+// ==================== 视频控制 ====================
+
+// 获取视频上下文
+const getVideoContext = (): VideoContext | null => {
+	const kid = videoKid.value
+	if (kid == '') return null
+	try {
+		return uni.createVideoContext('video-feed-' + kid)
+	} catch (e) {
+		return null
+	}
+}
+
+// 播放视频
+const playVideo = () => {
+	const ctx = getVideoContext()
+	if (ctx != null) {
+		ctx.play()
+	}
+}
+
+// 暂停视频
+const pauseVideo = () => {
+	const ctx = getVideoContext()
+	if (ctx != null) {
+		ctx.pause()
+	}
+}
+
+// 切换播放/暂停
+const togglePlay = () => {
+	if (isPlaying.value == true) {
+		pauseVideo()
+		isPaused.value = true
+	} else {
+		playVideo()
+		isPaused.value = false
+	}
+}
+
+// 重试加载
+const retryLoad = () => {
+	hasError.value = false
+	playVideo()
+}
+
+// ==================== 视频事件处理 ====================
+const onVideoPlay = () => {
+	isPlaying.value = true
+	isPaused.value = false
+	hasError.value = false
+	emit('play', videoKid.value)
+}
+
+const onVideoPause = () => {
+	isPlaying.value = false
+	emit('pause', videoKid.value)
+}
+
+const onVideoEnded = () => {
+	// 循环播放，不需要特殊处理
+}
+
+// 节流：限制 timeupdate 处理频率，避免高频 JSON 解析阻塞渲染线程
+let lastTimeUpdateTs: number = 0
+const timeUpdateThrottle = 1000 // H5 优化：每 1000ms 最多处理一次，减少主线程阻塞
+
+const onTimeUpdate = (e: any) => {
+	const now = Date.now()
+	if (now - lastTimeUpdateTs < timeUpdateThrottle) return
+	lastTimeUpdateTs = now
+	
+	try {
+		// H5 优化：直接访问 detail 属性，避免双重 JSON.stringify/parse
+		const detail = (e as UTSJSONObject).get('detail')
+		if (detail != null) {
+			const detailObj = detail as UTSJSONObject
+			
+			const currentTimeVal = detailObj.get('currentTime')
+			const durationVal = detailObj.get('duration')
+			
+			if (currentTimeVal != null) {
+				const ct = parseFloat(currentTimeVal.toString())
+				if (isNaN(ct) == false) {
+					currentTime.value = ct
+				}
+			}
+			
+			if (durationVal != null) {
+				const dur = parseFloat(durationVal.toString())
+				if (isNaN(dur) == false && dur > 0) {
+					duration.value = dur
+				}
+			}
+			
+			// 计算进度
+			if (duration.value > 0) {
+				progress.value = (currentTime.value / duration.value) * 100
+			}
+		}
+	} catch (err) {
+		// 如果直接访问失败，回退到 JSON 解析方式（兼容不同平台）
+		try {
+			const eStr = JSON.stringify(e)
+			const eObj = JSON.parse(eStr) as UTSJSONObject
+			const detailVal = eObj.get('detail')
+			if (detailVal != null) {
+				const detailStr = JSON.stringify(detailVal)
+				const detailObj = JSON.parse(detailStr) as UTSJSONObject
+				
+				const currentTimeVal = detailObj.get('currentTime')
+				const durationVal = detailObj.get('duration')
+				
+				if (currentTimeVal != null) {
+					const ct = parseFloat(currentTimeVal.toString())
+					if (isNaN(ct) == false) {
+						currentTime.value = ct
+					}
+				}
+				
+				if (durationVal != null) {
+					const dur = parseFloat(durationVal.toString())
+					if (isNaN(dur) == false && dur > 0) {
+						duration.value = dur
+					}
+				}
+				
+				if (duration.value > 0) {
+					progress.value = (currentTime.value / duration.value) * 100
+				}
+			}
+		} catch (innerErr) {}
+	}
+}
+
+const onVideoError = (e: any) => {
+	console.error('视频加载错误:', e)
+	hasError.value = true
+}
+
+const onVideoLoadedMetadata = (e: any) => {
+	try {
+		// H5 优化：直接访问属性，避免 JSON.stringify/parse 阻塞主线程
+		const detail = (e as UTSJSONObject).get('detail')
+		if (detail != null) {
+			const detailObj = detail as UTSJSONObject
+			
+			// 兼容不同平台：优先 width/height，回退 videoWidth/videoHeight
+			let widthVal = detailObj.get('width')
+			if (widthVal == null) {
+				widthVal = detailObj.get('videoWidth')
+			}
+			let heightVal = detailObj.get('height')
+			if (heightVal == null) {
+				heightVal = detailObj.get('videoHeight')
+			}
+			
+			if (widthVal != null) {
+				const w = parseFloat(widthVal.toString())
+				if (isNaN(w) == false && w > 0) {
+					actualVideoWidth.value = w
+				}
+			}
+			
+			if (heightVal != null) {
+				const h = parseFloat(heightVal.toString())
+				if (isNaN(h) == false && h > 0) {
+					actualVideoHeight.value = h
+				}
+			}
+			
+			console.log('[VideoFeedItem] 视频元数据加载, 实际宽高:', actualVideoWidth.value, 'x', actualVideoHeight.value)
+			return
+		}
+	} catch (err) {
+		// 直接访问失败，回退到 JSON 解析
+	}
+	
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const detailVal = eObj.get('detail')
+		if (detailVal != null) {
+			const detailStr = JSON.stringify(detailVal)
+			const detailObj = JSON.parse(detailStr) as UTSJSONObject
+			
+			let widthVal = detailObj.get('width')
+			if (widthVal == null) {
+				widthVal = detailObj.get('videoWidth')
+			}
+			let heightVal = detailObj.get('height')
+			if (heightVal == null) {
+				heightVal = detailObj.get('videoHeight')
+			}
+			
+			if (widthVal != null) {
+				const w = parseFloat(widthVal.toString())
+				if (isNaN(w) == false && w > 0) {
+					actualVideoWidth.value = w
+				}
+			}
+			
+			if (heightVal != null) {
+				const h = parseFloat(heightVal.toString())
+				if (isNaN(h) == false && h > 0) {
+					actualVideoHeight.value = h
+				}
+			}
+			
+			console.log('[VideoFeedItem] 视频元数据加载, 实际宽高:', actualVideoWidth.value, 'x', actualVideoHeight.value)
+		}
+	} catch (innerErr) {
+		// 静默处理解析错误
+	}
+}
+
+// 双击点赞（必须在 onVideoClick 之前定义）
+function handleDoubleTap(): void {
+	// 简化模式下不触发点赞，只切换播放/暂停
+	if (props.hideInteraction == true) {
+		togglePlay()
+		return
+	}
+	
+	// 完整模式：显示点赞动画
+	showLikeAnimation.value = true
+	safeSetTimeout(() => {
+		showLikeAnimation.value = false
+	}, 800)
+	
+	// 触发点赞
+	emit('double-tap', props.item)
+	
+	// 如果未点赞，执行点赞
+	if (isLikedValue.value == false) {
+		emit('like', props.item)
+	}
+}
+
+// 视频点击（单击/双击）
+const onVideoClick = () => {
+	const now = Date.now()
+	const timeDiff = now - lastTapTime.value
+	
+	if (timeDiff < doubleTapDelay && timeDiff > 0) {
+		// 双击 - 点赞
+		handleDoubleTap()
+		lastTapTime.value = 0
+	} else {
+		// 单击 - 延迟执行，等待可能的双击
+		lastTapTime.value = now
+		safeSetTimeout(() => {
+			if (lastTapTime.value == now) {
+				// 确认是单击
+				togglePlay()
+			}
+		}, doubleTapDelay)
+	}
+}
+
+// ==================== 互动事件处理 ====================
+const onLike = () => {
+	emit('like', props.item)
+}
+
+const onComment = () => {
+	emit('comment', props.item)
+}
+
+const onShare = () => {
+	emit('share', props.item)
+}
+
+const onFollow = () => {
+	emit('follow', props.item)
+}
+
+const onUserClick = () => {
+	emit('user-click', props.item)
+}
+
+const onLocationClick = () => {
+	// 位置点击，可以跳转到地图
+	const address = getDataProp('discoverAddress')
+	if (address != '') {
+		uni.showToast({
+			title: address,
+			icon: 'none'
+		})
+	}
+}
+
+// ==================== 监听 isActive 变化 ====================
+watch(
+	(): boolean => { return props.isActive },
+	(newVal: boolean) => {
+		if (newVal == true) {
+			// 激活时播放
+			playVideo()
+			isPaused.value = false
+		} else {
+			// 非激活时暂停
+			pauseVideo()
+		}
+	}
+)
+
+// 监听 isNearby 变化，远离时重置状态释放资源
+watch(
+	(): boolean => { return props.isNearby },
+	(newVal: boolean) => {
+		if (newVal == false) {
+			// 远离当前视频，重置播放状态
+			isPlaying.value = false
+			isPaused.value = false
+			currentTime.value = 0
+			progress.value = 0
+		}
+	}
+)
+
+onUnmounted(() => {
+	clearAllTimers()
+})
+</script>
+
+<style scoped>
+.video-feed-item {
+	position: relative;
+	width: 750rpx;
+	height: 100%;
+	background-color: #000000;
+}
+
+/* 视频播放器 */
+.video-player {
+	width: 750rpx;
+	height: 100%;
+}
+
+/* 视频容器基础样式 */
+.video-wrapper {
+	width: 750rpx;
+	height: 100%;
+	/* H5 优化：提升为独立合成层，避免视频渲染被其他元素的重绘阻塞 */
+	transform: translateZ(0);
+}
+
+/* 非标准比例视频居中容器 */
+.video-contain-wrapper {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #000000;
+}
+
+/* 非标准比例视频播放器（宽高按比例计算） */
+.video-player-fitted {
+}
+
+/* 暂停遮罩 */
+.pause-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.3);
+}
+
+.pause-icon-box {
+	width: 120rpx;
+	height: 120rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	border-radius: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.pause-icon-text {
+	font-size: 48rpx;
+	color: #FFFFFF;
+}
+
+/* 错误状态 */
+.error-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.7);
+}
+
+.error-icon-text {
+	font-size: 80rpx;
+	color: #FFFFFF;
+	margin-bottom: 20rpx;
+}
+
+.error-text {
+	font-size: 28rpx;
+	color: #FFFFFF;
+}
+
+/* 双击点赞动画 */
+.like-animation {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	margin-top: -100rpx;
+	margin-left: -100rpx;
+	width: 200rpx;
+	height: 200rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.like-heart-text {
+	font-size: 200rpx;
+	color: #FF4757;
+}
+
+/* 底部信息区域 */
+.bottom-info {
+	position: absolute;
+	left: 0;
+	right: 0;
+	flex-direction: row;
+	align-items: flex-end;
+	justify-content: space-between;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 24rpx;
+}
+
+/* 进度条 */
+.progress-bar {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 4rpx;
+	background-color: rgba(255, 255, 255, 0.3);
+}
+
+.progress-fill {
+	height: 4rpx;
+	background-color: #FFFFFF;
+	/* H5 优化：使用 GPU 加速的 transition 平滑过渡，避免每次 width 变化触发布局重排 */
+	transition-property: width;
+	transition-duration: 0.9s;
+	transition-timing-function: linear;
+}
+
+/* 播放中时启用平滑过渡 */
+.progress-animating {
+	transition-duration: 0.9s;
+}
+</style>

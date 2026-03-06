@@ -1,0 +1,329 @@
+/**
+ * 微信支付服务统一入口
+ * 
+ * 提供跨平台的类型定义和工具函数
+ * 平台特定实现由各端独立文件提供：
+ * - APP 端：wechatPayApp.uts
+ * - H5 端：wechatPayH5.uts
+ * - 小程序端：wechatPayMp.uts
+ * 
+ * @author wyxdapp
+ * @version 2.0.0
+ * @since 2025-12-28
+ */
+
+// ==================== 从 types.uts 重新导出类型和常量 ====================
+export {
+	// 支付状态常量
+	PAYMENT_STATE_IDLE,
+	PAYMENT_STATE_PENDING,
+	PAYMENT_STATE_PROCESSING,
+	PAYMENT_STATE_SUCCESS,
+	PAYMENT_STATE_FAILED,
+	PaymentState,
+	// 类
+	PaymentParams,
+	PaymentResult,
+	// 类型
+	PaymentSuccessCallback,
+	PaymentErrorCallback,
+	// 工具函数
+	createSuccessResult,
+	createFailResult,
+	// 状态管理函数
+	getPaymentState,
+	setPaymentState,
+	clearPaymentState
+} from './types.uts'
+
+// 导入类型供本文件使用
+import {
+	PaymentParams,
+	PaymentResult,
+	PaymentSuccessCallback,
+	PaymentErrorCallback,
+	PAYMENT_STATE_IDLE,
+	PAYMENT_STATE_PROCESSING,
+	PAYMENT_STATE_SUCCESS,
+	getPaymentState,
+	createSuccessResult
+} from './types.uts'
+
+import { SK_WX_CODE, SK_WX_CODE_USED } from '@/common/config/storageKeys.uts'
+
+// ==================== 平台检测函数 ====================
+
+export function getCurrentPlatform(): string {
+	try {
+		const systemInfo = uni.getSystemInfoSync()
+		const infoStr = JSON.stringify(systemInfo)
+		const infoObj = JSON.parse(infoStr) as UTSJSONObject
+		const platformVal = infoObj.get('uniPlatform')
+		if (platformVal != null) {
+			return platformVal.toString()
+		}
+	} catch (e) {
+		console.error('[WX-PAY] 获取平台信息失败:', e)
+	}
+	return ''
+}
+
+export function isAppPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios'
+}
+
+export function isH5Platform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'web' || platform == 'h5'
+}
+
+export function isMpWeixinPlatform(): boolean {
+	const platform = getCurrentPlatform()
+	return platform == 'mp-weixin'
+}
+
+export function getPlatformType(): string {
+	if (isAppPlatform()) {
+		return 'app'
+	} else if (isMpWeixinPlatform()) {
+		return 'mp-weixin'
+	} else if (isH5Platform()) {
+		return 'h5'
+	}
+	return 'unknown'
+}
+
+export function isPaymentAvailable(): boolean {
+	const platform = getPlatformType()
+	if (platform == 'mp-weixin') {
+		return true
+	}
+	if (platform == 'h5') {
+		// #ifdef H5
+		try {
+			if (typeof window != 'undefined') {
+				const ua = (window as any).navigator.userAgent.toLowerCase()
+				return ua.indexOf('micromessenger') != -1
+			}
+		} catch (e) {}
+		// #endif
+		return false
+	}
+	if (platform == 'app') {
+		return true
+	}
+	return false
+}
+
+// ==================== APP 端微信支付函数导出 ====================
+
+// 导出 APP 端微信支付函数（使用条件编译）
+// #ifndef H5
+export { 
+	wechatPayApp,
+	initWeChatPaySDK,
+	cleanupWeChatPaySDK,
+	checkPaymentOnAppShow,
+	getCurrentPayingOrderId,
+	triggerPaymentSuccess,
+	triggerPaymentFail
+} from './wechatPayApp.uts'
+// #endif
+
+// #ifdef H5
+// H5 端提供空实现
+export function wechatPayApp(
+	orderId: string,
+	amount: string,
+	goodsName: string,
+	onSuccess: (message: string) => void,
+	onError: (error: string) => void
+): void {
+	console.log('📱 [WX-PAY] H5环境不支持APP端微信支付')
+	onError('H5环境不支持APP端微信支付')
+}
+
+export function initWeChatPaySDK(): void {
+	console.log('📱 [WX-PAY] H5环境，跳过微信支付SDK初始化')
+}
+
+export function cleanupWeChatPaySDK(): void {
+	console.log('📱 [WX-PAY] H5环境，跳过SDK清理')
+}
+
+export function checkPaymentOnAppShow(): boolean {
+	return false
+}
+
+export function getCurrentPayingOrderId(): string {
+	return ''
+}
+
+export function triggerPaymentSuccess(): void {
+	console.log('📱 [WX-PAY] H5环境，跳过')
+}
+
+export function triggerPaymentFail(errorMsg: string): void {
+	console.log('📱 [WX-PAY] H5环境，跳过')
+}
+// #endif
+
+// ==================== 跨平台兼容函数 ====================
+
+export function getStoredWxCodeSafe(): string {
+	// #ifdef H5
+	try {
+		// 🔧 修复：使用正确的存储键 wxCode（与登录授权保持一致）
+		const code = uni.getStorageSync(SK_WX_CODE)
+		if (code != null && code.toString() != '') {
+			return code.toString()
+		}
+	} catch (e) {}
+	// #endif
+	return ''
+}
+
+export function clearWxCodeSafe(): void {
+	// #ifdef H5
+	try {
+		// 🔧 修复：清理正确的存储键
+		uni.removeStorageSync(SK_WX_CODE)
+		uni.removeStorageSync(SK_WX_CODE_USED)
+	} catch (e) {}
+	// #endif
+}
+
+// ==================== H5 端微信支付（带授权码）====================
+
+// 导入 H5 支付实现
+// #ifdef H5
+import { 
+	doWechatPayWithCode as doWechatPayWithCodeImpl, 
+	isWechatBrowser, 
+	getWechatAuthCode as getWechatAuthCodeImpl,
+	isWxCodeUsed as isWxCodeUsedImpl,
+	markWxCodeUsed as markWxCodeUsedImpl,
+	getAvailableWxCode as getAvailableWxCodeImpl
+} from './wechatPayH5.uts'
+// #endif
+
+export function wechatPayH5WithCode(
+	params: PaymentParams,
+	wxCode: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	console.log('💰 [WX-PAY] H5端使用授权码支付')
+	
+	const currentState = getPaymentState(params.orderId)
+	if (currentState == PAYMENT_STATE_PROCESSING) {
+		console.warn('⚠️ [WX-PAY] 支付正在处理中，防止重复支付')
+		onError('支付正在处理中，请稍候')
+		return
+	}
+	
+	// #ifdef H5
+	// 检查是否在微信浏览器中
+	if (isWechatBrowser() == false) {
+		console.error('❌ [WX-PAY] 非微信浏览器环境')
+		onError('请在微信浏览器中打开')
+		return
+	}
+	
+	// 调用实际的 H5 支付实现
+	doWechatPayWithCodeImpl(params, wxCode, onSuccess, onError)
+	// #endif
+	
+	// #ifndef H5
+	onError('非H5环境不支持此功能')
+	// #endif
+}
+
+/**
+ * H5 端获取微信授权码（用于支付）
+ * 会跳转到微信授权页面，授权成功后回跳到当前页面
+ */
+export function getWechatPayAuthCode(orderId: string): void {
+	// #ifdef H5
+	console.log('🔄 [WX-PAY] H5端获取微信支付授权码')
+	getWechatAuthCodeImpl(orderId, (code: string) => {
+		// 注意：这个回调不会被执行，因为页面会跳转
+	}, (error: string) => {
+		console.error('❌ [WX-PAY] 获取授权码失败:', error)
+	})
+	// #endif
+	
+	// #ifndef H5
+	console.log('⚠️ [WX-PAY] 非H5环境，跳过获取授权码')
+	// #endif
+}
+
+/**
+ * 检查是否在微信浏览器中
+ */
+export function checkIsWechatBrowser(): boolean {
+	// #ifdef H5
+	return isWechatBrowser()
+	// #endif
+	
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
+ * 检查授权码是否已使用
+ */
+export function checkWxCodeUsed(): boolean {
+	// #ifdef H5
+	return isWxCodeUsedImpl()
+	// #endif
+	
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
+ * 标记授权码为已使用
+ */
+export function markWxCodeAsUsed(): void {
+	// #ifdef H5
+	markWxCodeUsedImpl()
+	// #endif
+}
+
+/**
+ * 获取可用的授权码（检查是否已使用）
+ */
+export function getAvailableWxCode(): string {
+	// #ifdef H5
+	return getAvailableWxCodeImpl()
+	// #endif
+	
+	// #ifndef H5
+	return ''
+	// #endif
+}
+
+// ==================== 小程序端微信支付（带登录码）====================
+
+export function wechatPayMpWithCode(
+	params: PaymentParams,
+	loginCode: string,
+	onSuccess: PaymentSuccessCallback,
+	onError: PaymentErrorCallback
+): void {
+	console.log('💰 [WX-PAY] 小程序端使用登录码支付')
+	
+	const currentState = getPaymentState(params.orderId)
+	if (currentState == PAYMENT_STATE_PROCESSING) {
+		console.warn('⚠️ [WX-PAY] 支付正在处理中，防止重复支付')
+		onError('支付正在处理中，请稍候')
+		return
+	}
+	
+	onError('小程序端支付功能开发中')
+}
+

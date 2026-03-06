@@ -1,0 +1,114 @@
+<template>
+	<!-- #ifdef H5 -->
+	<view v-if="show == true" class="wechat-guide-overlay" @click="handleClose">
+		<view class="guide-content" @click.stop="">
+			<!-- 右上角箭头指示 -->
+			<view class="arrow-container">
+				<image 
+					class="arrow-icon" 
+					src="https://jiasu.wyxdapp.com/iconimages/wechat_guide_arrow.png" 
+					mode="aspectFit"
+				></image>
+			</view>
+			<!-- 提示文字 -->
+			<view class="guide-text-container">
+				<text class="guide-text-line1">点击右上角</text>
+				<text class="guide-text-line2">选择"在浏览器中打开"</text>
+				<text class="guide-text-line3">即可下载或打开APP</text>
+			</view>
+			<!-- 关闭按钮 -->
+			<view class="close-btn" @click="handleClose">
+				<text class="close-text">我知道了</text>
+			</view>
+		</view>
+	</view>
+	<!-- #endif -->
+</template>
+
+<script setup lang="uts">
+// Props 定义
+const props = defineProps({
+	show: { type: Boolean, default: false }
+})
+
+// Emits 定义
+const emit = defineEmits(['close', 'update:show'])
+
+// 关闭蒙层
+const handleClose = () => {
+	emit('update:show', false)
+	emit('close')
+}
+</script>
+
+<style scoped>
+/* #ifdef H5 */
+.wechat-guide-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.75);
+	z-index: 9999;
+	flex-direction: column;
+	align-items: flex-end;
+	padding-top: 20rpx;
+	padding-right: 30rpx;
+}
+
+.guide-content {
+	flex-direction: column;
+	align-items: flex-end;
+}
+
+.arrow-container {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 20rpx;
+}
+
+.arrow-icon {
+	width: 120rpx;
+	height: 120rpx;
+}
+
+.guide-text-container {
+	flex-direction: column;
+	align-items: flex-end;
+	margin-top: 30rpx;
+	margin-right: 20rpx;
+}
+
+.guide-text-line1 {
+	font-size: 36rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.guide-text-line2 {
+	font-size: 32rpx;
+	color: #ffffff;
+	margin-top: 16rpx;
+}
+
+.guide-text-line3 {
+	font-size: 28rpx;
+	color: #cccccc;
+	margin-top: 12rpx;
+}
+
+.close-btn {
+	margin-top: 60rpx;
+	margin-right: 20rpx;
+	padding: 20rpx 60rpx;
+	background-color: #37B1F2;
+	border-radius: 40rpx;
+}
+
+.close-text {
+	font-size: 30rpx;
+	color: #ffffff;
+}
+/* #endif */
+</style>

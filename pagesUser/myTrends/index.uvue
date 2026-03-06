@@ -1,0 +1,1015 @@
+<template>
+	<view class="page">
+		<!-- 顶部导航栏 -->
+		<!-- #ifndef H5 -->
+		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-bar">
+				<view class="back-btn" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">我的动态</text>
+				<view class="nav-right"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+		
+		<!-- 滚动内容 -->
+		<!-- #ifdef H5 -->
+		<scroll-view 
+			class="scroll-view-h5"
+			:style="{ height: contentHeight + 'px' }"
+			scroll-y="true"
+			refresher-enabled="true"
+			:refresher-triggered="refreshing"
+			@refresherrefresh="handleRefresh"
+			@scrolltolower="handleLoadMore"
+		>
+		<!-- #endif -->
+		<!-- #ifndef H5 -->
+		<scroll-view 
+			class="scroll-view"
+			scroll-y="true"
+			refresher-enabled="true"
+			:refresher-triggered="refreshing"
+			@refresherrefresh="handleRefresh"
+			@scrolltolower="handleLoadMore"
+		>
+		<!-- #endif -->
+			<!-- 空状态：只有在页面初始化完成且列表为空且不在加载中时才显示 -->
+			<view v-if="pageInitialized == true && listLength == 0 && trendsPageInfo.status != 'loading'" class="empty-box">
+				<text class="empty-text">暂无动态</text>
+				<text class="empty-tip">快去发布你的第一条动态吧~</text>
+			</view>
+			
+			<!-- 首次加载中状态 -->
+			<view v-if="isFirstLoad == true && trendsPageInfo.status == 'loading'" class="loading-box">
+				<text class="loading-text">加载中...</text>
+			</view>
+			
+			<!-- 动态列表：只有在有数据时才显示 -->
+			<view v-if="listLength > 0" class="list-container">
+				<view v-for="(item, index) in trendsList" :key="getKey(item, index)" class="item-wrapper">
+					<DynamicItem 
+						:item="item"
+						moreIcon="dots"
+						@like="onLike"
+						@comment="onComment"
+						@content-click="onContentClick"
+						@video-click="onVideoClick"
+						@user-click="onUserClick"
+						@more-click="onMoreClick"
+					/>
+				</view>
+			</view>
+			
+			<!-- 列表状态 -->
+			<LoadMore 
+				v-if="listLength > 0"
+				:status="trendsPageInfo.status"
+				@loadmore="handleLoadMore"
+			/>
+		</scroll-view>
+		
+		<!-- 固定发布按钮 -->
+		<view class="publish-btn-wrapper">
+			<view class="publish-btn" @click="handlePublish">
+				<text class="publish-text">发布</text>
+			</view>
+		</view>
+		
+		<!-- 操作菜单 -->
+		<view v-if="showActionSheet == true" class="action-sheet-mask" @click="handleActionCancel">
+			<view class="action-sheet-popup" @click.stop>
+				<!-- 选项列表 -->
+				<view class="action-list">
+					<!-- 顶置选项 -->
+					<view class="action-item" @click="handleActionSelect(0)">
+						<view class="action-item-content">
+							<text class="action-text">{{ topActionText }}</text>
+							<view class="vip-badge">
+								<text class="vip-text">会员专享</text>
+							</view>
+						</view>
+					</view>
+					<!-- 分享选项 -->
+					<view class="action-item" @click="handleActionSelect(1)">
+						<text class="action-text">分享</text>
+					</view>
+					<!-- 私密选项 -->
+					<view class="action-item" @click="handleActionSelect(2)">
+						<text class="action-text">{{ privateActionText }}</text>
+					</view>
+					<!-- 删除选项 -->
+					<view class="action-item action-item-danger" @click="handleActionSelect(3)">
+						<text class="action-text-danger">删除</text>
+					</view>
+				</view>
+				
+				<!-- 取消按钮 -->
+				<view class="cancel-section">
+					<view class="cancel-btn" @click="handleActionCancel">
+						<text class="cancel-text">取消</text>
+					</view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- 分享弹窗 -->
+		<SharePopup
+			:visity="showSharePopup"
+			:shareData="shareData"
+			:chatList="shareChatList"
+			@update:visity="(val: boolean) => { showSharePopup = val }"
+			@share-to-chat="onShareToChat"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
+import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import DynamicItem from '@/components/business/DynamicItem.uvue'
+import LoadMore from '@/components/base/LoadMore.uvue'
+import { 
+	PageInfoData, 
+	loadUserTrends 
+} from '@/pagesUser/composables/useProfileData.uts'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
+import { 
+	getStringProp, 
+	getNumberProp,
+	getArrayProp,
+	getItemKey,
+	toJsonObj 
+} from '@/common/utils/utsSafe.uts'
+import { 
+	getUserId, 
+	getUserVipStatus, 
+	getUserVipExpireTime,
+	getUserLoginStatus,
+	useUserStore
+} from '@/stores/user.uts'
+import { toggleLike } from '@/stores/like.uts'
+import { deleteTrends, setTrendsTop, setTrendsPrivate } from '@/common/services/trendsService.uts'
+import { getLocationInfo, LocationResult } from '@/common/utils/location.uts'
+// 🔧 新增：导入功能开关
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { VIP_ACTIVATED } from '@/common/config/businessCodes.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import { 
+	getChatListRef,
+	getChatList as getChatListFn, 
+	handleShareToChat as handleShareToChatFn 
+} from '@/common/composables/useChatAndShare.uts'
+
+// ==================== 响应式状态 ====================
+const trendsPageInfo = ref<PageInfoData>(new PageInfoData())
+const trendsList = ref<Array<UTSJSONObject>>([])  // 独立的列表 ref，确保响应式
+const refreshing = ref<boolean>(false)
+const statusBarHeight = ref<number>(44)
+const headerHeight = ref<number>(88)
+const contentHeight = ref<number>(600)
+
+// 位置信息
+const latitude = ref<number>(0)
+const longitude = ref<number>(0)
+const hasLocation = ref<boolean>(false)
+
+// 页面初始化状态（用于控制空状态显示）
+const pageInitialized = ref<boolean>(false)
+const isFirstLoad = ref<boolean>(true)
+
+// 操作菜单
+const showActionSheet = ref<boolean>(false)
+const selectedItem = ref<UTSJSONObject | null>(null)
+
+// 分享弹窗
+const showSharePopup = ref<boolean>(false)
+const shareData = ref<UTSJSONObject>({})
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const userStore = useUserStore()
+
+// 聊天列表
+const chatList = getChatListRef()
+
+// ==================== 辅助函数（必须在 computed 之前定义）====================
+const getKey = (item: UTSJSONObject | null, index: number): string => {
+	return getItemKey(item as any, index)
+}
+
+const getItemStringProp = (item: UTSJSONObject | null, key: string): string => {
+	return getStringProp(item as any, key)
+}
+
+const getItemNumberProp = (item: UTSJSONObject | null, key: string): number => {
+	return getNumberProp(item as any, key)
+}
+
+// ==================== 计算属性 ====================
+const listLength = computed((): number => {
+	try {
+		const arr = trendsList.value
+		if (arr != null && Array.isArray(arr) == true) {
+			return (arr as Array<UTSJSONObject>).length
+		}
+	} catch (e) {}
+	return 0
+})
+
+// 顶置操作文本
+const topActionText = computed((): string => {
+	if (selectedItem.value == null) return '顶置'
+	const onTop = getItemNumberProp(selectedItem.value, 'onTop')
+	return onTop == 10 ? '取消顶置' : '顶置'
+})
+
+// 私密操作文本
+const privateActionText = computed((): string => {
+	if (selectedItem.value == null) return '私密'
+	const privatel = getItemNumberProp(selectedItem.value, 'privatel')
+	return privatel == 20 ? '取消私密' : '私密'
+})
+
+// 检查 VIP 状态
+const checkVipStatus = (): boolean => {
+	const vipStatus = getUserVipStatus()
+	const vipExpireTime = getUserVipExpireTime()
+	
+	if (vipStatus != VIP_ACTIVATED) return false
+	
+	if (vipExpireTime != null && vipExpireTime != '') {
+		const expireDate = new Date(vipExpireTime)
+		const now = new Date()
+		return expireDate > now
+	}
+	
+	return true
+}
+
+// 更新列表项状态
+const updateItemStatus = (kid: string, key: string, value: number) => {
+	const list = trendsList.value
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		const itemKid = getItemStringProp(item, 'kid')
+		if (itemKid == kid) {
+			try {
+				const itemStr = JSON.stringify(item)
+				const itemObj = JSON.parse(itemStr) as UTSJSONObject
+				itemObj.set(key, value)
+				list[i] = itemObj
+				// 触发响应式更新
+				trendsList.value = list
+			} catch (e) {}
+			break
+		}
+	}
+}
+
+// 从列表中移除项
+const removeItemFromList = (kid: string) => {
+	const list = trendsList.value
+	const newList: Array<UTSJSONObject> = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const item = list[i]
+		const itemKid = getItemStringProp(item, 'kid')
+		if (itemKid != kid) {
+			newList.push(item)
+		}
+	}
+	trendsList.value = newList
+}
+
+// ==================== 数据加载 ====================
+const loadData = (refresh: boolean) => {
+	console.log('[MyTrends] loadData 被调用, refresh:', refresh)
+	
+	if (refresh == true) {
+		trendsPageInfo.value.reset()
+		trendsList.value = []
+	}
+	
+	const userKid = getUserId()
+	console.log('[MyTrends] loadData - userKid:', userKid)
+	
+	if (userKid == '') {
+		console.log('[MyTrends] loadData - userKid 为空，退出')
+		refreshing.value = false
+		pageInitialized.value = true
+		isFirstLoad.value = false
+		return
+	}
+	
+	trendsPageInfo.value.userKid = userKid
+	// 设置为 loading 状态，防止空状态闪现
+	trendsPageInfo.value.status = 'loading'
+	
+	console.log('[MyTrends] loadData - 开始调用 loadUserTrends')
+	
+	loadUserTrends(
+		trendsPageInfo.value,
+		latitude.value,
+		longitude.value,
+		hasLocation.value
+	).then((success: boolean) => {
+		console.log('[MyTrends] loadUserTrends 成功, success:', success, 'listLength:', trendsPageInfo.value.list.length)
+		// 同步列表数据到独立的 ref，确保响应式更新
+		trendsList.value = trendsPageInfo.value.list
+		console.log('[MyTrends] trendsList 已更新, length:', trendsList.value.length)
+		refreshing.value = false
+		pageInitialized.value = true
+		isFirstLoad.value = false
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '加载动态列表', null)
+		refreshing.value = false
+		pageInitialized.value = true
+		isFirstLoad.value = false
+	})
+}
+
+// ==================== 事件处理 ====================
+const handleBack = () => {
+	uni.navigateBack()
+}
+
+const handleRefresh = () => {
+	refreshing.value = true
+	loadData(true)
+}
+
+const handleLoadMore = () => {
+	if (trendsPageInfo.value.status == 'loading') return
+	if (trendsPageInfo.value.status == 'nomore') return
+	
+	trendsPageInfo.value.nextPage()
+	loadData(false)
+}
+
+const handlePublish = () => {
+	uni.navigateTo({ url: '/pages/index/components/addTrends' })
+}
+
+// 点赞
+const onLike = (item: UTSJSONObject | null) => {
+	const userKid = getUserId()
+	if (userKid == '') {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+	
+	const discoverKid = getItemStringProp(item, 'kid')
+	if (discoverKid == '') return
+	
+	toggleLike(userKid, discoverKid).then((newStatus: boolean) => {
+		// 更新列表中的点赞状态
+		const newIsLike = newStatus == true ? 10 : 0
+		updateItemStatus(discoverKid, 'isLike', newIsLike)
+		
+		// 更新点赞数
+		const currentLikeNum = getItemNumberProp(item, 'likeNum')
+		const newLikeNum = newStatus == true ? currentLikeNum + 1 : Math.max(0, currentLikeNum - 1)
+		updateItemStatus(discoverKid, 'likeNum', newLikeNum)
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '点赞操作', null)
+	})
+}
+
+// 评论
+const onComment = (item: UTSJSONObject | null) => {
+	const kid = getItemStringProp(item, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/commend/index?kid=' + kid })
+	}
+}
+
+// 内容点击
+const onContentClick = (item: UTSJSONObject | null) => {
+	const kid = getItemStringProp(item, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/commend/index?kid=' + kid })
+	}
+}
+
+// 视频点击
+const onVideoClick = (item: UTSJSONObject | null) => {
+	const kid = getItemStringProp(item, 'kid')
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesBusiness/videoFeed/index?kid=' + kid })
+	}
+}
+
+// 用户点击
+const onUserClick = (item: UTSJSONObject | null) => {
+	const userKid = getItemStringProp(item, 'userKid')
+	if (userKid != '') {
+		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + userKid })
+	}
+}
+
+// 更多操作
+const onMoreClick = (item: UTSJSONObject | null) => {
+	selectedItem.value = item
+	showActionSheet.value = true
+}
+
+// 分享操作
+const buildShareData = (item: UTSJSONObject | null): UTSJSONObject => {
+	const kid = getItemStringProp(item, 'kid')
+	const content = getItemStringProp(item, 'discoverContent')
+	const itemUserKid = getItemStringProp(item, 'userKid')
+
+	// 标题：取内容前20个字符
+	let title = content
+	if (content.length > TEXT_PREVIEW_LENGTH) {
+		title = content.substring(0, TEXT_PREVIEW_LENGTH) + '...'
+	}
+
+	// 图片：取 picList 第一张，无则用默认图
+	let imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	const picList = getArrayProp(item as any, 'picList')
+	if (picList.length > 0) {
+		const firstPic = picList[0]
+		const picStr = firstPic.toString()
+		if (picStr != '' && picStr != '[object Object]') {
+			imageUrl = picStr
+		} else {
+			const picUrl = getStringProp(firstPic as any, 'picUrl')
+			if (picUrl != '') {
+				imageUrl = picUrl
+			}
+		}
+	}
+
+	// 分享链接：动态详情页
+	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/commend/index?kid=' + kid
+
+	return {
+		title: title,
+		desc: content,
+		summary: content,
+		imageUrl: imageUrl,
+		url: shareUrl,
+		link: shareUrl,
+		discoverKid: kid,
+		userId: itemUserKid
+	} as UTSJSONObject
+}
+
+const handleShareTrends = async () => {
+	if (selectedItem.value == null) return
+	shareData.value = buildShareData(selectedItem.value)
+	
+	// 获取会话列表（异步请求） - 允许失败但仍显示弹窗
+	try {
+		const result = await getChatListFn(userStore)
+		console.log('[MyTrends] getChatListFn result:', JSON.stringify(result))
+		try {
+			if (result != null && Array.isArray(result) == true) {
+				shareChatList.value = result as Array<UTSJSONObject>
+				console.log('[MyTrends] assigned result to shareChatList, new length:', shareChatList.value.length)
+			} else {
+				// fallback: 安全解析模块级 chatList
+				try {
+					let fallbackArr: Array<UTSJSONObject> = []
+					try {
+						const rawParsed = JSON.parse(JSON.stringify(chatList))
+						if (Array.isArray(rawParsed) == true) {
+							fallbackArr = rawParsed as Array<UTSJSONObject>
+						}
+					} catch (e) {}
+					
+					if (fallbackArr.length == 0) {
+						try {
+							const chatListObj = toJsonObj(chatList)
+							if (chatListObj != null) {
+								try {
+									const v = chatListObj.get('value')
+									if (v != null) {
+										try {
+											const parsedV = JSON.parse(JSON.stringify(v))
+											if (Array.isArray(parsedV) == true) {
+												fallbackArr = parsedV as Array<UTSJSONObject>
+											}
+										} catch (e) {}
+									}
+								} catch (e) {}
+								try {
+									const l = chatListObj.get('list')
+									if (l != null) {
+										try {
+											const parsedL = JSON.parse(JSON.stringify(l))
+											if (Array.isArray(parsedL) == true) {
+												fallbackArr = parsedL as Array<UTSJSONObject>
+											}
+										} catch (e) {}
+									}
+								} catch (e) {}
+							}
+						} catch (e) {}
+					}
+					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
+					console.log('[MyTrends] used fallback chatList, length:', shareChatList.value.length)
+				} catch (e) {
+					shareChatList.value = []
+				}
+			}
+		} catch (e) {
+			handleSilentError(e, '[MyTrends] 会话列表赋值')
+		}
+	} catch (e) {
+		handleSilentError(e, '[MyTrends] 获取会话列表')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+// 分享到聊天
+const onShareToChat = (data: UTSJSONObject | null) => {
+	if (selectedItem.value == null) return
+	
+	const item = selectedItem.value
+	const contentText = getItemStringProp(item, 'discoverContent')
+	const titleText = contentText != '' ? contentText : '精彩动态分享'
+	
+	const dynamicInfo = {
+		kid: getItemStringProp(item, 'kid'),
+		id: getItemStringProp(item, 'kid'),
+		title: titleText.length > TEXT_PREVIEW_LENGTH ? titleText.substring(0, TEXT_PREVIEW_LENGTH) + '...' : titleText,
+		content: contentText,
+		text: contentText,
+		description: contentText,
+		image: '',
+		coverImage: '',
+		userKid: getItemStringProp(item, 'userKid'),
+		nickName: getItemStringProp(item, 'nickName'),
+		userImage: getItemStringProp(item, 'userImage')
+	}
+	
+	// 获取封面图片
+	const insertType = getItemNumberProp(item, 'insertType')
+	if (insertType == 1) {
+		const picList = getArrayProp(item as any, 'picList')
+		if (picList.length > 0) {
+			const firstPic = picList[0]
+			if (firstPic != null) {
+				let picUrl = ''
+				try {
+					const picStr = firstPic.toString()
+					if (picStr != '' && picStr.indexOf('http') >= 0) {
+						picUrl = picStr
+					} else {
+						const picUrlFromObj = getStringProp(firstPic as any, 'picUrl')
+						if (picUrlFromObj != '') {
+							picUrl = picUrlFromObj
+						}
+					}
+				} catch (e) {}
+				if (picUrl != '') {
+					dynamicInfo.image = picUrl
+					dynamicInfo.coverImage = picUrl
+				}
+			}
+		}
+	} else if (insertType == 3) {
+		const videoPic = getItemStringProp(item, 'videoPic')
+		if (videoPic != '') {
+			dynamicInfo.image = videoPic
+			dynamicInfo.coverImage = videoPic
+		}
+	}
+	
+	if (dynamicInfo.image == '') {
+		dynamicInfo.image = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+		dynamicInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+	}
+	
+	handleShareToChatFn(data as any, dynamicInfo as any)
+}
+
+// 顶置操作（必须在 handleActionSelect 之前定义）
+const handleTopTrends = () => {
+	if (selectedItem.value == null) return
+	
+	if (checkVipStatus() == false) {
+		// 🔧 新增：检查会员功能是否开启
+		if (isMemberFeatureEnabled() == false) {
+			uni.showToast({
+				title: '会员功能暂未开放',
+				icon: 'none'
+			})
+			return
+		}
+		
+		uni.showModal({
+			title: '提示',
+			content: '顶置功能需要开通会员',
+			confirmText: '去开通',
+			success: (res: UniShowModalResult) => {
+				if (res.confirm == true) {
+					uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+				}
+			}
+		})
+		return
+	}
+	
+	const kid = getItemStringProp(selectedItem.value, 'kid')
+	const onTop = getItemNumberProp(selectedItem.value, 'onTop')
+	const isCurrentlyTop = onTop == 10
+	
+	const params = { kid: kid, isTop: isCurrentlyTop == false } as UTSJSONObject
+	
+	setTrendsTop(params).then((res: UTSJSONObject) => {
+		const newOnTop = isCurrentlyTop == true ? 20 : 10
+		updateItemStatus(kid, 'onTop', newOnTop)
+		uni.showToast({ 
+			title: isCurrentlyTop == true ? '已取消顶置' : '已顶置', 
+			icon: 'success' 
+		})
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '顶置动态', null)
+	})
+}
+
+// 私密操作（必须在 handleActionSelect 之前定义）
+const handlePrivateTrends = () => {
+	if (selectedItem.value == null) return
+	
+	const item = selectedItem.value
+	const kid = getItemStringProp(item, 'kid')
+	const privatel = getItemNumberProp(item, 'privatel')
+	const isCurrentlyPrivate = privatel == 20
+	
+	const params = { kid: kid, isPrivate: isCurrentlyPrivate == false } as UTSJSONObject
+	
+	setTrendsPrivate(params).then((res: UTSJSONObject) => {
+		const newPrivatel = isCurrentlyPrivate == true ? 10 : 20
+		updateItemStatus(kid, 'privatel', newPrivatel)
+		uni.showToast({ 
+			title: isCurrentlyPrivate == true ? '已取消私密' : '已设为私密', 
+			icon: 'success' 
+		})
+	}).catch((error: any | null): void => {
+		handlePageError(error as any, '设置动态私密', null)
+	})
+}
+
+// 删除操作（必须在 handleActionSelect 之前定义）
+const handleDeleteTrends = () => {
+	if (selectedItem.value == null) return
+	
+	uni.showModal({
+		title: '提示',
+		content: '确定删除这条动态吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				const item = selectedItem.value
+				const kid = getItemStringProp(item, 'kid')
+				const params = { kid: kid } as UTSJSONObject
+				
+				deleteTrends(params).then((res: UTSJSONObject) => {
+					removeItemFromList(kid)
+					uni.showToast({ title: '已删除', icon: 'success' })
+				}).catch((error: any | null): void => {
+					handlePageError(error as any, '删除动态', null)
+				})
+			}
+		}
+	})
+}
+
+// 操作菜单选择
+const handleActionSelect = (index: number) => {
+	showActionSheet.value = false
+	
+	// 检查审核状态：待审核(10)或审核中(20)的动态只允许删除
+	const auditStatus = getItemNumberProp(selectedItem.value, 'auditStatus')
+	if (auditStatus == 10 || auditStatus == 20) {
+		if (index == 3) {
+			// 允许删除
+			handleDeleteTrends()
+		} else {
+			uni.showToast({ title: '动态审核中，暂不支持此操作', icon: 'none' })
+		}
+		return
+	}
+	
+	if (index == 0) {
+		handleTopTrends()
+	} else if (index == 1) {
+		handleShareTrends()
+	} else if (index == 2) {
+		handlePrivateTrends()
+	} else if (index == 3) {
+		handleDeleteTrends()
+	}
+}
+
+const handleActionCancel = () => {
+	showActionSheet.value = false
+	selectedItem.value = null
+}
+
+// ==================== 页面初始化 ====================
+const initPage = () => {
+	// 初始化布局
+	initPageLayout()
+	statusBarHeight.value = pageStatusBarHeight.value
+	headerHeight.value = statusBarHeight.value + 44
+	
+	// #ifdef H5
+	// H5端移除了自定义导航栏，滚动区域占满整个窗口
+	contentHeight.value = pageWindowHeight.value
+	// #endif
+	
+	// #ifndef H5
+	// APP端保留自定义导航栏，需要减去导航栏高度
+	contentHeight.value = pageWindowHeight.value - headerHeight.value
+	// #endif
+	
+	console.log('[MyTrends] initPage - 开始初始化')
+	
+	// 先立即加载数据（使用默认位置）
+	// 位置信息获取是异步的，不应该阻塞数据加载
+	loadData(true)
+	
+	// 异步获取位置信息，获取到后可以用于后续刷新
+	getLocationInfo().then((location: LocationResult) => {
+		console.log('[MyTrends] getLocationInfo 返回')
+		if (location != null) {
+			try {
+				latitude.value = location.latitude
+				longitude.value = location.longitude
+				hasLocation.value = true
+				console.log('[MyTrends] 位置信息已设置:', latitude.value, longitude.value)
+			} catch (e) {
+				handleSilentError(e, '[MyTrends] 解析位置信息')
+			}
+		}
+	}, (error: any | null) => {
+		handleSilentError(error as any, '[MyTrends] 获取定位信息')
+	})
+}
+
+// ==================== 生命周期 ====================
+onLoad((options: OnLoadOptions) => {
+	// 检查登录状态
+	const isLogin = getUserLoginStatus()
+	if (isLogin == false) {
+		uni.navigateTo({ url: '/pagesUser/login/index' })
+		return
+	}
+	
+	initPage()
+})
+
+onShow(() => {
+	// 页面显示时刷新数据（非首次加载时）
+	const isLogin = getUserLoginStatus()
+	if (isLogin == true && trendsPageInfo.value.userKid != '' && isFirstLoad.value == false) {
+		loadData(true)
+	}
+})
+</script>
+
+<style>
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #F5F5F5;
+}
+
+/* 顶部导航栏 */
+.header {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #FFFFFF;
+}
+
+.nav-bar {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.back-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.back-icon {
+	font-size: 48rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-title {
+	font-size: 36rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-right {
+	width: 60rpx;
+	height: 60rpx;
+}
+
+/* 滚动区域 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex-direction: column;
+	width: 750rpx;
+}
+/* #endif */
+
+/* 列表容器 */
+.list-container {
+	flex-direction: column;
+	padding-top: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 160rpx;
+}
+
+.item-wrapper {
+	flex-direction: column;
+}
+
+/* 空状态 */
+.empty-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+	padding-bottom: 200rpx;
+}
+
+.empty-text {
+	font-size: 32rpx;
+	color: #999999;
+}
+
+.empty-tip {
+	font-size: 26rpx;
+	color: #CCCCCC;
+	margin-top: 16rpx;
+}
+
+/* 加载中状态 */
+.loading-box {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding-top: 200rpx;
+	padding-bottom: 200rpx;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+/* 固定发布按钮 */
+.publish-btn-wrapper {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	padding-left: 48rpx;
+	padding-right: 48rpx;
+	padding-top: 20rpx;
+	padding-bottom: 40rpx;
+	background-color: transparent;
+}
+
+.publish-btn {
+	width: 654rpx;
+	height: 80rpx;
+	background-color: #37B1F2;
+	border-radius: 52rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.publish-text {
+	font-size: 32rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+/* 自定义操作菜单 */
+.action-sheet-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.action-sheet-popup {
+	width: 750rpx;
+	background-color: #f7f7f7;
+	flex-direction: column;
+}
+
+.action-list {
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.action-item {
+	height: 100rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #f0f0f0;
+}
+
+.action-item-content {
+	flex-direction: row;
+	align-items: center;
+}
+
+.action-item-danger {
+	border-bottom-width: 0;
+}
+
+.action-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.action-text-danger {
+	font-size: 28rpx;
+	color: #FF4D4F;
+}
+
+.vip-badge {
+	margin-left: 12rpx;
+	padding-top: 4rpx;
+	padding-bottom: 4rpx;
+	padding-left: 12rpx;
+	padding-right: 12rpx;
+	background-color: #FFE4B5;
+	border-radius: 8rpx;
+}
+
+.vip-text {
+	font-size: 20rpx;
+	color: #FF8C00;
+}
+
+.cancel-section {
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	flex-direction: column;
+}
+
+.cancel-btn {
+	height: 100rpx;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 16rpx;
+	margin-right: 16rpx;
+}
+
+.cancel-text {
+	font-size: 32rpx;
+	color: #666666;
+	font-weight: bold;
+}
+</style>

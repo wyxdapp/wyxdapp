@@ -1,0 +1,787 @@
+import ShareService from '@/common/utils/shareService.uts'
+import { isAndroid, isIOS } from '@/common/utils/systemInfo'
+import { DOWNLOAD_URLS, H5_SHARE_BASE_URL } from '@/utils/config.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
+import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { DEEP_LINK_TIMEOUT, SHARE_REDIRECT_TIMEOUT } from '@/common/config/timeoutConfig.uts'
+import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+// #ifdef H5
+import { 
+	initWechatJsSdk as initWxJsSdk, 
+	updateShareConfig as updateWxShareConfig 
+} from '@/common/services/wechatShareService.uts'
+// #endif
+
+// ==================== APP 下载链接配置 ====================
+// Android APK 直接下载链接
+const APP_DOWNLOAD_ANDROID: string = DOWNLOAD_URLS.android
+// iOS App Store 链接
+const APP_DOWNLOAD_IOS: string = DOWNLOAD_URLS.ios
+
+// ==================== APP 唤起配置 ====================
+// URL Scheme
+const APP_SCHEME = 'wyxdapp'
+// Android 包名
+const APP_PACKAGE = 'com.wyxdapp.guide'
+// 唤起超时时间（毫秒）
+const LAUNCH_TIMEOUT_ANDROID = DEEP_LINK_TIMEOUT
+const LAUNCH_TIMEOUT_IOS = SHARE_REDIRECT_TIMEOUT
+
+// UTS 规范：使用 class 替代对象字面量
+class ShareData {
+	title: string = ''
+	summary: string = ''
+	desc: string = ''
+	imageUrl: string = ''
+	link: string = ''
+	url: string = ''
+	userId: string = ''
+	
+	constructor(title: string, summary: string, desc: string, imageUrl: string, link: string, url: string, userId: string) {
+		this.title = title
+		this.summary = summary
+		this.desc = desc
+		this.imageUrl = imageUrl
+		this.link = link
+		this.url = url
+		this.userId = userId
+	}
+}
+
+// UTS 规范：安全访问对象属性的辅助函数
+function safeGetProperty(obj: any | null, key: string): string | null {
+	if (obj == null) {
+		return null
+	}
+	const utsObj = toUTSJSON(obj)
+	if (utsObj != null) {
+		const val = utsObj.get(key)
+		if (val != null) {
+			return val.toString()
+		}
+	}
+	return null
+}
+
+// ===== 直接导出的模块级函数（UTS 规范：避免从 composable 返回对象中访问方法）=====
+
+/**
+ * 准备分享数据（返回构建后的对象并同时设置传入的 shareDataRef）
+ */
+export function prepareShareData(infoRef: any | null, guiderKidRef: any | null, shareDataRef: any | null): Promise<ShareData> {
+	return new Promise<ShareData>((resolve: (value: ShareData) => void, reject: (reason?: any) => void) => {
+		;(async () => {
+			try {
+				// 获取当前用户的推广号（用户短号 short_kid，8位数字）
+				const referrerCode = await ShareService.getCurrentUserShortKid()
+				
+				const guiderKidValue = safeGetProperty(guiderKidRef, 'value')
+				const guiderKidStr = (guiderKidValue != null) ? guiderKidValue.toString() : ''
+				const shareLink = ShareService.buildShareLink(guiderKidStr, referrerCode)
+
+				const infoValue = safeGetProperty(infoRef, 'value')
+				const nickname = safeGetProperty(infoValue, 'nickname')
+				const nicknameStr = (nickname != null && nickname != '') ? nickname.toString() : ''
+				
+				const signature = safeGetProperty(infoValue, 'signature')
+				const signatureStr = (signature != null && signature != '') ? signature.toString() : ''
+				
+				const liveCity = safeGetProperty(infoValue, 'liveCity')
+				const liveCityStr = (liveCity != null && liveCity != '') ? liveCity.toString() : ''
+				
+				const sex = safeGetProperty(infoValue, 'sex')
+				const sexStr = (sex != null && sex != '') ? sex.toString() : ''
+				
+				const image = safeGetProperty(infoValue, 'image')
+				const imageStr = (image != null && image != '') ? image.toString() : ''
+
+				const summary = (signatureStr != null && signatureStr != '') ? signatureStr : ((liveCityStr != null && liveCityStr != '') ? `来自${liveCityStr}的` : '来自远方的') + (sexStr === '女' ? '女生' : '男生') + '，欢迎关注！'
+
+				const data = new ShareData(
+					`${nicknameStr}的个人主页`,
+					summary,
+					summary,
+					imageStr,
+					shareLink,
+					shareLink,
+					guiderKidStr
+				)
+
+				if (shareDataRef != null) {
+					try {
+						const utsObj = toUTSJSON(shareDataRef)
+						if (utsObj != null) {
+							utsObj.set('value', data)
+							console.log('shareDataRef.value 设置完成')
+						}
+					} catch (e: any) {
+						handleSilentError(e, 'prepareShareData 设置 shareDataRef')
+					}
+				}
+
+				resolve(data)
+			} catch (e: any) {
+				const infoValue = safeGetProperty(infoRef, 'value')
+				const signature = safeGetProperty(infoValue, 'signature')
+				const signatureStr = (signature != null && signature != '') ? signature.toString() : ''
+				
+				const liveCity = safeGetProperty(infoValue, 'liveCity')
+				const liveCityStr = (liveCity != null && liveCity != '') ? liveCity.toString() : ''
+				
+				const summary = (signatureStr != null && signatureStr != '') ? signatureStr : ((liveCityStr != null && liveCityStr != '') ? `来自${liveCityStr}的` : '来自远方的') + '网约向导了解一下~'
+				
+				const guiderKidValue = safeGetProperty(guiderKidRef, 'value')
+				const guiderKidStr = (guiderKidValue != null) ? guiderKidValue.toString() : ''
+				const url = `${H5_SHARE_BASE_URL}/#/pagesUser/persionInfo/index?id=${guiderKidStr}`
+				
+				const nickname = safeGetProperty(infoValue, 'nickname')
+				const nicknameStr = (nickname != null && nickname != '') ? nickname.toString() : '用户'
+				
+				const image = safeGetProperty(infoValue, 'image')
+				const imageStr = (image != null && image != '') ? image.toString() : ''
+				
+				const data = new ShareData(
+					`${nicknameStr}的个人主页`,
+					summary,
+					summary,
+					imageStr,
+					url,
+					url,
+					guiderKidStr
+				)
+				
+				if (shareDataRef != null) {
+					try {
+						const utsObj = toUTSJSON(shareDataRef)
+						if (utsObj != null) {
+							utsObj.set('value', data)
+							console.log('shareDataRef.value 设置完成')
+						}
+					} catch (e: any) {
+						handleSilentError(e, 'prepareShareData 降级设置 shareDataRef')
+					}
+				}
+				resolve(data)
+			}
+		})()
+	})
+}
+
+/**
+ * 从 URL 或当前用户信息中获取推广号（H5 环境优先 URL）
+ */
+export function getReferrerCodeFromUrl(userStore: any | null): string | null {
+	try {
+		// #ifdef H5
+		const urlParams = getUrlParams()
+		// 优先获取 ref 参数（推广号）
+		const refFromUrl = urlParams.get('ref')
+		if (refFromUrl != null && refFromUrl != '') return refFromUrl
+		// 兼容旧的 invite 参数
+		const inviteFromUrl = urlParams.get('invite')
+		if (inviteFromUrl != null && inviteFromUrl != '') return inviteFromUrl
+
+		if (userStore != null) {
+			const userInfo = safeGetProperty(userStore, 'userInfo')
+			if (userInfo != null) {
+				const extensionNumber = safeGetProperty(userInfo, 'extensionNumber')
+				if (extensionNumber != null && extensionNumber != '') {
+					return extensionNumber.toString()
+				}
+			}
+		}
+		// #endif
+	} catch (e) {}
+	return null
+}
+
+/**
+ * 从 URL 或当前用户信息中获取邀请码（兼容旧接口）
+ * @deprecated 请使用 getReferrerCodeFromUrl
+ */
+export function getInviteCodeFromUrl(userStore: any | null): string | null {
+	return getReferrerCodeFromUrl(userStore)
+}
+
+/**
+ * 尝试通过 schema 跳转到 APP（H5）
+ */
+export function tryJumpToApp(params: any | null, guiderKidRef: any | null): void {
+	// #ifdef H5
+	try {
+		if (params == null) return
+		
+		const userKid = safeGetProperty(params, 'userKid')
+		const userKidStr = (userKid != null && userKid != '') ? userKid.toString() : ''
+		
+		const ref = safeGetProperty(params, 'ref')
+		const refStr = (ref != null && ref != '') ? ref.toString() : ''
+		
+		let schemaUrl = `wyxdapp://profile?userKid=${userKidStr}`
+		if (refStr != null && refStr !== '') {
+			schemaUrl += `&ref=${refStr}`
+		}
+
+		const android = isAndroid()
+		const ios = isIOS()
+		if (android == true) {
+			jumpToAndroidApp(schemaUrl, params)
+		} else if (ios == true) {
+			jumpToIOSApp(schemaUrl, params)
+		}
+		// 移除了非移动端环境下的聊天页面跳转逻辑
+		// 非移动端环境应该由调用方处理（如显示下载提示）
+	} catch (e: any) {
+		handleSilentError(e, 'tryJumpToApp 执行')
+	}
+	// #endif
+}
+
+function jumpToAndroidApp(schemaUrl: string, params: any | null): void {
+	try {
+		if (params == null) {
+			jumpToAppStore('android')
+			return
+		}
+		
+		const userKid = safeGetProperty(params, 'userKid')
+		const userKidStr = (userKid != null) ? userKid.toString() : ''
+		
+		const ref = safeGetProperty(params, 'ref')
+		const refStr = (ref != null && ref != '') ? ref.toString() : ''
+		
+		const refPart = (refStr != null && refStr != '') ? ('&ref=' + refStr) : ''
+		const intentUrl = `intent://profile?userKid=${userKidStr}${refPart}#Intent;scheme=wyxdapp;package=com.wyxdapp.guide;end`
+		
+		// #ifdef H5
+		if (typeof window !== 'undefined' && window.location != null) {
+			window.location.href = intentUrl
+		}
+		// #endif
+		
+		const startTime = Date.now()
+		const checkTimer = setTimeout(() => {
+			if (Date.now() - startTime > DEEP_LINK_TIMEOUT) {
+				jumpToAppStore('android')
+			}
+		}, DEEP_LINK_TIMEOUT)
+		
+		const handleVisibilityChange = () => {
+			if (typeof document !== 'undefined' && (document as any).hidden == true) {
+				clearTimeout(checkTimer)
+			}
+		}
+		
+		// #ifdef H5
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange)
+			setTimeout(() => {
+				document.removeEventListener('visibilitychange', handleVisibilityChange)
+			}, 5000)
+		}
+		// #endif
+		// #ifndef H5
+		// 非 H5 平台应使用 uni-app 生命周期钩子 onShow/onHide 替代 visibilitychange 事件
+		// #endif
+	} catch (e) {
+		jumpToAppStore('android')
+	}
+}
+
+function jumpToIOSApp(schemaUrl: string, params: any | null): void {
+	try {
+		// #ifdef H5
+		if (typeof window !== 'undefined' && window.location != null) {
+			window.location.href = schemaUrl
+		}
+		// #endif
+		
+		const startTime = Date.now()
+		const checkTimer = setTimeout(() => {
+			if (Date.now() - startTime > SHARE_REDIRECT_TIMEOUT) {
+				jumpToAppStore('ios')
+			}
+		}, SHARE_REDIRECT_TIMEOUT)
+		
+		const handleVisibilityChange = () => {
+			if (typeof document !== 'undefined' && (document as any).hidden == true) {
+				clearTimeout(checkTimer)
+			}
+		}
+		
+		// #ifdef H5
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange)
+			setTimeout(() => {
+				document.removeEventListener('visibilitychange', handleVisibilityChange)
+			}, 5000)
+		}
+		// #endif
+		// #ifndef H5
+		// 非 H5 平台应使用 uni-app 生命周期钩子 onShow/onHide 替代 visibilitychange 事件
+		// #endif
+	} catch (e) {
+		jumpToAppStore('ios')
+	}
+}
+
+export function jumpToAppStore(platform: string): void {
+	// #ifdef H5
+	if (typeof window !== 'undefined' && window.location != null) {
+		if (platform === 'android') {
+			safeRedirect(APP_DOWNLOAD_ANDROID)
+		} else if (platform === 'ios') {
+			safeRedirect(APP_DOWNLOAD_IOS)
+		}
+	}
+	// #endif
+}
+
+/**
+ * 检测当前是否为微信浏览器环境
+ * @returns 是否为微信浏览器
+ */
+export function isWechatBrowser(): boolean {
+	// #ifdef H5
+	try {
+		if (typeof navigator !== 'undefined' && navigator.userAgent != null) {
+			const ua = navigator.userAgent.toLowerCase()
+			const isMicroMessenger = ua.indexOf('micromessenger') >= 0
+			return isMicroMessenger
+		}
+	} catch (e: any) {
+		handleSilentError(e, '检测微信环境')
+	}
+	// #endif
+	return false
+}
+
+/**
+ * H5 下处理自动跳转（读取 URL 参数）
+ */
+export function handleAutoJumpToApp(options: any | null, guiderKidRef: any | null, userStore: any | null): void {
+	// #ifdef H5
+	try {
+		const urlParams = getUrlParams()
+		if (urlParams.size === 0) return
+		try {
+			const autoJump = urlParams.get('autoJump') === 'true'
+			if (autoJump == true) {
+				setTimeout(() => {
+					const referrerCode = getReferrerCodeFromUrl(userStore)
+					
+					let userKidFromOptions = ''
+					if (options != null) {
+						const optionsId = safeGetProperty(options, 'id')
+						if (optionsId != null && optionsId != '') {
+							userKidFromOptions = optionsId.toString()
+						}
+					}
+					
+					let finalUserKid = userKidFromOptions
+					if (finalUserKid === '') {
+						const guiderKidValue = safeGetProperty(guiderKidRef, 'value')
+						if (guiderKidValue != null) {
+							finalUserKid = guiderKidValue.toString()
+						}
+					}
+					
+					const appParams = new UTSJSONObject()
+					appParams.set('userKid', finalUserKid)
+					appParams.set('ref', referrerCode)
+					
+					tryJumpToApp(appParams, guiderKidRef)
+				}, 1000)
+			}
+		} catch (e) {}
+	} catch (e) {}
+	// #endif
+}
+
+export function handleApp(infoRef: any | null, guiderKidRef: any | null, userStore: any | null, onWechatDetected: (() => void) | null = null): void {
+	// 检测微信环境
+	if (isWechatBrowser() == true) {
+		if (onWechatDetected != null) {
+			const callback = onWechatDetected
+			callback()
+		}
+		return
+	}
+	
+	// #ifdef H5
+	const android = isAndroid()
+	const ios = isIOS()
+	
+	// 如果是移动端（Android/iOS），尝试唤起 APP
+	if (android == true || ios == true) {
+		const referrerCode = getReferrerCodeFromUrl(userStore)
+		
+		let userKid = ''
+		const infoValue = safeGetProperty(infoRef, 'value')
+		if (infoValue != null) {
+			const kid = safeGetProperty(infoValue, 'kid')
+			if (kid != null && kid != '') {
+				userKid = kid.toString()
+			}
+		}
+		
+		if (userKid === '') {
+			const guiderKidValue = safeGetProperty(guiderKidRef, 'value')
+			if (guiderKidValue != null) {
+				userKid = guiderKidValue.toString()
+			}
+		}
+		
+		const appParams = new UTSJSONObject()
+		appParams.set('userKid', userKid)
+		appParams.set('ref', referrerCode)
+		
+		tryJumpToApp(appParams, guiderKidRef)
+	} else {
+		// PC 端或其他环境，直接跳转到下载页面
+		if (typeof window !== 'undefined' && window.location != null) {
+			safeRedirect(DOWNLOAD_URLS.h5)
+		}
+	}
+	// #endif
+}
+
+/**
+ * H5：设置分享相关 Meta 标签
+ */
+export function setShareMetaTags(infoRef: any | null): void {
+	// #ifdef H5
+	try {
+		console.log('[WX-SHARE] setShareMetaTags 被调用')
+		
+		// 获取用户信息（兼容 ref 对象和普通对象/直接传值）
+		let infoValue = safeGetRefValue(infoRef)
+		
+		// 如果 safeGetRefValue 返回 null，但 infoRef 本身不为 null，直接使用 infoRef
+		if (infoValue == null && infoRef != null) {
+			infoValue = infoRef
+			console.log('[WX-SHARE] setShareMetaTags: safeGetRefValue 返回 null，直接使用 infoRef')
+		}
+		
+		if (infoValue == null) {
+			console.log('[WX-SHARE] setShareMetaTags: 用户信息为空')
+			return
+		}
+		
+		// 确保 infoValue 是可解析的对象
+		let infoObj: UTSJSONObject | null = null
+		try {
+			infoObj = toUTSJSON(infoValue)
+		} catch (e: any) {
+			handleSilentError(e, 'setShareMetaTags 解析用户信息')
+			return
+		}
+		
+		if (infoObj == null) {
+			console.log('[WX-SHARE] setShareMetaTags: 用户信息解析为空')
+			return
+		}
+		
+		const nicknameVal = infoObj.get('nickname')
+		if (nicknameVal == null || nicknameVal.toString() == '') {
+			console.log('[WX-SHARE] setShareMetaTags: 昵称为空')
+			return
+		}
+		
+		const nicknameStr = nicknameVal.toString()
+		const title = nicknameStr + '的个人主页'
+		
+		const birthPlaceVal = infoObj.get('birthPlace')
+		const birthPlaceStr = (birthPlaceVal != null && birthPlaceVal.toString() != '') ? birthPlaceVal.toString() : ''
+		
+		const liveCityVal = infoObj.get('liveCity')
+		const liveCityStr = (liveCityVal != null && liveCityVal.toString() != '') ? liveCityVal.toString() : ''
+		
+		const birthPlaceFinal = (liveCityStr != '') ? liveCityStr : ((birthPlaceStr != '') ? birthPlaceStr : '远方')
+		
+		const signatureVal = infoObj.get('signature')
+		const signatureStr = (signatureVal != null && signatureVal.toString() != '') ? signatureVal.toString() : ''
+		
+		const sexVal = infoObj.get('sex')
+		const sexStr = (sexVal != null) ? sexVal.toString() : ''
+		
+		let description = ''
+		if (signatureStr != '') {
+			description = signatureStr
+		} else {
+			const genderPart = (sexStr == '女') ? '女生' : ((sexStr == '男') ? '男生' : 'TA')
+			description = '来自' + birthPlaceFinal + '的' + genderPart + '，欢迎关注！'
+		}
+		
+		const imageVal = infoObj.get('image')
+		// 使用专门的分享默认图片
+		let image = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : DEFAULT_SHARE_IMAGE
+		if (image.indexOf('http://') == 0) {
+			image = image.replace('http://', 'https://')
+		}
+		
+		// 验证图片 URL 格式
+		if (image.indexOf('https://') != 0) {
+			image = DEFAULT_SHARE_IMAGE
+		}
+		
+		const url = (typeof window !== 'undefined' && window.location && window.location.href) ? window.location.href : ''
+		
+		console.log('[WX-SHARE] setShareMetaTags 配置:')
+		console.log('[WX-SHARE] - title:', title)
+		console.log('[WX-SHARE] - description:', description)
+		console.log('[WX-SHARE] - image:', image)
+		
+		function setMetaTag(attr: string, name: string, content: string): void {
+			try {
+				if (typeof document === 'undefined') return
+				
+				let element = document.querySelector(`meta[${attr}="${name}"]`) as HTMLMetaElement
+				if (element == null) {
+					element = document.createElement('meta')
+					element.setAttribute(attr, name)
+					document.head.appendChild(element)
+				}
+				element.setAttribute('content', content)
+			} catch (e) {}
+		}
+		
+		if (typeof document !== 'undefined') {
+			document.title = title
+			setMetaTag('property', 'og:title', title)
+			setMetaTag('property', 'og:description', description)
+			setMetaTag('property', 'og:image', image)
+			setMetaTag('property', 'og:url', url)
+			setMetaTag('property', 'og:type', 'profile')
+			setMetaTag('property', 'og:site_name', '网约向导趣游玩')
+			setMetaTag('name', 'twitter:card', 'summary_large_image')
+			setMetaTag('name', 'twitter:title', title)
+			setMetaTag('name', 'twitter:description', description)
+			setMetaTag('name', 'twitter:image', image)
+			setMetaTag('name', 'wx:title', title)
+			setMetaTag('name', 'wx:desc', description)
+			setMetaTag('name', 'wx:image', image)
+			setMetaTag('name', 'wx:card', 'summary_large_image')
+			setMetaTag('name', 'description', description)
+			setMetaTag('name', 'keywords', nicknameStr + ',个人主页,网约向导,旅游,向导')
+			setMetaTag('name', 'author', nicknameStr)
+			setMetaTag('name', 'viewport', 'width=device-width, initial-scale=1.0')
+			
+			console.log('[WX-SHARE] setShareMetaTags 完成')
+		}
+	} catch (e: any) {
+		handleSilentError(e, 'setShareMetaTags 执行')
+	}
+	// #endif
+}
+
+export function setupH5Share(infoRef: any | null): void {
+	// #ifdef H5
+	try {
+		console.log('[WX-SHARE] setupH5Share 被调用')
+		setShareMetaTags(infoRef)
+	} catch (e: any) {
+		handleSilentError(e, 'setupH5Share 执行')
+	}
+	// #endif
+}
+
+/**
+ * 安全获取 ref 对象的 value 值
+ * 兼容 Vue ref 对象和普通对象
+ */
+function safeGetRefValue(refObj: any | null): any | null {
+	if (refObj == null) {
+		return null
+	}
+	try {
+		// 方式1：尝试直接访问 .value（Vue ref 对象）
+		const directValue = (refObj as any).value
+		if (directValue != null) {
+			return directValue
+		}
+	} catch (e) {}
+	
+	try {
+		// 方式2：通过 toUTSJSON 获取
+		const parsedObj = toUTSJSON(refObj)
+		if (parsedObj != null) {
+			// 检查是否有 value 属性（ref 对象序列化后的结构）
+			const valueFromJson = parsedObj.get('value')
+			if (valueFromJson != null) {
+				return valueFromJson
+			}
+			// 如果没有 value 属性，可能本身就是值
+			return refObj
+		}
+	} catch (e) {}
+	
+	// 方式3：直接返回原对象（可能本身就是值）
+	return refObj
+}
+
+/**
+ * 初始化微信分享（H5 微信浏览器环境）
+ * 
+ * 在用户信息加载完成后调用，配置微信 JS-SDK 分享内容
+ * 
+ * @param infoRef 用户信息 ref 对象或 UTSJSONObject（直接传值也支持）
+ * @param guiderKidRef 用户 ID ref 对象或字符串（直接传值也支持）
+ */
+export function initWechatShare(infoRef: any | null, guiderKidRef: any | null): void {
+	// #ifdef H5
+	try {
+		// 检查是否为微信环境
+		if (isWechatBrowser() == false) {
+			console.log('[WX-SHARE] 非微信环境，跳过分享初始化')
+			return
+		}
+		
+		console.log('[WX-SHARE] initWechatShare 被调用')
+		console.log('[WX-SHARE] infoRef 类型:', typeof infoRef)
+		console.log('[WX-SHARE] guiderKidRef 类型:', typeof guiderKidRef)
+		
+		// 获取用户信息（兼容 ref 对象和普通对象/直接传值）
+		let infoValue = safeGetRefValue(infoRef)
+		
+		// 如果 safeGetRefValue 返回 null，但 infoRef 本身不为 null，直接使用 infoRef
+		if (infoValue == null && infoRef != null) {
+			infoValue = infoRef
+			console.log('[WX-SHARE] safeGetRefValue 返回 null，直接使用 infoRef')
+		}
+		
+		if (infoValue == null) {
+			console.log('[WX-SHARE] 用户信息为空，跳过分享配置')
+			return
+		}
+		
+		console.log('[WX-SHARE] infoValue 获取成功')
+		
+		// 确保 infoValue 是可解析的对象
+		let infoObj: UTSJSONObject | null = null
+		try {
+			infoObj = toUTSJSON(infoValue)
+		} catch (e: any) {
+			handleSilentError(e, 'initWechatShare 解析用户信息')
+			return
+		}
+		
+		if (infoObj == null) {
+			console.log('[WX-SHARE] 用户信息解析为空，跳过分享配置')
+			return
+		}
+		
+		// 获取昵称
+		const nicknameVal = infoObj.get('nickname')
+		console.log('[WX-SHARE] nicknameVal:', nicknameVal)
+		const nicknameStr = (nicknameVal != null && nicknameVal.toString() != '') ? nicknameVal.toString() : '用户'
+		
+		// 获取个性签名
+		const signatureVal = infoObj.get('signature')
+		const signatureStr = (signatureVal != null && signatureVal.toString() != '') ? signatureVal.toString() : ''
+		
+		// 获取城市（优先 liveCity，其次 birthPlace）
+		const liveCityVal = infoObj.get('liveCity')
+		const birthPlaceVal = infoObj.get('birthPlace')
+		let cityStr = ''
+		if (liveCityVal != null && liveCityVal.toString() != '') {
+			cityStr = liveCityVal.toString()
+		} else if (birthPlaceVal != null && birthPlaceVal.toString() != '') {
+			cityStr = birthPlaceVal.toString()
+		}
+		
+		// 获取性别
+		const sexVal = infoObj.get('sex')
+		const sexStr = (sexVal != null) ? sexVal.toString() : ''
+		
+		// 获取头像
+		const imageVal = infoObj.get('image')
+		console.log('[WX-SHARE] imageVal:', imageVal)
+		// 使用专门的分享默认图片（而不是默认头像）
+		let imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : DEFAULT_SHARE_IMAGE
+		
+		// 确保图片是 HTTPS（微信要求）
+		if (imageStr.indexOf('http://') == 0) {
+			imageStr = imageStr.replace('http://', 'https://')
+		}
+		
+		// 验证图片 URL 格式
+		if (imageStr.indexOf('https://') != 0) {
+			console.log('[WX-SHARE] 图片 URL 格式无效，使用默认分享图片')
+			imageStr = DEFAULT_SHARE_IMAGE
+		}
+		
+		// 获取用户 ID（兼容 ref 对象、字符串、直接传值）
+		let guiderKidStr = ''
+		if (guiderKidRef != null) {
+			// 先尝试作为字符串处理
+			if (typeof guiderKidRef == 'string') {
+				guiderKidStr = guiderKidRef as string
+			} else {
+				// 尝试获取 ref 的值
+				const guiderKidValue = safeGetRefValue(guiderKidRef)
+				if (guiderKidValue != null) {
+					guiderKidStr = guiderKidValue.toString()
+				}
+			}
+		}
+		
+		// 如果 guiderKidRef 没有获取到值，尝试从 infoObj 中获取 kid
+		if (guiderKidStr == '') {
+			const kidVal = infoObj.get('kid')
+			if (kidVal != null && kidVal.toString() != '') {
+				guiderKidStr = kidVal.toString()
+			}
+		}
+		
+		console.log('[WX-SHARE] guiderKidStr:', guiderKidStr)
+		
+		// 构建分享标题
+		const title = nicknameStr + '的个人主页'
+		
+		// 构建分享描述
+		let desc = ''
+		if (signatureStr != '') {
+			desc = signatureStr
+		} else {
+			const cityPart = (cityStr != '') ? ('来自' + cityStr + '的') : '来自远方的'
+			const genderPart = (sexStr == '女') ? '女生' : ((sexStr == '男') ? '男生' : 'TA')
+			desc = cityPart + genderPart + '，欢迎关注！'
+		}
+		
+		// 构建分享链接（使用标准格式，避免参数重复）
+		let link = H5_SHARE_BASE_URL + '/#/pagesUser/persionInfo/index'
+		if (guiderKidStr != '') {
+			link = link + '?id=' + guiderKidStr
+		}
+		
+		console.log('[WX-SHARE] ========== 分享配置 ==========')
+		console.log('[WX-SHARE] 标题:', title)
+		console.log('[WX-SHARE] 描述:', desc)
+		console.log('[WX-SHARE] 链接:', link)
+		console.log('[WX-SHARE] 图片:', imageStr)
+		console.log('[WX-SHARE] ================================')
+		
+		// 初始化 JS-SDK 并配置分享内容
+		initWxJsSdk().then((success: boolean) => {
+			if (success == true) {
+				console.log('[WX-SHARE] JS-SDK 初始化成功，配置分享内容')
+				updateWxShareConfig(title, desc, link, imageStr)
+			} else {
+				console.log('[WX-SHARE] JS-SDK 初始化失败，尝试直接配置分享内容')
+				// 即使初始化失败，也尝试配置（可能 JS-SDK 已在其他地方初始化）
+				updateWxShareConfig(title, desc, link, imageStr)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error, 'initWechatShare JS-SDK 初始化')
+			// 异常时也尝试配置
+			updateWxShareConfig(title, desc, link, imageStr)
+		})
+	} catch (e: any) {
+		handleSilentError(e, 'initWechatShare 执行')
+	}
+	// #endif
+}
+
+export { ShareData }

@@ -1,0 +1,37 @@
+/**
+ * 行为模块类型定义（访客、点赞、评论等）
+ * 对应 API 文件: api/behavior.uts
+ */
+
+// 查询访客列表（含未读状态）请求参数
+export class QueryVisitorWithUnreadStatusParams {
+	userKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// 获取访客未读数统计请求参数
+export class GetVisitorUnreadCountParams {
+	userKid: string = ''
+}
+
+// 标记访客为已读请求参数
+export class MarkVisitorAsReadParams {
+	userKid: string = ''
+	visitorKid: string = ''
+}
+
+// 查询访客列表（基础版）请求参数
+export class QueryVisitorParams {
+	userKid: string = ''
+	pageNumber: number = 1
+	pageSize: number = 20
+}
+
+// 添加访客记录请求参数
+export class AddVisitorParams {
+	userKid: string = ''
+	visitUserKid: string = ''
+	visitType: string = ''
+	targetKid: string = ''
+}

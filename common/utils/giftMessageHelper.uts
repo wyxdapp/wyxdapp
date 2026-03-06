@@ -1,0 +1,423 @@
+/**
+ * 礼物消息工具函数
+ * 提供礼物消息的构造、解析功能
+ * 遵循 UTS 语法规范，使用 JSON 序列化方式安全访问属性
+ */
+
+import { DEFAULT_GIFT_IMAGE } from '@/common/config/defaultImages.uts'
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * 礼物消息内容结构
+ */
+export class GiftMessageData {
+	giftName: string = ''
+	giftImage: string = ''
+	giftValue: string = ''
+	type: string = 'gift'
+	
+	constructor(name: string, image: string, value: string) {
+		this.giftName = name
+		this.giftImage = image
+		this.giftValue = value
+		this.type = 'gift'
+	}
+}
+
+/**
+ * 礼物通知数据结构
+ */
+export class GiftNotificationData {
+	senderKid: string = ''
+	senderName: string = ''
+	senderAvatar: string = ''
+	giftName: string = ''
+	giftImage: string = ''
+	giftValue: string = ''
+	
+	constructor() {}
+}
+
+/**
+ * 官方礼物通知消息内容结构
+ */
+export class AdminGiftMessageData {
+	title: string = ''
+	content: string = ''
+	linkUrl: string = ''
+	senderKid: string = ''
+	giftName: string = ''
+	giftImage: string = ''
+	type: string = 'gift_notify'
+	
+	constructor() {}
+}
+
+// ==================== 默认值常量 ====================
+
+const DEFAULT_GIFT_NAME = '礼物'
+// DEFAULT_GIFT_IMAGE is imported from defaultImages.uts
+const DEFAULT_GIFT_VALUE = '0'
+
+// ==================== 构造函数 ====================
+
+/**
+ * 构造礼物消息 JSON 内容
+ * @param giftName 礼物名称
+ * @param giftImage 礼物图片URL
+ * @param giftValue 礼物价值
+ * @returns JSON 字符串
+ */
+export function buildGiftMessageContent(giftName: string, giftImage: string, giftValue: string): string {
+	const name = (giftName != null && giftName != '') ? giftName : DEFAULT_GIFT_NAME
+	const image = (giftImage != null && giftImage != '') ? giftImage : DEFAULT_GIFT_IMAGE
+	const value = (giftValue != null && giftValue != '') ? giftValue : DEFAULT_GIFT_VALUE
+	
+	const data = {
+		giftName: name,
+		giftImage: image,
+		giftValue: value,
+		type: 'gift'
+	} as any
+	
+	return JSON.stringify(data)
+}
+
+/**
+ * 从礼物对象构造礼物消息 JSON 内容
+ * 支持多种字段名兼容（rewardName/giftName 等）
+ * @param gift 礼物对象
+ * @returns JSON 字符串
+ */
+export function buildGiftMessageContentFromObject(gift: UTSJSONObject): string {
+	if (gift == null) {
+		return buildGiftMessageContent(DEFAULT_GIFT_NAME, DEFAULT_GIFT_IMAGE, DEFAULT_GIFT_VALUE)
+	}
+	
+	try {
+		const giftStr = JSON.stringify(gift)
+		if (giftStr == null || giftStr == '') {
+			return buildGiftMessageContent(DEFAULT_GIFT_NAME, DEFAULT_GIFT_IMAGE, DEFAULT_GIFT_VALUE)
+		}
+		
+		const giftObj = JSON.parse(giftStr) as UTSJSONObject
+		
+		// 获取礼物名称（兼容 rewardName/giftName）
+		let giftName = ''
+		const rewardNameVal = giftObj.get('rewardName')
+		const giftNameVal = giftObj.get('giftName')
+		if (rewardNameVal != null && rewardNameVal.toString() != '') {
+			giftName = rewardNameVal.toString()
+		} else if (giftNameVal != null && giftNameVal.toString() != '') {
+			giftName = giftNameVal.toString()
+		}
+		
+		// 获取礼物图片（兼容 rewardImage/giftImage）
+		let giftImage = ''
+		const rewardImageVal = giftObj.get('rewardImage')
+		const giftImageVal = giftObj.get('giftImage')
+		if (rewardImageVal != null && rewardImageVal.toString() != '') {
+			giftImage = rewardImageVal.toString()
+		} else if (giftImageVal != null && giftImageVal.toString() != '') {
+			giftImage = giftImageVal.toString()
+		}
+		
+		// 获取礼物价值（兼容 rewardValue/giftValue）
+		let giftValue = ''
+		const rewardValueVal = giftObj.get('rewardValue')
+		const giftValueVal = giftObj.get('giftValue')
+		if (rewardValueVal != null && rewardValueVal.toString() != '') {
+			giftValue = rewardValueVal.toString()
+		} else if (giftValueVal != null && giftValueVal.toString() != '') {
+			giftValue = giftValueVal.toString()
+		}
+		
+		return buildGiftMessageContent(giftName, giftImage, giftValue)
+	} catch (e) {
+		console.error('❌ [giftMessageHelper] 构造礼物消息失败:', e)
+		return buildGiftMessageContent(DEFAULT_GIFT_NAME, DEFAULT_GIFT_IMAGE, DEFAULT_GIFT_VALUE)
+	}
+}
+
+// ==================== 解析函数 ====================
+
+/**
+ * 解析礼物消息内容
+ * @param content 消息内容（JSON 字符串或对象）
+ * @returns GiftMessageData 对象
+ */
+export function parseGiftMessageContent(content: any): GiftMessageData {
+	const result = new GiftMessageData(DEFAULT_GIFT_NAME, DEFAULT_GIFT_IMAGE, DEFAULT_GIFT_VALUE)
+	
+	if (content == null) {
+		return result
+	}
+	
+	try {
+		let contentStr = ''
+		
+		// 处理不同类型的输入
+		if (typeof content == 'string') {
+			contentStr = content as string
+		} else {
+			contentStr = JSON.stringify(content)
+		}
+		
+		if (contentStr == null || contentStr == '') {
+			return result
+		}
+		
+		// 尝试解析 JSON
+		const contentObj = JSON.parse(contentStr) as UTSJSONObject
+		
+		// 获取礼物名称（兼容 rewardName/giftName）
+		const rewardNameVal = contentObj.get('rewardName')
+		const giftNameVal = contentObj.get('giftName')
+		if (rewardNameVal != null && rewardNameVal.toString() != '') {
+			result.giftName = rewardNameVal.toString()
+		} else if (giftNameVal != null && giftNameVal.toString() != '') {
+			result.giftName = giftNameVal.toString()
+		}
+		
+		// 获取礼物图片（兼容 rewardImage/giftImage）
+		const rewardImageVal = contentObj.get('rewardImage')
+		const giftImageVal = contentObj.get('giftImage')
+		if (rewardImageVal != null && rewardImageVal.toString() != '') {
+			result.giftImage = rewardImageVal.toString()
+		} else if (giftImageVal != null && giftImageVal.toString() != '') {
+			result.giftImage = giftImageVal.toString()
+		}
+		
+		// 获取礼物价值（兼容 rewardValue/giftValue）
+		const rewardValueVal = contentObj.get('rewardValue')
+		const giftValueVal = contentObj.get('giftValue')
+		if (rewardValueVal != null && rewardValueVal.toString() != '') {
+			result.giftValue = rewardValueVal.toString()
+		} else if (giftValueVal != null && giftValueVal.toString() != '') {
+			result.giftValue = giftValueVal.toString()
+		}
+		
+		// 获取类型
+		const typeVal = contentObj.get('type')
+		if (typeVal != null && typeVal.toString() != '') {
+			result.type = typeVal.toString()
+		}
+		
+	} catch (e) {
+		// 解析失败，返回默认值
+		console.warn('⚠️ [giftMessageHelper] 解析礼物消息内容失败，使用默认值')
+	}
+	
+	return result
+}
+
+/**
+ * 解析礼物通知数据
+ * @param data 通知数据对象
+ * @returns GiftNotificationData 对象
+ */
+export function parseGiftNotificationData(data: any): GiftNotificationData {
+	const result = new GiftNotificationData()
+	
+	if (data == null) {
+		return result
+	}
+	
+	try {
+		let dataStr = ''
+		
+		// 处理不同类型的输入
+		if (typeof data == 'string') {
+			dataStr = data as string
+		} else {
+			dataStr = JSON.stringify(data)
+		}
+		
+		if (dataStr == null || dataStr == '') {
+			return result
+		}
+		
+		// 尝试解析 JSON
+		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		// 获取发送者信息
+		const senderKidVal = dataObj.get('senderKid')
+		if (senderKidVal != null && senderKidVal.toString() != '') {
+			result.senderKid = senderKidVal.toString()
+		}
+		
+		const senderNameVal = dataObj.get('senderName')
+		if (senderNameVal != null && senderNameVal.toString() != '') {
+			result.senderName = senderNameVal.toString()
+		}
+		
+		const senderAvatarVal = dataObj.get('senderAvatar')
+		if (senderAvatarVal != null && senderAvatarVal.toString() != '') {
+			result.senderAvatar = senderAvatarVal.toString()
+		}
+		
+		// 获取礼物信息（兼容多种字段名）
+		const rewardNameVal = dataObj.get('rewardName')
+		const giftNameVal = dataObj.get('giftName')
+		if (rewardNameVal != null && rewardNameVal.toString() != '') {
+			result.giftName = rewardNameVal.toString()
+		} else if (giftNameVal != null && giftNameVal.toString() != '') {
+			result.giftName = giftNameVal.toString()
+		}
+		
+		const rewardImageVal = dataObj.get('rewardImage')
+		const giftImageVal = dataObj.get('giftImage')
+		if (rewardImageVal != null && rewardImageVal.toString() != '') {
+			result.giftImage = rewardImageVal.toString()
+		} else if (giftImageVal != null && giftImageVal.toString() != '') {
+			result.giftImage = giftImageVal.toString()
+		}
+		
+		const rewardValueVal = dataObj.get('rewardValue')
+		const giftValueVal = dataObj.get('giftValue')
+		if (rewardValueVal != null && rewardValueVal.toString() != '') {
+			result.giftValue = rewardValueVal.toString()
+		} else if (giftValueVal != null && giftValueVal.toString() != '') {
+			result.giftValue = giftValueVal.toString()
+		}
+		
+	} catch (e) {
+		// 解析失败，返回空对象
+		console.warn('⚠️ [giftMessageHelper] 解析礼物通知数据失败')
+	}
+	
+	return result
+}
+
+/**
+ * 解析官方礼物通知消息内容
+ * @param content 消息内容（JSON 字符串或对象）
+ * @returns AdminGiftMessageData 对象
+ */
+export function parseAdminGiftMessageContent(content: any): AdminGiftMessageData {
+	const result = new AdminGiftMessageData()
+	
+	if (content == null) {
+		return result
+	}
+	
+	try {
+		let contentStr = ''
+		
+		// 处理不同类型的输入
+		if (typeof content == 'string') {
+			contentStr = content as string
+		} else {
+			contentStr = JSON.stringify(content)
+		}
+		
+		if (contentStr == null || contentStr == '') {
+			return result
+		}
+		
+		// 尝试解析 JSON
+		const contentObj = JSON.parse(contentStr) as UTSJSONObject
+		
+		// 获取标题
+		const titleVal = contentObj.get('title')
+		if (titleVal != null && titleVal.toString() != '') {
+			result.title = titleVal.toString()
+		}
+		
+		// 获取内容
+		const contentVal = contentObj.get('content')
+		if (contentVal != null && contentVal.toString() != '') {
+			result.content = contentVal.toString()
+		}
+		
+		// 获取跳转链接
+		const linkUrlVal = contentObj.get('linkUrl')
+		if (linkUrlVal != null && linkUrlVal.toString() != '') {
+			result.linkUrl = linkUrlVal.toString()
+		}
+		
+		// 获取发送者ID
+		const senderKidVal = contentObj.get('senderKid')
+		if (senderKidVal != null && senderKidVal.toString() != '') {
+			result.senderKid = senderKidVal.toString()
+		}
+		
+		// 获取礼物名称
+		const giftNameVal = contentObj.get('giftName')
+		if (giftNameVal != null && giftNameVal.toString() != '') {
+			result.giftName = giftNameVal.toString()
+		}
+		
+		// 获取礼物图片
+		const giftImageVal = contentObj.get('giftImage')
+		if (giftImageVal != null && giftImageVal.toString() != '') {
+			result.giftImage = giftImageVal.toString()
+		}
+		
+		// 获取类型
+		const typeVal = contentObj.get('type')
+		if (typeVal != null && typeVal.toString() != '') {
+			result.type = typeVal.toString()
+		}
+		
+	} catch (e) {
+		// 解析失败，返回空对象
+		console.warn('⚠️ [giftMessageHelper] 解析官方礼物通知消息失败')
+	}
+	
+	return result
+}
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 判断消息是否为礼物消息
+ * @param messageType 消息类型
+ * @returns 是否为礼物消息
+ */
+export function isGiftMessageType(messageType: any): boolean {
+	if (messageType == null) return false
+	
+	const typeNum = parseInt(messageType.toString())
+	if (isNaN(typeNum) == true) return false
+	
+	return typeNum == 7
+}
+
+/**
+ * 判断通知是否为礼物通知
+ * @param notificationType 通知类型
+ * @param subType 子类型
+ * @returns 是否为礼物通知
+ */
+export function isGiftNotification(notificationType: string, subType: string): boolean {
+	if (notificationType == null || notificationType == '') return false
+	if (subType == null || subType == '') return false
+	
+	return notificationType == 'INTERACT' && subType == 'GIFT'
+}
+
+/**
+ * 获取默认礼物名称
+ * @returns 默认礼物名称
+ */
+export function getDefaultGiftName(): string {
+	return DEFAULT_GIFT_NAME
+}
+
+/**
+ * 获取默认礼物图片
+ * @returns 默认礼物图片URL
+ */
+export function getDefaultGiftImage(): string {
+	return DEFAULT_GIFT_IMAGE
+}
+
+/**
+ * 获取默认礼物价值
+ * @returns 默认礼物价值
+ */
+export function getDefaultGiftValue(): string {
+	return DEFAULT_GIFT_VALUE
+}

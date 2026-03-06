@@ -1,0 +1,33 @@
+/**
+ * 开放平台模块类型定义
+ * 对应 API 文件: api/openPlatform.uts
+ */
+
+// 通过开放平台创建订单请求参数
+export class CreateOpenOrderParams {
+	orderId: string = ''
+	guideKid: string = ''
+	txnAmt: string = ''
+	goodsName: string = ''
+}
+
+// 通过开放平台发起支付请求参数
+export class OpenPlatformPayParams {
+	orderId: string = ''
+	txnAmt: string = ''
+	goodsName: string = ''
+}
+
+// 通过开放平台申请退款请求参数
+export class OpenPlatformRefundParams {
+	orderId: string = ''
+	txnAmt: string = ''
+	reason: string = ''
+}
+
+// 合作方支付请求参数（微信/支付宝通用）
+export class PartnerPayParams {
+	orderId: string = ''
+	txnAmt: string = ''
+	goodsName: string = ''
+}

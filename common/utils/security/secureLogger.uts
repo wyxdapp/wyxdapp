@@ -1,0 +1,98 @@
+/**
+ * 生产环境安全日志管理模块
+ * 在生产环境中自动抑制包含敏感信息的 console 输出，防止通过浏览器开发者工具或日志收集系统泄露用户隐私数据
+ * 
+ * - secureLog: 生产环境不输出，开发环境完整输出
+ * - secureError: 生产环境仅输出错误类型和错误码，开发环境完整输出
+ * - secureWarn: 生产环境仅输出标签和消息，开发环境完整输出
+ * 
+ * 需求: 6.1, 6.5
+ */
+
+// ==================== 环境检测 ====================
+
+/**
+ * 判断当前是否为生产环境
+ * 通过 process.env.NODE_ENV 判断
+ */
+const isProduction: boolean = process.env.NODE_ENV === 'production'
+
+// ==================== 导出函数 ====================
+
+/**
+ * 安全日志输出
+ * 生产环境：不输出任何内容
+ * 开发环境：完整输出 tag、message、data
+ * 
+ * @param tag 日志标签（模块标识）
+ * @param message 日志消息
+ * @param data 附加数据（可能包含敏感信息）
+ * 
+ * 需求: 6.1
+ */
+export function secureLog(tag: string, message: string, data?: UTSJSONObject | string | null): void {
+	try {
+		if (!isProduction) {
+			if (data !== null) {
+				console.log(`[${tag}]`, message, data)
+			} else {
+				console.log(`[${tag}]`, message)
+			}
+		}
+	} catch (_e: any) {
+		// 日志模块不应影响业务流程，静默忽略异常
+	}
+}
+
+/**
+ * 安全错误日志输出
+ * 生产环境：仅输出 tag + errorType + errorCode（不含敏感数据）
+ * 开发环境：完整输出
+ * 
+ * @param tag 日志标签（模块标识）
+ * @param errorType 错误类型描述
+ * @param errorCode 错误码（可选）
+ * 
+ * 需求: 6.5
+ */
+export function secureError(tag: string, errorType: string, errorCode?: string): void {
+	try {
+		if (isProduction) {
+			if (errorCode !== null && errorCode.length > 0) {
+				console.error(`[${tag}]`, errorType, `code: ${errorCode}`)
+			} else {
+				console.error(`[${tag}]`, errorType)
+			}
+		} else {
+			if (errorCode !== null && errorCode.length > 0) {
+				console.error(`[${tag}]`, errorType, `code: ${errorCode}`)
+			} else {
+				console.error(`[${tag}]`, errorType)
+			}
+		}
+	} catch (_e: any) {
+		// 日志模块不应影响业务流程，静默忽略异常
+	}
+}
+
+/**
+ * 安全警告日志输出
+ * 生产环境：仅输出 tag + message（不含敏感数据）
+ * 开发环境：完整输出
+ * 
+ * @param tag 日志标签（模块标识）
+ * @param message 警告消息
+ * 
+ * 需求: 6.1
+ */
+export function secureWarn(tag: string, message: string): void {
+	try {
+		if (isProduction) {
+			console.warn(`[${tag}]`, message)
+		} else {
+			console.warn(`[${tag}]`, message)
+		}
+	} catch (_e: any) {
+		// 日志模块不应影响业务流程，静默忽略异常
+	}
+}

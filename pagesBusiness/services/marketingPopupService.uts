@@ -1,0 +1,320 @@
+/**
+ * 营销活动弹窗服务
+ * 负责获取弹窗配置、控制展示逻辑、管理本地存储
+ */
+import { getActiveMarketingPopup } from '@/api/marketing.uts'
+import { getResponseCode, getResponseData, getStringProp, getNumberProp } from '@/common/utils/utsSafe.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// ==================== 常量定义 ====================
+
+/** 弹窗触发事件名称 */
+export const MARKETING_POPUP_TRIGGER = 'MARKETING_POPUP_TRIGGER'
+
+/** 本地存储 key */
+const STORAGE_KEY = 'marketing_popup_record'
+
+/** 触发类型常量 */
+export const TRIGGER_TYPE_PAGE_LOAD: string = 'page_load'
+export const TRIGGER_TYPE_LOGIN_SUCCESS: string = 'login_success'
+export const TRIGGER_TYPE_REGISTER_SUCCESS: string = 'register_success'
+export const TRIGGER_TYPE_FIRST_ORDER: string = 'first_order'
+export const TRIGGER_TYPE_TASK_COMPLETE: string = 'task_complete'
+
+/** 触发类型对象（兼容旧代码） */
+export const TriggerType = {
+	PAGE_LOAD: TRIGGER_TYPE_PAGE_LOAD,
+	LOGIN_SUCCESS: TRIGGER_TYPE_LOGIN_SUCCESS,
+	REGISTER_SUCCESS: TRIGGER_TYPE_REGISTER_SUCCESS,
+	FIRST_ORDER: TRIGGER_TYPE_FIRST_ORDER,
+	TASK_COMPLETE: TRIGGER_TYPE_TASK_COMPLETE
+} as UTSJSONObject
+
+/** 展示策略常量 */
+export const DISPLAY_STRATEGY_ALWAYS: string = 'always'
+export const DISPLAY_STRATEGY_DAILY: string = 'daily'
+export const DISPLAY_STRATEGY_ONCE: string = 'once'
+
+/** 展示策略对象（兼容旧代码） */
+export const DisplayStrategy = {
+	ALWAYS: DISPLAY_STRATEGY_ALWAYS,
+	DAILY: DISPLAY_STRATEGY_DAILY,
+	ONCE: DISPLAY_STRATEGY_ONCE
+} as UTSJSONObject
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 获取当前日期字符串 (YYYY-MM-DD)
+ */
+const getCurrentDateStr = (): string => {
+	const now = new Date()
+	const year = now.getFullYear()
+	const month = now.getMonth() + 1
+	const day = now.getDate()
+	const monthStr = month < 10 ? '0' + month.toString() : month.toString()
+	const dayStr = day < 10 ? '0' + day.toString() : day.toString()
+	return year.toString() + '-' + monthStr + '-' + dayStr
+}
+
+/**
+ * 获取当前时间戳字符串
+ */
+const getCurrentTimeStr = (): string => {
+	return new Date().toISOString()
+}
+
+// ==================== 展示记录管理 ====================
+
+/**
+ * 获取展示记录
+ */
+export const getDisplayRecord = (popupKid: string): UTSJSONObject | null => {
+	try {
+		const recordStr = uni.getStorageSync(STORAGE_KEY)
+		if (recordStr == null || recordStr == '') {
+			return null
+		}
+		let jsonStr = ''
+		if (typeof recordStr === 'string') {
+			jsonStr = recordStr as string
+		} else {
+			jsonStr = JSON.stringify(recordStr)
+		}
+		if (jsonStr == '') {
+			return null
+		}
+		const record = JSON.parse(jsonStr) as UTSJSONObject
+		// 检查是否是同一个弹窗
+		const storedKid = getStringProp(record, 'popupKid')
+		if (storedKid != popupKid) {
+			// 不同弹窗，清除旧记录
+			uni.removeStorageSync(STORAGE_KEY)
+			return null
+		}
+		return record
+	} catch (e) {
+		return null
+	}
+}
+
+/**
+ * 保存展示记录
+ */
+export const saveDisplayRecord = (popupKid: string, action: string): void => {
+	try {
+		const existingRecord = getDisplayRecord(popupKid)
+		let showCount = 1
+		if (existingRecord != null) {
+			showCount = getNumberProp(existingRecord, 'showCount') + 1
+		}
+		
+		const record = {
+			popupKid: popupKid,
+			lastShowTime: getCurrentTimeStr(),
+			lastShowDate: getCurrentDateStr(),
+			showCount: showCount,
+			closed: action == 'close'
+		}
+		uni.setStorageSync(STORAGE_KEY, JSON.stringify(record))
+	} catch (e: Error) {
+		handleSilentError(e, '保存展示记录')
+	}
+}
+
+/**
+ * 清除展示记录
+ */
+export const clearDisplayRecord = (): void => {
+	try {
+		uni.removeStorageSync(STORAGE_KEY)
+	} catch (e: Error) {
+		handleSilentError(e, '清除展示记录')
+	}
+}
+
+// ==================== 展示策略判断 ====================
+
+/**
+ * 判断是否应该展示弹窗
+ * 增强数据有效性验证
+ */
+export const shouldShowPopup = (config: UTSJSONObject | null): boolean => {
+	// 1. 基础空值检查
+	if (config == null) {
+		return false
+	}
+	
+	// 2. 验证必要字段 - kid 非空
+	const kid = getStringProp(config, 'kid')
+	if (kid == '') {
+		return false
+	}
+	
+	// 3. 验证内容有效性
+	const contentType = getStringProp(config, 'contentType')
+	const imageUrl = getStringProp(config, 'imageUrl')
+	const htmlContent = getStringProp(config, 'htmlContent')
+	
+	// 图片模式必须有图片URL
+	if (contentType == 'image' && imageUrl == '') {
+		return false
+	}
+	
+	// HTML模式必须有HTML内容
+	if (contentType == 'html' && htmlContent == '') {
+		return false
+	}
+	
+	// 默认模式（image）或未指定时，需要有图片URL或HTML内容
+	if (contentType == '' && imageUrl == '' && htmlContent == '') {
+		return false
+	}
+	
+	// 4. 展示策略检查（原有逻辑）
+	const strategy = getStringProp(config, 'displayStrategy')
+	
+	// always 策略：每次都展示
+	if (strategy == DisplayStrategy.ALWAYS) {
+		return true
+	}
+	
+	// 获取展示记录
+	const record = getDisplayRecord(kid)
+	
+	// 无记录，可以展示
+	if (record == null) {
+		return true
+	}
+	
+	// once 策略：只展示一次
+	if (strategy == DisplayStrategy.ONCE) {
+		return false
+	}
+	
+	// daily 策略：每天展示一次
+	if (strategy == DisplayStrategy.DAILY) {
+		const lastShowDate = getStringProp(record, 'lastShowDate')
+		const today = getCurrentDateStr()
+		return lastShowDate != today
+	}
+	
+	return true
+}
+
+/**
+ * 验证弹窗数据是否有效
+ * 独立的数据验证函数，可用于组件层面的验证
+ * @param config 弹窗配置
+ * @returns 是否有效
+ */
+export const isValidPopupData = (config: UTSJSONObject | null): boolean => {
+	// 空值检查
+	if (config == null) {
+		return false
+	}
+	
+	// 验证 kid 非空
+	const kid = getStringProp(config, 'kid')
+	if (kid == '') {
+		return false
+	}
+	
+	// 验证内容有效性（imageUrl 或 htmlContent 至少有一个非空）
+	const imageUrl = getStringProp(config, 'imageUrl')
+	const htmlContent = getStringProp(config, 'htmlContent')
+	
+	return imageUrl != '' || htmlContent != ''
+}
+
+// ==================== 链接处理 ====================
+
+/**
+ * 判断是否为外部链接
+ */
+export const isExternalUrl = (url: string): boolean => {
+	if (url == null || url == '') {
+		return false
+	}
+	const lowerUrl = url.toLowerCase()
+	return lowerUrl.indexOf('http://') == 0 || lowerUrl.indexOf('https://') == 0
+}
+
+/**
+ * 执行跳转
+ */
+export const navigateToUrl = (url: string): void => {
+	if (url == null || url == '') {
+		return
+	}
+	
+	if (isExternalUrl(url) == true) {
+		// 外部链接使用 webview
+		uni.navigateTo({
+			url: '/pages/webview/index?url=' + encodeURIComponent(url),
+			fail: (err) => {
+				uni.showToast({ title: '无法打开链接', icon: 'none' })
+			}
+		})
+	} else {
+		// 内部链接直接跳转
+		uni.navigateTo({
+			url: url,
+			fail: (err) => {
+				uni.showToast({ title: '页面不存在', icon: 'none' })
+			}
+		})
+	}
+}
+
+// ==================== 弹窗配置获取 ====================
+
+/**
+ * 获取有效的营销弹窗配置
+ * @param triggerType 触发类型，默认 page_load
+ * @returns Promise<UTSJSONObject | null>
+ */
+export const fetchActivePopup = (triggerType: string): Promise<UTSJSONObject | null> => {
+	const type = (triggerType != null && triggerType != '') ? triggerType : TriggerType.PAGE_LOAD
+	
+	return new Promise<UTSJSONObject | null>((resolve: (value: UTSJSONObject | null) => void) => {
+		getActiveMarketingPopup(type as string).then((res: UTSJSONObject) => {
+			const code = getResponseCode(res)
+			if (code == 200) {
+				const data = getResponseData(res)
+				resolve(data)
+			} else {
+				resolve(null)
+			}
+		}).catch((error: Error | null): void => {
+			handleSilentError(error, '获取营销弹窗配置')
+			resolve(null)
+		})
+	})
+}
+
+// ==================== 事件触发 ====================
+
+/**
+ * 触发营销弹窗事件
+ * @param triggerType 触发类型
+ */
+export const triggerMarketingPopup = (triggerType: string): void => {
+	const eventData = { triggerType: triggerType } as UTSJSONObject
+	uni.$emit(MARKETING_POPUP_TRIGGER, eventData)
+}
+
+export default {
+	MARKETING_POPUP_TRIGGER,
+	TriggerType,
+	DisplayStrategy,
+	getDisplayRecord,
+	saveDisplayRecord,
+	clearDisplayRecord,
+	shouldShowPopup,
+	isValidPopupData,
+	isExternalUrl,
+	navigateToUrl,
+	fetchActivePopup,
+	triggerMarketingPopup
+}

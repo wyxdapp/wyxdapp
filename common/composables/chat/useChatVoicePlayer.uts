@@ -1,0 +1,162 @@
+/**
+ * 聊天语音播放 Composable
+ * 管理语音消息的播放状态和控制
+ */
+
+import { ref } from 'vue'
+import {
+	playAudio,
+	stopAudio,
+	destroyAudio,
+	onPlayStatusChange,
+	onPlayEnded,
+	onPlayError,
+	PlayingStatusPlaying,
+	PlayingStatusEnded
+} from '@/common/services/audioPlayerService.uts'
+import { getAnyString } from '@/common/utils/messageHelper.uts'
+import { ChatVoicePlayerResult } from '@/common/types/chatTypes.uts'
+
+// 重新导出类型供外部使用
+export { ChatVoicePlayerResult } from '@/common/types/chatTypes.uts'
+
+/**
+ * 聊天语音播放 Composable
+ */
+export function useChatVoicePlayer(): ChatVoicePlayerResult {
+	// 响应式状态
+	const isVoicePlaying = ref<boolean>(false)
+	const playingVoiceMessageId = ref<string>('')
+	
+	// 事件监听器取消函数
+	let offPlayStatusChange: (() => void) | null = null
+	let offPlayEnded: (() => void) | null = null
+	let offPlayError: (() => void) | null = null
+	
+	/**
+	 * 清理播放监听器
+	 */
+	const cleanupPlayListeners = () => {
+		// UTS 规范：可变闭包变量不能 smart cast，先保存到局部变量
+		const existingPlayStatusChange = offPlayStatusChange
+		if (existingPlayStatusChange != null) {
+			existingPlayStatusChange()
+			offPlayStatusChange = null
+		}
+		const existingPlayEnded = offPlayEnded
+		if (existingPlayEnded != null) {
+			existingPlayEnded()
+			offPlayEnded = null
+		}
+		const existingPlayError = offPlayError
+		if (existingPlayError != null) {
+			existingPlayError()
+			offPlayError = null
+		}
+	}
+	
+	/**
+	 * 播放语音消息
+	 * @param message 语音消息对象
+	 */
+	const playVoice = (message: any) => {
+		// 获取语音消息的URL和ID
+		const msgId = getAnyString(message, 'id')
+		const msgContent = getAnyString(message, 'content')
+		const msgMediaUrl = getAnyString(message, 'mediaUrl')
+		const msgVoiceUrl = getAnyString(message, 'voiceUrl')
+		
+		// 优先使用 content，其次 mediaUrl，最后 voiceUrl
+		let voiceUrl = ''
+		if (msgContent != '') {
+			voiceUrl = msgContent
+		} else if (msgMediaUrl != '') {
+			voiceUrl = msgMediaUrl
+		} else if (msgVoiceUrl != '') {
+			voiceUrl = msgVoiceUrl
+		}
+		
+		if (voiceUrl == '') {
+			uni.showToast({
+				title: '语音文件不存在',
+				icon: 'none'
+			})
+			return
+		}
+		
+		if (msgId == '') {
+			console.warn('🔊 [useChatVoicePlayer] 语音消息ID为空')
+			return
+		}
+		
+		console.log('🔊 [useChatVoicePlayer] 播放语音:', msgId, voiceUrl)
+		
+		// 调用播放服务
+		playAudio(voiceUrl, msgId)
+	}
+
+	/**
+	 * 停止播放
+	 */
+	const stopVoice = () => {
+		stopAudio()
+		isVoicePlaying.value = false
+		playingVoiceMessageId.value = ''
+	}
+	
+	/**
+	 * 设置播放监听器
+	 */
+	const setupPlayListeners = () => {
+		// 清理已有监听器
+		cleanupPlayListeners()
+		
+		// 监听播放状态变化
+		offPlayStatusChange = onPlayStatusChange((status: string, messageId: string) => {
+			console.log('🔊 [useChatVoicePlayer] 播放状态变化:', status, messageId)
+			if (status == PlayingStatusPlaying) {
+				isVoicePlaying.value = true
+				playingVoiceMessageId.value = messageId
+			} else if (status == PlayingStatusEnded || status == 'idle' || status == 'error') {
+				isVoicePlaying.value = false
+				playingVoiceMessageId.value = ''
+			}
+		})
+		
+		// 监听播放结束
+		offPlayEnded = onPlayEnded((messageId: string) => {
+			console.log('🔊 [useChatVoicePlayer] 播放结束:', messageId)
+			isVoicePlaying.value = false
+			playingVoiceMessageId.value = ''
+		})
+		
+		// 监听播放错误
+		offPlayError = onPlayError((error: string) => {
+			console.error('🔊 [useChatVoicePlayer] 播放错误:', error)
+			isVoicePlaying.value = false
+			playingVoiceMessageId.value = ''
+			uni.showToast({
+				title: error,
+				icon: 'none'
+			})
+		})
+	}
+	
+	/**
+	 * 销毁播放器
+	 */
+	const destroy = () => {
+		cleanupPlayListeners()
+		destroyAudio()
+	}
+	
+	return new ChatVoicePlayerResult(
+		isVoicePlaying,
+		playingVoiceMessageId,
+		playVoice,
+		stopVoice,
+		setupPlayListeners,
+		cleanupPlayListeners,
+		destroy
+	)
+}

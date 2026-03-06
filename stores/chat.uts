@@ -1,0 +1,803 @@
+/**
+ * 聊天状态管理 - 使用 Vue 响应式 API
+ */
+
+import { ref, computed } from 'vue'
+import { 
+	getConversations, 
+	markConversationRead, 
+	getChatToken,
+	GetChatTokenParams,
+	GetConversationsParams,
+	deleteConversation as apiDeleteConversation,
+	pinConversation as apiPinConversation,
+	getMessageReminderCount,
+	getHistoryMessages
+} from '@/api/chat'
+import { WS_BASE_URL } from '@/utils/config'
+import { WS_HEARTBEAT_INTERVAL, WS_HEARTBEAT_TIMEOUT, WS_CONNECTION_ELAPSED_THRESHOLD } from '@/common/config/timeoutConfig'
+import { SK_CHAT_TOKEN, SK_CONNECTING_START_TIME } from '@/common/config/storageKeys'
+import { RADIX_BASE36 } from '@/common/config/generatorConfig.uts'
+import { chatService, ChatServiceStatus } from '@/stores/chatService'
+import { secureLog } from '@/common/utils/security/secureLogger.uts'
+import { webSocketEventHandler, WebSocketEventType } from '@/stores/webSocketEventHandler'
+import { messageQueueManager } from '@/stores/messageQueueManager'
+import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
+import { toUTSJSON } from '@/common/utils/typeConverter'
+import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+
+// 使用 ref 创建响应式状态
+const chatTokenRef = ref<string>('')
+const conversationsRef = ref<Array<any>>([])
+const unreadCountRef = ref<number>(0)
+const lastUnreadCountUpdateTimeRef = ref<number>(0)
+const currentConversationRef = ref<UTSJSONObject | null>(null)
+const webSocketConnectedRef = ref<boolean>(false)
+const connectingRef = ref<boolean>(false)
+const socketTaskRef = ref<SocketTask | null>(null)
+const reconnectAttemptsRef = ref<number>(0)
+// 移除重连次数限制，改为持续重连
+// const maxReconnectAttemptsRef = ref<number>(10)
+const reconnectTimerRef = ref<number | null>(null)
+const heartbeatTimerRef = ref<number | null>(null)
+const heartbeatIntervalRef = ref<number>(WS_HEARTBEAT_INTERVAL)
+const lastHeartbeatTimeRef = ref<number>(0)
+const connectionIdRef = ref<string>('')
+const closedByNewConnectionRef = ref<boolean>(false)
+const messageReminderCountsInitial = new UTSJSONObject()
+messageReminderCountsInitial.set('commentCount', 0)
+messageReminderCountsInitial.set('likeCount', 0)
+messageReminderCountsInitial.set('followCount', 0)
+messageReminderCountsInitial.set('visitorCount', 0)
+const messageReminderCountsRef = ref<UTSJSONObject | null>(messageReminderCountsInitial)
+
+// Getters
+const isConnected = computed((): boolean => {
+	return webSocketConnectedRef.value
+})
+
+const isConnecting = computed((): boolean => {
+	return connectingRef.value
+})
+
+// Actions
+const fetchChatToken = async (userId: string): Promise<boolean> => {
+	try {
+		secureLog('Token', '开始获取聊天Token，用户ID:', userId)
+		// UTS 规范：不能使用对象字面量，需使用类实例
+		const params = new GetChatTokenParams()
+		params.userId = userId
+		const res = await getChatToken(params)
+		secureLog('Token', '接口响应:', res)
+		
+		if (res != null) {
+			// 使用 toUTSJSON 替代 JSON.stringify + JSON.parse，避免不必要的序列化
+			const resObj = toUTSJSON(res)
+			const resData = resObj != null ? resObj.get('data') : null
+			if (resData != null) {
+				const dataObj = toUTSJSON(resData)
+				const tokenVal = dataObj != null ? dataObj.getString('token') : null
+				const hasToken = tokenVal != null && tokenVal != ''
+				if (hasToken == true) {
+					chatTokenRef.value = tokenVal as string
+					// 🔧 降级方案：缓存 Token 到本地存储
+					safeSetStorageSync(SK_CHAT_TOKEN, tokenVal as string)
+					return true
+				}
+			}
+		}
+		secureLog('Token', '响应数据格式错误', null)
+		return false
+	} catch (error) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(error, 'ChatStore 获取聊天Token', options)
+		
+		// 🔧 确保重置连接状态
+		connectingRef.value = false
+		uni.removeStorageSync(SK_CONNECTING_START_TIME)
+		
+		// 🔧 降级方案：尝试使用缓存的 Token
+		const cachedToken = safeGetStorageSync(SK_CHAT_TOKEN)
+		if (cachedToken != null && cachedToken != '') {
+			const tokenStr = cachedToken.toString()
+			if (tokenStr != '') {
+				chatTokenRef.value = tokenStr
+				secureLog('Token', '使用缓存Token（降级方案）', null)
+				return true
+			}
+		}
+		secureLog('Token', '无可用Token（包括缓存）', null)
+		return false
+	}
+}
+
+// UTS 规范：使用 function 声明以获得函数提升，避免闭包中找不到函数
+function smartReconnect(userId: string): void {
+	if (userId == null || userId == '') {
+		console.log('⏸️ [WebSocket] 用户未登录，停止重连')
+		return
+	}
+	
+	// 确保旧心跳定时器在重连前被清理，防止定时器泄漏
+	stopHeartbeat()
+	
+	// 移除重连次数限制，改为持续重连
+	// 每 10 次重连后重置计数器，避免间隔过长
+	if (reconnectAttemptsRef.value >= 10) {
+		reconnectAttemptsRef.value = 5  // 重置到 5，保持约 32 秒间隔
+		console.log('🔄 [WebSocket] 重置重连计数器，保持合理间隔')
+	}
+	
+	// UTS 规范：可变属性不能 smart cast，先保存到局部变量
+	const existingTimer = reconnectTimerRef.value
+	if (existingTimer != null) {
+		clearTimeout(existingTimer)
+	}
+	
+	// 指数退避，最大 60 秒
+	const backoffTime = Math.min(
+		Math.pow(2, reconnectAttemptsRef.value) * 1000,
+		WS_HEARTBEAT_TIMEOUT
+	)
+	
+	// UTS 规范：不能使用 ++
+	reconnectAttemptsRef.value = reconnectAttemptsRef.value + 1
+	
+	console.log(`🔄 [WebSocket] 将在 ${backoffTime/1000} 秒后进行第 ${reconnectAttemptsRef.value} 次重连`)
+	
+	reconnectTimerRef.value = setTimeout(function() {
+		console.log(`🔌 [WebSocket] 开始第 ${reconnectAttemptsRef.value} 次重连`)
+		initWebSocket(userId)
+	}, backoffTime)
+}
+
+// 强制重连，无条件重置状态并重新连接
+async function forceReconnect(userId: string): Promise<boolean> {
+	console.log('🔄 [WebSocket] 强制重连开始, userId:', userId)
+	
+	if (userId == null || userId === '') {
+		console.log('⏸️ [WebSocket] 用户未登录，无法强制重连')
+		return false
+	}
+	
+	// 1. 标记为主动关闭，防止 onClose 触发 smartReconnect
+	closedByNewConnectionRef.value = true
+	
+	// 2. 关闭现有连接
+	closeWebSocket()
+	
+	// 3. 重置所有状态
+	reconnectAttemptsRef.value = 0
+	connectingRef.value = false
+	webSocketConnectedRef.value = false
+	
+	// 4. 清除重连定时器
+	const existingTimer = reconnectTimerRef.value
+	if (existingTimer != null) {
+		clearTimeout(existingTimer)
+		reconnectTimerRef.value = null
+	}
+	
+	// 5. 清除 storage 中的连接状态
+	uni.removeStorageSync(SK_CONNECTING_START_TIME)
+	
+	// 6. 短暂延迟后重新连接（确保旧连接完全关闭）
+	await new Promise<number>((resolve: (value: number) => void) => {
+		setTimeout(() => {
+			resolve(0)
+		}, 200)
+	})
+	
+	// 7. 重置主动关闭标记
+	closedByNewConnectionRef.value = false
+	
+	// 8. 立即重新连接
+	console.log('🔌 [WebSocket] 强制重连：开始新连接')
+	return await initWebSocket(userId)
+}
+
+const resetReconnectAttempts = () => {
+	reconnectAttemptsRef.value = 0
+	// UTS 规范：可变属性不能 smart cast
+	const existingTimer = reconnectTimerRef.value
+	if (existingTimer != null) {
+		clearTimeout(existingTimer)
+		reconnectTimerRef.value = null
+	}
+}
+
+const stopHeartbeat = () => {
+	// UTS 规范：可变属性不能 smart cast
+	const existingTimer = heartbeatTimerRef.value
+	if (existingTimer != null) {
+		clearInterval(existingTimer)
+		heartbeatTimerRef.value = null
+	}
+}
+
+const closeWebSocket = () => {
+	stopHeartbeat()
+	
+	// UTS 规范：可变属性不能 smart cast
+	const existingSocket = socketTaskRef.value
+	if (existingSocket != null) {
+		try {
+			existingSocket.close({})
+		} catch (e: any) {
+			handleSilentError(e, 'ChatStore 关闭WebSocket连接')
+		}
+	}
+	
+	socketTaskRef.value = null
+	webSocketConnectedRef.value = false
+	connectingRef.value = false
+}
+
+const startHeartbeat = (userId: string) => {
+	stopHeartbeat()
+	lastHeartbeatTimeRef.value = Date.now()
+	
+	heartbeatTimerRef.value = setInterval(() => {
+		if (webSocketConnectedRef.value == false || socketTaskRef.value == null) {
+			console.warn('⚠️ [WebSocket] 心跳检测：连接已断开，停止心跳')
+			stopHeartbeat()
+			return
+		}
+		
+		const timeSinceLastBeat = Date.now() - lastHeartbeatTimeRef.value
+		if (timeSinceLastBeat > heartbeatIntervalRef.value * 2) {
+			console.warn('⚠️ [WebSocket] 心跳超时，主动断开重连')
+			closeWebSocket()
+			smartReconnect(userId)
+			return
+		}
+		
+		try {
+			// UTS 规范：可变属性不能 smart cast，需重新获取
+			const socket = socketTaskRef.value
+			if (socket != null) {
+				socket.send({
+					data: 'ping',
+					success: () => {
+						// H5 优化：心跳成功不打印日志，减少主线程开销
+					},
+					fail: (error: any) => {
+						console.error('❌ [WebSocket] 心跳发送失败:', error)
+						stopHeartbeat()
+						closeWebSocket()
+						smartReconnect(userId)
+					}
+				})
+			}
+		} catch (error: any) {
+			handleSilentError(error, 'ChatStore 心跳发送')
+			stopHeartbeat()
+			closeWebSocket()
+			smartReconnect(userId)
+		}
+	}, heartbeatIntervalRef.value)
+}
+
+const handleWebSocketMessage = (data: UTSJSONObject | string) => {
+	try {
+		const dataStr = (typeof data === 'string') ? (data as string) : JSON.stringify(data)
+		
+		if (dataStr === 'pong' || dataStr === 'ping') {
+			// H5 优化：心跳 pong 不打印日志
+			return
+		}
+		
+		const parsed = JSON.parse(dataStr)
+		if (parsed == null || (!(parsed instanceof UTSJSONObject) && !Array.isArray(parsed))) {
+			console.log('⏸️ [WebSocket] 跳过非对象消息:', dataStr)
+			return
+		}
+		
+		// 如果是数组类型，跳过（无法作为 UTSJSONObject 处理）
+		if (Array.isArray(parsed)) {
+			console.log('⏸️ [WebSocket] 跳过数组类型消息')
+			return
+		}
+		
+		const messageParsed = parsed as UTSJSONObject
+		console.log('📨 [WebSocket] 收到消息:', messageParsed)
+		
+		// ⭐ 修复：使用 handleWebSocketMessage 处理消息，让事件处理器根据消息类型分发
+		// 而不是直接触发 MESSAGE_RECEIVED 事件
+		try {
+			webSocketEventHandler.handleWebSocketMessage(messageParsed)
+		} catch (e: any) {
+			handleSilentError(e, 'ChatStore 处理WebSocket消息事件')
+		}
+	} catch (error: any) {
+		handleSilentError(error, 'ChatStore 解析WebSocket消息')
+	}
+}
+
+// UTS 规范：使用 function 声明以获得函数提升
+async function initWebSocket(userId: string): Promise<boolean> {
+	console.log('🔌 [WebSocket] initWebSocket 被调用, userId:', userId)
+	
+	if (userId == null || userId === '') {
+		console.error('❌ [WebSocket] 用户未登录，无法连接')
+		return false
+	}
+	
+	// 打印当前状态
+	console.log('🔌 [WebSocket] 当前状态:', {
+		connected: webSocketConnectedRef.value,
+		connecting: connectingRef.value,
+		hasSocket: socketTaskRef.value != null,
+		reconnectAttempts: reconnectAttemptsRef.value
+	})
+	
+	// 【关键修复】如果已经连接成功，直接返回 true，不要做任何操作
+	// 这样可以防止多个地方同时调用 initWebSocket 导致连接被关闭
+	if (webSocketConnectedRef.value == true && socketTaskRef.value != null) {
+		return true
+	}
+	
+	// 【关键修复】如果正在连接中，直接返回 false，不要重置状态
+	// 除非超时（10秒），才强制重置
+	if (connectingRef.value == true) {
+		const now = Date.now()
+		const connectingStartTimeVal = safeGetStorageSync(SK_CONNECTING_START_TIME)
+		// UTS 规范：不能使用 Number() 构造函数，使用 parseInt
+		const startTimeStr = (connectingStartTimeVal != null) ? connectingStartTimeVal.toString() : '0'
+		const connectingStartTime = parseInt(startTimeStr)
+		const elapsedTime = now - connectingStartTime
+		console.log('⏳ [WebSocket] 连接进行中，已耗时:', elapsedTime, 'ms')
+		
+		if (elapsedTime > WS_CONNECTION_ELAPSED_THRESHOLD) {
+			console.warn('⚠️ [WebSocket] connecting 状态超时（>10秒），强制重置')
+			connectingRef.value = false
+			uni.removeStorageSync(SK_CONNECTING_START_TIME)
+			// 同时关闭可能存在的旧连接
+			const existingSocket = socketTaskRef.value
+			if (existingSocket != null) {
+				closedByNewConnectionRef.value = true  // 标记为主动关闭，防止触发重连
+				try {
+					existingSocket.close({})
+				} catch (e: any) {
+					handleSilentError(e, 'ChatStore 关闭超时WebSocket连接')
+				}
+				socketTaskRef.value = null
+			}
+		} else {
+			console.log('⏳ [WebSocket] 连接正在进行中，跳过重复请求')
+			return false
+		}
+	}
+	
+	const connId = `conn_${Date.now()}_${Math.random().toString(RADIX_BASE36).substring(2, 11)}`
+	connectionIdRef.value = connId
+	
+	console.log('🔌 [WebSocket] 建立连接 - userId:', userId, 'connectionId:', connId)
+	
+	connectingRef.value = true
+	safeSetStorageSync(SK_CONNECTING_START_TIME, Date.now().toString())
+	
+	// 【关键修复】如果存在旧连接，先标记为主动关闭，再关闭
+	// 这样 onClose 回调不会触发 smartReconnect
+	if (socketTaskRef.value != null) {
+		secureLog('WebSocket', '关闭旧连接...', null)
+		closedByNewConnectionRef.value = true  // 标记为主动关闭
+		closeWebSocket()
+	}
+	
+	secureLog('WebSocket', '获取最新聊天Token...', null)
+	const success = await fetchChatToken(userId)
+	const successStr = success ? 'true' : 'false'
+	secureLog('WebSocket', 'Token获取结果: ' + successStr, null)
+	
+	if (success == false) {
+		secureLog('WebSocket', 'Token获取失败，停止连接', null)
+		connectingRef.value = false
+		uni.removeStorageSync(SK_CONNECTING_START_TIME)
+		return false
+	}
+	
+	try {
+		// 🔧 修复：Token 通过 URL 参数传递（uni.connectSocket 不支持自定义 Header）
+		// WebSocket 握手时，自定义 Header 可能不会被正确传递
+		const tokenVal = chatTokenRef.value
+		const wsUrl = `${WS_BASE_URL}/chat/ws?token=${tokenVal}`
+		secureLog('WebSocket', '开始连接, URL: ' + WS_BASE_URL + '/chat/ws' + ', Token长度: ' + tokenVal.length.toString(), null)
+		
+		// 🔧 调试：打印 Token 前20个字符（不打印完整 Token 以保护安全）
+		const tokenPreview = (tokenVal.length > 20) ? tokenVal.substring(0, 20) + '...' : tokenVal
+		secureLog('WebSocket', 'Token预览: ' + tokenPreview, null)
+		
+		const newSocketTask = uni.connectSocket({
+			url: wsUrl,
+			success: () => {
+				console.log('🔌 [WebSocket] connectSocket调用成功，等待onOpen...')
+			},
+			fail: (error: any) => {
+				console.error('❌ [WebSocket] connectSocket调用失败:', JSON.stringify(error))
+				smartReconnect(userId)
+			}
+		})
+		
+		newSocketTask.onOpen(() => {
+			webSocketConnectedRef.value = true
+			connectingRef.value = false
+			uni.removeStorageSync(SK_CONNECTING_START_TIME)
+			socketTaskRef.value = newSocketTask
+			
+			resetReconnectAttempts()
+			startHeartbeat(userId)
+			closedByNewConnectionRef.value = false
+			
+			try {
+				chatService.setStatus(ChatServiceStatus.CONNECTED)
+			} catch (error: any) {
+				handleSilentError(error, 'ChatStore 设置连接状态为CONNECTED')
+			}
+			
+			try {
+				webSocketEventHandler.dispatchEvent(WebSocketEventType.CONNECTED, null)
+			} catch (error: any) {
+				handleSilentError(error, 'ChatStore 分发CONNECTED事件')
+			}
+			
+			try {
+				messageQueueManager.setWebSocketTask(newSocketTask)
+			} catch (error: any) {
+				handleSilentError(error, 'ChatStore 设置消息队列WebSocket任务')
+			}
+		})
+		
+		newSocketTask.onMessage((res: any) => {
+			// NOTE: SocketTask.onMessage callback parameter kept as any (framework callback)
+			// 使用 toUTSJSON 替代 JSON.stringify + JSON.parse，避免不必要的序列化
+			const resObj = toUTSJSON(res)
+			const dataVal = resObj != null ? resObj.get('data') : null
+			if (dataVal != null) {
+				// 将 data 转换为字符串传递给 handleWebSocketMessage
+				const dataStr = (typeof dataVal === 'string') ? (dataVal as string) : JSON.stringify(dataVal)
+				handleWebSocketMessage(dataStr)
+			}
+			lastHeartbeatTimeRef.value = Date.now()
+		})
+		
+		newSocketTask.onError((error: any) => {
+			console.error('❌ [WebSocket] 连接错误:', JSON.stringify(error))
+			webSocketConnectedRef.value = false
+			connectingRef.value = false
+			stopHeartbeat()
+			uni.removeStorageSync(SK_CONNECTING_START_TIME)
+			
+			try {
+				chatService.setStatus(ChatServiceStatus.ERROR)
+			} catch (e: any) {
+				handleSilentError(e, 'ChatStore 设置连接状态为ERROR')
+			}
+			
+			try {
+				webSocketEventHandler.dispatchEvent(WebSocketEventType.ERROR, null)
+			} catch (e: any) {
+				handleSilentError(e, 'ChatStore 分发ERROR事件')
+			}
+			
+			smartReconnect(userId)
+		})
+		
+		newSocketTask.onClose(() => {
+			console.log('🔌 [WebSocket] 连接已关闭')
+			webSocketConnectedRef.value = false
+			socketTaskRef.value = null
+			stopHeartbeat()
+			
+			try {
+				chatService.setStatus(ChatServiceStatus.DISCONNECTED)
+			} catch (e: any) {
+				handleSilentError(e, 'ChatStore 设置连接状态为DISCONNECTED')
+			}
+			
+			try {
+				webSocketEventHandler.dispatchEvent(WebSocketEventType.DISCONNECTED, null)
+			} catch (e: any) {
+				handleSilentError(e, 'ChatStore 分发DISCONNECTED事件')
+			}
+			
+			if (closedByNewConnectionRef.value == false) {
+				smartReconnect(userId)
+			}
+		})
+		
+		return true
+	} catch (error: any) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(error, 'ChatStore WebSocket连接', options)
+		connectingRef.value = false
+		return false
+	}
+}
+
+const sendMessage = (message: UTSJSONObject): boolean => {
+	// UTS 规范：可变属性不能 smart cast
+	const socket = socketTaskRef.value
+	if (socket == null || webSocketConnectedRef.value == false) {
+		console.error('❌ [WebSocket] 未连接，无法发送消息')
+		return false
+	}
+	
+	try {
+		const messageStr = (typeof message === 'string') ? message : JSON.stringify(message)
+		socket.send({
+			data: messageStr,
+			success: () => {
+				console.log('📤 [WebSocket] 消息发送成功')
+			},
+			fail: (error: any) => {
+				console.error('❌ [WebSocket] 消息发送失败:', error)
+			}
+		})
+		return true
+	} catch (error: any) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(error, 'ChatStore 发送消息', options)
+		return false
+	}
+}
+
+// UTS 规范：返回类型不能是 any 返回 null，改为 any | null
+const getConversationByUserId = (userId: string): UTSJSONObject | null => {
+	const convList = conversationsRef.value as Array<any>
+	for (let i = 0; i < convList.length; i++) {
+		const conv = convList[i]
+		if (conv != null) {
+			try {
+				// 使用 toUTSJSON 替代 JSON.stringify + JSON.parse，避免不必要的序列化
+				const convObj = toUTSJSON(conv)
+				const targetId = convObj != null ? convObj.getString('targetUserId') : null
+				if (targetId == userId) {
+					return toUTSJSON(conv)
+				}
+			} catch (e) {
+				handleSilentError(e, 'ChatStore 解析会话用户ID')
+			}
+		}
+	}
+	return null
+}
+
+const fetchConversations = async (userId: string): Promise<boolean> => {
+	try {
+		// UTS 规范：不能使用对象字面量，需使用类实例
+		const params = new GetConversationsParams()
+		params.userId = userId
+		const res = await getConversations(params)
+		if (res != null) {
+			// 使用 toUTSJSON 替代 JSON.stringify + JSON.parse，避免不必要的序列化
+			const resObj = toUTSJSON(res)
+			const data = resObj != null ? resObj.get('data') : null
+			if (data != null && Array.isArray(data)) {
+				conversationsRef.value = data as Array<any>
+				return true
+			}
+		}
+		return false
+	} catch (error: any) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(error, 'ChatStore 获取会话列表', options)
+		throw error
+	}
+}
+
+// UTS 规范：参数类型需要与 ref 类型匹配
+const setCurrentConversation = (conversation: UTSJSONObject | null) => {
+	currentConversationRef.value = conversation
+}
+
+const updateUnreadCount = (count: number) => {
+	unreadCountRef.value = count
+	lastUnreadCountUpdateTimeRef.value = Date.now()
+}
+
+const reset = () => {
+	closeWebSocket()
+	chatTokenRef.value = ''
+	conversationsRef.value = []
+	unreadCountRef.value = 0
+	currentConversationRef.value = null
+}
+
+// 请求未读数
+const requestUnreadCount = () => {
+	try {
+		// 通过 WebSocket 请求未读数
+		const taskVal = socketTaskRef.value
+		if (taskVal != null && webSocketConnectedRef.value == true) {
+			const message = JSON.stringify({
+				type: 'requestUnreadCount',
+				timestamp: Date.now()
+			})
+			taskVal.send({ data: message })
+			console.log('📨 [Chat] 请求未读数')
+		}
+	} catch (e: any) {
+		handleSilentError(e, 'ChatStore 请求未读数')
+	}
+}
+
+// 验证 WebSocket 连接健康状态
+const validateWebSocketHealth = (): boolean | null => {
+	try {
+		const taskVal = socketTaskRef.value
+		if (taskVal == null) {
+			return null
+		}
+		// 检查连接状态和心跳时间
+		if (webSocketConnectedRef.value == false) {
+			return false
+		}
+		// 检查心跳超时（WS_HEARTBEAT_TIMEOUT 未收到心跳响应）
+		const now = Date.now()
+		const lastHeartbeat = lastHeartbeatTimeRef.value
+		if (lastHeartbeat > 0 && (now - lastHeartbeat) > WS_HEARTBEAT_TIMEOUT) {
+			console.warn('⚠️ [Chat] 心跳超时，连接可能异常')
+			return null
+		}
+		return true
+	} catch (e: any) {
+		handleSilentError(e, 'ChatStore 验证WebSocket连接健康')
+		return null
+	}
+}
+
+// 导出 useChatStore 函数
+// UTS 规范：对象字面量不支持 getter/setter 语法
+export const useChatStore = () => {
+	// UTS 规范：先将值存入局部变量，避免递归问题
+	const chatTokenVal = chatTokenRef.value
+	const conversationsVal = conversationsRef.value
+	const unreadCountVal = unreadCountRef.value
+	const currentConversationVal = currentConversationRef.value
+	const webSocketConnectedVal = webSocketConnectedRef.value
+	const connectingVal = connectingRef.value
+	const socketTaskVal = socketTaskRef.value
+	const messageReminderCountsVal = messageReminderCountsRef.value
+	const isConnectedVal = isConnected.value
+	const isConnectingVal = isConnecting.value
+	
+	return {
+		// State - 直接返回当前值
+		chatToken: chatTokenVal,
+		conversations: conversationsVal,
+		unreadCount: unreadCountVal,
+		currentConversation: currentConversationVal,
+		webSocketConnected: webSocketConnectedVal,
+		// 保留 connecting 属性名以保持向后兼容
+		connecting: connectingVal,
+		socketTask: socketTaskVal,
+		messageReminderCounts: messageReminderCountsVal,
+		
+		// Getters - 直接返回计算属性的当前值
+		isConnected: isConnectedVal,
+		// 注意：重命名为 isCurrentlyConnecting 避免与 connecting 属性产生 JVM 签名冲突
+		isCurrentlyConnecting: isConnectingVal,
+		
+		// Actions - 包装为箭头函数
+		fetchChatToken: (userId: string): Promise<boolean> => fetchChatToken(userId),
+		initWebSocket: (userId: string): Promise<boolean> => initWebSocket(userId),
+		closeWebSocket: () => closeWebSocket(),
+		sendMessage: (message: UTSJSONObject): boolean => sendMessage(message),
+		smartReconnect: (userId: string) => smartReconnect(userId),
+		forceReconnect: (userId: string): Promise<boolean> => forceReconnect(userId),
+		resetReconnectAttempts: () => resetReconnectAttempts(),
+		startHeartbeat: (userId: string) => startHeartbeat(userId),
+		stopHeartbeat: () => stopHeartbeat(),
+		handleWebSocketMessage: (data: UTSJSONObject | string) => handleWebSocketMessage(data),
+		getConversationByUserId: (userId: string): UTSJSONObject | null => {
+			return getConversationByUserId(userId)
+		},
+		fetchConversations: (userId: string): Promise<boolean> => fetchConversations(userId),
+		// 注意：方法重命名为 updateCurrentConversation 避免与 currentConversation 属性的 setter 冲突
+		updateCurrentConversation: (conversation: UTSJSONObject | null) => setCurrentConversation(conversation),
+		updateUnreadCount: (count: number) => updateUnreadCount(count),
+		reset: () => reset(),
+		requestUnreadCount: () => requestUnreadCount(),
+		validateWebSocketHealth: (): boolean | null => validateWebSocketHealth(),
+		
+		// Setter 方法 - 重命名避免与属性 setter 冲突
+		updateChatToken: (val: string) => { chatTokenRef.value = val },
+		updateConversations: (val: Array<any>) => { conversationsRef.value = val },
+		updateUnreadCountValue: (val: number) => { unreadCountRef.value = val },
+		updateMessageReminderCounts: (val: UTSJSONObject | null) => { messageReminderCountsRef.value = val }
+	}
+}
+
+// 导出部分操作供外部直接调用（避免在脚本中直接点访问 store 返回对象的函数）
+export const closeWebSocketAction = () => {
+	try {
+		closeWebSocket()
+	} catch (e: any) {
+		handleSilentError(e, 'ChatStore closeWebSocketAction')
+	}
+}
+
+// 导出 initWebSocket 操作供外部直接调用
+export const initWebSocketAction = async (userId: string): Promise<boolean> => {
+	try {
+		return await initWebSocket(userId)
+	} catch (e: any) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(e, 'ChatStore initWebSocketAction', options)
+		return false
+	}
+}
+
+// 导出 forceReconnect 操作供外部直接调用
+export const forceReconnectAction = async (userId: string): Promise<boolean> => {
+	try {
+		return await forceReconnect(userId)
+	} catch (e: any) {
+		const options = new ErrorHandleOptions()
+		options.showToast = false
+		options.rethrow = false
+		handleError(e, 'ChatStore forceReconnectAction', options)
+		return false
+	}
+}
+
+// 导出 resetReconnectAttempts 操作供外部直接调用
+export const resetReconnectAttemptsAction = () => {
+	try {
+		resetReconnectAttempts()
+	} catch (e: any) {
+		handleSilentError(e, 'ChatStore resetReconnectAttemptsAction')
+	}
+}
+
+// 导出获取 WebSocket 连接状态的函数
+export const getWebSocketConnectedStatus = (): boolean => {
+	return webSocketConnectedRef.value
+}
+
+// 导出 ChatStore 类型
+// 注意：为避免 JVM 签名冲突，setter 方法已重命名
+export interface ChatStore {
+	chatToken: string
+	conversations: Array<any>
+	unreadCount: number
+	currentConversation: UTSJSONObject | null
+	webSocketConnected: boolean
+	connecting: boolean
+	socketTask: SocketTask | null
+	messageReminderCounts: UTSJSONObject | null
+	isConnected: boolean
+	isCurrentlyConnecting: boolean
+	fetchChatToken(userId: string): Promise<boolean>
+	initWebSocket(userId: string): Promise<boolean>
+	closeWebSocket(): void
+	sendMessage(message: UTSJSONObject): boolean
+	smartReconnect(userId: string): void
+	forceReconnect(userId: string): Promise<boolean>
+	resetReconnectAttempts(): void
+	startHeartbeat(userId: string): void
+	stopHeartbeat(): void
+	handleWebSocketMessage(data: UTSJSONObject | string): void
+	getConversationByUserId(userId: string): UTSJSONObject | null
+	fetchConversations(userId: string): Promise<boolean>
+	updateCurrentConversation(conversation: UTSJSONObject | null): void
+	updateUnreadCount(count: number): void
+	reset(): void
+	requestUnreadCount(): void
+	validateWebSocketHealth(): boolean | null
+	updateChatToken(val: string): void
+	updateConversations(val: Array<any>): void
+	updateUnreadCountValue(val: number): void
+	updateMessageReminderCounts(val: UTSJSONObject | null): void
+}

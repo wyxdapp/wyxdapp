@@ -1,0 +1,146 @@
+/**
+ * 类型转换工具模块
+ * 提供安全的 UTSJSONObject 转换和属性访问函数
+ * 替代重复的 JSON.stringify + JSON.parse 模式，减少热路径序列化开销
+ * 
+ * 设计原则：
+ * - 优先直接类型判断（instanceof / typeof），仅在必要时使用 JSON 序列化
+ * - 对 null/undefined 输入安全返回 null 或默认值
+ * - 对非对象类型输入记录 warning 并返回 null
+ */
+
+/**
+ * 将任意值安全转换为 UTSJSONObject
+ * 优先使用直接类型判断，仅在必要时使用 JSON 序列化作为 fallback
+ * @param val 任意值（UTSJSONObject、string 或其他对象）
+ * @returns UTSJSONObject 或 null
+ */
+export function toUTSJSON(val: any | null): UTSJSONObject | null {
+	if (val == null) return null
+
+	// 优先：如果已经是 UTSJSONObject，直接返回（避免序列化）
+	if (val instanceof UTSJSONObject) {
+		return val as UTSJSONObject
+	}
+
+	// 字符串输入：尝试 JSON.parse
+	if (typeof val === 'string') {
+		const str = val as string
+		if (str == '' || str == 'null' || str == 'undefined') return null
+		try {
+			const parsed = JSON.parse(str)
+			if (parsed instanceof UTSJSONObject) {
+				return parsed as UTSJSONObject
+			}
+		} catch (_e) {}
+		console.warn('[typeConverter] toUTSJSON: 字符串无法解析为 UTSJSONObject')
+		return null
+	}
+
+	// 非对象基本类型（number, boolean）无法转为 UTSJSONObject
+	if (typeof val === 'number' || typeof val === 'boolean') {
+		console.warn('[typeConverter] toUTSJSON: 非对象类型输入 (' + (typeof val) + ')，返回 null')
+		return null
+	}
+
+	// fallback：通过 JSON 序列化转换（处理 UTS 运行时的 any 类型对象）
+	try {
+		const str = JSON.stringify(val)
+		if (str == '' || str == 'null') return null
+		return JSON.parse(str) as UTSJSONObject
+	} catch (_e) {}
+	return null
+}
+
+/**
+ * 从 UTSJSONObject 安全获取字符串属性
+ * @param obj UTSJSONObject 或 null
+ * @param key 属性名
+ * @returns 字符串值，不存在或为 null 时返回空字符串
+ */
+export function getString(obj: UTSJSONObject | null, key: string): string {
+	if (obj == null) return ''
+	try {
+		const val = obj.get(key)
+		if (val == null) return ''
+		return val.toString()
+	} catch (_e) {}
+	return ''
+}
+
+/**
+ * 从 UTSJSONObject 安全获取数字属性
+ * @param obj UTSJSONObject 或 null
+ * @param key 属性名
+ * @returns 数字值，不存在或无法转换时返回 0
+ */
+export function getNumber(obj: UTSJSONObject | null, key: string): number {
+	if (obj == null) return 0
+	try {
+		const val = obj.get(key)
+		if (val == null) return 0
+		const str = val.toString()
+		if (str == '') return 0
+		// 优先尝试 parseFloat 以支持小数
+		const num = parseFloat(str)
+		if (isNaN(num) == false) return num
+	} catch (_e) {}
+	return 0
+}
+
+/**
+ * 从 UTSJSONObject 安全获取布尔属性
+ * @param obj UTSJSONObject 或 null
+ * @param key 属性名
+ * @returns 布尔值，不存在时返回 false
+ */
+export function getBoolean(obj: UTSJSONObject | null, key: string): boolean {
+	if (obj == null) return false
+	try {
+		const val = obj.get(key)
+		if (val == null) return false
+		if (val == true) return true
+		if (val == false) return false
+		const str = val.toString()
+		return str == 'true' || str == '1'
+	} catch (_e) {}
+	return false
+}
+
+/**
+ * 从 UTSJSONObject 安全获取数组属性
+ * @param obj UTSJSONObject 或 null
+ * @param key 属性名
+ * @returns 数组，不存在或非数组时返回空数组
+ */
+export function getArray(obj: UTSJSONObject | null, key: string): Array<any> {
+	if (obj == null) return []
+	try {
+		const val = obj.get(key)
+		if (val == null) return []
+		if (Array.isArray(val) == true) {
+			return val as Array<any>
+		}
+	} catch (_e) {}
+	return []
+}
+
+/**
+ * 从 UTSJSONObject 安全获取嵌套对象属性
+ * @param obj UTSJSONObject 或 null
+ * @param key 属性名
+ * @returns UTSJSONObject 或 null
+ */
+export function getObject(obj: UTSJSONObject | null, key: string): UTSJSONObject | null {
+	if (obj == null) return null
+	try {
+		const val = obj.get(key)
+		if (val == null) return null
+		if (val instanceof UTSJSONObject) {
+			return val as UTSJSONObject
+		}
+		// fallback：尝试通过 JSON 序列化转换
+		return toUTSJSON(val)
+	} catch (_e) {}
+	return null
+}

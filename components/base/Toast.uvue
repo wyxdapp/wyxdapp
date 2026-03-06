@@ -1,0 +1,134 @@
+<template>
+	<view v-if="show" class="wy-toast" :class="`wy-toast--${position}`">
+		<view class="wy-toast__content" :class="`wy-toast--${type}`">
+			<view v-if="icon || type != 'default'" class="wy-toast__icon">
+				<text>{{ getIcon() }}</text>
+			</view>
+			<text class="wy-toast__text">{{ message }}</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { defineProps, watch, ref } from 'vue'
+
+// Props - 运行时声明
+const props = defineProps({
+	show: { type: Boolean, default: false },
+	message: { type: String, default: '' },
+	type: { type: String, default: 'default' },
+	icon: { type: String, default: '' },
+	position: { type: String, default: 'center' },
+	duration: { type: Number, default: 2000 }
+})
+
+// Emits
+const emit = defineEmits<{
+	close: []
+}>()
+
+// Data
+let timer: number | null = null
+
+// Methods
+const getIcon = (): string => {
+	if (props.icon != null && props.icon != '') return props.icon
+	
+	const iconMap: Record<string, string> = {
+		success: '✓',
+		error: '✕',
+		warning: '⚠',
+		loading: '⏳'
+	}
+	
+	return iconMap[props.type] || ''
+}
+
+// Watch
+watch(() => props.show, (newVal) => {
+	if (newVal == true && props.duration > 0 && props.type != 'loading') {
+		if (timer != null) clearTimeout(timer)
+		timer = setTimeout(() => {
+			emit('close')
+		}, props.duration)
+	}
+})
+</script>
+
+<style scoped>
+.wy-toast {
+	position: fixed;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	animation: fade-in 0.3s;
+}
+
+.wy-toast--top {
+	top: 100rpx;
+}
+
+.wy-toast--center {
+	top: 50%;
+	transform: translate(-50%, -50%);
+}
+
+.wy-toast--bottom {
+	bottom: 100rpx;
+}
+
+}
+
+.wy-toast--center {
+	animation: zoom-in 0.3s;
+}
+
+
+.wy-toast__content {
+	max-width: 500rpx;
+	min-width: 200rpx;
+	padding: 24rpx 32rpx;
+	background-color: rgba(0, 0, 0, 0.75);
+	border-radius: 12rpx;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+.wy-toast--success .wy-toast__icon text {
+	color: #4CAF50;
+}
+
+.wy-toast--error .wy-toast__icon text {
+	color: #F44336;
+}
+
+.wy-toast--warning .wy-toast__icon text {
+	color: #FF9800;
+}
+
+.wy-toast__icon {
+	margin-bottom: 12rpx;
+}
+
+.wy-toast__icon text {
+	font-size: 48rpx;
+	color: #ffffff;
+}
+
+.wy-toast--loading .wy-toast__icon text {
+	animation: rotate 1s linear infinite;
+}
+
+
+.wy-toast__text {
+	font-size: 28rpx;
+	color: #ffffff;
+	text-align: center;
+	line-height: 1.5;
+}
+</style>

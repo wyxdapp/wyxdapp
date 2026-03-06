@@ -1,0 +1,211 @@
+/**
+ * 抽奖服务 API
+ */
+import { request } from '@/utils/request'
+import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
+
+// 参数接口定义（仅用于文档说明，不用于类型转换）
+export interface GetLotteryInfoParams {
+  userKid: string
+}
+
+export interface DrawLotteryParams {
+  userKid: string
+  lotteryType: number  // LOTTERY_TYPE_FREE 免费 LOTTERY_TYPE_PAID 付费
+  drawCount: number    // 1 或 10
+}
+
+export interface UseGiftParams {
+  userKid: string
+  lotteryRecordKid: string
+  actionType: number  // LOTTERY_ACTION_SELF 自己使用 LOTTERY_ACTION_GIFT 赠送他人
+  receiveUserKid?: string
+}
+
+export interface HandleCashRewardParams {
+  userKid: string
+  lotteryRecordKid: string
+  actionType: number  // LOTTERY_ACTION_SELF 提现 LOTTERY_ACTION_GIFT 存入余额
+  withdrawMethod?: number  // WITHDRAW_METHOD_WECHAT 微信 WITHDRAW_METHOD_ALIPAY 支付宝
+}
+
+export interface GetMyGiftsParams {
+  userKid: string
+}
+
+export interface SendGiftFromBagParams {
+  userKid: string
+  lotteryRecordKid: string
+  receiveUserKid: string
+}
+
+export interface SendGiftFromShopParams {
+  userKid: string
+  giftKid: string
+  receiveUserKid: string
+}
+
+export interface ExchangeLuckyPointsParams {
+  userKid: string
+  points: number  // 兑换点数：50/100/200/300/500/800
+  rewardType: number  // 奖励类型：10 虚拟礼物 20 现金红包
+}
+
+export interface GetTaskStatusParams {
+  userKid: string
+}
+
+export interface CompleteTaskParams {
+  userKid: string
+  taskType: number  // 任务类型：10 首次发布向导信息 20 每日发布动态 30 每日分享
+}
+
+/**
+ * 安全获取参数字段值 — 使用 typeConverter 统一工具函数
+ * getString / getNumber 来自 @/common/utils/typeConverter
+ */
+
+/**
+ * 获取抽奖信息
+ * @param params { userKid: string }
+ */
+export const getLotteryInfo = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  return request.get('/lottery/info', { userKid: userKid } as UTSJSONObject, false)
+}
+
+/**
+ * 执行抽奖
+ * @param params { userKid: string, lotteryType: number, drawCount: number }
+ */
+export const drawLottery = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const lotteryType = getNumber(paramsObj, 'lotteryType')
+  const drawCount = getNumber(paramsObj, 'drawCount')
+  return request.post('/lottery/draw?userKid=' + userKid, {
+    lotteryType: lotteryType,
+    drawCount: drawCount
+  } as UTSJSONObject, false)
+}
+
+/**
+ * 使用/赠送虚拟礼物
+ * @param params { userKid: string, lotteryRecordKid: string, actionType: number, receiveUserKid?: string }
+ */
+export const useGift = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const lotteryRecordKid = getString(paramsObj, 'lotteryRecordKid')
+  const actionType = getNumber(paramsObj, 'actionType')
+  const receiveUserKid = getString(paramsObj, 'receiveUserKid')
+  const receiveParam = (receiveUserKid != '') ? '&receiveUserKid=' + receiveUserKid : ''
+  const url = '/lottery/gift/use?userKid=' + userKid + '&lotteryRecordKid=' + lotteryRecordKid + '&actionType=' + actionType.toString() + receiveParam
+  return request.post(url, {} as UTSJSONObject, false)
+}
+
+/**
+ * 处理现金奖励
+ * @param params { userKid: string, lotteryRecordKid: string, actionType: number, withdrawMethod?: number }
+ */
+export const handleCashReward = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const lotteryRecordKid = getString(paramsObj, 'lotteryRecordKid')
+  const actionType = getNumber(paramsObj, 'actionType')
+  const withdrawMethodVal = (paramsObj != null) ? paramsObj.get('withdrawMethod') : null
+  const withdrawParam = (withdrawMethodVal != null) ? '&withdrawMethod=' + withdrawMethodVal.toString() : ''
+  const url = '/lottery/cash/handle?userKid=' + userKid + '&lotteryRecordKid=' + lotteryRecordKid + '&actionType=' + actionType.toString() + withdrawParam
+  return request.post(url, {} as UTSJSONObject, false)
+}
+
+/**
+ * 查询我的礼物（背包）
+ * @param params { userKid: string }
+ */
+export const getMyGifts = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  return request.get('/lottery/gift/my?userKid=' + userKid, null, false)
+}
+
+/**
+ * 查询所有礼物（商店）
+ */
+export const getAllGifts = () => {
+  return request.get('/lottery/gift/list', null, false)
+}
+
+/**
+ * 赠送礼物（从背包）
+ * @param params { userKid: string, lotteryRecordKid: string, receiveUserKid: string }
+ */
+export const sendGiftFromBag = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const lotteryRecordKid = getString(paramsObj, 'lotteryRecordKid')
+  const receiveUserKid = getString(paramsObj, 'receiveUserKid')
+  return request.post('/lottery/gift/send?userKid=' + userKid + '&lotteryRecordKid=' + lotteryRecordKid + '&receiveUserKid=' + receiveUserKid, {} as UTSJSONObject, false)
+}
+
+/**
+ * 付费赠送礼物（从商店）
+ * @param params { userKid: string, giftKid: string, receiveUserKid: string }
+ */
+export const sendGiftFromShop = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const giftKid = getString(paramsObj, 'giftKid')
+  const receiveUserKid = getString(paramsObj, 'receiveUserKid')
+  return request.post('/lottery/gift/pay-send?userKid=' + userKid + '&giftKid=' + giftKid + '&receiveUserKid=' + receiveUserKid, {} as UTSJSONObject, false)
+}
+
+/**
+ * 幸运值兑换
+ * @param params { userKid: string, points: number, rewardType: number }
+ */
+export const exchangeLuckyPoints = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const points = getNumber(paramsObj, 'points')
+  const rewardType = getNumber(paramsObj, 'rewardType')
+  return request.post('/lottery/lucky/exchange?userKid=' + userKid + '&points=' + points.toString() + '&rewardType=' + rewardType.toString(), {} as UTSJSONObject, false)
+}
+
+/**
+ * 获取用户今日任务状态
+ * @param params { userKid: string }
+ */
+export const getTaskStatus = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  return request.get('/lottery/task/status', { userKid: userKid } as UTSJSONObject, false)
+}
+
+/**
+ * 完成任务并领取奖励
+ * @param params { userKid: string, taskType: number }
+ */
+export const completeTask = (params: UTSJSONObject) => {
+  const paramsObj = toUTSJSON(params)
+  const userKid = getString(paramsObj, 'userKid')
+  const taskType = getNumber(paramsObj, 'taskType')
+  return request.post('/lottery/task/complete?userKid=' + userKid, {
+    taskType: taskType
+  } as UTSJSONObject, false)
+}
+
+export default {
+  getLotteryInfo,
+  drawLottery,
+  useGift,
+  handleCashReward,
+  getMyGifts,
+  getAllGifts,
+  sendGiftFromBag,
+  sendGiftFromShop,
+  exchangeLuckyPoints,
+  getTaskStatus,
+  completeTask
+}

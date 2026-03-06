@@ -1,0 +1,727 @@
+<template>
+	<view class="tags-page">
+		<view class="section-card">
+			<view class="section-header">
+				<text class="section-icon">🌏</text>
+				<view class="section-info">
+					<text class="section-title">会说的语言</text>
+					<text class="section-subtitle">最多选择4种语言</text>
+				</view>
+				<view v-if="selectedLanguages.length" class="section-badge">
+					<text>{{ selectedLanguages.length }}/4</text>
+				</view>
+			</view>
+			
+			<view class="tags-container">
+				<view v-if="loading" class="tag-loading">加载中...</view>
+				<view v-else-if="languageOptions.length == 0" class="empty-tip">暂无语言数据</view>
+				<template v-else>
+					<view
+						v-for="item in languageListDisplay"
+						:key="item.kid"
+						class="tag-item"
+						:class="[{ selected: item.isSelected }, item.isCustomized ? 'custom' : '']"
+						@click="toggleLanguage(item)"
+					>
+						<text class="tag-text">{{ item.name }}</text>
+						<text
+							v-if="item.isSelected"
+							class="tag-close"
+							@click.stop="toggleLanguage(item)"
+						>
+							✕
+						</text>
+						<text v-if="item.isCustomized" class="tag-badge">自定义</text>
+						<text
+							v-if="item.isCustomized"
+							class="tag-delete"
+							@click.stop="handleDelete(item)"
+						>
+							✕
+						</text>
+					</view>
+					<view class="tag-item add-tag" @click="openAddDialog('language')">
+						<text class="add-icon">+</text>
+						<text class="tag-text">自定义语言</text>
+					</view>
+				</template>
+			</view>
+		</view>
+
+		<view class="section-card">
+			<view class="section-header">
+				<UniIcons type="flag" :size="36" color="#37B1F2" />
+				<view class="section-info">
+					<text class="section-title">个性标签</text>
+					<text class="section-subtitle">最多选择5种标签</text>
+				</view>
+				<view v-if="selectedLabels.length" class="section-badge">
+					<text>{{ selectedLabels.length }}/5</text>
+				</view>
+			</view>
+
+			<view class="tags-container">
+				<view v-if="loading" class="tag-loading">加载中...</view>
+				<view v-else-if="labelOptions.length == 0" class="empty-tip">暂无标签数据</view>
+				<template v-else>
+					<view
+						v-for="item in labelListDisplay"
+						:key="item.kid"
+						class="tag-item"
+						:class="[{ selected: item.isSelected }, item.isCustomized ? 'custom' : '']"
+						@click="toggleLabel(item)"
+					>
+						<text class="tag-text">{{ item.name }}</text>
+						<text
+							v-if="item.isSelected"
+							class="tag-close"
+							@click.stop="toggleLabel(item)"
+						>
+							✕
+						</text>
+						<text v-if="item.isCustomized" class="tag-badge">自定义</text>
+						<text
+							v-if="item.isCustomized"
+							class="tag-delete"
+							@click.stop="handleDelete(item)"
+						>
+							✕
+						</text>
+					</view>
+					<view class="tag-item add-tag" @click="openAddDialog('label')">
+						<text class="add-icon">+</text>
+						<text class="tag-text">自定义标签</text>
+					</view>
+				</template>
+			</view>
+		</view>
+
+		<view class="save-section">
+			<Button type="primary" block :loading="saving" @click="handleSave">
+				保存设置
+			</Button>
+		</view>
+
+		<Popup :show="showAddDialog" position="center" @close="closeDialog">
+			<view class="add-dialog">
+				<text class="dialog-title">{{ dialogType === 'language' ? '添加自定义语言' : '添加自定义标签' }}</text>
+				<Input
+					v-model="customInput"
+					:placeholder="dialogType === 'language' ? '请输入语言名称' : '请输入标签名称'"
+					maxlength="10"
+				/>
+				<view class="dialog-buttons">
+					<Button type="default" @click="closeDialog">取消</Button>
+					<Button type="primary" @click="handleAddCustom">确定</Button>
+				</view>
+			</view>
+		</Popup>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { handlePageError } from '@/common/utils/errorHandler.uts'
+import Button from '@/components/base/Button.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import Input from '@/components/base/Input.uvue'
+import Popup from '@/components/base/Popup.uvue'
+import { useUserStore } from '@/stores/user'
+import { 
+	checkUserLoginReliable, 
+	waitForLoginStatus, 
+	getCurrentUserIdReliable,
+	onLoginStatusChange,
+	offLoginStatusChange,
+	parseLoginStatusData,
+	getIsLoginFromData
+} from '@/common/utils/loginHelper.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import {
+	queryAllSpeciality,
+	addCustomLanguage,
+	addCustomLabel,
+	deleteUserLanguage,
+	deleteUserLabel,
+	addUserSpeciality,
+	QueryAllSpecialityParams
+} from '@/api/discover.uts'
+import {
+	AddCustomLanguageParams,
+	AddCustomLabelParams,
+	DeleteUserLanguageParams,
+	DeleteUserLabelParams,
+	AddUserSpecialityParams
+} from '@/api/discover.uts'
+
+type TagKind = 'language' | 'label'
+
+class TagOption {
+	kid: string
+	name: string
+	type: TagKind
+	isSelected: boolean
+	isCustomized: boolean
+	constructor(kid: string, name: string, type: TagKind, isSelected: boolean, isCustomized: boolean) {
+		this.kid = kid
+		this.name = name
+		this.type = type
+		this.isSelected = isSelected
+		this.isCustomized = isCustomized
+	}
+}
+
+const MAX_LANGUAGE = 4
+const MAX_LABEL = 5
+
+const userStore = useUserStore()
+const currentUserKid = computed((): string => {
+	try {
+		const getUserKidSafe = (): string => {
+			try {
+				const storeObj = toJsonObj(userStore)
+				if (storeObj == null) return ''
+
+				let userInfoValAny: string | number | boolean | UTSJSONObject | null = null
+				try {
+					userInfoValAny = storeObj.get('userInfo')
+				} catch (e) {}
+
+				if (userInfoValAny == null || userInfoValAny == '') return ''
+				const userInfoJson = JSON.stringify(userInfoValAny)
+				if (userInfoJson == null || userInfoJson == '') return ''
+
+				const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+				if (userInfoObj == null) return ''
+
+				let kidValAny: string | number | boolean | UTSJSONObject | null = null
+				try {
+					kidValAny = userInfoObj.get('kid')
+				} catch (e) {}
+
+				if (kidValAny == null) return ''
+				const kidStr = kidValAny.toString()
+				return (kidStr != null && kidStr != '') ? kidStr : ''
+			} catch (e) {}
+			return ''
+		}
+		return getUserKidSafe()
+	} catch (e) {}
+	return ''
+})
+
+const loading = ref(false)
+const saving = ref(false)
+const languageOptions = ref<TagOption[]>([])
+const labelOptions = ref<TagOption[]>([])
+
+const showAddDialog = ref(false)
+const dialogType = ref<TagKind>('language')
+const customInput = ref('')
+
+const selectedLanguages = computed((): TagOption[] => {
+	try {
+		const res: TagOption[] = []
+		const arr = languageOptions.value as TagOption[]
+		for (let i = 0; i < arr.length; i++) {
+			const it = arr[i]
+			if (it != null && it.isSelected == true) {
+				res.push(it)
+			}
+		}
+		return res
+	} catch (e) {}
+	return [] as TagOption[]
+})
+
+const selectedLabels = computed((): TagOption[] => {
+	try {
+		const res: TagOption[] = []
+		const arr = labelOptions.value as TagOption[]
+		for (let i = 0; i < arr.length; i++) {
+			const it = arr[i]
+			if (it != null && it.isSelected == true) {
+				res.push(it)
+			}
+		}
+		return res
+	} catch (e) {}
+	return [] as TagOption[]
+})
+
+const languageListDisplay = computed((): TagOption[] => {
+	try {
+		const arr: TagOption[] = ([] as TagOption[]).concat(languageOptions.value as TagOption[])
+		arr.sort((a: TagOption, b: TagOption): number => {
+			const av = (a != null && a.isSelected == true) ? 1 : 0
+			const bv = (b != null && b.isSelected == true) ? 1 : 0
+			return bv - av
+		})
+		return arr
+	} catch (e) {}
+	return [] as TagOption[]
+})
+
+const labelListDisplay = computed((): TagOption[] => {
+	try {
+		const arr: TagOption[] = ([] as TagOption[]).concat(labelOptions.value as TagOption[])
+		arr.sort((a: TagOption, b: TagOption): number => {
+			const av = (a != null && a.isSelected == true) ? 1 : 0
+			const bv = (b != null && b.isSelected == true) ? 1 : 0
+			return bv - av
+		})
+		return arr
+	} catch (e) {}
+	return [] as TagOption[]
+})
+
+const ensureLogin = async (): Promise<boolean> => {
+	// 使用 loginHelper 进行可靠的登录检查
+	const isLogin = checkUserLoginReliable()
+	if (isLogin == false) {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return false
+	}
+	
+	// 检查用户ID
+	const userKid = getCurrentUserIdReliable()
+	if (userKid == null || userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		setTimeout(() => {
+			uni.navigateTo({ url: '/pagesUser/login/index' })
+		}, 1000)
+		return false
+	}
+	return true
+}
+
+const normalizeList = (list: UTSJSONObject[], type: TagKind): TagOption[] => {
+	const out: TagOption[] = []
+	if (list == null || Array.isArray(list) == false) return out
+	for (let i = 0; i < list.length; i++) {
+		const raw = list[i]
+		if (raw == null) continue
+		try {
+			const rawJson = JSON.stringify(raw)
+			if (rawJson == null || rawJson == '') continue
+			const parsedObj = JSON.parse(rawJson) as UTSJSONObject
+			if (parsedObj == null) continue
+
+			let kidValAny: string | number | boolean | UTSJSONObject | null = null
+			try {
+				kidValAny = parsedObj.get('kid')
+			} catch (e) {}
+			if (kidValAny == null || kidValAny == '') {
+				try { kidValAny = parsedObj.get('labelKid') } catch (e) {}
+			}
+			if (kidValAny == null || kidValAny == '') {
+				try { kidValAny = parsedObj.get('languageKid') } catch (e) {}
+			}
+
+			let nameValAny: string | number | boolean | UTSJSONObject | null = null
+			try {
+				nameValAny = parsedObj.get('name')
+			} catch (e) {}
+			if (nameValAny == null || nameValAny == '') {
+				try { nameValAny = parsedObj.get('labelName') } catch (e) {}
+			}
+			if (nameValAny == null || nameValAny == '') {
+				try { nameValAny = parsedObj.get('languageName') } catch (e) {}
+			}
+
+			const kid = (kidValAny != null && kidValAny != '') ? kidValAny.toString() : `${type}-${(nameValAny != null && nameValAny != '') ? nameValAny.toString() : ''}`
+			const name = (nameValAny != null && nameValAny != '') ? nameValAny.toString() : ''
+
+			let isSelectedAny: string | number | boolean | UTSJSONObject | null = null
+			try { isSelectedAny = parsedObj.get('isSelected') } catch (e) {}
+			const isSelectedVal = (isSelectedAny === 1 || isSelectedAny === true)
+
+			let isCustomizedAny: string | number | boolean | UTSJSONObject | null = null
+			try { isCustomizedAny = parsedObj.get('isCustomized') } catch (e) {}
+			let sourceAny: string | number | boolean | UTSJSONObject | null = null
+			try { sourceAny = parsedObj.get('source') } catch (e) {}
+			const isCustomizedVal = (isCustomizedAny === 1 || isCustomizedAny === true || sourceAny === 'custom')
+
+			if (name != null && name != '') {
+				out.push(new TagOption(kid, name, type, isSelectedVal, isCustomizedVal))
+			}
+		} catch (e) {}
+	}
+	return out
+}
+
+const loadSpecialities = async () => {
+	const loginOk1 = await ensureLogin()
+	if (loginOk1 == null || loginOk1 == false) return
+	loading.value = true
+	try {
+		// 构造参数：使用 JSON 序列化/反序列化避免匿名对象字面量导致的 UTS 参数类型错误
+		const paramsJson = JSON.stringify({ userKid: currentUserKid.value })
+		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const params = paramsParsed as QueryAllSpecialityParams
+
+		const res = await queryAllSpeciality(params)
+		// 使用 JSON 序列化/反序列化安全读取返回值，避免直接点访问触发 error18
+		const resJson = JSON.stringify(res)
+		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		let dataValAny: string | number | boolean | UTSJSONObject | null = null
+		try { dataValAny = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+		let dataObj: UTSJSONObject = {} as UTSJSONObject
+		if (dataValAny != null && dataValAny != '') {
+			try {
+				const dataJson = JSON.stringify(dataValAny)
+				dataObj = (dataJson != null && dataJson != '') ? JSON.parse(dataJson) as UTSJSONObject : {} as UTSJSONObject
+			} catch (e) { dataObj = {} as UTSJSONObject }
+		}
+
+		// 将 dataObj 转为 UTSJSONObject 安全访问字段，避免 error18
+		let dataObjJson: string = ''
+		try { dataObjJson = JSON.stringify(dataObj) } catch (e) { dataObjJson = '' }
+		const dataObjParsed = (dataObjJson != null && dataObjJson != '') ? JSON.parse(dataObjJson) as UTSJSONObject : null
+
+		let languageListValAny: string | number | boolean | UTSJSONObject | null = null
+		try { languageListValAny = (dataObjParsed != null) ? dataObjParsed.get('languageList') : null } catch (e) {}
+		let systemLanguagesAny: string | number | boolean | UTSJSONObject | null = null
+		try { systemLanguagesAny = (dataObjParsed != null) ? dataObjParsed.get('systemLanguages') : null } catch (e) {}
+		let customLanguagesAny: string | number | boolean | UTSJSONObject | null = null
+		try { customLanguagesAny = (dataObjParsed != null) ? dataObjParsed.get('customLanguages') : null } catch (e) {}
+
+		let languageList: UTSJSONObject[] = []
+		try {
+			if (languageListValAny != null && languageListValAny != '') {
+				languageList = languageListValAny as UTSJSONObject[]
+			} else {
+				const sys = (systemLanguagesAny != null && systemLanguagesAny != '') ? systemLanguagesAny as UTSJSONObject[] : []
+				const cus = (customLanguagesAny != null && customLanguagesAny != '') ? customLanguagesAny as UTSJSONObject[] : []
+				languageList = [...sys, ...cus]
+			}
+		} catch (e) { languageList = [] }
+
+		let labelListValAny: string | number | boolean | UTSJSONObject | null = null
+		try { labelListValAny = (dataObjParsed != null) ? dataObjParsed.get('labelList') : null } catch (e) {}
+		let systemLabelsAny: string | number | boolean | UTSJSONObject | null = null
+		try { systemLabelsAny = (dataObjParsed != null) ? dataObjParsed.get('systemLabels') : null } catch (e) {}
+		let customLabelsAny: string | number | boolean | UTSJSONObject | null = null
+		try { customLabelsAny = (dataObjParsed != null) ? dataObjParsed.get('customLabels') : null } catch (e) {}
+
+		let labelList: UTSJSONObject[] = []
+		try {
+			if (labelListValAny != null && labelListValAny != '') {
+				labelList = labelListValAny as UTSJSONObject[]
+			} else {
+				const sl = (systemLabelsAny != null && systemLabelsAny != '') ? systemLabelsAny as UTSJSONObject[] : []
+				const cl = (customLabelsAny != null && customLabelsAny != '') ? customLabelsAny as UTSJSONObject[] : []
+				labelList = [...sl, ...cl]
+			}
+		} catch (e) { labelList = [] }
+		languageOptions.value = normalizeList(languageList, 'language')
+		labelOptions.value = normalizeList(labelList, 'label')
+	} catch (error) {
+		handlePageError(error, '加载标签', null)
+	} finally {
+		loading.value = false
+	}
+}
+
+const toggleLanguage = (item: TagOption) => {
+	if (!item.isSelected && selectedLanguages.value.length >= MAX_LANGUAGE) {
+		uni.showToast({ title: `最多选择${MAX_LANGUAGE}种语言`, icon: 'none' })
+		return
+	}
+	item.isSelected = !item.isSelected
+}
+
+const toggleLabel = (item: TagOption) => {
+	if (!item.isSelected && selectedLabels.value.length >= MAX_LABEL) {
+		uni.showToast({ title: `最多选择${MAX_LABEL}种标签`, icon: 'none' })
+		return
+	}
+	item.isSelected = !item.isSelected
+}
+
+const openAddDialog = (type: TagKind) => {
+	dialogType.value = type
+	customInput.value = ''
+	showAddDialog.value = true
+}
+
+const closeDialog = () => {
+	showAddDialog.value = false
+	customInput.value = ''
+}
+
+const handleAddCustom = async () => {
+	const value = customInput.value.trim()
+	if (value == null) {
+		uni.showToast({ title: '请输入内容', icon: 'none' })
+		return
+	}
+	const loginOk2 = await ensureLogin()
+	if (loginOk2 == null || loginOk2 == false) return
+
+	try {
+		if (dialogType.value === 'language') {
+			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, languageName: value })
+			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+			const params = paramsParsed as AddCustomLanguageParams
+			await addCustomLanguage(params)
+		} else {
+			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, labelName: value })
+			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+			const params = paramsParsed as AddCustomLabelParams
+			await addCustomLabel(params)
+		}
+		uni.showToast({ title: '添加成功', icon: 'success' })
+		closeDialog()
+		loadSpecialities()
+	} catch (error) {
+		handlePageError(error, '添加自定义标签', null)
+	}
+}
+
+const handleDelete = async (item: TagOption) => {
+	if (item.isCustomized == null || item.isCustomized == false) return
+	const loginOk3 = await ensureLogin()
+	if (loginOk3 == null || loginOk3 == false) return
+	const confirmRes = await new Promise<boolean>((resolve) => {
+		uni.showModal({
+			title: '提示',
+			content: `确定删除“${item.name}”吗？`,
+			success: res => resolve(res.confirm),
+			fail: () => resolve(false)
+		})
+	})
+	if (confirmRes == null) return
+	try {
+		if (item.type === 'language') {
+			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, languageKid: item.kid })
+			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+			const params = paramsParsed as DeleteUserLanguageParams
+			await deleteUserLanguage(params)
+		} else {
+			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, labelKid: item.kid })
+			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+			const params = paramsParsed as DeleteUserLabelParams
+			await deleteUserLabel(params)
+		}
+		uni.showToast({ title: '删除成功', icon: 'success' })
+		loadSpecialities()
+	} catch (error) {
+		handlePageError(error, '删除自定义标签', null)
+	}
+}
+
+const handleSave = async () => {
+	const loginOk4 = await ensureLogin()
+	if (loginOk4 == null || loginOk4 == false) return
+	const hasSelectedLanguages = (selectedLanguages.value != null && Array.isArray(selectedLanguages.value) == true && (selectedLanguages.value as TagOption[]).length > 0) ? true : false
+	const hasSelectedLabels = (selectedLabels.value != null && Array.isArray(selectedLabels.value) == true && (selectedLabels.value as TagOption[]).length > 0) ? true : false
+	if (hasSelectedLanguages == false && hasSelectedLabels == false) {
+		uni.showToast({ title: '请至少选择一种语言或标签', icon: 'none' })
+		return
+	}
+	saving.value = true
+	try {
+		const paramsJson = JSON.stringify({
+			userKid: currentUserKid.value,
+			languageKids: selectedLanguages.value.map(item => item.kid),
+			labelKids: selectedLabels.value.map(item => item.kid)
+		})
+		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
+		const params = paramsParsed as AddUserSpecialityParams
+		await addUserSpeciality(params)
+		uni.showToast({ title: '保存成功', icon: 'success' })
+		setTimeout(() => { uni.navigateBack() }, 1200)
+	} catch (error) {
+		handlePageError(error, '保存标签', null)
+	} finally {
+		saving.value = false
+	}
+}
+
+onMounted(() => {
+	loadSpecialities()
+})
+</script>
+
+<style scoped>
+.tags-page {
+	background: #f5f5f5;
+	padding: 24rpx 20rpx 60rpx;
+}
+
+.section-card {
+	background: #ffffff;
+	border-radius: 24rpx;
+	padding: 28rpx;
+	margin-bottom: 24rpx;
+	box-shadow: 0 12rpx 30rpx rgba(32, 118, 189, 0.05);
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 20rpx;
+}
+
+.section-icon {
+	font-size: 48rpx;
+	margin-left: 16rpx;
+}
+
+.section-info {
+	flex: 1;
+}
+
+.section-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #222831;
+}
+
+.section-subtitle {
+	font-size: 24rpx;
+	color: #99a3b4;
+}
+
+.section-badge {
+	min-width: 96rpx;
+	text-align: center;
+	padding: 8rpx 16rpx;
+	border-radius: 999rpx;
+	background: #2eacf2;
+	color: #fff;
+	font-size: 24rpx;
+}
+
+.tags-container {
+	flex-wrap: wrap;
+	margin-top: -10rpx;
+	margin-bottom: -10rpx;
+	margin-left: -10rpx;
+	margin-right: -10rpx;
+	flex-direction: row;
+	justify-content: flex-start;
+}
+
+.tag-item {
+	position: relative;
+	margin-top: 10rpx;
+	margin-bottom: 10rpx;
+	margin-left: 10rpx;
+	margin-right: 10rpx;
+	min-width: 160rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	padding-left: 32rpx;
+	padding-right: 56rpx;
+	border-radius: 999rpx;
+	background-color: #eaf4ff;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 6rpx 18rpx rgba(46, 172, 242, 0.15);
+	color: #2294e4;
+	font-size: 26rpx;
+	flex: none;
+	width: auto;
+	max-width: 600rpx;
+}
+
+.tag-item.custom {
+	padding-right: 72rpx;
+}
+
+.tag-item.selected {
+	background: #2eacf2;
+	color: #fff;
+	box-shadow: 0 12rpx 24rpx rgba(46, 172, 242, 0.35);
+}
+
+.tag-text {
+	white-space: nowrap;
+}
+
+.tag-close {
+	position: absolute;
+	top: 4rpx;
+	right: 10rpx;
+	width: 32rpx;
+	height: 32rpx;
+	border-radius: 16rpx;
+	background: rgba(0, 0, 0, 0.25);
+	color: #fff;
+	font-size: 22rpx;
+	line-height: 32rpx;
+	text-align: center;
+}
+
+.tag-badge {
+	position: absolute;
+	left: 18rpx;
+	top: -14rpx;
+	font-size: 20rpx;
+	color: #7fb4ff;
+}
+
+.tag-delete {
+	position: absolute;
+	top: 4rpx;
+	right: 8rpx;
+	width: 32rpx;
+	height: 32rpx;
+	border-radius: 16rpx;
+	background: rgba(0, 0, 0, 0.35);
+	color: #fff;
+	font-size: 22rpx;
+	line-height: 32rpx;
+	text-align: center;
+}
+
+.tag-item.add-tag {
+	padding-right: 36rpx;
+	background: #f2f2f2;
+	color: #8c9aa9;
+	box-shadow: none;
+}
+
+.add-icon {
+	font-size: 32rpx;
+	margin-right: 8rpx;
+}
+
+.tag-loading,
+.empty-tip {
+	font-size: 26rpx;
+	color: #99a3b4;
+}
+
+.save-section {
+	margin-top: 20rpx;
+}
+
+.add-dialog {
+	width: 620rpx;
+	background: #fff;
+	border-radius: 24rpx;
+	padding: 32rpx;
+}
+
+.dialog-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #222831;
+	text-align: center;
+	margin-bottom: 24rpx;
+}
+
+.dialog-buttons {
+	flex-direction: row;
+	margin-top: 32rpx;
+}
+
+</style>

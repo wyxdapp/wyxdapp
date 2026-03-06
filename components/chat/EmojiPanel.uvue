@@ -1,0 +1,812 @@
+<template>
+	<view v-if="props.show == true" class="emoji-panel-mask" @click="handleClose">
+		<view class="emoji-panel" @click.stop>
+			<!-- ⭐ 顶部输入框组件 -->
+			<view class="emoji-input-wrapper">
+				<ChatInput
+					ref="chatInputRef"
+					:placeholder="inputPlaceholder"
+					:show-emoji-icon="false"
+					:show-keyboard-icon="true"
+					@send="handleSendFromInput"
+					@keyboard="handleKeyboard"
+					@showMore="handleShowMore"
+				/>
+			</view>
+			
+			<!-- 表情网格 - H5端 -->
+			<!-- #ifdef H5 -->
+			<scroll-view class="emoji-scroll-h5" scroll-y="true" :show-scrollbar="false">
+				<view class="emoji-grid">
+					<view 
+						v-for="(item, index) in displayEmojis" 
+						:key="getEmojiKey(item, index)"
+						class="emoji-item"
+						@click="selectEmoji(item)"
+						@longpress="handleLongPress(item)"
+					>
+						<!-- Unicode表情 -->
+						<text v-if="isUnicodeEmoji(item) == true" class="emoji-text">
+							{{ getEmojiText(item) }}
+						</text>
+						
+						<!-- 自定义表情图片 -->
+						<image 
+							v-else
+							class="emoji-image"
+							:src="getEmojiImageUrl(item)"
+							mode="aspectFit"
+						/>
+					</view>
+					
+					<!-- ⭐ 添加自定义表情按钮（仅在自定义分类显示）-->
+					<view 
+						v-if="activeCategory == 'custom'"
+						class="emoji-item add-emoji-btn"
+						@click="handleAddCustomEmoji"
+					>
+						<text class="add-icon">+</text>
+					</view>
+				</view>
+			</scroll-view>
+			<!-- #endif -->
+			
+			<!-- 表情网格 - APP端 -->
+			<!-- #ifndef H5 -->
+			<scroll-view class="emoji-scroll" scroll-y="true" :show-scrollbar="false">
+				<view class="emoji-grid">
+					<view 
+						v-for="(item, index) in displayEmojis" 
+						:key="getEmojiKey(item, index)"
+						class="emoji-item"
+						@click="selectEmoji(item)"
+						@longpress="handleLongPress(item)"
+					>
+						<!-- Unicode表情 -->
+						<text v-if="isUnicodeEmoji(item) == true" class="emoji-text">
+							{{ getEmojiText(item) }}
+						</text>
+						
+						<!-- 自定义表情图片 -->
+						<image 
+							v-else
+							class="emoji-image"
+							:src="getEmojiImageUrl(item)"
+							mode="aspectFit"
+						/>
+					</view>
+					
+					<!-- ⭐ 添加自定义表情按钮（仅在自定义分类显示）-->
+					<view 
+						v-if="activeCategory == 'custom'"
+						class="emoji-item add-emoji-btn"
+						@click="handleAddCustomEmoji"
+					>
+						<text class="add-icon">+</text>
+					</view>
+				</view>
+			</scroll-view>
+			<!-- #endif -->
+			
+			<!-- ⭐ 底部功能区（分类标签） -->
+			<view class="emoji-footer">
+				<view class="add-btn-wrapper" @click="handleAddCustomEmoji">
+					<text class="footer-icon">+</text>
+				</view>
+				
+				<scroll-view class="emoji-tabs" scroll-x :show-scrollbar="false">
+					<view 
+						v-for="(category, index) in displayCategories" 
+						:key="getCategoryKey(category, index)"
+						class="emoji-tab"
+						:class="{ active: isCategoryActive(category) }"
+						@click="handleSwitchCategory(category)"
+					>
+						<text class="tab-text">{{ getCategoryLabel(category) }}</text>
+					</view>
+				</scroll-view>
+			</view>
+			
+			<!-- ⭐ 悬浮删除按钮 (固定在表情区域右下角) -->
+			<view 
+				class="float-delete-btn"
+				@click="handleDelete"
+			>
+				<text class="delete-icon-text">⌫</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted, watch } from 'vue'
+import { EMOJI_DATA, EMOJI_CATEGORIES } from '@/common/config/emoji'
+import { 
+	useEmojiStore, 
+	addRecentEmojiAction, 
+	saveCustomEmojiToServerAction, 
+	deleteCustomEmojiFromServerAction,
+	initEmojiStore,
+	getRecentEmojisList,
+	getCustomEmojisList
+} from '@/stores/emoji.uts'
+import { getStringProp, getCurrentUserKid } from '@/common/utils/utsSafe.uts'
+import { getUserId, isStoreReady } from '@/stores/user'
+import ChatInput from './ChatInput.uvue'
+import { cosUploader, UploadResult } from '@/utils/upload/cosUploader.uts'
+// #ifdef APP
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+// #endif
+
+// ✅ 运行时 Props 声明 (符合 uni-app x 规范)
+const props = defineProps({
+	show: {
+		type: Boolean,
+		default: false
+	},
+	inputPlaceholder: {
+		type: String,
+		default: '请输入消息...'
+	}
+})
+
+const emit = defineEmits<{
+	close: []
+	select: [emoji: string, type: string, imageUrl: string]
+	delete: []
+	send: [content: string]
+	showMore: []
+}>()
+
+// 当前激活的分类（默认常用）
+const activeCategory = ref<string>('common')
+
+// 分类配置
+const categories = EMOJI_CATEGORIES
+
+// 显示的分类列表（转换为普通对象，解决APP端类实例属性访问问题）
+const displayCategories = ref<Array<any>>([])
+
+// 输入框引用 - 使用 ComponentPublicInstance 类型
+const chatInputRef = ref<ComponentPublicInstance | null>(null)
+
+// 显示的表情列表（用于模板渲染）
+const displayEmojis = ref<Array<any>>([])
+
+// 分类项类型
+interface EmojiCategory {
+	key: string
+	label: string
+}
+
+// ==================== 辅助方法 ====================
+
+// 获取表情的唯一key
+const getEmojiKey = (item: any, index: number): string => {
+	// 尝试获取kid（自定义表情）
+	const kid = getStringProp(item, 'kid')
+	if (kid != '') return kid
+	
+	// 尝试获取emoji（Unicode表情）
+	const emoji = getStringProp(item, 'emoji')
+	if (emoji != '') return 'unicode_' + emoji + '_' + index.toString()
+	
+	return 'emoji_' + index.toString()
+}
+
+// 安全访问 category 属性
+const getCategoryKey = (category: any, index: number): string => {
+	const key = getStringProp(category, 'key')
+	if (key != '') return key
+	return index.toString()
+}
+
+const getCategoryLabel = (category: any): string => {
+	return getStringProp(category, 'label')
+}
+
+const isCategoryActive = (category: any): boolean => {
+	const key = getStringProp(category, 'key')
+	return activeCategory.value == key
+}
+
+// 判断是否为Unicode表情
+const isUnicodeEmoji = (item: any): boolean => {
+	// 检查type字段
+	const itemType = getStringProp(item, 'type')
+	if (itemType == 'custom') return false
+	if (itemType == 'unicode') return true
+	
+	// 检查是否有imageUrl（自定义表情特征）
+	const imageUrl = getStringProp(item, 'imageUrl')
+	if (imageUrl != '' && imageUrl.indexOf('http') >= 0) return false
+	
+	// 检查是否有emoji字段（Unicode表情特征）
+	const emoji = getStringProp(item, 'emoji')
+	if (emoji != '') return true
+	
+	// 默认当作Unicode表情
+	return true
+}
+
+// 获取表情文本（Unicode表情）
+const getEmojiText = (item: any): string => {
+	// 方案1：尝试通过 UTSJSONObject 直接访问（普通对象）
+	try {
+		const itemStr = JSON.stringify(item)
+		// 检测是否为对象引用字符串（APP端类实例序列化问题）
+		if (itemStr.indexOf('@') >= 0) {
+			// 对象引用字符串，无法正确解析
+			return ''
+		}
+		if (itemStr != '' && itemStr != '{}') {
+			const itemObj = JSON.parse(itemStr) as UTSJSONObject
+			const emojiVal = itemObj.get('emoji')
+			if (emojiVal != null && emojiVal.toString() != '') {
+				return emojiVal.toString()
+			}
+		}
+	} catch (e) {}
+	
+	// 方案2：使用 getStringProp（JSON序列化方式）
+	const emoji = getStringProp(item, 'emoji')
+	if (emoji != '' && emoji.indexOf('@') < 0) return emoji
+	
+	// 方案3：尝试直接转字符串（兜底，排除对象引用）
+	try {
+		const text = item.toString()
+		if (text != '' && text != '[object Object]' && text.indexOf('@') < 0) {
+			return text
+		}
+	} catch (e) {}
+	
+	return ''
+}
+
+// 获取表情图片URL（自定义表情）
+const getEmojiImageUrl = (item: any): string => {
+	// 尝试获取 imageUrl 字段
+	let url = getStringProp(item, 'imageUrl')
+	
+	// 如果 imageUrl 为空，尝试其他可能的字段名
+	if (url == '') {
+		url = getStringProp(item, 'imgUrl')
+	}
+	if (url == '') {
+		url = getStringProp(item, 'image')
+	}
+	if (url == '') {
+		url = getStringProp(item, 'url')
+	}
+	
+	return url
+}
+
+// 获取表情名称
+const getEmojiName = (item: any): string => {
+	return getStringProp(item, 'name')
+}
+
+// ==================== 表情列表计算 ====================
+
+// 初始化分类数据（将类实例转换为普通对象）
+const initCategories = () => {
+	const result: Array<any> = []
+	for (let i = 0; i < EMOJI_CATEGORIES.length; i = i + 1) {
+		const category = EMOJI_CATEGORIES[i]
+		result.push(category.toPlainObject())
+	}
+	displayCategories.value = result
+}
+
+// 安全获取最近使用表情列表
+const getRecentEmojiList = (): Array<any> => {
+	return getRecentEmojisList()
+}
+
+// 安全获取自定义表情列表
+const getCustomEmojiList = (): Array<any> => {
+	return getCustomEmojisList()
+}
+
+// 更新显示的表情列表
+const updateDisplayEmojis = () => {
+	const result: Array<any> = []
+	
+	if (activeCategory.value == 'common') {
+		// 常用分类：最近使用(最多20个) + 默认Unicode表情
+		const recentList = getRecentEmojiList()
+		const recentCount = recentList.length
+		
+		// 添加最近使用的表情（最多20个）
+		const maxRecent = 20
+		for (let i = 0; i < recentCount && i < maxRecent; i = i + 1) {
+			result.push(recentList[i])
+		}
+		
+		// 添加默认Unicode表情（去重）
+		for (let j = 0; j < EMOJI_DATA.length; j = j + 1) {
+			const defaultEmoji = EMOJI_DATA[j]
+			// ⭐ 关键修复：调用 toPlainObject() 转换为普通对象，确保APP端JSON序列化正确
+			const plainEmoji = defaultEmoji.toPlainObject()
+			const defaultEmojiText = getStringProp(plainEmoji, 'emoji')
+			
+			// 检查是否已在最近使用中
+			let isDuplicate = false
+			for (let k = 0; k < result.length; k = k + 1) {
+				const recentItem = result[k]
+				const recentEmoji = getStringProp(recentItem, 'emoji')
+				if (recentEmoji == defaultEmojiText && defaultEmojiText != '') {
+					isDuplicate = true
+					break
+				}
+			}
+			
+			if (isDuplicate == false) {
+				result.push(plainEmoji)
+			}
+		}
+	} else if (activeCategory.value == 'custom') {
+		// 自定义分类：用户自定义表情
+		const customList = getCustomEmojiList()
+		const customCount = customList.length
+		for (let i = 0; i < customCount; i = i + 1) {
+			result.push(customList[i])
+		}
+	}
+	
+	displayEmojis.value = result
+}
+
+// ==================== 事件处理 ====================
+
+// 切换分类
+const switchCategory = (category: string) => {
+	activeCategory.value = category
+	updateDisplayEmojis()
+}
+
+const handleSwitchCategory = (category: any) => {
+	const key = getStringProp(category, 'key')
+	if (key != '') {
+		switchCategory(key)
+	}
+}
+
+// 插入表情到输入框（封装方法调用）
+const insertEmojiToInput = (emoji: string) => {
+	const inputRef = chatInputRef.value
+	if (inputRef != null) {
+		try {
+			// 使用 $callMethod 调用组件暴露的方法
+			inputRef.$callMethod('insertEmoji', emoji)
+		} catch (e) {
+			// 忽略错误
+		}
+	}
+}
+
+// 选择表情
+const selectEmoji = (item: any) => {
+	const isUnicode = isUnicodeEmoji(item)
+	
+	if (isUnicode == true) {
+		// Unicode表情：插入到内部输入框
+		const emoji = getEmojiText(item)
+		const name = getEmojiName(item)
+		
+		// 记录到最近使用
+		addRecentEmojiAction(emoji, 'unicode', '', name)
+		
+		// ⭐ 插入到内部 ChatInput 输入框
+		insertEmojiToInput(emoji)
+		
+		// 通知父组件（用于同步状态，但不发送消息）
+		emit('select', emoji, 'unicode', '')
+	} else {
+		// 自定义表情：直接发送图片消息
+		const imageUrl = getEmojiImageUrl(item)
+		const name = getEmojiName(item)
+		
+		// 记录到最近使用
+		addRecentEmojiAction(imageUrl, 'custom', imageUrl, name)
+		
+		// 通知父组件发送图片消息
+		emit('select', imageUrl, 'custom', imageUrl)
+	}
+}
+
+// 关闭面板
+const handleClose = () => {
+	emit('close')
+}
+
+// 删除字符
+const handleDelete = () => {
+	emit('delete')
+}
+
+// 从输入框发送
+const handleSendFromInput = (content: string) => {
+	emit('send', content)
+}
+
+// 键盘按钮（关闭表情面板）
+const handleKeyboard = () => {
+	emit('close')
+}
+
+// +号按钮（显示更多功能：图片、视频、语音、礼物）
+const handleShowMore = () => {
+	emit('showMore')
+}
+
+// 检查上传是否完成（必须在 uploadAndSaveEmojis 之前定义）
+const checkUploadComplete = (processed: number, total: number, successNum: number) => {
+	if (processed >= total) {
+		uni.hideLoading()
+		
+		if (successNum > 0) {
+			uni.showToast({
+				title: '成功添加 ' + successNum.toString() + ' 个表情',
+				icon: 'success'
+			})
+			// 刷新表情列表
+			updateDisplayEmojis()
+		} else {
+			uni.showToast({
+				title: '添加失败',
+				icon: 'none'
+			})
+		}
+	}
+}
+
+// 上传并保存表情（必须在 handleAddCustomEmoji 之前定义）
+const uploadAndSaveEmojis = (filePaths: Array<any>) => {
+	let successCount = 0
+	let processedCount = 0
+	const totalCount = filePaths.length
+	
+	// 空进度回调
+	const emptyProgressCallback = (progress: number): void => {
+		// 不处理进度
+	}
+	
+	for (let i = 0; i < totalCount; i = i + 1) {
+		const filePath = filePaths[i]
+		const filePathStr = filePath.toString()
+		
+		// 上传到COS（添加 onProgress 参数）
+		cosUploader.uploadImage(filePathStr, 'emoji', emptyProgressCallback).then((uploadRes: any) => {
+			processedCount = processedCount + 1
+			
+			// 使用 JSON 序列化方式安全访问属性
+			let isSuccess = false
+			let compressedUrl = ''
+			
+			try {
+				const resStr = JSON.stringify(uploadRes)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				
+				const successVal = resObj.get('success')
+				if (successVal != null && successVal.toString() == 'true') {
+					isSuccess = true
+				}
+				
+				const dataVal = resObj.get('data')
+				if (dataVal != null) {
+					const dataStr = JSON.stringify(dataVal)
+					const dataObj = JSON.parse(dataStr) as UTSJSONObject
+					
+					const compressedUrlVal = dataObj.get('compressedUrl')
+					if (compressedUrlVal != null && compressedUrlVal.toString() != '') {
+						compressedUrl = compressedUrlVal.toString()
+					}
+				}
+			} catch (e) {
+				console.error('🎨 [EmojiPanel] 解析上传结果失败:', e)
+			}
+			
+			if (isSuccess == true && compressedUrl != '') {
+				// 保存到服务端
+				saveCustomEmojiToServerAction(compressedUrl, '').then((saved: boolean) => {
+					if (saved == true) {
+						successCount = successCount + 1
+					}
+					checkUploadComplete(processedCount, totalCount, successCount)
+				}, (err: any | null): void => {
+					console.error('🎨 [EmojiPanel] 保存到服务端失败:', err)
+					checkUploadComplete(processedCount, totalCount, successCount)
+				})
+				return
+			}
+			
+			checkUploadComplete(processedCount, totalCount, successCount)
+		}, (err: any | null): void => {
+			processedCount = processedCount + 1
+			console.error('🎨 [EmojiPanel] 上传图片异常:', err)
+			checkUploadComplete(processedCount, totalCount, successCount)
+		})
+	}
+}
+
+// 添加自定义表情（从相册选择）
+const handleAddCustomEmoji = () => {
+	// 优先从 Store 获取用户ID
+	let userKid = ''
+	const storeReady = isStoreReady()
+	
+	if (storeReady == true) {
+		userKid = getUserId()
+	}
+	
+	// 如果 Store 获取不到，尝试从 Storage 获取
+	if (userKid == '') {
+		userKid = getCurrentUserKid()
+	}
+	
+	if (userKid == '') {
+		uni.showToast({ title: '请先登录', icon: 'none' })
+		return
+	}
+	
+	// 选择图片并上传的核心逻辑
+	const doChooseImage = () => {
+		uni.chooseImage({
+			count: 9,
+			sizeType: ['compressed'],
+			sourceType: ['album'],
+			success: (res: any) => {
+				// 安全解析返回数据
+				let tempFilePaths: Array<any> = []
+				try {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						tempFilePaths = tempFilePathsVal as Array<any>
+					}
+				} catch (e) {
+					console.error('🎨 [EmojiPanel] 解析 chooseImage 结果失败:', e)
+				}
+				
+				if (tempFilePaths.length == 0) {
+					return
+				}
+				
+				uni.showLoading({ title: '上传中...' })
+				
+				// 上传图片并保存
+				uploadAndSaveEmojis(tempFilePaths)
+			},
+			fail: (err: any) => {
+				console.error('🎨 [EmojiPanel] chooseImage 失败:', err)
+				uni.showToast({ title: '选择图片失败', icon: 'none' })
+			}
+		})
+	}
+	
+	// #ifdef APP
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		doChooseImage()
+	})
+	// #endif
+	// #ifndef APP
+	doChooseImage()
+	// #endif
+}
+
+// 长按删除自定义表情
+const handleLongPress = (item: any) => {
+	// 只有自定义表情才能删除
+	if (isUnicodeEmoji(item) == true) return
+	
+	const kid = getStringProp(item, 'kid')
+	if (kid == '') return
+	
+	uni.showModal({
+		title: '删除表情',
+		content: '确定要删除这个表情吗？',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				deleteCustomEmojiFromServerAction(kid).then((deleted: boolean) => {
+					if (deleted == true) {
+						updateDisplayEmojis()
+					}
+				}).catch((err: any | null): void => {
+					console.error('删除表情失败:', err)
+				})
+			}
+		}
+	})
+}
+
+// ==================== 生命周期 ====================
+
+onMounted(() => {
+	// 初始化emoji store
+	initEmojiStore()
+	// 初始化分类数据（转换为普通对象）
+	initCategories()
+	// 更新显示列表
+	updateDisplayEmojis()
+})
+
+// 监听show变化，显示时刷新列表
+// 使用 ref 包装 props.show 来监听
+const showValue = computed((): boolean => {
+	return props.show
+})
+
+watch(showValue, (newVal: boolean, oldVal: boolean) => {
+	if (newVal == true) {
+		updateDisplayEmojis()
+	}
+})
+</script>
+
+<style>
+.emoji-panel-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: transparent;
+	z-index: 1000;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.emoji-panel {
+	width: 750rpx;
+	height: 680rpx;
+	background-color: #EDEDED;
+	flex-direction: column;
+	padding-bottom: env(safe-area-inset-bottom);
+	position: relative;
+}
+
+/* ⭐ 顶部输入框区域 */
+.emoji-input-wrapper {
+	background-color: #FFFFFF;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #E5E5E5;
+}
+
+/* APP端表情滚动区域 */
+/* #ifndef H5 */
+.emoji-scroll {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	padding: 20rpx;
+}
+/* #endif */
+
+/* H5端表情滚动区域 */
+/* #ifdef H5 */
+.emoji-scroll-h5 {
+	flex: 1;
+	flex-direction: column;
+	width: 750rpx;
+	padding: 20rpx;
+}
+/* #endif */
+
+.emoji-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+	padding-bottom: 80rpx;
+}
+
+.emoji-item {
+	width: 12.5%;
+	height: 90rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 10rpx;
+}
+
+.emoji-text {
+	font-size: 56rpx;
+}
+
+/* 底部功能区 */
+.emoji-footer {
+	height: 80rpx;
+	background-color: #FFFFFF;
+	flex-direction: row;
+	align-items: center;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #E5E5E5;
+}
+
+.add-btn-wrapper {
+	width: 90rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #F0F0F0;
+}
+
+.footer-icon {
+	font-size: 40rpx;
+	color: #666666;
+	font-weight: normal;
+}
+
+.emoji-tabs {
+	flex: 1;
+	height: 80rpx;
+	flex-direction: row;
+}
+
+.emoji-tab {
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.emoji-tab.active {
+	background-color: #F0F0F0;
+}
+
+.tab-text {
+	font-size: 26rpx;
+	color: #666666;
+}
+
+/* 悬浮删除按钮样式 */
+.float-delete-btn {
+	position: absolute;
+	right: 20rpx;
+	bottom: 100rpx;
+	width: 96rpx;
+	height: 96rpx;
+	background-color: #FFFFFF;
+	border-radius: 12rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+.delete-icon-text {
+	font-size: 48rpx;
+	color: #666666;
+	font-weight: 400;
+}
+
+/* 自定义表情图片 */
+.emoji-image {
+	width: 60rpx;
+	height: 60rpx;
+}
+
+/* 添加表情按钮 */
+.add-emoji-btn {
+	background-color: #FFFFFF;
+	border-radius: 10rpx;
+	width: 90rpx;
+	height: 90rpx;
+	margin: 10rpx;
+}
+
+.add-icon {
+	font-size: 50rpx;
+	color: #CCCCCC;
+}
+</style>

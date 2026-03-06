@@ -1,0 +1,320 @@
+﻿<template>
+	<view class="page">
+		<!-- 编辑区域 -->
+		<view class="editor-container">
+			<textarea 
+				class="editor-textarea"
+				v-model="formText"
+				:placeholder="placeholder"
+				auto-height
+				:maxlength="-1"
+			></textarea>
+		</view>
+		
+		<!-- 底部占位 -->
+		<view class="bottom-space"></view>
+		
+		<!-- 确定按钮 -->
+		<view class="btn-container">
+			<view class="btn" @click="handleSubmit">
+				<text class="btn-text">确定</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { getRouteDetail, updateRouteDetail } from '@/common/services/routeService.uts'
+import { safeGetStorageSync } from '@/common/utils/storageHelper'
+
+// ==================== 响应式状态 ====================
+
+// 页面参数
+const pageType = ref<number>(10)
+const pageLineKid = ref<string>('')
+const pageUserKid = ref<string>('')
+
+// 编辑器相关
+const placeholder = ref<string>('请编辑内容')
+
+// 表单数据
+const formLineKid = ref<string>('')
+const formText = ref<string>('')
+const formType = ref<number>(10)
+
+// ==================== 业务函数 ====================
+
+const loadRouteDetail = async () => {
+	try {
+		const params = {
+			lineKid: formLineKid.value,
+			userKid: pageUserKid.value
+		} as UTSJSONObject
+		
+		const res = await getRouteDetail(params)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const codeVal = resObj.get('code')
+			const dataVal = resObj.get('data')
+			
+			if (codeVal != null && codeVal.toString() == '200' && dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				const lineVal = dataObj.get('line')
+				
+				let text = ''
+				
+				if (lineVal != null) {
+					const lineStr = JSON.stringify(lineVal)
+					const lineObj = JSON.parse(lineStr) as UTSJSONObject
+					
+					// 根据类型获取对应内容
+					if (formType.value == 10) {
+						const newFeatureVal = lineObj.get('newFeature')
+						if (newFeatureVal != null && newFeatureVal.toString() != '') {
+							text = newFeatureVal.toString()
+						}
+					} else if (formType.value == 20) {
+						const newPlanVal = lineObj.get('newPlan')
+						if (newPlanVal != null && newPlanVal.toString() != '') {
+							text = newPlanVal.toString()
+						}
+					} else if (formType.value == 30) {
+						const newNoticeVal = lineObj.get('newNotice')
+						if (newNoticeVal != null && newNoticeVal.toString() != '') {
+							text = newNoticeVal.toString()
+						}
+					}
+				}
+				
+				// 设置内容（去除HTML标签）
+				if (text != '') {
+					// 简单去除HTML标签
+					let plainText = text
+					// 替换常见HTML标签为换行或空格
+					plainText = plainText.replace(/<br\s*\/?>/gi, '\n')
+					plainText = plainText.replace(/<\/p>/gi, '\n')
+					plainText = plainText.replace(/<\/div>/gi, '\n')
+					plainText = plainText.replace(/<[^>]+>/g, '')
+					// 解码HTML实体
+					plainText = plainText.replace(/&nbsp;/g, ' ')
+					plainText = plainText.replace(/&lt;/g, '<')
+					plainText = plainText.replace(/&gt;/g, '>')
+					plainText = plainText.replace(/&amp;/g, '&')
+					plainText = plainText.replace(/&quot;/g, '"')
+					formText.value = plainText.trim()
+				}
+			}
+		}
+	} catch (error) {
+		console.error('加载定制详情失败:', error)
+		uni.showToast({
+			title: '加载失败',
+			icon: 'none'
+		})
+	}
+}
+
+const doSaveContent = async () => {
+	// 验证内容
+	const content = formText.value.trim()
+	if (content == '') {
+		uni.showToast({
+			title: '请输入内容',
+			icon: 'none'
+		})
+		return
+	}
+	
+	try {
+		uni.showLoading({
+			title: '保存中...'
+		})
+		
+		// 将纯文本转换为简单HTML格式
+		let htmlContent = content
+		// 将换行转换为<br>
+		htmlContent = htmlContent.replace(/\n/g, '<br>')
+		// 包装在段落中
+		htmlContent = '<p>' + htmlContent + '</p>'
+		
+		const params = {
+			lineKid: formLineKid.value,
+			text: htmlContent,
+			type: formType.value
+		} as UTSJSONObject
+		
+		const result = await updateRouteDetail(params)
+		
+		if (result != null) {
+			const resultStr = JSON.stringify(result)
+			const resultObj = JSON.parse(resultStr) as UTSJSONObject
+			const codeVal = resultObj.get('code')
+			
+			if (codeVal != null && codeVal.toString() == '200') {
+				uni.showToast({
+					title: '保存成功',
+					icon: 'success'
+				})
+				
+				setTimeout(() => {
+					uni.navigateBack()
+				}, 1500)
+			} else {
+				const msgVal = resultObj.get('msg')
+				let errMsg = '保存失败'
+				if (msgVal != null && msgVal.toString() != '') {
+					errMsg = msgVal.toString()
+				}
+				uni.showToast({
+					title: errMsg,
+					icon: 'none'
+				})
+			}
+		}
+	} catch (error) {
+		console.error('保存失败:', error)
+		uni.showToast({
+			title: '保存失败',
+			icon: 'none'
+		})
+	} finally {
+		uni.hideLoading()
+	}
+}
+
+// ==================== 事件处理函数 ====================
+
+const handleSubmit = () => {
+	doSaveContent()
+}
+
+const initPageData = (options: UTSJSONObject | null) => {
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		
+		const typeVal = optionsObj.get('type')
+		const lineKidVal = optionsObj.get('lineKid')
+		const userKidVal = optionsObj.get('userKid')
+		const kidVal = optionsObj.get('kid')
+		
+		if (typeVal != null && typeVal.toString() != '') {
+			const typeNum = parseInt(typeVal.toString())
+			if (isNaN(typeNum) == false) {
+				pageType.value = typeNum
+				formType.value = typeNum
+			}
+		}
+		
+		if (lineKidVal != null && lineKidVal.toString() != '') {
+			pageLineKid.value = lineKidVal.toString()
+			formLineKid.value = lineKidVal.toString()
+		}
+		
+		if (userKidVal != null && userKidVal.toString() != '') {
+			pageUserKid.value = userKidVal.toString()
+		} else if (kidVal != null && kidVal.toString() != '') {
+			pageUserKid.value = kidVal.toString()
+		} else {
+			const storageUserKid = safeGetStorageSync('userKid')
+			if (storageUserKid != null && storageUserKid != '') {
+				pageUserKid.value = storageUserKid.toString()
+			}
+		}
+		
+		// 设置标题和占位符
+		let title = '编辑'
+		if (pageType.value == 10) {
+			title = '定制特色'
+			placeholder.value = '请编辑定制特色内容'
+		} else if (pageType.value == 20) {
+			title = '行程安排'
+			placeholder.value = '请编辑行程安排内容'
+		} else if (pageType.value == 30) {
+			title = '费用须知'
+			placeholder.value = '请编辑费用须知内容'
+		}
+		
+		uni.setNavigationBarTitle({
+			title: title
+		})
+		
+		// 如果有lineKid，加载已有内容
+		if (pageLineKid.value != '') {
+			loadRouteDetail()
+		}
+	}
+}
+
+// ==================== 生命周期 ====================
+
+onLoad((options: OnLoadOptions) => {
+	initPageData(options)
+})
+</script>
+
+<style scoped>
+.page {
+	flex-direction: column;
+	background-color: #f5f5f5;
+	flex: 1;
+}
+
+.editor-container {
+	flex: 1;
+	background-color: #ffffff;
+	padding: 24rpx;
+	margin: 20rpx;
+	border-radius: 16rpx;
+}
+
+.editor-textarea {
+	flex: 1;
+	min-height: 600rpx;
+	font-size: 28rpx;
+	color: #333333;
+	line-height: 1.6;
+}
+
+.bottom-space {
+	height: 140rpx;
+}
+
+.btn-container {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	flex-direction: row;
+	justify-content: center;
+	padding-top: 20rpx;
+	padding-bottom: 40rpx;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	background-color: #ffffff;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #eeeeee;
+}
+
+.btn {
+	flex: 1;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	height: 88rpx;
+	background-color: #37B1F2;
+	border-radius: 44rpx;
+}
+
+.btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+</style>

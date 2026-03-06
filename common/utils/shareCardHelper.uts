@@ -1,0 +1,822 @@
+/**
+ * 分享卡片消息工具函数
+ * 提供分享卡片的构造、解析、跳转功能
+ * 遵循 UTS 语法规范，使用 JSON 序列化方式安全访问属性
+ */
+
+import { DEFAULT_ORDER_IMAGE } from '@/common/config/defaultImages.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * 分享卡片数据结构
+ */
+export class ShareCardData {
+	cardType: string = 'profile'
+	title: string = ''
+	summary: string = ''
+	imageUrl: string = ''
+	targetId: string = ''
+	targetUrl: string = ''
+	
+	constructor(
+		cardType: string = 'profile',
+		title: string = '',
+		summary: string = '',
+		imageUrl: string = '',
+		targetId: string = '',
+		targetUrl: string = ''
+	) {
+		this.cardType = cardType
+		this.title = title
+		this.summary = summary
+		this.imageUrl = imageUrl
+		this.targetId = targetId
+		this.targetUrl = targetUrl
+	}
+}
+
+// ==================== 卡片类型常量 ====================
+
+export const CARD_TYPE_PROFILE = 'profile'   // 个人主页
+export const CARD_TYPE_DYNAMIC = 'dynamic'   // 动态
+export const CARD_TYPE_CUSTOM = 'custom'     // 定制
+export const CARD_TYPE_ORDER = 'order'       // 订单
+
+// ==================== 默认值常量 ====================
+
+const DEFAULT_PROFILE_IMAGE = '/static/images/default_avatar.png'
+const DEFAULT_DYNAMIC_IMAGE = '/static/images/default_dynamic.png'
+const DEFAULT_CUSTOM_IMAGE = '/static/images/default_custom.png'
+// DEFAULT_ORDER_IMAGE is imported from defaultImages.uts
+
+const DEFAULT_PROFILE_TITLE = '用户主页'
+const DEFAULT_DYNAMIC_TITLE = '动态分享'
+const DEFAULT_CUSTOM_TITLE = '定制服务'
+const DEFAULT_ORDER_TITLE = '订单详情'
+
+const DEFAULT_PROFILE_SUMMARY = '点击查看用户主页'
+const DEFAULT_DYNAMIC_SUMMARY = '点击查看动态详情'
+const DEFAULT_CUSTOM_SUMMARY = '点击查看定制详情'
+const DEFAULT_ORDER_SUMMARY = '点击查看订单详情'
+
+// ==================== 构造函数 ====================
+
+/**
+ * 构造分享卡片 JSON 内容
+ * @param cardType 卡片类型
+ * @param title 标题
+ * @param summary 摘要
+ * @param imageUrl 图片URL
+ * @param targetId 目标ID
+ * @param targetUrl 跳转路径（可选）
+ * @returns JSON 字符串
+ */
+export function buildShareCardContent(
+	cardType: string,
+	title: string,
+	summary: string,
+	imageUrl: string,
+	targetId: string,
+	targetUrl: string = ''
+): string {
+	const finalCardType = (cardType != null && cardType != '') ? cardType : CARD_TYPE_PROFILE
+	const finalTitle = (title != null && title != '') ? title : getDefaultTitle(finalCardType)
+	const finalSummary = (summary != null && summary != '') ? summary : getDefaultSummary(finalCardType)
+	const finalImageUrl = (imageUrl != null && imageUrl != '') ? imageUrl : getCardDefaultImage(finalCardType)
+	const finalTargetId = (targetId != null) ? targetId : ''
+	const finalTargetUrl = (targetUrl != null) ? targetUrl : ''
+	
+	const data = {
+		cardType: finalCardType,
+		title: finalTitle,
+		summary: finalSummary,
+		imageUrl: finalImageUrl,
+		targetId: finalTargetId,
+		targetUrl: finalTargetUrl
+	} as any
+	
+	return JSON.stringify(data)
+}
+
+/**
+ * 构造个人主页分享卡片内容
+ * @param userInfo 用户信息对象
+ * @returns JSON 字符串
+ */
+export function buildProfileCardContent(userInfo: UTSJSONObject): string {
+	if (userInfo == null) {
+		return buildShareCardContent(CARD_TYPE_PROFILE, DEFAULT_PROFILE_TITLE, DEFAULT_PROFILE_SUMMARY, DEFAULT_PROFILE_IMAGE, '')
+	}
+	
+	try {
+		const userStr = JSON.stringify(userInfo)
+		if (userStr == null || userStr == '') {
+			return buildShareCardContent(CARD_TYPE_PROFILE, DEFAULT_PROFILE_TITLE, DEFAULT_PROFILE_SUMMARY, DEFAULT_PROFILE_IMAGE, '')
+		}
+		
+		const userObj = JSON.parse(userStr) as UTSJSONObject
+		
+		// 获取用户ID（兼容 kid/id/guideKid/memberGuideKid）
+		let targetId = ''
+		const kidVal = userObj.get('kid')
+		const idVal = userObj.get('id')
+		const guideKidVal = userObj.get('guideKid')
+		const memberGuideKidVal = userObj.get('memberGuideKid')
+		if (kidVal != null && kidVal.toString() != '') {
+			targetId = kidVal.toString()
+		} else if (idVal != null && idVal.toString() != '') {
+			targetId = idVal.toString()
+		} else if (guideKidVal != null && guideKidVal.toString() != '') {
+			targetId = guideKidVal.toString()
+		} else if (memberGuideKidVal != null && memberGuideKidVal.toString() != '') {
+			targetId = memberGuideKidVal.toString()
+		}
+		
+		// 获取昵称
+		let title = DEFAULT_PROFILE_TITLE
+		const nicknameVal = userObj.get('nickname')
+		const nickNameVal = userObj.get('nickName')
+		if (nicknameVal != null && nicknameVal.toString() != '') {
+			title = nicknameVal.toString()
+		} else if (nickNameVal != null && nickNameVal.toString() != '') {
+			title = nickNameVal.toString()
+		}
+		
+		// 获取签名/摘要
+		let summary = DEFAULT_PROFILE_SUMMARY
+		const signatureVal = userObj.get('signature')
+		const liveCityVal = userObj.get('liveCity')
+		const sexVal = userObj.get('sex')
+		if (signatureVal != null && signatureVal.toString() != '') {
+			summary = signatureVal.toString()
+		} else {
+			// 构建默认摘要
+			let cityText = '远方'
+			let sexText = ''
+			if (liveCityVal != null && liveCityVal.toString() != '') {
+				cityText = liveCityVal.toString()
+			}
+			if (sexVal != null && sexVal.toString() != '') {
+				const sexStr = sexVal.toString()
+				if (sexStr == '女') {
+					sexText = '女生'
+				} else {
+					sexText = '男生'
+				}
+			}
+			if (sexText != '') {
+				summary = '来自' + cityText + '的' + sexText + '，欢迎关注！'
+			} else {
+				summary = '来自' + cityText + '，欢迎关注！'
+			}
+		}
+		
+		// 获取头像（兼容 image/avatar）
+		let imageUrl = DEFAULT_PROFILE_IMAGE
+		const imageVal = userObj.get('image')
+		const avatarVal = userObj.get('avatar')
+		if (imageVal != null && imageVal.toString() != '') {
+			imageUrl = imageVal.toString()
+		} else if (avatarVal != null && avatarVal.toString() != '') {
+			imageUrl = avatarVal.toString()
+		}
+		
+		return buildShareCardContent(CARD_TYPE_PROFILE, title, summary, imageUrl, targetId)
+	} catch (e) {
+		console.error('❌ [shareCardHelper] 构造个人主页卡片失败:', e)
+		return buildShareCardContent(CARD_TYPE_PROFILE, DEFAULT_PROFILE_TITLE, DEFAULT_PROFILE_SUMMARY, DEFAULT_PROFILE_IMAGE, '')
+	}
+}
+
+/**
+ * 构造动态分享卡片内容
+ * @param dynamicInfo 动态信息对象
+ * @returns JSON 字符串
+ */
+export function buildDynamicCardContent(dynamicInfo: UTSJSONObject): string {
+	if (dynamicInfo == null) {
+		return buildShareCardContent(CARD_TYPE_DYNAMIC, DEFAULT_DYNAMIC_TITLE, DEFAULT_DYNAMIC_SUMMARY, DEFAULT_DYNAMIC_IMAGE, '')
+	}
+	
+	try {
+		const dynamicStr = JSON.stringify(dynamicInfo)
+		if (dynamicStr == null || dynamicStr == '') {
+			return buildShareCardContent(CARD_TYPE_DYNAMIC, DEFAULT_DYNAMIC_TITLE, DEFAULT_DYNAMIC_SUMMARY, DEFAULT_DYNAMIC_IMAGE, '')
+		}
+		
+		const dynamicObj = JSON.parse(dynamicStr) as UTSJSONObject
+		
+		// 获取动态ID
+		let targetId = ''
+		const kidVal = dynamicObj.get('kid')
+		const idVal = dynamicObj.get('id')
+		if (kidVal != null && kidVal.toString() != '') {
+			targetId = kidVal.toString()
+		} else if (idVal != null && idVal.toString() != '') {
+			targetId = idVal.toString()
+		}
+		
+		// 获取标题/内容
+		let title = DEFAULT_DYNAMIC_TITLE
+		let summary = DEFAULT_DYNAMIC_SUMMARY
+		const titleVal = dynamicObj.get('title')
+		const contentVal = dynamicObj.get('content')
+		const textVal = dynamicObj.get('text')
+		
+		if (titleVal != null && titleVal.toString() != '') {
+			title = titleVal.toString()
+		} else if (contentVal != null && contentVal.toString() != '') {
+			// 内容作为标题，截取前20字符
+			const contentStr = contentVal.toString()
+			if (contentStr.length > TEXT_PREVIEW_LENGTH) {
+				title = contentStr.substring(0, TEXT_PREVIEW_LENGTH) + '...'
+			} else {
+				title = contentStr
+			}
+		} else if (textVal != null && textVal.toString() != '') {
+			const textStr = textVal.toString()
+			if (textStr.length > TEXT_PREVIEW_LENGTH) {
+				title = textStr.substring(0, TEXT_PREVIEW_LENGTH) + '...'
+			} else {
+				title = textStr
+			}
+		}
+		
+		// 摘要使用完整内容
+		if (contentVal != null && contentVal.toString() != '') {
+			summary = contentVal.toString()
+		} else if (textVal != null && textVal.toString() != '') {
+			summary = textVal.toString()
+		}
+		
+		// 获取图片（兼容多种字段）
+		let imageUrl = DEFAULT_DYNAMIC_IMAGE
+		const imageVal = dynamicObj.get('image')
+		const coverVal = dynamicObj.get('cover')
+		const coverImageVal = dynamicObj.get('coverImage')
+		const imagesVal = dynamicObj.get('images')
+		
+		if (imageVal != null && imageVal.toString() != '') {
+			imageUrl = imageVal.toString()
+		} else if (coverVal != null && coverVal.toString() != '') {
+			imageUrl = coverVal.toString()
+		} else if (coverImageVal != null && coverImageVal.toString() != '') {
+			imageUrl = coverImageVal.toString()
+		} else if (imagesVal != null && Array.isArray(imagesVal) == true) {
+			const imagesArr = imagesVal as Array<any>
+			if (imagesArr.length > 0) {
+				const firstImg = imagesArr[0]
+				if (firstImg != null && firstImg.toString() != '') {
+					imageUrl = firstImg.toString()
+				}
+			}
+		}
+		
+		return buildShareCardContent(CARD_TYPE_DYNAMIC, title, summary, imageUrl, targetId)
+	} catch (e) {
+		console.error('❌ [shareCardHelper] 构造动态卡片失败:', e)
+		return buildShareCardContent(CARD_TYPE_DYNAMIC, DEFAULT_DYNAMIC_TITLE, DEFAULT_DYNAMIC_SUMMARY, DEFAULT_DYNAMIC_IMAGE, '')
+	}
+}
+
+/**
+ * 构造定制分享卡片内容
+ * @param customInfo 定制信息对象
+ * @returns JSON 字符串
+ */
+export function buildCustomCardContent(customInfo: UTSJSONObject): string {
+	if (customInfo == null) {
+		return buildShareCardContent(CARD_TYPE_CUSTOM, DEFAULT_CUSTOM_TITLE, DEFAULT_CUSTOM_SUMMARY, DEFAULT_CUSTOM_IMAGE, '')
+	}
+	
+	try {
+		const customStr = JSON.stringify(customInfo)
+		if (customStr == null || customStr == '') {
+			return buildShareCardContent(CARD_TYPE_CUSTOM, DEFAULT_CUSTOM_TITLE, DEFAULT_CUSTOM_SUMMARY, DEFAULT_CUSTOM_IMAGE, '')
+		}
+		
+		const customObj = JSON.parse(customStr) as UTSJSONObject
+		
+		// 获取定制ID
+		let targetId = ''
+		const kidVal = customObj.get('kid')
+		const idVal = customObj.get('id')
+		if (kidVal != null && kidVal.toString() != '') {
+			targetId = kidVal.toString()
+		} else if (idVal != null && idVal.toString() != '') {
+			targetId = idVal.toString()
+		}
+		
+		// 获取标题
+		let title = DEFAULT_CUSTOM_TITLE
+		const titleVal = customObj.get('title')
+		const nameVal = customObj.get('name')
+		const routeNameVal = customObj.get('routeName')
+		if (titleVal != null && titleVal.toString() != '') {
+			title = titleVal.toString()
+		} else if (nameVal != null && nameVal.toString() != '') {
+			title = nameVal.toString()
+		} else if (routeNameVal != null && routeNameVal.toString() != '') {
+			title = routeNameVal.toString()
+		}
+		
+		// 获取描述
+		let summary = DEFAULT_CUSTOM_SUMMARY
+		const descVal = customObj.get('description')
+		const introVal = customObj.get('intro')
+		const contentVal = customObj.get('content')
+		if (descVal != null && descVal.toString() != '') {
+			summary = descVal.toString()
+		} else if (introVal != null && introVal.toString() != '') {
+			summary = introVal.toString()
+		} else if (contentVal != null && contentVal.toString() != '') {
+			summary = contentVal.toString()
+		}
+		
+		// 获取图片
+		let imageUrl = DEFAULT_CUSTOM_IMAGE
+		const imageVal = customObj.get('image')
+		const coverVal = customObj.get('cover')
+		const coverImageVal = customObj.get('coverImage')
+		if (imageVal != null && imageVal.toString() != '') {
+			imageUrl = imageVal.toString()
+		} else if (coverVal != null && coverVal.toString() != '') {
+			imageUrl = coverVal.toString()
+		} else if (coverImageVal != null && coverImageVal.toString() != '') {
+			imageUrl = coverImageVal.toString()
+		}
+		
+		return buildShareCardContent(CARD_TYPE_CUSTOM, title, summary, imageUrl, targetId)
+	} catch (e) {
+		console.error('❌ [shareCardHelper] 构造定制卡片失败:', e)
+		return buildShareCardContent(CARD_TYPE_CUSTOM, DEFAULT_CUSTOM_TITLE, DEFAULT_CUSTOM_SUMMARY, DEFAULT_CUSTOM_IMAGE, '')
+	}
+}
+
+/**
+ * 构造订单分享卡片内容
+ * @param orderInfo 订单信息对象
+ * @returns JSON 字符串
+ */
+export function buildOrderCardContent(orderInfo: UTSJSONObject): string {
+	if (orderInfo == null) {
+		return buildShareCardContent(CARD_TYPE_ORDER, DEFAULT_ORDER_TITLE, DEFAULT_ORDER_SUMMARY, DEFAULT_ORDER_IMAGE, '')
+	}
+	
+	try {
+		const orderStr = JSON.stringify(orderInfo)
+		if (orderStr == null || orderStr == '') {
+			return buildShareCardContent(CARD_TYPE_ORDER, DEFAULT_ORDER_TITLE, DEFAULT_ORDER_SUMMARY, DEFAULT_ORDER_IMAGE, '')
+		}
+		
+		const orderObj = JSON.parse(orderStr) as UTSJSONObject
+		
+		// 获取订单ID（兼容 kid/id/orderKid 字段）
+		let targetId = ''
+		const kidVal = orderObj.get('kid')
+		const idVal = orderObj.get('id')
+		const orderKidVal = orderObj.get('orderKid')
+		if (kidVal != null && kidVal.toString() != '') {
+			targetId = kidVal.toString()
+		} else if (idVal != null && idVal.toString() != '') {
+			targetId = idVal.toString()
+		} else if (orderKidVal != null && orderKidVal.toString() != '') {
+			targetId = orderKidVal.toString()
+		}
+		
+		// 获取订单标题（兼容 orderTitle/title 字段）
+		let title = DEFAULT_ORDER_TITLE
+		const orderTitleVal = orderObj.get('orderTitle')
+		const titleVal = orderObj.get('title')
+		if (orderTitleVal != null && orderTitleVal.toString() != '') {
+			title = orderTitleVal.toString()
+		} else if (titleVal != null && titleVal.toString() != '') {
+			title = titleVal.toString()
+		}
+		
+		// 构建订单摘要（包含订单编号、价格、出发时间）
+		let summary = DEFAULT_ORDER_SUMMARY
+		const orderNoVal = orderObj.get('orderNo')
+		const totalMoneyVal = orderObj.get('totalMoney')
+		const travelDateVal = orderObj.get('travelDate')
+		
+		let orderNo = ''
+		let totalMoney = ''
+		let travelDate = ''
+		
+		if (orderNoVal != null && orderNoVal.toString() != '') {
+			orderNo = orderNoVal.toString()
+		}
+		if (totalMoneyVal != null && totalMoneyVal.toString() != '') {
+			totalMoney = totalMoneyVal.toString()
+		}
+		if (travelDateVal != null && travelDateVal.toString() != '') {
+			travelDate = travelDateVal.toString()
+		}
+		
+		// 构建摘要文本
+		if (orderNo != '' || totalMoney != '' || travelDate != '') {
+			let parts: Array<string> = []
+			if (orderNo != '') {
+				parts.push('订单编号：' + orderNo)
+			}
+			if (totalMoney != '') {
+				parts.push('价格：¥' + totalMoney)
+			}
+			if (travelDate != '') {
+				parts.push('出发时间：' + travelDate)
+			}
+			summary = parts.join('\n')
+		}
+		
+		// 获取图片（兼容 touristAvatar/image/coverImage 字段）
+		let imageUrl = DEFAULT_ORDER_IMAGE
+		const touristAvatarVal = orderObj.get('touristAvatar')
+		const imageVal = orderObj.get('image')
+		const coverImageVal = orderObj.get('coverImage')
+		if (touristAvatarVal != null && touristAvatarVal.toString() != '') {
+			imageUrl = touristAvatarVal.toString()
+		} else if (imageVal != null && imageVal.toString() != '') {
+			imageUrl = imageVal.toString()
+		} else if (coverImageVal != null && coverImageVal.toString() != '') {
+			imageUrl = coverImageVal.toString()
+		}
+		
+		return buildShareCardContent(CARD_TYPE_ORDER, title, summary, imageUrl, targetId)
+	} catch (e) {
+		console.error('❌ [shareCardHelper] 构造订单卡片失败:', e)
+		return buildShareCardContent(CARD_TYPE_ORDER, DEFAULT_ORDER_TITLE, DEFAULT_ORDER_SUMMARY, DEFAULT_ORDER_IMAGE, '')
+	}
+}
+
+
+// ==================== 解析函数 ====================
+
+/**
+ * 解析分享卡片内容
+ * 支持 JSON 格式和旧版换行文本格式
+ * @param content 消息内容（JSON 字符串或换行文本）
+ * @returns ShareCardData 对象
+ */
+export function parseShareCardContent(content: any): ShareCardData {
+	const result = new ShareCardData()
+	
+	if (content == null) {
+		return result
+	}
+	
+	try {
+		let contentStr = ''
+		
+		// 处理不同类型的输入
+		if (typeof content == 'string') {
+			contentStr = content as string
+		} else {
+			contentStr = JSON.stringify(content)
+		}
+		
+		if (contentStr == null || contentStr == '') {
+			return result
+		}
+		
+		// 尝试 JSON 解析
+		if (isJsonFormat(contentStr) == true) {
+			const contentObj = JSON.parse(contentStr) as UTSJSONObject
+			
+			// 获取卡片类型
+			const cardTypeVal = contentObj.get('cardType')
+			if (cardTypeVal != null && cardTypeVal.toString() != '') {
+				result.cardType = cardTypeVal.toString()
+			}
+			
+			// 获取标题
+			const titleVal = contentObj.get('title')
+			if (titleVal != null && titleVal.toString() != '') {
+				result.title = titleVal.toString()
+			}
+			
+			// 获取摘要
+			const summaryVal = contentObj.get('summary')
+			if (summaryVal != null && summaryVal.toString() != '') {
+				result.summary = summaryVal.toString()
+			}
+			
+			// 获取图片
+			const imageUrlVal = contentObj.get('imageUrl')
+			if (imageUrlVal != null && imageUrlVal.toString() != '') {
+				result.imageUrl = imageUrlVal.toString()
+			}
+			
+			// 获取目标ID
+			const targetIdVal = contentObj.get('targetId')
+			if (targetIdVal != null && targetIdVal.toString() != '') {
+				result.targetId = targetIdVal.toString()
+			}
+			
+			// 获取跳转路径
+			const targetUrlVal = contentObj.get('targetUrl')
+			if (targetUrlVal != null && targetUrlVal.toString() != '') {
+				result.targetUrl = targetUrlVal.toString()
+			}
+		} else {
+			// 回退到旧版换行文本格式解析
+			return parseLegacyShareCardContent(contentStr)
+		}
+	} catch (e) {
+		// JSON 解析失败，尝试旧版格式
+		try {
+			let contentStr = ''
+			if (typeof content == 'string') {
+				contentStr = content as string
+			} else {
+				contentStr = JSON.stringify(content)
+			}
+			return parseLegacyShareCardContent(contentStr)
+		} catch (e2) {
+			console.warn('⚠️ [shareCardHelper] 解析分享卡片内容失败，使用默认值')
+		}
+	}
+	
+	return result
+}
+
+/**
+ * 解析旧版换行文本格式的分享卡片内容
+ * 格式：昵称\n签名\n链接\n头像\n用户ID
+ * @param content 换行文本内容
+ * @returns ShareCardData 对象
+ */
+export function parseLegacyShareCardContent(content: string): ShareCardData {
+	const result = new ShareCardData()
+	result.cardType = CARD_TYPE_PROFILE  // 旧版格式默认为个人主页
+	
+	if (content == null || content == '') {
+		return result
+	}
+	
+	try {
+		const parts = content.split('\n')
+		
+		// 第一行：昵称/标题
+		if (parts.length > 0) {
+			const first = parts[0]
+			if (first != null && first != '') {
+				result.title = first
+			}
+		}
+		
+		// 第二行：签名/摘要
+		if (parts.length > 1) {
+			const second = parts[1]
+			if (second != null && second != '') {
+				result.summary = second
+			}
+		}
+		
+		// 第三行：链接（可选，用于 targetUrl）
+		if (parts.length > 2) {
+			const third = parts[2]
+			if (third != null && third != '') {
+				result.targetUrl = third
+			}
+		}
+		
+		// 第四行：头像/图片
+		if (parts.length > 3) {
+			const fourth = parts[3]
+			if (fourth != null && fourth != '') {
+				result.imageUrl = fourth
+			}
+		}
+		
+		// 第五行：用户ID/目标ID
+		if (parts.length > 4) {
+			const fifth = parts[4]
+			if (fifth != null && fifth != '') {
+				result.targetId = fifth
+			}
+		}
+	} catch (e) {
+		console.warn('⚠️ [shareCardHelper] 解析旧版格式失败')
+	}
+	
+	return result
+}
+
+/**
+ * 判断内容是否为 JSON 格式
+ * @param content 内容字符串
+ * @returns 是否为 JSON 格式
+ */
+export function isJsonFormat(content: string): boolean {
+	if (content == null || content == '') return false
+	
+	const trimmed = content.trim()
+	if (trimmed == '') return false
+	
+	// 简单判断：以 { 开头且以 } 结尾
+	const startsWithBrace = trimmed.charAt(0) == '{'
+	const endsWithBrace = trimmed.charAt(trimmed.length - 1) == '}'
+	
+	return startsWithBrace == true && endsWithBrace == true
+}
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 获取卡片类型对应的操作提示文字
+ * @param cardType 卡片类型
+ * @returns 操作提示文字
+ */
+export function getCardActionText(cardType: string): string {
+	if (cardType == null || cardType == '') {
+		return '查看详情'
+	}
+	
+	if (cardType == CARD_TYPE_PROFILE) {
+		return '查看主页'
+	} else if (cardType == CARD_TYPE_DYNAMIC) {
+		return '查看动态'
+	} else if (cardType == CARD_TYPE_CUSTOM) {
+		return '查看定制'
+	}
+	
+	return '查看详情'
+}
+
+/**
+ * 获取卡片类型对应的默认图片
+ * @param cardType 卡片类型
+ * @returns 默认图片路径
+ */
+export function getCardDefaultImage(cardType: string): string {
+	if (cardType == null || cardType == '') {
+	 return DEFAULT_PROFILE_IMAGE
+        }
+    
+        if (cardType == CARD_TYPE_PROFILE) {
+        return DEFAULT_PROFILE_IMAGE
+        } else if (cardType == CARD_TYPE_DYNAMIC) {
+        return DEFAULT_DYNAMIC_IMAGE
+        } else if (cardType == CARD_TYPE_CUSTOM) {
+        return DEFAULT_CUSTOM_IMAGE
+        } else if (cardType == CARD_TYPE_ORDER) {
+        return DEFAULT_ORDER_IMAGE
+        }
+    
+        return DEFAULT_PROFILE_IMAGE
+    }
+
+/**
+ * 获取默认标题
+ * @param cardType 卡片类型
+ * @returns 默认标题
+ */
+function getDefaultTitle(cardType: string): string {
+	if (cardType == CARD_TYPE_PROFILE) {
+		return DEFAULT_PROFILE_TITLE
+	} else if (cardType == CARD_TYPE_DYNAMIC) {
+        return DEFAULT_DYNAMIC_TITLE
+	 } else if (cardType == CARD_TYPE_CUSTOM) {
+        return DEFAULT_CUSTOM_TITLE
+        } else if (cardType == CARD_TYPE_ORDER) {
+        return DEFAULT_ORDER_TITLE
+        }
+        return DEFAULT_PROFILE_TITLE
+    }
+
+/**
+ * 获取默认摘要
+ * @param cardType 卡片类型
+ * @returns 默认摘要
+ */
+function getDefaultSummary(cardType: string): string {
+	if (cardType == CARD_TYPE_PROFILE) {
+	 return DEFAULT_PROFILE_SUMMARY
+        } else if (cardType == CARD_TYPE_DYNAMIC) {
+        return DEFAULT_DYNAMIC_SUMMARY
+        } else if (cardType == CARD_TYPE_CUSTOM) {
+        return DEFAULT_CUSTOM_SUMMARY
+        } else if (cardType == CARD_TYPE_ORDER) {
+        return DEFAULT_ORDER_SUMMARY
+        }
+        return DEFAULT_PROFILE_SUMMARY
+    }
+
+/**
+ * 根据卡片类型和目标ID获取跳转路径
+ * @param cardType 卡片类型
+ * @param targetId 目标ID
+ * @returns 跳转路径
+ */
+export function getNavigationUrl(cardType: string, targetId: string): string {
+	if (targetId == null || targetId == '') {
+        return ''
+        }
+    
+        if (cardType == CARD_TYPE_PROFILE) {
+        return '/pagesUser/persionInfo/index?id=' + targetId
+        } else if (cardType == CARD_TYPE_DYNAMIC) {
+        return '/pagesBusiness/trendsDetail/index?kid=' + targetId
+        } else if (cardType == CARD_TYPE_CUSTOM) {
+        return '/pagesBusiness/routeInfo/index?kid=' + targetId
+        } else if (cardType == CARD_TYPE_ORDER) {
+        return '/pagesTrade/orderDetails/index?orderKid=' + targetId
+        }
+    
+        // 默认跳转个人主页
+        return '/pagesUser/persionInfo/index?id=' + targetId
+    }
+
+/**
+ * 处理分享卡片点击跳转
+ * @param cardData ShareCardData 对象
+ * @returns 是否成功跳转
+ */
+export function handleShareCardNavigation(cardData: ShareCardData): boolean {
+	if (cardData == null) {
+		uni.showToast({
+			title: '无法打开分享内容',
+			icon: 'none'
+		})
+		return false
+	}
+	
+	const targetId = cardData.targetId
+	const cardType = cardData.cardType
+	const targetUrl = cardData.targetUrl
+	
+	// 优先使用自定义跳转路径
+	if (targetUrl != null && targetUrl != '') {
+		uni.navigateTo({
+			url: targetUrl,
+			fail: (err: any) => {
+				console.error('❌ [shareCardHelper] 跳转失败:', err)
+				uni.showToast({
+					title: '无法打开分享内容',
+					icon: 'none'
+				})
+			}
+		})
+		return true
+	}
+	
+	// 检查目标ID
+	if (targetId == null || targetId == '') {
+		uni.showToast({
+			title: '无法打开分享内容',
+			icon: 'none'
+		})
+		return false
+	}
+	
+	// 获取跳转路径
+	const url = getNavigationUrl(cardType, targetId)
+	if (url == null || url == '') {
+		uni.showToast({
+			title: '无法打开分享内容',
+			icon: 'none'
+		})
+		return false
+	}
+	
+	// 执行跳转
+	uni.navigateTo({
+		url: url,
+		fail: (err: any) => {
+			console.error('❌ [shareCardHelper] 跳转失败:', err)
+			uni.showToast({
+				title: '无法打开分享内容',
+				icon: 'none'
+			})
+		}
+	})
+	
+	return true
+}
+
+/**
+ * 从消息内容解析并处理分享卡片点击
+ * @param content 消息内容
+ * @returns 是否成功跳转
+ */
+export function handleShareCardClickFromContent(content: any): boolean {
+	const cardData = parseShareCardContent(content)
+	return handleShareCardNavigation(cardData)
+}
+
+/**
+ * 判断消息是否为分享卡片消息
+ * @param messageType 消息类型
+ * @returns 是否为分享卡片消息
+ */
+export function isShareCardMessageType(messageType: any): boolean {
+	if (messageType == null) return false
+	
+	const typeNum = parseInt(messageType.toString())
+	if (isNaN(typeNum) == true) return false
+	
+	return typeNum == 6
+}

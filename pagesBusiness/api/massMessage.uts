@@ -1,0 +1,37 @@
+/**
+ * 群发消息 API
+ * 对应后端: MassMessageController.java
+ */
+
+import request from '@/utils/request'
+
+// 群发消息请求参数
+export interface MassSendRequest {
+	senderKid: string           // 发送者ID
+	recipientKids: Array<string> // 接收者ID列表
+	content: string             // 消息内容
+	messageType: number         // 消息类型: 1=文本
+}
+
+// 群发消息响应结果
+export interface MassSendResult {
+	total: number               // 总发送数
+	success: number             // 成功数
+	onlineSent: number          // 在线送达数
+	offlineStored: number       // 离线存储数
+	failed: number              // 失败数
+	failedUsers: Array<string>  // 失败的用户ID列表
+}
+
+/**
+ * 发送群发消息
+ * POST /chat/mass/send
+ * @param params { senderKid: string, recipientKids: string[], content: string, messageType?: number }
+ */
+export const sendMassMessage = (params: UTSJSONObject): Promise<UTSJSONObject> => {
+	return request.post('/chat/mass/send', params, true)
+}
+
+export default {
+	sendMassMessage
+}

@@ -1,0 +1,731 @@
+﻿<template>
+	<view class="fix-page bg-light-base">
+		<!-- 背景图片 -->
+		<image class="header-bg" :src="cosOrderBgUrl" mode="aspectFill" />
+		
+		<!-- Tab栏 -->
+		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="tabs-row">
+				<view 
+					v-for="(tab, index) in tabs" 
+					:key="index"
+					class="tab-item" 
+					@click="handleTabChange(index)"
+				>
+					<text class="tab-text" :class="{ 'tab-text-active': current == index }">{{ tab.label }}</text>
+					<view v-if="current == index" class="tab-underline"></view>
+				</view>
+			</view>
+		</view>
+		
+		<!-- Swiper容器 -->
+		<swiper 
+			class="swiper-container" 
+			:style="{ height: contentHeight + 'px' }"
+			@change="onTabChange" 
+			:current="current"
+		>
+			<!-- 第一个：关注列表 -->
+			<swiper-item class="swiper-item">
+				<scroll-view 
+					scroll-y
+					:show-scrollbar="false"
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					@scrolltolower="loadMore"
+					refresher-enabled
+					:refresher-triggered="refreshing"
+					@refresherrefresh="onRefresh"
+				>
+					<ListStatus 
+						v-if="users.length == 0 && loading == false" 
+						status="empty" 
+						emptyText="暂无关注"
+					/>
+					<view v-else class="user-list">
+						<view 
+							v-for="(u, idx) in users" 
+							:key="u.userKid" 
+							class="user-card bg-white border-radius-16 mb-20" 
+							@click="gotoUserProfile(u)"
+						>
+							<view class="flex-row align-center">
+								<Avatar 
+									:url="u.avatar"
+									:userId="u.userKid"
+									size="medium"
+									:customSize="96"
+									clickMode="none"
+								/>
+								<view class="flex-1 ml-20">
+									<NicknameWithBadges
+										:nickname="u.nickname != '' ? u.nickname : getShortUserKid(u.userKid)"
+										:vipType="getVipType(u)"
+										:giftLevel="u.giftLevel"
+										:targetUserKid="u.userKid"
+										size="medium"
+										@vipClick="handleVipClick"
+										@giftClick="handleGiftIconClick"
+									/>
+									<text class="fs-sm color-text mt-8">{{ u.mutual == true ? '互相关注' : '' }}</text>
+								</view>
+								<FollowButton 
+									:targetUserKid="u.userKid"
+									:isFollow="true"
+									@change="onFollowChange"
+								/>
+							</view>
+						</view>
+					</view>
+					<view class="load-more" v-if="users.length >= 5">
+						<text class="load-text">{{ loadStatusText }}</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+			<!-- 第二个：粉丝列表 -->
+			<swiper-item class="swiper-item">
+				<scroll-view 
+					scroll-y
+					:show-scrollbar="false"
+					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
+					@scrolltolower="loadMore"
+					refresher-enabled
+					:refresher-triggered="refreshing"
+					@refresherrefresh="onRefresh"
+				>
+					<ListStatus 
+						v-if="users.length == 0 && loading == false" 
+						status="empty" 
+						emptyText="暂无粉丝"
+					/>
+					<view v-else class="user-list">
+						<view 
+							v-for="(u, idx) in users" 
+							:key="u.userKid" 
+							class="user-card bg-white border-radius-16 mb-20" 
+							@click="gotoUserProfile(u)"
+						>
+							<view class="flex-row align-center">
+								<Avatar 
+									:url="u.avatar"
+									:userId="u.userKid"
+									size="medium"
+									:customSize="96"
+									clickMode="none"
+								/>
+								<view class="flex-1 ml-20">
+									<NicknameWithBadges
+										:nickname="u.nickname != '' ? u.nickname : getShortUserKid(u.userKid)"
+										:vipType="getVipType(u)"
+										:giftLevel="u.giftLevel"
+										:targetUserKid="u.userKid"
+										size="medium"
+										@vipClick="handleVipClick"
+										@giftClick="handleGiftIconClick"
+									/>
+									<text class="fs-sm gray mt-8">{{ u.mutual == true ? '互相关注' : '' }}</text>
+								</view>
+								<FollowButton 
+									:targetUserKid="u.userKid"
+									:isFollow="u.isFollow"
+									@change="onFollowChange"
+								/>
+							</view>
+						</view>
+					</view>
+					<view class="load-more" v-if="users.length >= 5">
+						<text class="load-text">{{ loadStatusText }}</text>
+					</view>
+				</scroll-view>
+			</swiper-item>
+		</swiper>
+		
+		<!-- 礼物选择弹窗 -->
+		<GiftSelector
+			:show="showGiftSelector"
+			:userKid="currentUserId"
+			:receiveUserKid="selectedUserKid"
+			@close="showGiftSelector = false"
+			@selectGift="handleSelectGift"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed, onMounted } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { getUserId } from '@/stores/user.uts'
+import * as followApi from '@/common/services/followService.uts'
+import { setFollowStatus, batchSetFollowStatus, BatchFollowUser } from '@/stores/follow.uts'
+import { resetMessageReminderCount, ResetMessageReminderParams } from '@/api/chat'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper'
+import FollowButton from '@/components/base/FollowButton.uvue'
+import Avatar from '@/components/base/Avatar.uvue'
+import ListStatus from '@/components/base/ListStatus.uvue'
+import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
+import GiftSelector from '@/components/lottery/GiftSelector.uvue'
+import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
+import { requireLoginReliable } from '@/common/utils/loginHelper.uts'
+import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+
+// COS 图片 URL
+const cosOrderBgUrl = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_bg.png'
+import { 
+	pageStatusBarHeight, 
+	pageWindowHeight,
+	initPageLayout as initPageLayoutComposable 
+} from '@/common/composables/usePageLayout.uts'
+
+// ==================== 布局相关 ====================
+// 头部高度（状态栏 + Tab栏）
+const headerHeight = ref<number>(0)
+// 内容区域高度
+const contentHeight = ref<number>(0)
+
+// 初始化页面布局
+const initPageLayout = () => {
+	initPageLayoutComposable()
+	
+	// 计算头部高度（状态栏 + Tab栏约 90rpx ≈ 45px）
+	headerHeight.value = pageStatusBarHeight.value + 45
+	
+	// 计算内容区域高度
+	if (pageWindowHeight.value > 0) {
+		contentHeight.value = pageWindowHeight.value - headerHeight.value
+		
+		// 确保内容高度有效
+		if (contentHeight.value < 200) {
+			contentHeight.value = pageWindowHeight.value - 100
+		}
+	}
+	
+	// 如果内容高度仍然无效，设置默认值
+	if (contentHeight.value <= 0) {
+		contentHeight.value = 500
+	}
+	
+	console.log('[Fans] 布局初始化:', {
+		statusBarHeight: pageStatusBarHeight.value,
+		headerHeight: headerHeight.value,
+		contentHeight: contentHeight.value
+	})
+}
+
+// ==================== 辅助函数 ====================
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	if (val != null && val.toString() != '') {
+		return val.toString()
+	}
+	return ''
+}
+
+const getObjNumber = (obj: UTSJSONObject | null, key: string): number => {
+	if (obj == null) return 0
+	const val = obj.get(key)
+	if (val != null) {
+		const num = parseInt(val.toString())
+		if (isNaN(num) == false) {
+			return num
+		}
+	}
+	return 0
+}
+
+const getObjBoolean = (obj: UTSJSONObject | null, key: string): boolean => {
+	if (obj == null) return false
+	const val = obj.get(key)
+	if (val != null) {
+		const str = val.toString()
+		return str == 'true' || str == '1'
+	}
+	return false
+}
+
+// ==================== Tab 配置 ====================
+class TabItemData {
+	label: string = ''
+	value: number = 0
+	constructor(label: string, value: number) {
+		this.label = label
+		this.value = value
+	}
+}
+
+// ==================== 用户数据类 ====================
+class UserItemData {
+	userKid: string = ''
+	nickname: string = ''
+	avatar: string = ''
+	isFollow: boolean = false
+	mutual: boolean = false
+	vip: number = 10
+	vipType: number = 0
+	giftLevel: number = 0
+	constructor() {}
+}
+
+// 状态
+const tabs = ref<Array<TabItemData>>([
+	new TabItemData('关注', 0),
+	new TabItemData('粉丝', 1)
+])
+const current = ref<number>(0)
+const page = ref<number>(1)
+const size = ref<number>(20)
+const total = ref<number>(0)
+const users = ref<Array<UserItemData>>([])
+const loading = ref<boolean>(false)
+const refreshing = ref<boolean>(false)
+const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
+
+// 🎯 礼物选择弹窗相关
+const showGiftSelector = ref<boolean>(false)
+const selectedUserKid = ref<string>('')
+
+// 当前用户ID（用于礼物发送）
+const currentUserId = computed((): string => {
+	return getUserId()
+})
+
+// 计算属性
+const userKid = computed((): string => {
+	return getUserId()
+})
+
+const loadStatusText = computed((): string => {
+	if (users.value.length >= total.value && total.value > 0) {
+		return '没有更多了'
+	}
+	if (loading.value == true) {
+		return '加载中...'
+	}
+	return '上拉加载更多'
+})
+
+// 获取短用户ID
+const getShortUserKid = (kid: string): string => {
+	if (kid == '') return '用户'
+	if (kid.length <= 4) return '用户' + kid
+	return '用户' + kid.substring(kid.length - 4)
+}
+
+// VIP 类型转换函数
+const getVipType = (u: UserItemData): string => {
+	// 只有 vip=VIP_ACTIVATED（已开通）才显示会员勋章
+	if (u.vip != 20) return ''
+	// 🔧 修复：后端 vipType 只有两种：VIP_TYPE_MONTHLY=月卡，VIP_TYPE_YEARLY=年卡
+	if (u.vipType == 20) return 'year'
+	return 'normal'
+}
+
+// ==================== 方法定义（必须在生命周期之前）====================
+
+// 获取数据
+const fetchData = async () => {
+	const kid = userKid.value
+	if (kid == '') return
+	loading.value = true
+	try {
+		const params = {
+			userKid: kid,
+			page: page.value,
+			size: size.value
+		} as UTSJSONObject
+		// current.value == 0 现在是关注列表，1是粉丝列表
+		let res: UTSJSONObject | null = null
+		if (current.value == 0) {
+			res = await followApi.getFollowings(params)
+		} else {
+			res = await followApi.getFollowers(params)
+		}
+		const resObj = toJsonObj(res)
+		if (resObj != null) {
+			const totalVal = getObjNumber(resObj, 'total')
+			const pageVal = getObjNumber(resObj, 'page')
+			const sizeVal = getObjNumber(resObj, 'size')
+			total.value = totalVal
+			if (pageVal > 0) {
+				page.value = pageVal
+			}
+			if (sizeVal > 0) {
+				size.value = sizeVal
+			}
+			const itemsVal = resObj.get('items')
+			if (itemsVal != null && Array.isArray(itemsVal) == true) {
+				const itemsArr = itemsVal as Array<UTSJSONObject>
+				// 批量设置关注状态到 store
+				const batchUsers: Array<BatchFollowUser> = []
+				for (let i = 0; i < itemsArr.length; i = i + 1) {
+					const item = itemsArr[i]
+					const itemObj = toJsonObj(item)
+					if (itemObj != null) {
+						const userItem = new UserItemData()
+						userItem.userKid = getObjString(itemObj, 'userKid')
+						userItem.nickname = getObjString(itemObj, 'nickname')
+						userItem.avatar = getObjString(itemObj, 'avatar')
+						userItem.isFollow = getObjBoolean(itemObj, 'isFollow')
+						userItem.mutual = getObjBoolean(itemObj, 'mutual')
+						userItem.vip = getObjNumber(itemObj, 'vip')
+						userItem.vipType = getObjNumber(itemObj, 'vipType')
+						userItem.giftLevel = getObjNumber(itemObj, 'giftLevel')
+						users.value.push(userItem)
+						// 添加到批量设置列表
+						const batchItem = new BatchFollowUser(userItem.userKid, userItem.isFollow)
+						batchUsers.push(batchItem)
+					}
+				}
+				// 批量设置关注状态
+				if (batchUsers.length > 0) {
+					batchSetFollowStatus(batchUsers)
+				}
+			}
+		}
+	} catch (e) {
+		console.error('获取数据失败:', e)
+	} finally {
+		loading.value = false
+	}
+}
+
+// 刷新
+const refresh = async () => {
+	page.value = 1
+	users.value = []
+	await fetchData()
+}
+
+// 加载更多
+const loadMore = async () => {
+	if (loading.value == true) return
+	if (users.value.length >= total.value && total.value > 0) return
+	page.value = page.value + 1
+	await fetchData()
+}
+
+// 下拉刷新
+const onRefresh = async () => {
+	refreshing.value = true
+	await refresh()
+	refreshing.value = false
+}
+
+// Tab切换
+const handleTabChange = (index: number) => {
+	current.value = index
+	refresh()
+}
+
+// 兼容 swiper 的 change 事件
+const onTabChange = (e: UTSJSONObject | null) => {
+	let index = 0
+	try {
+		const eObj = toJsonObj(e)
+		if (eObj != null) {
+			const detailVal = eObj.get('detail')
+			const detailObj = toJsonObj(detailVal)
+			if (detailObj != null) {
+				const currentVal = detailObj.get('current')
+				if (currentVal != null) {
+					index = parseInt(currentVal.toString())
+					if (isNaN(index) == true) {
+						index = 0
+					}
+				}
+			}
+		}
+	} catch (err) {
+		index = 0
+	}
+	current.value = index
+	refresh()
+}
+
+// 切换关注状态
+const toggle = async (u: UserItemData) => {
+	const kid = userKid.value
+	if (kid == '' || u.userKid == '') return
+	try {
+		const params = {
+			userKid: kid,
+			focusUserKid: u.userKid
+		} as UTSJSONObject
+		if (u.isFollow == true) {
+			await followApi.cancelFocus(params)
+			u.isFollow = false
+		} else {
+			await followApi.addFocus(params)
+			u.isFollow = true
+		}
+	} catch (e) {
+		console.error('操作失败:', e)
+	}
+}
+
+// 关注状态变化回调
+const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
+	// 更新本地列表中的状态
+	for (let i = 0; i < users.value.length; i = i + 1) {
+		if (users.value[i].userKid == targetUserKid) {
+			users.value[i].isFollow = isFollow
+			break
+		}
+	}
+}
+
+// VIP图标点击 - 跳转VIP页面
+const handleVipClick = () => {
+	// 🔧 新增：检查会员功能是否开启
+	if (isMemberFeatureEnabled() == false) {
+		uni.showToast({
+			title: '会员功能暂未开放',
+			icon: 'none'
+		})
+		return
+	}
+	
+	uni.navigateTo({
+		url: '/pagesUser/my/proveDetails/vip'
+	})
+}
+
+// 礼物图标点击 - 打开礼物选择面板
+const handleGiftIconClick = (targetUserKid: string) => {
+	if (requireLoginReliable(true, '/pages/news/fans/index') == false) return
+	selectedUserKid.value = targetUserKid
+	showGiftSelector.value = true
+}
+
+// 处理选择礼物
+const handleSelectGift = (gift: UTSJSONObject | null) => {
+	showGiftSelector.value = false
+	if (gift != null) {
+		const giftObj = toJsonObj(gift)
+		if (giftObj != null) {
+			const giftIdVal = giftObj.get('id')
+			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
+			if (giftId != '' && selectedUserKid.value != '') {
+				const userId = currentUserId.value
+				const sendParams = {
+					userKid: userId,
+					receiveUserKid: selectedUserKid.value,
+					lotteryRecordKid: giftId
+				} as UTSJSONObject
+				sendGiftFromBag(sendParams).then(() => {
+					uni.showToast({
+						title: '礼物发送成功',
+						icon: 'success'
+					})
+				}).catch((error): void => {
+					uni.showToast({
+						title: '发送失败',
+						icon: 'none'
+					})
+				})
+			}
+		}
+	}
+}
+
+// 跳转用户主页
+const gotoUserProfile = (u: UserItemData) => {
+	if (u.userKid == '') return
+	uni.navigateTo({
+		url: `/pagesUser/persionInfo/index?id=${u.userKid}`
+	})
+}
+
+// ⭐ 新增：页面显示时自动清零粉丝未读数
+const autoClearFansUnread = () => {
+	const userId = getCurrentUserIdReliable()
+	if (userId == '') return
+
+	// 调用清零API
+	const params = new ResetMessageReminderParams()
+	params.userKid = userId
+	params.reminderType = 10 // REMINDER_TYPE_FOLLOWER
+
+	resetMessageReminderCount(params).then(() => {
+		// 移除：不要调用 updateUnreadCountsDirect({})
+		// resetMessageReminderCount API会在后端推送WebSocket更新，前端会自动更新UI
+	}).catch((error) => {
+		console.error('❌ 清零粉丝未读数失败:', error)
+	})
+}
+
+// ==================== 生命周期（必须在所有函数之后）====================
+onMounted(() => {
+	initPageLayout()
+	refresh()
+})
+
+onShow(() => {
+	// ⭐ 新增：页面显示时自动清零粉丝未读数
+	autoClearFansUnread()
+})
+</script>
+
+<style lang="scss" scoped>
+@import '@/common/styles/tabs.css';
+
+/* 页面主容器 */
+.fans-page {
+	flex-direction: column;
+	background-color: #f5f5f5;
+}
+
+.fix-page {
+	flex-direction: column;
+	width: 750rpx;
+	background-color: #f5f5f5;
+}
+
+.bg-light-base {
+	background-color: #f5f5f5;
+}
+
+/* 背景图片 */
+.header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 300rpx;
+}
+
+/* Tab栏 */
+.tabs-wrapper {
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	z-index: 10;
+}
+
+/* Swiper容器 */
+.swiper-container {
+	flex: 1;
+	flex-direction: column;
+	z-index: 1;
+}
+
+.swiper-item {
+	flex-direction: column;
+}
+
+/* 滚动区域 */
+.scroll-view {
+	padding-top: 20rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 20rpx;
+	background-color: transparent;
+	z-index: 1;
+}
+
+/* 用户列表 */
+.user-list {
+	padding-top: 20rpx;
+	padding-bottom: 20rpx;
+}
+
+/* 用户卡片 */
+.user-card {
+	padding: 24rpx;
+	margin-bottom: 20rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+}
+
+.avatar {
+	width: 96rpx;
+	height: 96rpx;
+	border-radius: 48rpx;
+}
+
+/* 空状态 */
+.empty-box {
+	height: 400rpx;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+
+/* 加载更多 */
+.load-more {
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.load-text {
+	font-size: 24rpx;
+	color: #999999;
+	text-align: center;
+}
+
+.flex-row {
+	flex-direction: row;
+}
+
+.align-center {
+	align-items: center;
+}
+
+.flex-1 {
+	flex: 1;
+}
+
+.ml-20 {
+	margin-left: 20rpx;
+}
+
+.mt-8 {
+	margin-top: 8rpx;
+}
+
+.mb-20 {
+	margin-bottom: 20rpx;
+}
+
+.fs-md {
+	font-size: 28rpx;
+}
+
+.fs-sm {
+	font-size: 24rpx;
+}
+
+.color-title {
+	color: #333333;
+}
+
+.color-text {
+	color: #666666;
+}
+
+.gray {
+	color: #999999;
+}
+
+.font-bold {
+	font-weight: bold;
+}
+
+.bg-white {
+	background-color: #ffffff;
+}
+
+.border-radius-16 {
+	border-radius: 16rpx;
+}
+</style>

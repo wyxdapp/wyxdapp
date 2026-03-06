@@ -1,0 +1,181 @@
+﻿/**
+ * 视频流数据共享 Store
+ * 用于页面间传递视频列表数据，避免通过 URL 参数传递大量数据
+ * 
+ * 注意：此文件从 pagesBusiness/stores/videoFeed.uts 移动到主包
+ * 原因：pagesUser 需要引用此 store，避免跨分包引用错误
+ * 移动时间：2026-02-04
+ */
+import { ref } from 'vue'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { deepCloneObject } from '@/utils/deepClone.uts'
+
+// ==================== 内部状态 ====================
+
+// 视频列表数据
+const videoListRef = ref<Array<any>>([])
+
+// 起始播放索引
+const startIndexRef = ref<number>(0)
+
+// 当前播放索引
+const currentIndexRef = ref<number>(0)
+
+// ==================== 导出函数 ====================
+
+/**
+ * 设置视频流数据
+ * @param list 视频列表
+ * @param index 起始播放索引
+ */
+export function setVideoFeedData(list: Array<any>, index: number): void {
+	if (list == null) {
+		videoListRef.value = []
+	} else {
+		// 复制数组，避免引用问题
+		const newList: Array<any> = []
+		for (let i = 0; i < list.length; i = i + 1) {
+			newList.push(list[i])
+		}
+		videoListRef.value = newList
+	}
+	
+	// 确保索引有效
+	if (index < 0) {
+		startIndexRef.value = 0
+	} else if (index >= videoListRef.value.length && videoListRef.value.length > 0) {
+		startIndexRef.value = videoListRef.value.length - 1
+	} else {
+		startIndexRef.value = index
+	}
+	
+	currentIndexRef.value = startIndexRef.value
+	
+	console.log('[VideoFeed Store] 设置视频数据, 列表长度:', videoListRef.value.length, '起始索引:', startIndexRef.value)
+}
+
+/**
+ * 获取视频流数据
+ * @returns 包含视频列表和起始索引的对象
+ */
+export function getVideoFeedData(): UTSJSONObject {
+	const result = new UTSJSONObject()
+	result.set('list', videoListRef.value)
+	result.set('index', startIndexRef.value)
+	result.set('currentIndex', currentIndexRef.value)
+	return deepCloneObject(result)
+}
+
+/**
+ * 获取视频列表
+ * @returns 视频列表数组
+ */
+export function getVideoList(): Array<any> {
+	return videoListRef.value
+}
+
+/**
+ * 获取起始索引
+ * @returns 起始播放索引
+ */
+export function getStartIndex(): number {
+	return startIndexRef.value
+}
+
+/**
+ * 获取当前播放索引
+ * @returns 当前播放索引
+ */
+export function getCurrentIndex(): number {
+	return currentIndexRef.value
+}
+
+/**
+ * 设置当前播放索引
+ * @param index 当前播放索引
+ */
+export function setCurrentIndex(index: number): void {
+	if (index >= 0 && index < videoListRef.value.length) {
+		currentIndexRef.value = index
+	}
+}
+
+/**
+ * 获取视频列表长度
+ * @returns 视频列表长度
+ */
+export function getVideoListLength(): number {
+	try {
+		const list = videoListRef.value
+		if (list != null && Array.isArray(list) == true) {
+			return (list as Array<any>).length
+		}
+	} catch (e) {}
+	return 0
+}
+
+/**
+ * 获取指定索引的视频数据
+ * @param index 视频索引
+ * @returns 视频数据对象，不存在则返回 null
+ */
+export function getVideoAtIndex(index: number): UTSJSONObject | null {
+	try {
+		const list = videoListRef.value
+		if (list != null && index >= 0 && index < list.length) {
+			return list[index]
+		}
+	} catch (e) {}
+	return null
+}
+
+/**
+ * 追加视频数据（用于加载更多）
+ * @param newVideos 新的视频列表
+ */
+export function appendVideoFeedData(newVideos: Array<any>): void {
+	if (newVideos == null || newVideos.length == 0) return
+	
+	const currentList = videoListRef.value
+	for (let i = 0; i < newVideos.length; i = i + 1) {
+		currentList.push(newVideos[i])
+	}
+	videoListRef.value = currentList
+	
+	console.log('[VideoFeed Store] 追加视频数据, 新增:', newVideos.length, '总数:', videoListRef.value.length)
+}
+
+/**
+ * 更新指定索引的视频数据
+ * @param index 视频索引
+ * @param data 更新的数据
+ */
+export function updateVideoAtIndex(index: number, data: UTSJSONObject): void {
+	try {
+		const list = videoListRef.value
+		if (list != null && index >= 0 && index < list.length && data != null) {
+			list[index] = data
+			videoListRef.value = list
+		}
+	} catch (e) {
+		handleSilentError(e, '更新视频数据')
+	}
+}
+
+/**
+ * 清除视频流数据
+ */
+export function clearVideoFeedData(): void {
+	videoListRef.value = []
+	startIndexRef.value = 0
+	currentIndexRef.value = 0
+	console.log('[VideoFeed Store] 清除视频数据')
+}
+
+/**
+ * 检查是否有视频数据
+ * @returns 是否有视频数据
+ */
+export function hasVideoFeedData(): boolean {
+	return videoListRef.value.length > 0
+}

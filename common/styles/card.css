@@ -1,0 +1,266 @@
+/**
+ * 卡片组件公共样式
+ * 用于 guider-card, merchant-card, route-card 等卡片组件
+ */
+
+/* 卡片图片容器 */
+.card-image-box {
+  position: relative;
+  width: 196rpx;
+  height: 274rpx;
+  border-radius: 24rpx;
+}
+
+/* 卡片封面图片 */
+.card-cover-image {
+  width: 196rpx;
+  height: 274rpx;
+  background-color: #F0F0F0;
+  border-radius: 24rpx;
+}
+
+/* 卡片信息区域 */
+.card-info-box {
+  flex: 1;
+  margin-left: 20rpx;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-top: 10rpx;
+  padding-bottom: 10rpx;
+}
+
+/* 卡片标题 */
+.card-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #333333;
+  margin-bottom: 12rpx;
+  lines: 2;
+  text-overflow: ellipsis;
+}
+
+/* 卡片描述 */
+.card-description {
+  font-size: 24rpx;
+  color: #666666;
+  line-height: 36rpx;
+  lines: 2;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-height: 72rpx;
+}
+
+/* 卡片标签容器 */
+.card-tags {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  height: 44rpx;
+  margin-bottom: 12rpx;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* 卡片标签项 */
+.card-tag {
+  background-color: #F5F7FA;
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: #E4E7ED;
+  padding-top: 4rpx;
+  padding-bottom: 4rpx;
+  padding-left: 14rpx;
+  padding-right: 14rpx;
+  border-radius: 18rpx;
+  margin-right: 8rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 36rpx;
+}
+
+/* 卡片标签文字 */
+.card-tag-text {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+/* 统计行 */
+.card-stat-row {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+/* 统计标签 */
+.card-stat-label {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+/* 统计值 */
+.card-stat-value {
+  font-size: 24rpx;
+  color: #666666;
+}
+
+/* 统计值高亮 */
+.card-stat-highlight {
+  color: #FF9800;
+}
+
+/* 点分隔符 */
+.card-dot-divider {
+  width: 6rpx;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background-color: #DCDFE6;
+  margin-left: 16rpx;
+  margin-right: 16rpx;
+}
+
+/* ==================== 蓝色标签样式 ==================== */
+
+/* 蓝色标签容器 - 用于定制卡片、向导卡片等 */
+.card-tag-blue {
+  background-color: #E3F2FD;
+  padding-top: 6rpx;
+  padding-bottom: 6rpx;
+  padding-left: 12rpx;
+  padding-right: 12rpx;
+  border-radius: 6rpx;
+  margin-right: 12rpx;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 蓝色标签文字 */
+.card-tag-blue-text {
+  font-size: 20rpx;
+  color: #2196F3;
+}
+
+/* ==================== 卡片尺寸变体 ==================== */
+
+/* 小卡片 */
+.card-sm {
+  background-color: #FFFFFF;
+  border-radius: 12rpx;
+  padding-top: 16rpx;
+  padding-bottom: 16rpx;
+  padding-left: 20rpx;
+  padding-right: 20rpx;
+}
+
+/* 标准卡片 */
+.card {
+  background-color: #FFFFFF;
+  border-radius: 16rpx;
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+}
+
+/* 大卡片 */
+.card-lg {
+  background-color: #FFFFFF;
+  border-radius: 24rpx;
+  padding-top: 32rpx;
+  padding-bottom: 32rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+}
+
+/* ==================== 卡片样式变体 ==================== */
+
+/* 带阴影卡片 */
+.card-shadow {
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.08);
+}
+
+/* 带边框卡片 */
+.card-border {
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: #EEEEEE;
+}
+
+/* 无内边距卡片 */
+.card-no-padding {
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* 透明背景卡片 */
+.card-transparent {
+  background-color: transparent;
+}
+
+/* ==================== 卡片头部 ==================== */
+
+.card-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 20rpx;
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: #F5F5F5;
+  margin-bottom: 20rpx;
+}
+
+.card-header-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333333;
+}
+
+.card-header-extra {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+/* ==================== 卡片底部 ==================== */
+
+.card-footer {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20rpx;
+  border-top-width: 1rpx;
+  border-top-style: solid;
+  border-top-color: #F5F5F5;
+  margin-top: 20rpx;
+}
+
+/* ==================== 横向卡片布局 ==================== */
+
+.card-horizontal {
+  flex-direction: row;
+  background-color: #FFFFFF;
+  border-radius: 16rpx;
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+  padding-left: 28rpx;
+  padding-right: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+/* ==================== 卡片列表项 ==================== */
+
+.card-list-item {
+  flex-direction: row;
+  align-items: center;
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: #F5F5F5;
+}
+
+.card-list-item:last-child {
+  border-bottom-width: 0;
+}

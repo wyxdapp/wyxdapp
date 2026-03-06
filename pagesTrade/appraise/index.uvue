@@ -1,0 +1,724 @@
+<template>
+	<view class="page">
+		<!-- #ifndef H5 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">评价</text>
+				<view class="nav-action"></view>
+			</view>
+		</view>
+		<!-- #endif -->
+
+		<!-- #ifndef H5 -->
+		<scroll-view class="scroll-view" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }" scroll-y="true">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
+		<scroll-view class="scroll-view-h5" scroll-y="true">
+		<!-- #endif -->
+
+			<!-- 订单信息卡片 -->
+			<view class="section">
+				<view class="order-row">
+					<view class="order-avatar">
+						<Avatar :url="orderProviderAvatar" :customSize="120" clickMode="none" />
+					</view>
+					<view class="order-info">
+						<text class="order-name">{{ orderProviderName }}</text>
+						<text class="order-desc">{{ orderTitle }}</text>
+						<view class="order-time-row">
+							<image class="time-icon" :src="cosStartTimeIconUrl" mode="aspectFill" />
+							<text class="time-text">出发时间：{{ orderServiceTime }}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 服务评分 -->
+			<view class="section">
+				<view class="section-header">
+					<view class="section-line"></view>
+					<text class="section-title">服务评分</text>
+				</view>
+				<view class="rating-stars">
+					<text v-for="(item, index) in ratingStars" :key="index" class="star" @click="setRating(index + 1)">{{ item }}</text>
+				</view>
+				<text class="rating-text">{{ ratingText }}</text>
+			</view>
+
+			<!-- 评价标签 -->
+			<view class="section">
+				<view class="section-header">
+					<view class="section-line"></view>
+					<text class="section-title">评价标签</text>
+				</view>
+				<view class="tags-grid">
+					<view v-for="(tag, index) in tagList" :key="index"
+						:class="isTagSelected(tag) == true ? 'tag-item tag-selected' : 'tag-item'"
+						@click="toggleTag(tag)">
+						<text :class="isTagSelected(tag) == true ? 'tag-text tag-text-selected' : 'tag-text'">{{ tag }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 评价内容 -->
+			<view class="section">
+				<view class="section-header">
+					<view class="section-line"></view>
+					<text class="section-title">评价内容</text>
+				</view>
+				<textarea class="content-textarea" v-model="content" placeholder="分享你的服务体验..." :maxlength="500" />
+				<text class="char-count">{{ contentLength }}/500</text>
+			</view>
+
+			<!-- 上传图片 -->
+			<view class="section">
+				<view class="section-header">
+					<view class="section-line"></view>
+					<text class="section-title">上传图片</text>
+				</view>
+				<view class="image-grid">
+					<view v-for="(img, index) in images" :key="index" class="image-item">
+						<image class="uploaded-image" :src="img" mode="aspectFill"></image>
+						<view class="delete-btn" @click="deleteImage(index)">
+							<text class="delete-btn-text">✕</text>
+						</view>
+					</view>
+					<view v-if="canAddMoreImages == true" class="image-item add-image" @click="chooseImage">
+						<uni-icons type="camera" size="48" color="#CCCCCC"></uni-icons>
+						<text class="add-image-text">添加图片</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 匿名评价 -->
+			<view class="section anonymous-section">
+				<view class="anonymous-row" @click="toggleAnonymous">
+					<text class="anonymous-text">匿名评价</text>
+					<view :class="isAnonymous == true ? 'checkbox checkbox-checked' : 'checkbox'">
+						<text v-if="isAnonymous == true" class="checkbox-icon">✓</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 提交按钮（在scroll-view内部，跟随内容滚动） -->
+			<view class="btn-container">
+				<view class="submit-btn" @click="handleSubmit">
+					<text class="submit-btn-text">{{ submitButtonText }}</text>
+				</view>
+			</view>
+
+			<!-- 底部安全区域 -->
+			<view class="safe-bottom"></view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import Avatar from '@/components/base/Avatar.uvue'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { getGuiderOrderInfo, setTravelAppraise } from '@/common/services/orderService.uts'
+import { getUserId } from '@/stores/user.uts'
+import { COS_BUCKET_ID } from '@/common/config/thirdPartyConfig.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// COS 图片 URL
+const cosStartTimeIconUrl = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/order_icon_startTime.png'
+
+const orderId = ref<string>('')
+const submitting = ref<boolean>(false)
+const rating = ref<number>(5)
+const content = ref<string>('')
+const images = ref<Array<string>>([])
+const isAnonymous = ref<boolean>(false)
+const selectedTags = ref<Array<string>>([])
+const tagList = ref<Array<string>>([
+	'服务态度好', '专业', '准时', '热情',
+	'讲解详细', '路线合理', '性价比高', '值得推荐'
+])
+
+const orderTitle = ref<string>('')
+const orderServiceTime = ref<string>('')
+const orderProviderAvatar = ref<string>('')
+const orderProviderName = ref<string>('')
+const evaluateUserKid = ref<string>('')
+const lineKid = ref<string>('')
+const orderType = ref<number>(0)
+
+const handleBack = () => {
+	uni.navigateBack({ delta: 1, fail: () => { uni.switchTab({ url: '/pages/index/index' }) } })
+}
+
+const getObjString = (obj: UTSJSONObject | null, key: string): string => {
+	if (obj == null) return ''
+	const val = obj.get(key)
+	return (val != null && val.toString() != '') ? val.toString() : ''
+}
+
+const uploadImageToCOS = (filePath: string): Promise<string> => {
+	return new Promise<string>((resolve: (value: string) => void, reject: (reason: Error) => void) => {
+		cosUploader.uploadDynamic(filePath, (progress: number) => {
+			console.log('📈 上传进度:', progress.toString() + '%')
+		}).then((result: UTSJSONObject | null) => {
+			if (result != null) {
+				const resultStr = JSON.stringify(result)
+				const resultObj = JSON.parse(resultStr) as UTSJSONObject
+				const successVal = resultObj.get('success')
+				const isSuccess = (successVal != null && successVal.toString() == 'true')
+				if (isSuccess == true) {
+					const dataVal = resultObj.get('data')
+					if (dataVal != null) {
+						const dataStr = JSON.stringify(dataVal)
+						const dataObj = JSON.parse(dataStr) as UTSJSONObject
+						const compressedUrlVal = dataObj.get('compressedUrl')
+						if (compressedUrlVal != null && compressedUrlVal.toString() != '') { resolve(compressedUrlVal.toString()); return }
+						const originalUrlVal = dataObj.get('originalUrl')
+						if (originalUrlVal != null && originalUrlVal.toString() != '') { resolve(originalUrlVal.toString()); return }
+					}
+				}
+				let errorMsg = '上传失败'
+				const errorVal = resultObj.get('error')
+				if (errorVal != null && errorVal.toString() != '') errorMsg = errorVal.toString()
+				reject(new Error(errorMsg))
+			} else { reject(new Error('上传失败')) }
+		}).then((ignore: any | null) => {}, (error: any | null) => { 
+			const err = error != null ? error as Error : new Error('上传失败')
+			reject(err) 
+		})
+	})
+}
+
+const ratingStars = computed((): Array<string> => {
+	const stars: Array<string> = []
+	for (let i = 1; i <= 5; i = i + 1) {
+		if (i <= rating.value) { stars.push('⭐') } else { stars.push('☆') }
+	}
+	return stars
+})
+
+const ratingText = computed((): string => {
+	const r = rating.value
+	if (r == 1) return '非常不满意'
+	if (r == 2) return '不满意'
+	if (r == 3) return '一般'
+	if (r == 4) return '满意'
+	if (r == 5) return '非常满意'
+	return ''
+})
+
+const contentLength = computed((): number => { return content.value.length })
+const canAddMoreImages = computed((): boolean => { return images.value.length < 9 })
+const submitButtonText = computed((): string => { return submitting.value == true ? '提交中...' : '提交评价' })
+
+const setRating = (value: number) => { rating.value = value }
+
+const isTagSelected = (tag: string): boolean => {
+	const tags = selectedTags.value
+	for (let i = 0; i < tags.length; i = i + 1) { if (tags[i] == tag) return true }
+	return false
+}
+
+const toggleTag = (tag: string) => {
+	const tags = selectedTags.value
+	let foundIndex = -1
+	for (let i = 0; i < tags.length; i = i + 1) { if (tags[i] == tag) { foundIndex = i; break } }
+	if (foundIndex > -1) {
+		const newTags: Array<string> = []
+		for (let i = 0; i < tags.length; i = i + 1) { if (i != foundIndex) newTags.push(tags[i]) }
+		selectedTags.value = newTags
+	} else {
+		const newTags: Array<string> = []
+		for (let i = 0; i < tags.length; i = i + 1) { newTags.push(tags[i]) }
+		newTags.push(tag)
+		selectedTags.value = newTags
+	}
+}
+
+const toggleAnonymous = () => { isAnonymous.value = isAnonymous.value == false }
+
+const loadOrderInfo = async () => {
+	try {
+		const params = { orderKid: orderId.value, userKid: getUserId() } as UTSJSONObject
+		const res = await getGuiderOrderInfo(params)
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const dataVal = resObj.get('data')
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				orderTitle.value = getObjString(dataObj, 'orderTitle')
+				if (orderTitle.value == '') orderTitle.value = getObjString(dataObj, 'lineName')
+				orderServiceTime.value = getObjString(dataObj, 'travelDate')
+				if (orderServiceTime.value == '') orderServiceTime.value = getObjString(dataObj, 'startTime')
+				orderProviderAvatar.value = getObjString(dataObj, 'guideAvatar')
+				orderProviderName.value = getObjString(dataObj, 'guideNickname')
+				if (orderProviderName.value == '') orderProviderName.value = getObjString(dataObj, 'guideName')
+				evaluateUserKid.value = getObjString(dataObj, 'guideKid')
+				lineKid.value = getObjString(dataObj, 'lineKid')
+				const orderTypeVal = dataObj.get('orderType')
+				if (orderTypeVal != null) {
+					const num = parseInt(orderTypeVal.toString())
+					if (isNaN(num) == false) orderType.value = num
+				}
+			}
+		}
+	} catch (error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '加载订单信息', null)
+		}
+	}
+}
+
+const chooseImage = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		const remainCount = 9 - images.value.length
+		uni.chooseImage({
+			count: remainCount, sizeType: ['compressed'], sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const tempFilePaths = tempFilePathsVal as Array<string | null>
+						const newImages: Array<string> = []
+						for (let i = 0; i < images.value.length; i = i + 1) { newImages.push(images.value[i]) }
+						for (let i = 0; i < tempFilePaths.length; i = i + 1) {
+							const path = tempFilePaths[i]
+							if (path != null && path.toString() != '') newImages.push(path.toString())
+						}
+						images.value = newImages
+					}
+				}
+			}
+		})
+	}).catch((error: any | null): void => {
+		handleSilentError(error as any, '请求相册权限(评价)')
+	})
+}
+
+const deleteImage = (index: number) => {
+	const newImages: Array<string> = []
+	for (let i = 0; i < images.value.length; i = i + 1) { if (i != index) newImages.push(images.value[i]) }
+	images.value = newImages
+}
+
+const uploadAllImages = async (): Promise<Array<string>> => {
+	const urls: Array<string> = []
+	if (images.value.length == 0) return urls
+	for (let i = 0; i < images.value.length; i = i + 1) {
+		const filePath = images.value[i]
+		const url = await uploadImageToCOS(filePath)
+		urls.push(url)
+	}
+	return urls
+}
+
+const handleSubmit = async () => {
+	if (submitting.value == true) return
+	const trimmedContent = content.value.trim()
+	if (trimmedContent == null || trimmedContent == '') {
+		uni.showToast({ title: '请输入评价内容', icon: 'none' })
+		return
+	}
+	submitting.value = true
+	uni.showLoading({ title: '提交中...' })
+	try {
+		const uploadedUrls = await uploadAllImages()
+		let imagesStr = ''
+		for (let i = 0; i < uploadedUrls.length; i = i + 1) { if (i > 0) imagesStr = imagesStr + ','; imagesStr = imagesStr + uploadedUrls[i] }
+		let tagsStr = ''
+		for (let i = 0; i < selectedTags.value.length; i = i + 1) { if (i > 0) tagsStr = tagsStr + ','; tagsStr = tagsStr + selectedTags.value[i] }
+		const params = {
+			userKid: getUserId(), evaluateUserKid: evaluateUserKid.value, orderNumber: orderId.value,
+			starLevel: rating.value, commentContent: trimmedContent, images: imagesStr,
+			evaluateType: 10, orderType: orderType.value, lineKid: lineKid.value,
+			tags: tagsStr, isAnonymous: isAnonymous.value
+		} as UTSJSONObject
+		try {
+			const res = await setTravelAppraise(params)
+			uni.hideLoading()
+			uni.showToast({ title: '评价成功', icon: 'success' })
+			setTimeout(() => { submitting.value = false; uni.navigateBack() }, 1500)
+		} catch (error) {
+			uni.hideLoading()
+			if (!isAuthError(error)) {
+				handlePageError(error, '提交评价', submitting)
+			} else {
+				submitting.value = false
+			}
+		}
+	} catch (error) {
+		uni.hideLoading()
+		if (!isAuthError(error)) {
+			handlePageError(error, '上传评价图片', submitting)
+		} else {
+			submitting.value = false
+		}
+	}
+}
+
+onLoad((options: OnLoadOptions) => {
+	initPageLayout()
+	if (options != null) {
+		const optionsStr = JSON.stringify(options)
+		const optionsObj = JSON.parse(optionsStr) as UTSJSONObject
+		let orderIdVal = getObjString(optionsObj, 'orderKid')
+		if (orderIdVal == '') orderIdVal = getObjString(optionsObj, 'orderId')
+		if (orderIdVal != '') orderId.value = orderIdVal
+	}
+	loadOrderInfo()
+})
+</script>
+
+<style scoped>
+/* 页面容器 */
+.page {
+	flex-direction: column;
+	width: 750rpx;
+	flex: 1;
+	background-color: #F5F5F5;
+	position: relative;
+}
+
+/* #ifndef H5 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	width: 750rpx;
+	background-color: #ffffff;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #eeeeee;
+	z-index: 1000;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.nav-back {
+	width: 88rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	flex: 1;
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+	text-align: center;
+}
+
+.nav-action {
+	width: 88rpx;
+	height: 88rpx;
+}
+/* #endif */
+
+/* APP端滚动区域 */
+/* #ifndef H5 */
+.scroll-view {
+	flex: 1;
+	flex-direction: column;
+	background-color: #F5F5F5;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.scroll-view-h5 {
+	flex: 1;
+	flex-direction: column;
+	background-color: #F5F5F5;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	width: 750rpx;
+}
+/* #endif */
+
+.section {
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	margin-top: 20rpx;
+}
+
+.section-header {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 24rpx;
+}
+
+.section-line {
+	width: 6rpx;
+	height: 28rpx;
+	background-color: #36A0EE;
+	border-radius: 3rpx;
+	margin-right: 12rpx;
+}
+
+.section-title {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+/* 订单信息 */
+.order-row {
+	flex-direction: row;
+}
+
+.order-avatar {
+	width: 120rpx;
+	height: 120rpx;
+	margin-right: 20rpx;
+	flex-shrink: 0;
+}
+
+.order-info {
+	flex: 1;
+	flex-direction: column;
+}
+
+.order-name {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-bottom: 8rpx;
+}
+
+.order-desc {
+	font-size: 24rpx;
+	color: #666666;
+	margin-bottom: 8rpx;
+}
+
+.order-time-row {
+	flex-direction: row;
+	align-items: center;
+}
+
+.time-icon {
+	width: 24rpx;
+	height: 24rpx;
+	margin-right: 8rpx;
+}
+
+.time-text {
+	font-size: 22rpx;
+	color: #999999;
+}
+
+/* 评分 */
+.rating-stars {
+	flex-direction: row;
+	justify-content: center;
+	margin-bottom: 16rpx;
+}
+
+.star {
+	font-size: 64rpx;
+	margin-left: 8rpx;
+	margin-right: 8rpx;
+}
+
+.rating-text {
+	text-align: center;
+	font-size: 26rpx;
+	color: #FF9800;
+}
+
+/* 标签 */
+.tags-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.tag-item {
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	background-color: #F5F5F5;
+	border-radius: 24rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #F5F5F5;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+}
+
+.tag-selected {
+	background-color: #E3F2FD;
+	border-color: #37B1F2;
+}
+
+.tag-text {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.tag-text-selected {
+	color: #37B1F2;
+}
+
+/* 评价内容 */
+.content-textarea {
+	width: 100%;
+	min-height: 200rpx;
+	font-size: 28rpx;
+	line-height: 1.6;
+	margin-bottom: 12rpx;
+}
+
+.char-count {
+	text-align: right;
+	font-size: 24rpx;
+	color: #999999;
+}
+
+/* 图片 */
+.image-grid {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
+.image-item {
+	width: 200rpx;
+	height: 200rpx;
+	margin-right: 16rpx;
+	margin-bottom: 16rpx;
+	border-radius: 12rpx;
+	position: relative;
+}
+
+.uploaded-image {
+	width: 200rpx;
+	height: 200rpx;
+	border-radius: 12rpx;
+}
+
+.delete-btn {
+	position: absolute;
+	top: -10rpx;
+	right: -10rpx;
+	width: 40rpx;
+	height: 40rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	border-radius: 20rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.delete-btn-text {
+	font-size: 24rpx;
+	color: #ffffff;
+}
+
+.add-image {
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	background-color: #F5F5F5;
+	border-width: 2rpx;
+	border-style: dashed;
+	border-color: #DDDDDD;
+}
+
+.add-image-text {
+	font-size: 22rpx;
+	color: #999999;
+	margin-top: 8rpx;
+}
+
+/* 匿名评价 */
+.anonymous-section {
+	margin-top: 20rpx;
+}
+
+.anonymous-row {
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.anonymous-text {
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.checkbox {
+	width: 44rpx;
+	height: 44rpx;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #e0e0e0;
+	border-radius: 8rpx;
+	align-items: center;
+	justify-content: center;
+}
+
+.checkbox-checked {
+	background-color: #37B1F2;
+	border-color: #37B1F2;
+}
+
+.checkbox-icon {
+	font-size: 28rpx;
+	color: #ffffff;
+}
+
+/* 提交按钮 */
+.btn-container {
+	padding-top: 40rpx;
+	padding-bottom: 40rpx;
+	flex-direction: row;
+	justify-content: center;
+}
+
+.submit-btn {
+	width: 654rpx;
+	height: 88rpx;
+	border-radius: 44rpx;
+	background-color: #37B1F2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.submit-btn-text {
+	font-size: 32rpx;
+	color: #ffffff;
+	font-weight: bold;
+}
+
+.safe-bottom {
+	height: 60rpx;
+}
+</style>

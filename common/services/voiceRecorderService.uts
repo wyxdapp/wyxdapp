@@ -1,0 +1,684 @@
+/**
+ * 语音录制服务
+ * 封装 uni.getRecorderManager API，提供录音的开始、停止、取消功能
+ */
+
+import { ref } from 'vue'
+import { requestPermissionTip, PERMISSION_MICROPHONE } from '@/common/utils/permissionTipManager.uts'
+import { VOICE_MAX_DURATION_SECONDS } from '@/common/config/timeoutConfig.uts'
+import { handleSilentError } from '@/common/utils/errorHandler.uts'
+
+// 录音状态枚举值
+export const RecordingStatusIdle = 'idle'
+export const RecordingStatusRecording = 'recording'
+export const RecordingStatusUploading = 'uploading'
+export const RecordingStatusCompleted = 'completed'
+export const RecordingStatusCancelled = 'cancelled'
+export const RecordingStatusError = 'error'
+
+// 录音结果类
+export class RecordingResult {
+	tempFilePath: string = ''
+	duration: number = 0
+	fileSize: number = 0
+}
+
+// 录音配置常量
+const RECORDING_DURATION: number = VOICE_MAX_DURATION_SECONDS * 1000 // 最大录音时长（毫秒）
+const RECORDING_SAMPLE_RATE: number = 16000     // 采样率
+const RECORDING_CHANNELS: number = 1            // 声道数
+const RECORDING_BIT_RATE: number = 48000        // 编码码率
+const RECORDING_FORMAT: string = 'mp3'          // 音频格式
+
+// 状态变量
+const currentStatus = ref<string>(RecordingStatusIdle)
+const currentDuration = ref<number>(0)
+const currentVolume = ref<number>(0)
+const tempFilePath = ref<string>('')
+const startTime = ref<number>(0)
+let durationTimer: number = 0
+
+// 回调函数
+let onStatusChangeCallback: ((status: string) => void) | null = null
+let onDurationChangeCallback: ((duration: number) => void) | null = null
+let onVolumeChangeCallback: ((volume: number) => void) | null = null
+let onErrorCallback: ((error: string) => void) | null = null
+let resolveStopRecording: ((result: RecordingResult) => void) | null = null
+let rejectStopRecording: ((error: string) => void) | null = null
+
+// #ifdef APP-ANDROID || APP-IOS
+// APP 端录音管理器
+let recorderManager: RecorderManager | null = null
+
+// 初始化录音管理器
+function initRecorderManager() {
+	if (recorderManager != null) return
+	
+	recorderManager = uni.getRecorderManager()
+	
+	recorderManager!.onStart(() => {
+		console.log('🎤 [VoiceRecorder] 录音开始')
+		// 确认状态设置（已在 startRecording 中预设）
+		if (currentStatus.value != RecordingStatusRecording) {
+			currentStatus.value = RecordingStatusRecording
+			notifyStatusChange(RecordingStatusRecording)
+		}
+		startTime.value = Date.now()
+		startDurationTimer()
+	})
+	
+	recorderManager!.onStop((res: any) => {
+		console.log('🎤 [VoiceRecorder] 录音停止')
+		stopDurationTimer()
+
+		if (currentStatus.value == RecordingStatusCancelled) {
+			// 已取消，不处理
+			console.log('🎤 [VoiceRecorder] 录音已取消，跳过处理')
+			return
+		}
+
+		// 解析录音结果
+		let filePath = ''
+		let fileSize = 0
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const pathVal = resObj.get('tempFilePath')
+				if (pathVal != null && pathVal.toString() != '') {
+					filePath = pathVal.toString()
+				}
+				const sizeVal = resObj.get('fileSize')
+				if (sizeVal != null) {
+					const sizeNum = parseInt(sizeVal.toString())
+					if (isNaN(sizeNum) == false) {
+						fileSize = sizeNum
+					}
+				}
+			} catch (e) {
+			handleSilentError(e, '解析录音结果')
+		}
+		}
+
+		tempFilePath.value = filePath
+		currentStatus.value = RecordingStatusCompleted
+		notifyStatusChange(RecordingStatusCompleted)
+
+		// 返回录音结果
+		if (resolveStopRecording != null) {
+			const result = new RecordingResult()
+			result.tempFilePath = filePath
+			result.duration = currentDuration.value
+			result.fileSize = fileSize
+			const callback = resolveStopRecording!
+			resolveStopRecording = null
+			rejectStopRecording = null
+			callback(result)
+		}
+	})
+	
+	recorderManager!.onError((err: any) => {
+		console.error('🎤 [VoiceRecorder] 录音错误:', err)
+		stopDurationTimer()
+
+		// 重置状态
+		currentStatus.value = RecordingStatusError
+		currentDuration.value = 0
+		currentVolume.value = 0
+		tempFilePath.value = ''
+		startTime.value = 0
+
+		notifyStatusChange(RecordingStatusError)
+
+		let errorMsg = '录音失败'
+		if (err != null) {
+			try {
+				const errStr = JSON.stringify(err)
+				const errObj = JSON.parse(errStr) as UTSJSONObject
+				const msgVal = errObj.get('errMsg')
+				if (msgVal != null && msgVal.toString() != '') {
+					errorMsg = msgVal.toString()
+				}
+			} catch (e) {}
+		}
+
+		notifyError(errorMsg)
+
+		if (rejectStopRecording != null) {
+			const callback = rejectStopRecording!
+			resolveStopRecording = null
+			rejectStopRecording = null
+			callback(errorMsg)
+		}
+	})
+	
+	// 监听帧数据（用于获取音量）
+	recorderManager!.onFrameRecorded((res: any) => {
+		// 可以从帧数据计算音量，这里简化处理
+	})
+}
+// #endif
+
+// 开始录音时长计时器
+function startDurationTimer() {
+	stopDurationTimer()
+	currentDuration.value = 0
+	
+	durationTimer = setInterval(() => {
+		currentDuration.value = currentDuration.value + 1
+		notifyDurationChange(currentDuration.value)
+		
+		// 模拟音量变化（实际应从录音数据获取）
+		const randomVolume = Math.floor(Math.random() * 50) + 30
+		currentVolume.value = randomVolume
+		notifyVolumeChange(randomVolume)
+		
+		// VOICE_MAX_DURATION_SECONDS 秒自动停止
+		if (currentDuration.value >= VOICE_MAX_DURATION_SECONDS) {
+			console.log('🎤 [VoiceRecorder] 达到最大时长，自动停止')
+			stopRecording()
+		}
+	}, 1000)
+}
+
+// 停止录音时长计时器
+function stopDurationTimer() {
+	if (durationTimer != 0) {
+		clearInterval(durationTimer)
+		durationTimer = 0
+	}
+}
+
+// 通知状态变化
+function notifyStatusChange(status: string) {
+	if (onStatusChangeCallback != null) {
+		const callback = onStatusChangeCallback!
+		callback(status)
+	}
+}
+
+// 通知时长变化
+function notifyDurationChange(duration: number) {
+	if (onDurationChangeCallback != null) {
+		const callback = onDurationChangeCallback!
+		callback(duration)
+	}
+}
+
+// 通知音量变化
+function notifyVolumeChange(volume: number) {
+	if (onVolumeChangeCallback != null) {
+		const callback = onVolumeChangeCallback!
+		callback(volume)
+	}
+}
+
+// 通知错误
+function notifyError(error: string) {
+	if (onErrorCallback != null) {
+		const callback = onErrorCallback!
+		callback(error)
+	}
+}
+
+/**
+ * 检查录音权限
+ */
+export function checkRecordPermission(): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// #ifdef APP-ANDROID || APP-IOS
+		// APP 端直接返回 true，权限在录音时会自动请求
+		console.log('🎤 [VoiceRecorder] APP端录音权限检查')
+		resolve(true)
+		// #endif
+		
+		// #ifdef MP-WEIXIN
+		// 微信小程序使用 wx.authorize
+		console.log('🎤 [VoiceRecorder] 微信小程序录音权限检查')
+		uni.authorize({
+			scope: 'scope.record',
+			success: () => {
+				console.log('🎤 [VoiceRecorder] 录音权限已授权')
+				resolve(true)
+			},
+			fail: (err: any) => {
+				console.warn('🎤 [VoiceRecorder] 录音权限未授权:', err)
+				resolve(false)
+			}
+		})
+		// #endif
+		
+		// #ifdef H5
+		// H5 端检查麦克风权限
+		if (typeof navigator === 'undefined' || navigator.permissions == null) {
+			resolve(true) // 无法检查权限，假设支持
+			return
+		}
+
+		navigator.permissions.query({ name: 'microphone' as any }).then((result: any) => {
+			if (result.state === 'granted') {
+				console.log('🎤 [VoiceRecorder] H5麦克风权限已授权')
+				resolve(true)
+			} else if (result.state === 'denied') {
+				console.warn('🎤 [VoiceRecorder] H5麦克风权限被拒绝')
+				resolve(false)
+			} else {
+				console.log('🎤 [VoiceRecorder] H5麦克风权限状态未知，尝试请求')
+				resolve(true) // 未知状态，允许尝试
+			}
+		}).catch((error: any) => {
+		handleSilentError(error, 'H5权限检查')
+		resolve(true) // 检查失败，允许尝试
+	})
+		// #endif
+	})
+}
+
+/**
+ * 请求录音权限
+ */
+export function requestRecordPermission(): Promise<boolean> {
+	return new Promise<boolean>((resolve: (value: boolean) => void) => {
+		// #ifdef APP-ANDROID || APP-IOS
+		// APP 端：先弹出权限说明，再让系统请求权限
+		console.log('🎤 [VoiceRecorder] APP端请求录音权限')
+		requestPermissionTip(PERMISSION_MICROPHONE).then((confirmed: boolean): void => {
+			if (confirmed == true) {
+				resolve(true)
+			} else {
+				resolve(false)
+			}
+		}).catch((error: any | null): void => {
+			handleSilentError(error as any, '请求录音权限')
+			resolve(false)
+		})
+		// #endif
+		
+		// #ifdef MP-WEIXIN
+		// 微信小程序权限处理
+		console.log('🎤 [VoiceRecorder] 微信小程序请求录音权限')
+		uni.authorize({
+			scope: 'scope.record',
+			success: () => {
+				console.log('🎤 [VoiceRecorder] 录音权限授权成功')
+				resolve(true)
+			},
+			fail: () => {
+				// 权限被拒绝，引导用户到设置页面
+				uni.showModal({
+					title: '需要录音权限',
+					content: '请在设置中开启麦克风权限，以使用语音功能',
+					confirmText: '去设置',
+					success: (res: UniShowModalResult) => {
+						if (res.confirm == true) {
+							uni.openSetting({
+								success: (settingRes: any) => {
+									// 检查用户是否开启了权限
+									if (settingRes != null) {
+										try {
+											const resStr = JSON.stringify(settingRes)
+											const resObj = JSON.parse(resStr) as UTSJSONObject
+											const authSetting = resObj.get('authSetting')
+											if (authSetting != null) {
+												const authStr = JSON.stringify(authSetting)
+												const authObj = JSON.parse(authStr) as UTSJSONObject
+												const recordVal = authObj.get('scope.record')
+												if (recordVal != null && recordVal.toString() == 'true') {
+													resolve(true)
+													return
+												}
+											}
+										} catch (e) {}
+									}
+									resolve(false)
+								},
+								fail: () => {
+									resolve(false)
+								}
+							})
+						} else {
+							resolve(false)
+						}
+					}
+				})
+			}
+		})
+		// #endif
+		
+		// #ifdef H5
+		// H5 端请求麦克风权限
+		if (typeof navigator === 'undefined' || navigator.mediaDevices == null) {
+			console.warn('🎤 [VoiceRecorder] H5浏览器不支持麦克风访问')
+			resolve(false)
+			return
+		}
+
+		navigator.mediaDevices.getUserMedia({ audio: true }).then((stream: any) => {
+			console.log('🎤 [VoiceRecorder] H5麦克风权限授权成功')
+			// 立即停止流，我们只是为了获取权限
+			stream.getTracks().forEach((track: any) => track.stop())
+			resolve(true)
+		}).catch((error: any) => {
+		handleSilentError(error, 'H5麦克风权限请求')
+		uni.showModal({
+			title: '需要麦克风权限',
+			content: '请在浏览器设置中允许麦克风权限，以使用语音功能',
+			confirmText: '知道了',
+			showCancel: false
+		})
+		resolve(false)
+	})
+		// #endif
+	})
+}
+
+/**
+ * 开始录音
+ */
+export function startRecording() {
+	console.log('🎤 [VoiceRecorder] 开始录音')
+
+	// 检查当前状态
+	if (currentStatus.value == RecordingStatusRecording) {
+		console.warn('🎤 [VoiceRecorder] 已在录音中')
+		return
+	}
+
+	// 重置状态
+	currentStatus.value = RecordingStatusIdle
+	currentDuration.value = 0
+	currentVolume.value = 0
+	tempFilePath.value = ''
+	startTime.value = 0
+
+	// #ifdef APP-ANDROID || APP-IOS
+	// 初始化录音管理器
+	initRecorderManager()
+
+	// 开始录音
+	if (recorderManager != null) {
+		const options: RecorderManagerStartOptions = {
+			duration: RECORDING_DURATION,
+			sampleRate: RECORDING_SAMPLE_RATE,
+			numberOfChannels: RECORDING_CHANNELS,
+			encodeBitRate: RECORDING_BIT_RATE,
+			format: RECORDING_FORMAT
+		}
+
+		// 立即设置状态，避免异步回调延迟
+		currentStatus.value = RecordingStatusRecording
+		notifyStatusChange(RecordingStatusRecording)
+
+		recorderManager!.start(options)
+	} else {
+		// 录音管理器初始化失败
+		currentStatus.value = RecordingStatusError
+		notifyError('录音功能初始化失败')
+	}
+	// #endif
+
+// #ifdef H5
+// H5 端使用 MediaRecorder API
+try {
+	// 检查浏览器支持
+	if (typeof navigator === 'undefined' || navigator.mediaDevices == null) {
+		currentStatus.value = RecordingStatusError
+		notifyError('当前浏览器不支持录音功能')
+		return
+	}
+
+	// 请求麦克风权限并开始录音
+	navigator.mediaDevices.getUserMedia({ audio: true }).then((stream: any) => {
+		// 创建 MediaRecorder
+		const mediaRecorder = new (window as any).MediaRecorder(stream)
+
+		// 存储录音数据
+		let recordedChunks: Array<any> = []
+
+		mediaRecorder.ondataavailable = (event: any) => {
+			if (event.data.size > 0) {
+				recordedChunks.push(event.data)
+			}
+		}
+
+		mediaRecorder.onstop = () => {
+			// 创建音频 Blob
+			const audioBlob = new Blob(recordedChunks, { type: 'audio/webm' })
+
+			// 创建临时文件URL（模拟文件路径）
+			const audioUrl = URL.createObjectURL(audioBlob)
+
+			// 计算录音时长
+			const duration = currentDuration.value
+
+			// 返回录音结果
+			if (resolveStopRecording != null) {
+				const result = new RecordingResult()
+				result.tempFilePath = audioUrl
+				result.duration = duration
+				result.fileSize = audioBlob.size
+				const callback = resolveStopRecording!
+				resolveStopRecording = null
+				rejectStopRecording = null
+				callback(result)
+			}
+
+			// 停止所有音轨
+			stream.getTracks().forEach((track: any) => track.stop())
+		}
+
+		mediaRecorder.onerror = (event: any) => {
+			console.error('🎤 [VoiceRecorder] H5录音错误:', event)
+			currentStatus.value = RecordingStatusError
+			notifyStatusChange(RecordingStatusError)
+			notifyError('录音失败')
+
+			if (rejectStopRecording != null) {
+				const callback = rejectStopRecording!
+				resolveStopRecording = null
+				rejectStopRecording = null
+				callback('录音失败')
+			}
+		}
+
+		// 开始录音
+		mediaRecorder.start(1000) // 每秒收集一次数据
+		currentStatus.value = RecordingStatusRecording
+		startTime.value = Date.now()
+		startDurationTimer()
+		notifyStatusChange(RecordingStatusRecording)
+
+		// 存储 MediaRecorder 引用用于停止
+		;(globalThis as any).h5MediaRecorder = mediaRecorder
+
+	}).catch((error: any) => {
+		handleSilentError(error, '获取麦克风权限')
+		currentStatus.value = RecordingStatusError
+		notifyError('无法获取麦克风权限')
+	})
+} catch (error: any) {
+	handleSilentError(error, 'H5录音初始化')
+	currentStatus.value = RecordingStatusError
+	notifyError('录音功能初始化失败')
+}
+// #endif
+}
+
+/**
+ * 停止录音
+ */
+export function stopRecording(): Promise<RecordingResult> {
+	console.log('🎤 [VoiceRecorder] 停止录音，当前状态:', currentStatus.value, '时长:', currentDuration.value)
+
+	return new Promise<RecordingResult>((resolve: (value: RecordingResult) => void, reject: (reason: string) => void) => {
+		// 检查当前状态（放宽检查条件，允许空闲状态下的停止操作）
+		const isRecording = currentStatus.value == RecordingStatusRecording || currentStatus.value == RecordingStatusIdle
+		if (currentStatus.value != RecordingStatusRecording && currentStatus.value != RecordingStatusIdle) {
+			console.warn('🎤 [VoiceRecorder] 当前状态不允许停止录音:', currentStatus.value)
+			reject('当前状态不允许停止录音')
+			return
+		}
+
+		// 检查录音时长
+		if (currentDuration.value < 1) {
+			stopDurationTimer()
+			currentStatus.value = RecordingStatusCancelled
+			notifyStatusChange(RecordingStatusCancelled)
+
+			// #ifdef APP-ANDROID || APP-IOS
+			if (recorderManager != null) {
+				recorderManager!.stop()
+			}
+			// #endif
+
+			reject('录音时间太短')
+			return
+		}
+
+		// 保存回调
+		resolveStopRecording = resolve
+		rejectStopRecording = reject
+
+		// #ifdef APP-ANDROID || APP-IOS
+		if (recorderManager != null) {
+			recorderManager!.stop()
+		} else {
+			// 录音管理器不存在，直接返回失败
+			reject('录音功能未初始化')
+		}
+		// #endif
+
+		// #ifdef H5
+		// H5 端停止录音
+		const mediaRecorder = (globalThis as any).h5MediaRecorder
+		if (mediaRecorder != null && mediaRecorder.state === 'recording') {
+			stopDurationTimer()
+			mediaRecorder.stop()
+		} else {
+			reject('录音未开始或已停止')
+		}
+		// #endif
+	})
+}
+
+/**
+ * 取消录音
+ */
+export function cancelRecording() {
+	console.log('🎤 [VoiceRecorder] 取消录音')
+	
+	stopDurationTimer()
+	currentStatus.value = RecordingStatusCancelled
+	notifyStatusChange(RecordingStatusCancelled)
+
+	// #ifdef APP-ANDROID || APP-IOS
+	if (recorderManager != null) {
+		recorderManager!.stop()
+	}
+	// #endif
+
+	// #ifdef H5
+	// H5 端取消录音
+	const mediaRecorder = (globalThis as any).h5MediaRecorder
+	if (mediaRecorder != null && mediaRecorder.state === 'recording') {
+		mediaRecorder.stop()
+	}
+	// 清理 MediaRecorder 引用
+	;(globalThis as any).h5MediaRecorder = null
+	// #endif
+
+	// 清理回调
+	resolveStopRecording = null
+	rejectStopRecording = null
+}
+
+/**
+ * 重置状态
+ */
+export function resetRecorder() {
+	stopDurationTimer()
+	currentStatus.value = RecordingStatusIdle
+	currentDuration.value = 0
+	currentVolume.value = 0
+	tempFilePath.value = ''
+	startTime.value = 0
+	resolveStopRecording = null
+	rejectStopRecording = null
+
+	// #ifdef H5
+	// 清理 H5 录音相关状态
+	;(globalThis as any).h5MediaRecorder = null
+	// #endif
+}
+
+/**
+ * 获取当前状态
+ */
+export function getRecordingStatus(): string {
+	return currentStatus.value
+}
+
+/**
+ * 获取当前录音时长
+ */
+export function getRecordingDuration(): number {
+	return currentDuration.value
+}
+
+/**
+ * 获取当前音量
+ */
+export function getRecordingVolume(): number {
+	return currentVolume.value
+}
+
+/**
+ * 设置状态变化回调
+ */
+export function onStatusChange(callback: (status: string) => void): () => void {
+	onStatusChangeCallback = callback
+	return () => {
+		onStatusChangeCallback = null
+	}
+}
+
+/**
+ * 设置时长变化回调
+ */
+export function onDurationChange(callback: (duration: number) => void): () => void {
+	onDurationChangeCallback = callback
+	return () => {
+		onDurationChangeCallback = null
+	}
+}
+
+/**
+ * 设置音量变化回调
+ */
+export function onVolumeChange(callback: (volume: number) => void): () => void {
+	onVolumeChangeCallback = callback
+	return () => {
+		onVolumeChangeCallback = null
+	}
+}
+
+/**
+ * 设置错误回调
+ */
+export function onRecordError(callback: (error: string) => void): () => void {
+	onErrorCallback = callback
+	return () => {
+		onErrorCallback = null
+	}
+}
+
+/**
+ * 格式化时长为 MM:SS 格式
+ */
+export function formatDuration(seconds: number): string {
+	const mins = Math.floor(seconds / 60)
+	const secs = seconds % 60
+	const minsStr = mins < 10 ? '0' + mins.toString() : mins.toString()
+	const secsStr = secs < 10 ? '0' + secs.toString() : secs.toString()
+	return minsStr + ':' + secsStr
+}

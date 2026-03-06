@@ -1,0 +1,373 @@
+/**
+ * 首页相关 API
+ * 对应Vue2: http.api.js 中的首页接口
+ */
+
+import request from '@/utils/request'
+import { SEARCH_TYPE_USER, SEARCH_TYPE_CUSTOM, SEARCH_TYPE_TREND } from '@/common/config/businessCodes.uts'
+import {
+	GetGuideListParams,
+	GetTravelLineListParams,
+	GetUserHomePageParams,
+	QueryUserByKidParams,
+	GetGuideInfoDetailParams,
+	GetUserTrendsParams,
+	GetUserLinesParams,
+	SearchIndexParams as SearchIndexParamsType,
+	SearchByTypeParams as SearchByTypeParamsType
+} from './types/homeTypes.uts'
+
+/**
+ * 获取首页向导列表
+ * POST /support/member/queryGuideInfoList
+ */
+export const getGuideList = (params: GetGuideListParams) => {
+	const payload = {
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize,
+		userKid: params.userKid,
+		cityName: params.cityName,
+		sortType: params.sortType
+	} as UTSJSONObject
+	return request.post('/support/member/queryGuideInfoList', payload, false)
+}
+
+/**
+ * 获取首页定制列表
+ * POST /line/newLine/homeLinePage
+ * @param params { pageNumber?, pageSize?, userKid?, cityName?, sortType? }
+ */
+export const getTravelLineList = (params: GetTravelLineListParams): Promise<UTSJSONObject> => {
+	const payload = {
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize,
+		userKid: params.userKid,
+		cityName: params.cityName,
+		sortType: params.sortType
+	} as UTSJSONObject
+	return request.post('/line/newLine/homeLinePage', payload, false)
+}
+
+/**
+ * 获取用户主页信息
+ * POST /user/baseInfo/queryUserHomePage
+ * @param params { kid: string, focusUserkid?: string }
+ */
+export const getUserHomePage = (params: GetUserHomePageParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid,
+		focusUserkid: params.focusUserkid
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/queryUserHomePage', payload, false)
+}
+
+/**
+ * 根据kid查询用户基本信息
+ * POST /user/baseInfo/queryByKid
+ * @param params { kid: string }
+ */
+export const queryUserByKid = (params: QueryUserByKidParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/user/baseInfo/queryByKid', payload, false)
+}
+
+/**
+ * 获取向导信息详情（评价用）
+ * POST /support/member/queryGuideInfoDetails
+ * @param params { kid: string }
+ */
+export const getGuideInfoDetail = (params: GetGuideInfoDetailParams): Promise<UTSJSONObject> => {
+	const payload = {
+		kid: params.kid
+	} as UTSJSONObject
+	return request.post('/support/member/queryGuideInfoDetails', payload, false)
+}
+
+/**
+ * 获取个人动态列表
+ * POST /dynamic/v1/queryMyDynamic
+ * UTS 规范：API 函数参数使用类型定义，避免 Android ClassCastException
+ */
+export const getUserTrends = (params: GetUserTrendsParams) => {
+	// 🔧 APP端修复：将自定义类型转换为普通对象，避免 uni.request 报 "请求数据格式错误"
+	const payload = {
+		userKid: params.userKid,
+		pageNumber: params.pageNumber,
+		pageSize: params.pageSize
+	} as UTSJSONObject
+	// 条件性包含 currentUserKid：仅当值不为空字符串时
+	if (params.currentUserKid != null && params.currentUserKid != '') {
+		payload['currentUserKid'] = params.currentUserKid
+	}
+	// 条件性包含位置字段：仅当值不为 0 时（即用户已授权定位）
+	if (params.latitude != 0 && params.longitude != 0) {
+		payload['latitude'] = params.latitude
+		payload['longitude'] = params.longitude
+	}
+	return request.post('/dynamic/v1/queryMyDynamic', payload, false)
+}
+
+/**
+ * 获取个人定制列表
+ * GET /line/newLine/queryMyLine
+ * UTS 规范：API 函数参数使用类型定义，避免 Android ClassCastException
+ */
+export const getUserLines = (params: GetUserLinesParams) => {
+	// 手动构造查询字符串，避免使用 Object.keys
+	// 使用 JSON 序列化安全访问属性
+	let userKid = ''
+	let pageNumber = 1
+	let pageSize = 10
+	
+	try {
+		const paramsStr = JSON.stringify(params)
+		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+		
+		const userKidVal = paramsObj.get('userKid')
+		if (userKidVal != null && userKidVal.toString() != '') {
+			userKid = userKidVal.toString()
+		}
+		
+		const pageNumberVal = paramsObj.get('pageNumber')
+		if (pageNumberVal != null) {
+			const pn = parseInt(pageNumberVal.toString())
+			if (isNaN(pn) == false) {
+				pageNumber = pn
+			}
+		}
+		
+		const pageSizeVal = paramsObj.get('pageSize')
+		if (pageSizeVal != null) {
+			const ps = parseInt(pageSizeVal.toString())
+			if (isNaN(ps) == false) {
+				pageSize = ps
+			}
+		}
+	} catch (e) {
+		// param parse error
+	}
+	
+	let queryParts: Array<string> = []
+	if (userKid != '') {
+		queryParts.push('userKid=' + encodeURIComponent(userKid))
+	}
+	queryParts.push('pageNumber=' + encodeURIComponent(pageNumber.toString()))
+	queryParts.push('pageSize=' + encodeURIComponent(pageSize.toString()))
+	
+	const query = queryParts.join('&')
+	const fullUrl = '/line/newLine/queryMyLine?' + query
+	return request.get(fullUrl, null, false)
+}
+
+/**
+ * 首页搜索
+ * POST /dynamic/searchDynamic
+ */
+export const searchIndex = (params: SearchIndexParamsType | null) => {
+	// 使用 JSON 序列化访问参数属性
+	let keywordValue = ''
+	let searchTypeValue: number | null = null
+	let pageNumberValue = 1
+	let pageSizeValue = 20
+	let userKidValue = ''
+	
+	if (params != null) {
+		const paramsStr = JSON.stringify(params)
+		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+		
+		const keywordVal = paramsObj.get('keyword')
+		const searchContentVal = paramsObj.get('searchContent')
+		if (keywordVal != null && keywordVal.toString() != '') {
+			keywordValue = keywordVal.toString()
+		} else if (searchContentVal != null && searchContentVal.toString() != '') {
+			keywordValue = searchContentVal.toString()
+		}
+		
+		const searchTypeVal = paramsObj.get('searchType')
+		if (searchTypeVal != null) {
+			const num = parseInt(searchTypeVal.toString())
+			if (isNaN(num) == false) {
+				searchTypeValue = num
+			}
+		}
+		
+		const pageNumberVal = paramsObj.get('pageNumber')
+		if (pageNumberVal != null) {
+			const num = parseInt(pageNumberVal.toString())
+			if (isNaN(num) == false) {
+				pageNumberValue = num
+			}
+		}
+		
+		const pageSizeVal = paramsObj.get('pageSize')
+		if (pageSizeVal != null) {
+			const num = parseInt(pageSizeVal.toString())
+			if (isNaN(num) == false) {
+				pageSizeValue = num
+			}
+		}
+		
+		const userKidVal = paramsObj.get('userKid')
+		if (userKidVal != null && userKidVal.toString() != '') {
+			userKidValue = userKidVal.toString()
+		}
+	}
+	
+	const kw = keywordValue.trim()
+	
+	// 空关键字直接返回空结果
+	if (kw == null || kw == '') {
+		// 显式指定数组类型，避免类型推断错误
+		const emptyDynamics: Array<any> = []
+		const emptyLines: Array<any> = []
+		const emptyUsers: Array<any> = []
+		const emptyData = {
+			dynamics: emptyDynamics,
+			lines: emptyLines,
+			users: emptyUsers
+		} as any
+		return Promise.resolve({
+			code: 200,
+			data: emptyData
+		} as any)
+	}
+	
+	const body = {
+		keyword: kw,
+		userKid: userKidValue,
+		pageNumber: pageNumberValue,
+		pageSize: pageSizeValue,
+		searchType: searchTypeValue
+	} as any
+	
+	return request.post('/dynamic/searchDynamic', body, false) as Promise<any>
+}
+
+
+// ==================== 分类搜索 API ====================
+
+/**
+ * 搜索类型常量
+ * 10-向导, SEARCH_TYPE_USER-用户, SEARCH_TYPE_CUSTOM-定制, SEARCH_TYPE_TREND-动态
+ */
+export const SearchType = {
+	GUIDE: 10,      // 向导
+	USER: SEARCH_TYPE_USER,       // 用户
+	ROUTE: SEARCH_TYPE_CUSTOM,      // 定制/路线
+	DYNAMIC: SEARCH_TYPE_TREND     // 动态
+}
+
+/**
+ * 获取搜索类型名称
+ */
+export function getSearchTypeName(searchType: number): string {
+	if (searchType == 10) return '向导'
+	if (searchType == SEARCH_TYPE_USER) return '用户'
+	if (searchType == SEARCH_TYPE_CUSTOM) return '定制'
+	if (searchType == SEARCH_TYPE_TREND) return '动态'
+	return '未知'
+}
+
+/**
+ * 分类搜索
+ * POST /dynamic/searchByType
+ * 根据搜索类型返回对应分类的搜索结果
+ * @param params { keyword, searchType, pageNumber?, pageSize?, userKid?, latitude?, longitude? }
+ */
+export const searchByType = (params: SearchByTypeParamsType | null) => {
+	// 使用 JSON 序列化安全访问参数属性
+	let keywordValue = ''
+	let searchTypeValue = 10
+	let pageNumberValue = 1
+	let pageSizeValue = 20
+	let userKidValue = ''
+	let latitudeValue: number | null = null
+	let longitudeValue: number | null = null
+	
+	if (params != null) {
+		const paramsStr = JSON.stringify(params)
+		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
+		
+		const keywordVal = paramsObj.get('keyword')
+		if (keywordVal != null && keywordVal.toString() != '') {
+			keywordValue = keywordVal.toString()
+		}
+		
+		const searchTypeVal = paramsObj.get('searchType')
+		if (searchTypeVal != null) {
+			const num = parseInt(searchTypeVal.toString())
+			if (isNaN(num) == false) {
+				searchTypeValue = num
+			}
+		}
+		
+		const pageNumberVal = paramsObj.get('pageNumber')
+		if (pageNumberVal != null) {
+			const num = parseInt(pageNumberVal.toString())
+			if (isNaN(num) == false) {
+				pageNumberValue = num
+			}
+		}
+		
+		const pageSizeVal = paramsObj.get('pageSize')
+		if (pageSizeVal != null) {
+			const num = parseInt(pageSizeVal.toString())
+			if (isNaN(num) == false) {
+				pageSizeValue = num
+			}
+		}
+		
+		const userKidVal = paramsObj.get('userKid')
+		if (userKidVal != null && userKidVal.toString() != '') {
+			userKidValue = userKidVal.toString()
+		}
+		
+		const latitudeVal = paramsObj.get('latitude')
+		if (latitudeVal != null) {
+			const num = parseFloat(latitudeVal.toString())
+			if (isNaN(num) == false) {
+				latitudeValue = num
+			}
+		}
+		
+		const longitudeVal = paramsObj.get('longitude')
+		if (longitudeVal != null) {
+			const num = parseFloat(longitudeVal.toString())
+			if (isNaN(num) == false) {
+				longitudeValue = num
+			}
+		}
+	}
+	
+	const kw = keywordValue.trim()
+	
+	// 空关键字直接返回空结果
+	if (kw == null || kw == '') {
+		const emptyEntities: Array<any> = []
+		const emptyData = {
+			searchType: searchTypeValue,
+			pageNumber: pageNumberValue,
+			pageSize: pageSizeValue,
+			total: 0,
+			entities: emptyEntities
+		} as any
+		return Promise.resolve({
+			code: 200,
+			data: emptyData
+		} as any)
+	}
+	
+	const body = {
+		keyword: kw,
+		searchType: searchTypeValue,
+		pageNumber: pageNumberValue,
+		pageSize: pageSizeValue,
+		userKid: userKidValue,
+		latitude: latitudeValue,
+		longitude: longitudeValue
+	} as any
+	
+	return request.post('/dynamic/searchByType', body, false) as Promise<any>
+}

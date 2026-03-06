@@ -1,0 +1,361 @@
+<template>
+	<view class="publish-page">
+		<!-- 文字输入 -->
+		<textarea 
+			class="content-input"
+			v-model="content"
+			placeholder="分享你的旅行故事..."
+			:maxlength="500"
+			:auto-height="true"
+		></textarea>
+		
+		<!-- 图片选择 -->
+		<view class="image-section">
+			<view class="image-list">
+				<view v-for="(img, index) in images" :key="index" class="image-item">
+					<image class="image" :src="img" mode="aspectFill"></image>
+					<view class="image-delete" @click="deleteImage(index)">
+						<text>✕</text>
+					</view>
+				</view>
+				<view v-if="images.length < 9" class="image-add" @click="chooseImage">
+					<UniIcons type="camera" :size="48" color="#CCCCCC" />
+				</view>
+			</view>
+		</view>
+		
+		<!-- 位置选择 -->
+		<view class="option-item" @click="chooseLocation">
+			<UniIcons type="location" :size="32" color="#999999" />
+			<text class="option-text">{{ location || '添加位置' }}</text>
+			<text class="option-arrow">›</text>
+		</view>
+		
+		<!-- 话题选择 -->
+		<view class="option-item" @click="chooseTopic">
+			<text class="option-icon">#</text>
+			<text class="option-text">{{ topic || '添加话题' }}</text>
+			<text class="option-arrow">›</text>
+		</view>
+		
+		<!-- 发布按钮 -->
+		<view class="publish-footer">
+			<Button type="primary" block :loading="publishing" @click="handlePublish">
+				{{ publishing ? '发布中...' : '发布' }}
+			</Button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+import { ref, computed } from 'vue'
+import Button from '@/components/base/Button.uvue'
+import UniIcons from '@/components/base/UniIcons.uvue'
+import { cosUploader } from '@/utils/upload/index.uts'
+import { publishTrends } from '@/common/services/trendsService.uts'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+
+// 响应式数据
+const content = ref<string>('')
+const images = ref<Array<string>>([])
+const uploadedUrls = ref<Array<string>>([])
+const location = ref<string>('')
+const topic = ref<string>('')
+const publishing = ref<boolean>(false)
+
+// 计算属性
+const imagesLength = computed((): number => {
+	try {
+		return images.value.length
+	} catch (e) {}
+	return 0
+})
+
+// 上传图片到 COS
+const uploadImageToCOS = (filePath: string): Promise<string> => {
+	return new Promise<string>((resolve: (value: string) => void, reject: (reason: Error) => void) => {
+		cosUploader.uploadDynamic(filePath, (progress: number) => {
+			console.log('📈 图片上传进度:', progress.toString() + '%')
+		}).then((result: UTSJSONObject) => {
+			if (result != null && result.success == true) {
+				const data = result.data
+				if (data != null) {
+					if (data.compressedUrl != null && data.compressedUrl != '') {
+						resolve(data.compressedUrl)
+						return
+					} else if (data.originalUrl != null && data.originalUrl != '') {
+						resolve(data.originalUrl)
+						return
+					}
+				}
+			}
+			let errorMsg = '上传失败'
+			if (result != null && result.error != null && result.error != '') {
+				errorMsg = result.error
+			}
+			reject(new Error(errorMsg))
+		}).catch((error: Error) => {
+			reject(error)
+		})
+	})
+}
+
+// 方法
+const chooseImage = () => {
+	requestPermissionTip(PERMISSION_CAMERA_ALBUM).then((confirmed: boolean): void => {
+		if (confirmed != true) return
+		const remainCount = 9 - images.value.length
+		uni.chooseImage({
+			count: remainCount,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res: any | null) => {
+				if (res != null) {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const tempFilePathsVal = resObj.get('tempFilePaths')
+					
+					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
+						const tempFilePaths = tempFilePathsVal as Array<string>
+						for (let i = 0; i < tempFilePaths.length; i = i + 1) {
+							const path = tempFilePaths[i]
+							if (path != null && path.toString() != '') {
+								images.value.push(path.toString())
+							}
+						}
+					}
+				}
+			}
+		})
+	}).catch((error: Error | null): void => {
+		handleSilentError(error, '请求相机相册权限')
+	})
+}
+
+const deleteImage = (index: number) => {
+	const newImages: Array<string> = []
+	for (let i = 0; i < images.value.length; i = i + 1) {
+		if (i != index) {
+			newImages.push(images.value[i])
+		}
+	}
+	images.value = newImages
+	
+	// 同步删除已上传的 URL
+	if (index < uploadedUrls.value.length) {
+		const newUrls: Array<string> = []
+		for (let i = 0; i < uploadedUrls.value.length; i = i + 1) {
+			if (i != index) {
+				newUrls.push(uploadedUrls.value[i])
+			}
+		}
+		uploadedUrls.value = newUrls
+	}
+}
+
+const chooseLocation = () => {
+	uni.chooseLocation({
+		success: (res: UTSJSONObject) => {
+			if (res != null) {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const nameVal = resObj.get('name')
+				const addressVal = resObj.get('address')
+				if (nameVal != null && nameVal.toString() != '') {
+					location.value = nameVal.toString()
+				} else if (addressVal != null && addressVal.toString() != '') {
+					location.value = addressVal.toString()
+				}
+			}
+		}
+	})
+}
+
+const chooseTopic = () => {
+	uni.navigateTo({
+		url: '/pagesBusiness/topicList/index'
+	})
+}
+
+// 上传所有图片
+const uploadAllImages = async (): Promise<Array<string>> => {
+	const urls: Array<string> = []
+	for (let i = 0; i < images.value.length; i = i + 1) {
+		const filePath = images.value[i]
+		try {
+			const url = await uploadImageToCOS(filePath)
+			urls.push(url)
+		} catch (error: Error) {
+			handleSilentError(error, '上传图片')
+			throw error
+		}
+	}
+	return urls
+}
+
+const handlePublish = () => {
+	const trimmedContent = content.value.trim()
+	if ((trimmedContent == null || trimmedContent == '') && images.value.length == 0) {
+		uni.showToast({
+			title: '请输入内容或选择图片',
+			icon: 'none'
+		})
+		return
+	}
+	
+	publishing.value = true
+	uni.showLoading({ title: '发布中...' })
+	
+	// 先上传图片
+	uploadAllImages().then((urls: Array<string>) => {
+		uploadedUrls.value = urls
+		
+		// 构建发布参数
+		const userKid = getCurrentUserIdReliable()
+		const params = {
+			userKid: userKid,
+			insertType: 0,
+			picUrls: urls,
+			discoverContent: content.value,
+			discoverAddress: location.value
+		} as UTSJSONObject
+		
+		// 调用发布接口
+		return publishTrends(params)
+	}).then((res: UTSJSONObject) => {
+		uni.hideLoading()
+		
+		let code = 0
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
+			const codeVal = resObj.get('code')
+			if (codeVal != null) {
+				code = parseInt(codeVal.toString())
+			}
+		}
+		
+		if (code == 200) {
+			uni.showToast({
+				title: '发布成功',
+				icon: 'success'
+			})
+			
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 1500)
+		} else {
+			uni.showToast({
+				title: '发布失败',
+				icon: 'none'
+			})
+		}
+	}).catch((error: Error) => {
+		uni.hideLoading()
+		if (!isAuthError(error)) {
+			handlePageError(error, '发布动态', null)
+		}
+	}).finally(() => {
+		publishing.value = false
+	})
+}
+</script>
+
+<style scoped>
+.publish-page {
+	min-height: 2000rpx;
+	background-color: #ffffff;
+	padding: 28rpx;
+}
+
+.content-input {
+	width: 100%;
+	min-height: 300rpx;
+	font-size: 28rpx;
+	line-height: 1.8;
+	margin-bottom: 40rpx;
+}
+
+.image-section {
+	margin-bottom: 40rpx;
+}
+
+.image-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16rpx;
+}
+
+.image-item {
+	position: relative;
+	width: 220rpx;
+	height: 220rpx;
+}
+
+.image {
+	width: 100%;
+	height: 100%;
+	border-radius: 8rpx;
+}
+
+.image-delete {
+	position: absolute;
+	top: 8rpx;
+	right: 8rpx;
+	width: 48rpx;
+	height: 48rpx;
+	background-color: rgba(0, 0, 0, 0.5);
+	border-radius: 30rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.image-delete text {
+	font-size: 32rpx;
+	color: #ffffff;
+}
+
+.image-add {
+	width: 220rpx;
+	height: 220rpx;
+	background-color: #f5f5f5;
+	border-radius: 8rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.image-add text {
+	font-size: 64rpx;
+}
+
+.option-item {
+	display: flex;
+	align-items: center;
+	padding: 32rpx 0;
+	border-bottom: 2rpx solid #f0f0f0;
+}
+
+.option-icon {
+	font-size: 40rpx;
+	margin-right: 16rpx;
+}
+
+.option-text {
+	flex: 1;
+	font-size: 28rpx;
+	color: #333333;
+}
+
+.option-arrow {
+	font-size: 40rpx;
+	color: #cccccc;
+}
+
+.publish-footer {
+	margin-top: 60rpx;
+}
+</style>

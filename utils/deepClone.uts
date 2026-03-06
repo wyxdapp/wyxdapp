@@ -1,0 +1,45 @@
+/**
+ * 类型安全的深拷贝工具
+ * 替代 JSON.parse(JSON.stringify(obj)) as UTSJSONObject 模式
+ * 
+ * 需求: 5.1, 5.2, 5.3, 10.4
+ */
+
+/**
+ * 深拷贝对象
+ * 递归复制所有属性，确保无引用共享
+ * 支持任意对象类型（包括自定义类型参数类）
+ */
+export function deepCloneObject(source: any): UTSJSONObject {
+  // 使用 JSON 序列化/反序列化进行深拷贝
+  // 这是 UTS 环境中最可靠的深拷贝方式
+  try {
+    const jsonStr = JSON.stringify(source)
+    if (jsonStr != null && jsonStr != '') {
+      const cloned = JSON.parse(jsonStr) as UTSJSONObject
+      return cloned
+    }
+  } catch (e) {
+    console.error('deepCloneObject 失败:', e)
+  }
+  return new UTSJSONObject()
+}
+
+/**
+ * 深拷贝数组
+ * 递归复制数组中所有元素，确保无引用共享
+ */
+export function deepCloneArray(source: Array<any>): Array<any> {
+  // 使用 JSON 序列化/反序列化进行深拷贝
+  // 这是 UTS 环境中最可靠的深拷贝方式
+  try {
+    const jsonStr = JSON.stringify(source)
+    if (jsonStr != null && jsonStr != '') {
+      const cloned = JSON.parse(jsonStr) as Array<any>
+      return cloned
+    }
+  } catch (e) {
+    console.error('deepCloneArray 失败:', e)
+  }
+  return []
+}

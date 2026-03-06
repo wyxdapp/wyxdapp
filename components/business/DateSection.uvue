@@ -1,0 +1,76 @@
+<template>
+	<view class="section-card bg-white">
+		<view class="section-header">
+			<text class="fs-lg color-title font-bold">{{ title }}</text>
+			<view class="more-btn" @click="handleMoreClick">
+				<text class="more-btn-text">更多</text>
+				<text class="arrow-icon">›</text>
+			</view>
+		</view>
+		<DatePicker 
+			:modelValue="modelValue"
+			:minDate="minDate"
+			:maxDate="maxDate"
+			@update:modelValue="handleDateChange"
+		/>
+	</view>
+</template>
+
+<script setup lang="uts">
+import DatePicker from '@/components/business/DatePicker.uvue'
+
+// Props - 运行时声明
+const props = defineProps({
+	title: { type: String, default: '日期' },
+	modelValue: { type: String, required: true },
+	minDate: { type: String, default: '' },
+	maxDate: { type: String, default: '' }
+})
+
+// Emits
+const emit = defineEmits<{
+	'update:modelValue': [value: string]
+	'more': []
+}>()
+
+// 日期变化处理
+const handleDateChange = (value: string) => {
+	emit('update:modelValue', value)
+}
+
+// 更多按钮点击
+const handleMoreClick = () => {
+	emit('more')
+}
+</script>
+
+<style scoped>
+.section-card {
+	margin: 24rpx;
+	border-radius: 16rpx;
+	padding: 32rpx;
+}
+
+.section-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 24rpx;
+}
+
+.more-btn {
+	display: flex;
+	align-items: center;
+	gap: 8rpx;
+}
+
+.more-btn-text {
+	font-size: 28rpx;
+	color: #666;
+}
+
+.arrow-icon {
+	font-size: 32rpx;
+	color: #666;
+}
+</style>

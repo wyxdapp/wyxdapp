@@ -1,0 +1,362 @@
+/**
+ * 个人主页 - 擅长标签处理 composable
+ * 提取标签相关的逻辑，减少主页面代码量
+ */
+
+import { ref, computed } from 'vue'
+import { getStringProp, getNumberProp, getBoolProp, getArrayProp } from '@/common/utils/utsSafe.uts'
+import { queryAllSpeciality } from '@/api/discover.uts'
+import { QueryAllSpecialityParams } from '@/api/types/discoverTypes.uts'
+
+// ==================== 类型定义 ====================
+
+/**
+ * 擅长标签项
+ */
+export class SpecialityItem {
+	kid: string = ''
+	name: string = ''
+	type: string = ''  // 'language' | 'label'
+	isCustom: boolean = false
+	
+	constructor(kid: string = '', name: string = '', type: string = '', isCustom: boolean = false) {
+		this.kid = kid
+		this.name = name
+		this.type = type
+		this.isCustom = isCustom
+	}
+}
+
+/**
+ * 排序选项
+ */
+export class SortOptions {
+	lengthOrder: string = 'asc'
+	constructor(lengthOrder: string = 'asc') {
+		this.lengthOrder = lengthOrder
+	}
+}
+
+// ==================== 工具函数 ====================
+
+/**
+ * 将 API 返回的标签数据映射为 SpecialityItem 数组
+ */
+export const mapSpecialityList = (items: UTSJSONObject[], type: string): SpecialityItem[] => {
+	if (Array.isArray(items) == false) return [] as SpecialityItem[]
+	const result: SpecialityItem[] = []
+	
+	for (let i = 0; i < items.length; i = i + 1) {
+		const item = items[i]
+		if (item == null) continue
+		
+		// 获取名称（兼容多种字段名）
+		let name = getStringProp(item, 'name')
+		if (name == '') name = getStringProp(item, 'labelName')
+		if (name == '') name = getStringProp(item, 'languageName')
+		if (name == '') name = getStringProp(item, 'value')
+		if (name == '') continue
+		
+		// 获取 kid（兼容多种字段名）
+		let kid = getStringProp(item, 'kid')
+		if (kid == '') kid = getStringProp(item, 'labelKid')
+		if (kid == '') kid = getStringProp(item, 'languageKid')
+		if (kid == '') kid = type + '-' + name
+		
+		// 判断是否为自定义标签
+		const isCustomizedVal = getNumberProp(item, 'isCustomized')
+		const sourceVal = getStringProp(item, 'source')
+		const isCustomFlag = (isCustomizedVal == 1 || sourceVal == 'custom')
+		
+		result.push(new SpecialityItem(kid, name, type, isCustomFlag))
+	}
+	
+	return result
+}
+
+/**
+ * 提取已选中的标签
+ */
+export const extractSelectedItems = (items: UTSJSONObject[], type: string): SpecialityItem[] => {
+	if (Array.isArray(items) == false) return [] as SpecialityItem[]
+	const filtered: UTSJSONObject[] = []
+	
+	for (let i = 0; i < items.length; i = i + 1) {
+		const it = items[i]
+		if (it == null) continue
+		
+		const isSelectedVal = getNumberProp(it, 'isSelected')
+		const isSelectedBool = getBoolProp(it, 'isSelected')
+		if (isSelectedVal == 1 || isSelectedBool == true) {
+			filtered.push(it)
+		}
+	}
+	
+	return mapSpecialityList(filtered, type)
+}
+
+/**
+ * 对标签列表进行排序
+ * 排序规则：非自定义在前，按名称长度排序
+ */
+export const sortSpecialities = (items: SpecialityItem[], options: SortOptions): SpecialityItem[] => {
+	const lengthOrder = options.lengthOrder
+	const itemsCopy: SpecialityItem[] = []
+	
+	// UTS 规范：使用 for 循环复制数组
+	for (let i = 0; i < items.length; i = i + 1) {
+		itemsCopy.push(items[i])
+	}
+	
+	return itemsCopy.sort((a: SpecialityItem, b: SpecialityItem): number => {
+		// 非自定义标签排在前面
+		const aCustomNum = (a.isCustom == true) ? 1 : 0
+		const bCustomNum = (b.isCustom == true) ? 1 : 0
+		const customDiff = aCustomNum - bCustomNum
+		if (customDiff != 0) return customDiff
+		
+		// 按名称长度排序
+		const aNameLen = (a.name != null) ? a.name.length : 0
+		const bNameLen = (b.name != null) ? b.name.length : 0
+		const lengthDiff = aNameLen - bNameLen
+		if (lengthDiff != 0) {
+			return lengthOrder == 'desc' ? -lengthDiff : lengthDiff
+		}
+		
+		// 按名称字母排序
+		const aName = (a.name != null) ? a.name : ''
+		const bName = (b.name != null) ? b.name : ''
+		if (aName < bName) return -1
+		if (aName > bName) return 1
+		return 0
+	})
+}
+
+// ==================== Composable ====================
+
+/**
+ * 个人主页擅长标签 composable
+ */
+export const useProfileSpeciality = () => {
+	// 状态
+	const loading = ref<boolean>(false)
+	const languageTags = ref<SpecialityItem[]>([])
+	const labelTags = ref<SpecialityItem[]>([])
+	
+	// 排序选项
+	const languageSortOptions = new SortOptions('desc')
+	const labelSortOptions = new SortOptions('asc')
+	
+	// 排序后的显示列表
+	const languageDisplayTags = computed((): SpecialityItem[] => {
+		return sortSpecialities(languageTags.value, languageSortOptions)
+	})
+	
+	const labelDisplayTags = computed((): SpecialityItem[] => {
+		return sortSpecialities(labelTags.value, labelSortOptions)
+	})
+	
+	/**
+	 * 从 payload 构建标签显示数据
+	 */
+	const buildSpecialityDisplay = (payload: UTSJSONObject | null, fallbackLanguages: UTSJSONObject[], fallbackLabels: UTSJSONObject[]) => {
+		const systemLanguagesArr = getArrayProp(payload, 'systemLanguages')
+		const customLanguagesArr = getArrayProp(payload, 'customLanguages')
+		const systemLabelsArr = getArrayProp(payload, 'systemLabels')
+		const customLabelsArr = getArrayProp(payload, 'customLabels')
+		const languageListArr = getArrayProp(payload, 'languageList')
+		const labelListArr = getArrayProp(payload, 'labelList')
+		
+		// 合并语言和标签数组
+		const languagesSourceArray: UTSJSONObject[] = []
+		const labelsSourceArray: UTSJSONObject[] = []
+		
+		if (languageListArr.length > 0) {
+			for (let i = 0; i < languageListArr.length; i = i + 1) {
+				languagesSourceArray.push(languageListArr[i])
+			}
+		} else {
+			for (let i = 0; i < systemLanguagesArr.length; i = i + 1) {
+				languagesSourceArray.push(systemLanguagesArr[i])
+			}
+			for (let i = 0; i < customLanguagesArr.length; i = i + 1) {
+				languagesSourceArray.push(customLanguagesArr[i])
+			}
+		}
+		
+		if (labelListArr.length > 0) {
+			for (let i = 0; i < labelListArr.length; i = i + 1) {
+				labelsSourceArray.push(labelListArr[i])
+			}
+		} else {
+			for (let i = 0; i < systemLabelsArr.length; i = i + 1) {
+				labelsSourceArray.push(systemLabelsArr[i])
+			}
+			for (let i = 0; i < customLabelsArr.length; i = i + 1) {
+				labelsSourceArray.push(customLabelsArr[i])
+			}
+		}
+		
+		let selectedLanguages = extractSelectedItems(languagesSourceArray, 'language')
+		let selectedLabels = extractSelectedItems(labelsSourceArray, 'label')
+		
+		// 如果没有选中的，使用 fallback 数据
+		if (selectedLanguages.length == 0 && fallbackLanguages.length > 0) {
+			selectedLanguages = mapSpecialityList(fallbackLanguages, 'language')
+		}
+		if (selectedLabels.length == 0 && fallbackLabels.length > 0) {
+			selectedLabels = mapSpecialityList(fallbackLabels, 'label')
+		}
+		
+		languageTags.value = selectedLanguages
+		labelTags.value = selectedLabels
+	}
+	
+	/**
+	 * 加载用户擅长标签
+	 */
+	const loadSpecialities = async (userKid: string, fallbackLanguages: UTSJSONObject[] = [], fallbackLabels: UTSJSONObject[] = []) => {
+		if (userKid == null || userKid == '') return
+		
+		loading.value = true
+		try {
+			const params = { userKid: userKid } as UTSJSONObject
+			const res = await queryAllSpeciality(params)
+			
+			let resData: UTSJSONObject | null = null
+			if (res != null) {
+				try {
+					const resStr = JSON.stringify(res)
+					const resObj = JSON.parse(resStr) as UTSJSONObject
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						resData = JSON.parse(JSON.stringify(dataVal)) as UTSJSONObject
+					}
+				} catch (e) {}
+			}
+			
+			buildSpecialityDisplay(resData, fallbackLanguages, fallbackLabels)
+		} catch (error) {
+			console.error('加载擅长标签失败', error)
+			languageTags.value = [] as SpecialityItem[]
+			labelTags.value = [] as SpecialityItem[]
+		} finally {
+			loading.value = false
+		}
+	}
+	
+	/**
+	 * 清空标签
+	 */
+	const clearTags = () => {
+		languageTags.value = [] as SpecialityItem[]
+		labelTags.value = [] as SpecialityItem[]
+	}
+	
+	return {
+		loading,
+		languageTags,
+		labelTags,
+		languageDisplayTags,
+		labelDisplayTags,
+		loadSpecialities,
+		buildSpecialityDisplay,
+		clearTags
+	}
+}
+
+// 导出模块级函数供直接调用
+export const specialityLoading = ref<boolean>(false)
+export const specialityLanguageTags = ref<SpecialityItem[]>([])
+export const specialityLabelTags = ref<SpecialityItem[]>([])
+
+const languageSortOpts = new SortOptions('desc')
+const labelSortOpts = new SortOptions('asc')
+
+export const getLanguageDisplayTags = (): SpecialityItem[] => {
+	return sortSpecialities(specialityLanguageTags.value, languageSortOpts)
+}
+
+export const getLabelDisplayTags = (): SpecialityItem[] => {
+	return sortSpecialities(specialityLabelTags.value, labelSortOpts)
+}
+
+export const loadProfileSpecialities = async (userKid: string, fallbackLanguages: UTSJSONObject[], fallbackLabels: UTSJSONObject[]) => {
+	if (userKid == null || userKid == '') return
+	
+	specialityLoading.value = true
+	try {
+		const params = new QueryAllSpecialityParams()
+		params.userKid = userKid
+		const res = await queryAllSpeciality(params)
+		
+		let resData: UTSJSONObject | null = null
+		if (res != null) {
+			try {
+				const resStr = JSON.stringify(res)
+				const resObj = JSON.parse(resStr) as UTSJSONObject
+				const dataVal = resObj.get('data')
+				if (dataVal != null) {
+					resData = JSON.parse(JSON.stringify(dataVal)) as UTSJSONObject
+				}
+			} catch (e) {}
+		}
+		
+		// 构建显示数据
+		const resDataAny = resData as any
+		const systemLanguagesArr = getArrayProp(resDataAny, 'systemLanguages')
+		const customLanguagesArr = getArrayProp(resDataAny, 'customLanguages')
+		const systemLabelsArr = getArrayProp(resDataAny, 'systemLabels')
+		const customLabelsArr = getArrayProp(resDataAny, 'customLabels')
+		const languageListArr = getArrayProp(resDataAny, 'languageList')
+		const labelListArr = getArrayProp(resDataAny, 'labelList')
+		
+		const languagesSourceArray: UTSJSONObject[] = []
+		const labelsSourceArray: UTSJSONObject[] = []
+		
+		if (languageListArr.length > 0) {
+			for (let i = 0; i < languageListArr.length; i = i + 1) {
+				languagesSourceArray.push(languageListArr[i] as UTSJSONObject)
+			}
+		} else {
+			for (let i = 0; i < systemLanguagesArr.length; i = i + 1) {
+				languagesSourceArray.push(systemLanguagesArr[i] as UTSJSONObject)
+			}
+			for (let i = 0; i < customLanguagesArr.length; i = i + 1) {
+				languagesSourceArray.push(customLanguagesArr[i] as UTSJSONObject)
+			}
+		}
+		
+		if (labelListArr.length > 0) {
+			for (let i = 0; i < labelListArr.length; i = i + 1) {
+				labelsSourceArray.push(labelListArr[i] as UTSJSONObject)
+			}
+		} else {
+			for (let i = 0; i < systemLabelsArr.length; i = i + 1) {
+				labelsSourceArray.push(systemLabelsArr[i] as UTSJSONObject)
+			}
+			for (let i = 0; i < customLabelsArr.length; i = i + 1) {
+				labelsSourceArray.push(customLabelsArr[i] as UTSJSONObject)
+			}
+		}
+		
+		let selectedLanguages = extractSelectedItems(languagesSourceArray, 'language')
+		let selectedLabels = extractSelectedItems(labelsSourceArray, 'label')
+		
+		if (selectedLanguages.length == 0 && fallbackLanguages.length > 0) {
+			selectedLanguages = mapSpecialityList(fallbackLanguages, 'language')
+		}
+		if (selectedLabels.length == 0 && fallbackLabels.length > 0) {
+			selectedLabels = mapSpecialityList(fallbackLabels, 'label')
+		}
+		
+		specialityLanguageTags.value = selectedLanguages
+		specialityLabelTags.value = selectedLabels
+	} catch (error) {
+		console.error('加载擅长标签失败', error)
+		specialityLanguageTags.value = [] as SpecialityItem[]
+		specialityLabelTags.value = [] as SpecialityItem[]
+	} finally {
+		specialityLoading.value = false
+	}
+}

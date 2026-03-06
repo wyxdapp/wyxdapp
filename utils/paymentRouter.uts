@@ -1,0 +1,83 @@
+/**
+ * 支付路由工具
+ * 根据向导是否属于开放平台Partner，自动路由到对应的支付通道
+ * 
+ * 使用方式：
+ * 1. 下单前调用 checkPaymentRoute(guideKid) 判断支付路由
+ * 2. 如果返回 isOpenPlatform = true，使用 openPlatformPay 发起支付
+ * 3. 如果返回 isOpenPlatform = false，使用原有支付流程
+ * 
+ * 前端无感知处理：支付路由逻辑封装在此工具中，
+ * 页面层只需调用 routedPay() 即可自动选择正确的支付通道
+ */
+
+import { getGuidePartner, openPlatformPay, checkBalancePay } from '@/api/openPlatform'
+
+// 支付路由结果
+export class PaymentRouteResult {
+	isOpenPlatform: boolean
+	partnerId: string
+	mchId: string
+	constructor(isOpenPlatform: boolean, partnerId: string, mchId: string) {
+		this.isOpenPlatform = isOpenPlatform
+		this.partnerId = partnerId
+		this.mchId = mchId
+	}
+}
+
+/**
+ * 检查支付路由
+ * @param guideKid 向导KID
+ * @returns 路由结果，isOpenPlatform=true 表示需要走开放平台支付
+ */
+export const checkPaymentRoute = async (guideKid: string): Promise<PaymentRouteResult> => {
+	try {
+		const res = await getGuidePartner(guideKid) as UTSJSONObject
+		if (res != null && res.get('data') != null) {
+			const data = res.get('data') as UTSJSONObject
+			const partnerId = data.getString('wyxdkey')
+			if (partnerId != null && partnerId != '') {
+				return new PaymentRouteResult(
+					true,
+					partnerId,
+					(data.get('mchId') != null ? data.get('mchId')!.toString() : '') as string
+				)
+			}
+		}
+	} catch (e: any) {
+		// 查询失败时走默认支付流程
+		console.log('支付路由查询失败，使用默认流程', e)
+	}
+	return new PaymentRouteResult(false, '', '')
+}
+
+
+// 零钱支付资格检查结果
+export class BalancePayCheckResult {
+	balancePayEnabled: boolean
+	constructor(balancePayEnabled: boolean) {
+		this.balancePayEnabled = balancePayEnabled
+	}
+}
+
+/**
+ * 检查零钱支付资格
+ * @param userKid 用户唯一标识
+ * @param guideKid 向导唯一标识
+ * @param orderType 订单类型（10=定制订单，20=自由行，30=会员，40=礼物，50=抽奖）
+ * @returns 零钱支付资格结果，异常时降级返回 false
+ */
+export const checkBalancePayEnabled = async (
+	userKid: string, guideKid: string, orderType: number
+): Promise<BalancePayCheckResult> => {
+	try {
+		const res = await checkBalancePay(userKid, guideKid, orderType) as UTSJSONObject
+		if (res != null && res.get('data') != null) {
+			const data = res.get('data') as UTSJSONObject
+			return new BalancePayCheckResult(data.getBoolean('balancePayEnabled') == true)
+		}
+	} catch (e: any) {
+		console.log('零钱支付资格查询失败，降级隐藏', e)
+	}
+	return new BalancePayCheckResult(false)
+}
