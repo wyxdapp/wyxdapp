@@ -1,7 +1,7 @@
 {
   "id": "tt-wechat-pro",
   "displayName": "【Android+iOS+Harmony】微信授权登录、微信分享、微信支付、打开小程序、微信客服",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "微信授权登录、分享、支付、打开小程序、打开微信客服等功能",
   "keywords": [
     "微信授权登录",

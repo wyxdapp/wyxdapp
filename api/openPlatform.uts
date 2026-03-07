@@ -101,5 +101,5 @@ export const partnerAlipayAppPay = (params: PartnerPayParams): Promise<UTSJSONOb
  * @param orderType 订单类型（10=定制订单，20=自由行，30=会员，40=礼物，50=抽奖）
  */
 export const checkBalancePay = (userKid: string, guideKid: string, orderType: number): Promise<UTSJSONObject> => {
-	return request.post(`${OPEN_BASE}/pay/checkBalancePay`, { userKid, guideKid, orderType }, true)
+	return request.post(`${OPEN_BASE}/pay/checkBalancePay?userKid=${userKid}&guideKid=${guideKid}&orderType=${orderType}`, null, true)
 }

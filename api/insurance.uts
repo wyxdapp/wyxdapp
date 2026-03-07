@@ -119,3 +119,11 @@ export const getInsuranceOrderDetail = (params: GetInsuranceOrderDetailParams): 
 export const getInsuranceByTripOrder = (params: GetInsuranceByTripOrderParams): Promise<UTSJSONObject> => {
 	return request.get('/insurance/order/by-trip-order?tripOrderKid=' + params.tripOrderKid, null, true)
 }
+
+/**
+ * 获取投保人默认信息
+ * GET /insurance/policyholder
+ */
+export const getPolicyholder = (): Promise<UTSJSONObject> => {
+	return request.get('/insurance/policyholder', null, true)
+}

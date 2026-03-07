@@ -933,7 +933,7 @@ const handleSubmitOrder = async () => {
 				// 检查零钱支付资格
 				let balancePayFlag = false
 				try {
-					const balanceResult = await checkBalancePayEnabled(userKid, '', 30)
+					const balanceResult = await checkBalancePayEnabled(userKid, guiderKidVal, 20)
 					balancePayFlag = balanceResult.balancePayEnabled
 				} catch (e : Error) {
 					console.log('零钱支付资格检查失败', e)
