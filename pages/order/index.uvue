@@ -123,7 +123,7 @@
 								><text class="blue-btn-text">付款</text></view>
 								<view
 									class="btn gray-btn ml-24"
-									v-if="getItemOrderStatus(item) == 50 && getItemRefundStatus(item) != REFUND_STATUS_PENDING"
+									v-if="isInsuranceButtonEnabled() && getItemOrderStatus(item) == 50 && getItemRefundStatus(item) != REFUND_STATUS_PENDING"
 									@click="handleInsuranceClick(item)"
 								><text class="gray-btn-text">{{ getInsuranceBtnText(item) }}</text></view>
 								<view
@@ -266,6 +266,11 @@
 								><text class="blue-btn-text">同意退款</text></view>
 								<view
 									class="btn gray-btn ml-24"
+									v-if="isInsuranceButtonEnabled() && getItemOrderStatus(item) == 50 && getItemRefundStatus(item) != REFUND_STATUS_PENDING"
+									@click="handleInsuranceClick(item)"
+								><text class="gray-btn-text">{{ getInsuranceBtnText(item) }}</text></view>
+								<view
+									class="btn gray-btn ml-24"
 									v-if="canDeleteIncome(item) == true"
 									@click="handleIncomeAction('delete', item)"
 								><text class="gray-btn-text">删除订单</text></view>
@@ -368,6 +373,7 @@ import { ORDER_LIST_CACHE_DURATION } from '@/common/config/timeoutConfig.uts'
 import { LOGIN_BOX_TOP_ORDER } from '@/common/config/uiConfig.uts'
 import { safeSetStorageSync } from '@/common/utils/storageHelper'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { isInsuranceButtonEnabled } from '@/common/composables/useFeatureToggles.uts'
 import { GetExpenditureListParams, GetIncomeListParams, CancelOrderParams, RemoveOrderParams, CompleteOrderParams, AcceptOrderParams, RejectOrderParams, UpdateOrderPriceParams } from '@/api/types/orderTypes.uts'
 
 const getObjString = (obj: UTSJSONObject | null, key: string): string => {
@@ -979,6 +985,95 @@ const parseEntitiesFromResponse = (res: UTSJSONObject | null): Array<UTSJSONObje
 	return result
 }
 
+// ========== 保险按钮相关 ==========
+// 缓存每个订单的保险状态: orderKid -> insuranceOrderKid (空字符串表示未投保)
+const insuranceStatusMap = ref<Map<string, string>>(new Map<string, string>())
+
+// 获取保险按钮文案
+const getInsuranceBtnText = (item: UTSJSONObject | null): string => {
+	const kid = getItemOrderKid(item)
+	if (kid == '') return '保险'
+	const insKid = insuranceStatusMap.value.get(kid)
+	if (insKid != null && insKid != '') return '已投保'
+	return '保险'
+}
+
+// 点击保险按钮
+const handleInsuranceClick = (item: UTSJSONObject | null) => {
+	const kid = getItemOrderKid(item)
+	if (kid == '') return
+
+	const insKid = insuranceStatusMap.value.get(kid)
+	if (insKid != null && insKid != '') {
+		// 已投保，跳转保单详情
+		uni.navigateTo({
+			url: '/pagesTrade/insurance/InsuranceDetail?orderKid=' + insKid
+		})
+	} else {
+		// 未投保，跳转保险信息填写页面
+		pendingRefresh.value = true
+		const obj = toJsonObj(item)
+		const travelDate = getObjString(obj, 'travelDate')
+		uni.navigateTo({
+			url: '/pagesTrade/insurance/InsuranceEntry?tripOrderKid=' + kid + '&travelDate=' + travelDate
+		})
+	}
+}
+
+// 检查订单的保险状态
+const checkInsuranceStatus = (orderKid: string) => {
+	if (orderKid == '') return
+	const params = new GetInsuranceByTripOrderParams()
+	params.tripOrderKid = orderKid
+	getInsuranceByTripOrder(params).then((res: UTSJSONObject | null) => {
+		if (res != null) {
+			const code = getObjNumber(res, 'code')
+			if (code == 200) {
+				const dataVal = res.get('data')
+				if (dataVal != null) {
+					const dataObj = toJsonObj(dataVal)
+					if (dataObj != null) {
+						const insKid = getObjString(dataObj, 'kid')
+						if (insKid != '') {
+							insuranceStatusMap.value.set(orderKid, insKid)
+						}
+					}
+				}
+			}
+		}
+	}).catch((_e: any | null) => {
+		// 查询失败静默处理
+	})
+}
+
+// 批量检查支出订单列表中进行中订单的保险状态
+const checkExpenditureInsuranceStatuses = () => {
+	for (let i = 0; i < expenditureList.value.length; i++) {
+		const item = expenditureList.value[i]
+		const status = getItemOrderStatus(item)
+		if (status == 50) {
+			const kid = getItemOrderKid(item)
+			if (kid != '' && insuranceStatusMap.value.has(kid) == false) {
+				checkInsuranceStatus(kid)
+			}
+		}
+	}
+}
+
+// 批量检查收入订单列表中进行中订单的保险状态
+const checkIncomeInsuranceStatuses = () => {
+	for (let i = 0; i < incomeList.value.length; i++) {
+		const item = incomeList.value[i]
+		const status = getItemOrderStatus(item)
+		if (status == 50) {
+			const kid = getItemOrderKid(item)
+			if (kid != '' && insuranceStatusMap.value.has(kid) == false) {
+				checkInsuranceStatus(kid)
+			}
+		}
+	}
+}
+
 // ========== 数据加载函数 ==========
 const loadExpenditureList = async () => {
 	const loginOk = ensureLogin()
@@ -1141,6 +1236,9 @@ const loadIncomeList = async () => {
 		} catch (e) {}
 		
 		calculateIncompleteOrderCount()
+		
+		// 检查进行中订单的保险状态
+		checkIncomeInsuranceStatuses()
 	} catch (error) {
 		// 加载失败时回退页码，允许用户重试
 		if (incomePageNumber.value > 1) {
@@ -1425,81 +1523,6 @@ const doCancelRefund = async (orderKid: string, userKid: string) => {
 	} catch (e) {
 		console.error('撤销退款失败:', e)
 		uni.showToast({ title: '撤销退款失败', icon: 'none' })
-	}
-}
-
-// ========== 保险按钮相关 ==========
-// 缓存每个订单的保险状态: orderKid -> insuranceOrderKid (空字符串表示未投保)
-const insuranceStatusMap = ref<Map<string, string>>(new Map<string, string>())
-
-// 获取保险按钮文案
-const getInsuranceBtnText = (item: UTSJSONObject | null): string => {
-	const kid = getItemOrderKid(item)
-	if (kid == '') return '保险'
-	const insKid = insuranceStatusMap.value.get(kid)
-	if (insKid != null && insKid != '') return '已投保'
-	return '保险'
-}
-
-// 点击保险按钮
-const handleInsuranceClick = (item: UTSJSONObject | null) => {
-	const kid = getItemOrderKid(item)
-	if (kid == '') return
-
-	const insKid = insuranceStatusMap.value.get(kid)
-	if (insKid != null && insKid != '') {
-		// 已投保，跳转保单详情
-		uni.navigateTo({
-			url: '/pagesTrade/insurance/InsuranceDetail?orderKid=' + insKid
-		})
-	} else {
-		// 未投保，跳转保险信息填写页面
-		pendingRefresh.value = true
-		const obj = toJsonObj(item)
-		const travelDate = getObjString(obj, 'travelDate')
-		uni.navigateTo({
-			url: '/pagesTrade/insurance/InsuranceEntry?tripOrderKid=' + kid + '&travelDate=' + travelDate
-		})
-	}
-}
-
-// 检查订单的保险状态
-const checkInsuranceStatus = (orderKid: string) => {
-	if (orderKid == '') return
-	const params = new GetInsuranceByTripOrderParams()
-	params.tripOrderKid = orderKid
-	getInsuranceByTripOrder(params).then((res: UTSJSONObject | null) => {
-		if (res != null) {
-			const code = getObjNumber(res, 'code')
-			if (code == 200) {
-				const dataVal = res.get('data')
-				if (dataVal != null) {
-					const dataObj = toJsonObj(dataVal)
-					if (dataObj != null) {
-						const insKid = getObjString(dataObj, 'kid')
-						if (insKid != '') {
-							insuranceStatusMap.value.set(orderKid, insKid)
-						}
-					}
-				}
-			}
-		}
-	}).catch((_e: any | null) => {
-		// 查询失败静默处理
-	})
-}
-
-// 批量检查支出订单列表中进行中订单的保险状态
-const checkExpenditureInsuranceStatuses = () => {
-	for (let i = 0; i < expenditureList.value.length; i++) {
-		const item = expenditureList.value[i]
-		const status = getItemOrderStatus(item)
-		if (status == 50) {
-			const kid = getItemOrderKid(item)
-			if (kid != '' && insuranceStatusMap.value.has(kid) == false) {
-				checkInsuranceStatus(kid)
-			}
-		}
 	}
 }
 

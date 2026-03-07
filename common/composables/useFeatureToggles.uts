@@ -12,6 +12,7 @@ import { getResponseCode, getResponseData } from '@/common/utils/utsSafe.uts'
 const memberFeatureEnabled = ref<boolean>(false)
 const giftFeatureEnabled = ref<boolean>(false)
 const sharedDataDisplayEnabled = ref<boolean>(true)
+const insuranceButtonEnabled = ref<boolean>(false)
 const isLoaded = ref<boolean>(false)
 
 const getObjString = (obj: UTSJSONObject | null, key: string): string => {
@@ -59,16 +60,23 @@ export const loadFeatureToggles = () => {
 			if (sharedDataVal != '') {
 				sharedDataDisplayEnabled.value = parseBooleanConfig(sharedDataVal)
 			}
+			
+			const insuranceVal = getObjString(dataObj, 'show_insurance_button')
+			if (insuranceVal != '') {
+				insuranceButtonEnabled.value = parseBooleanConfig(insuranceVal)
+			}
 			isLoaded.value = true
 			console.log('[FeatureToggles] 会员功能状态:', memberFeatureEnabled.value)
 			console.log('[FeatureToggles] 礼物功能状态:', giftFeatureEnabled.value)
 			console.log('[FeatureToggles] 共享数据显示状态:', sharedDataDisplayEnabled.value)
+			console.log('[FeatureToggles] 保险按钮状态:', insuranceButtonEnabled.value)
 		}
 	}).catch((error: any | null): void => {
 		console.error('[FeatureToggles] 加载配置失败:', error)
 		memberFeatureEnabled.value = false
 		giftFeatureEnabled.value = false
 		sharedDataDisplayEnabled.value = true
+		insuranceButtonEnabled.value = false
 		isLoaded.value = true
 	})
 }
@@ -103,4 +111,12 @@ export const isFeatureTogglesLoaded = (): boolean => {
  */
 export const isSharedDataDisplayEnabled = (): boolean => {
 	return sharedDataDisplayEnabled.value
+}
+
+/**
+ * 检查保险按钮是否显示
+ * @returns true=显示保险按钮，false=隐藏
+ */
+export const isInsuranceButtonEnabled = (): boolean => {
+	return insuranceButtonEnabled.value
 }
