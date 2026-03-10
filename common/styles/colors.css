@@ -73,7 +73,7 @@
 
 /* 背景颜色兼容 */
 .bg-light-base { background-color: #F5F5F5; }
-.bg-base { background-color: #EDEDED; }
+.bg-base { background-color: #F5F5F5; }
 .bg-F2 { background-color: #F2F2F2; }
 .bg-light-gray { background-color: #E5E5E5; }
 .bg-light-black { background-color: #666666; }

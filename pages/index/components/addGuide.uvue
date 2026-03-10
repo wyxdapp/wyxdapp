@@ -1,5 +1,9 @@
 <template>
 	<view class="page">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -25,7 +29,7 @@
 		<!-- 形象照 -->
 		<view class="section">
 			<view class="section-header">
-				<uni-icons type="camera-filled" :size="20" color="#37B1F2" />
+				<uni-icons type="camera-filled" :size="20" :color="currentTheme.primaryColor" />
 				<text class="section-title-text">形象照</text>
 			</view>
 			<view class="section-body">
@@ -45,7 +49,7 @@
 		<!-- 城市 -->
 		<view class="section">
 			<view class="section-header">
-				<uni-icons type="location-filled" :size="20" color="#37B1F2" />
+				<uni-icons type="location-filled" :size="20" :color="currentTheme.primaryColor" />
 				<text class="section-title-text">城市</text>
 			</view>
 			<view class="section-body">
@@ -68,7 +72,7 @@
 		<!-- 擅长 -->
 		<view class="section">
 			<view class="section-header">
-				<uni-icons type="star-filled" :size="20" color="#37B1F2" />
+				<uni-icons type="star-filled" :size="20" :color="currentTheme.primaryColor" />
 				<text class="section-title-text">擅长</text>
 			</view>
 			<view class="section-body">
@@ -91,7 +95,7 @@
 		<!-- 服务费用 -->
 		<view class="section">
 			<view class="section-header">
-				<uni-icons type="wallet-filled" :size="20" color="#37B1F2" />
+				<uni-icons type="wallet-filled" :size="20" :color="currentTheme.primaryColor" />
 				<text class="section-title-text">费用</text>
 			</view>
 			<view class="section-body">
@@ -105,7 +109,7 @@
 		<!-- 服务介绍 -->
 		<view class="section">
 			<view class="section-header">
-				<uni-icons type="compose" :size="20" color="#37B1F2" />
+				<uni-icons type="compose" :size="20" :color="currentTheme.primaryColor" />
 				<text class="section-title-text">介绍</text>
 			</view>
 			<view class="section-body">
@@ -130,6 +134,7 @@
 <script setup lang="uts">
 import { ref, computed, onUnmounted } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { getGuideDetail, publishGuide } from '@/common/services/guideService.uts'
 import { cosUploader } from '@/utils/upload/index.uts'
@@ -146,6 +151,8 @@ import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvu
 import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
 import { GUIDE_CONTENT_MAX_LENGTH } from '@/common/config/uiConfig.uts'
 import { QueryUserForteParams, DeleteUserLanguageParams, DeleteUserLabelParams } from '@/api/types/discoverTypes.uts'
+import { currentTheme } from '@/stores/theme.uts'
+import { getLocationInfo, LocationResult } from '@/common/utils/location.uts'
 
 // ==================== 页面布局 ====================
 // 使用导出的 ref 变量和函数
@@ -199,6 +206,13 @@ const submitting = ref<boolean>(false)
 
 // 🔧 优化：添加标记，避免 onLoad 和 onShow 重复加载
 const isFirstShow = ref<boolean>(true)
+
+// 🔧 标记：从城市选择页面返回时跳过刷新，避免覆盖刚选的城市
+const skipNextRefresh = ref<boolean>(false)
+
+// 用户经纬度（定位获取）
+const userLatitude = ref<number>(0)
+const userLongitude = ref<number>(0)
 
 // ==================== 计算属性 ====================
 
@@ -360,6 +374,8 @@ const loadGuideInfo = async (kid: string) => {
 				const dataStr = JSON.stringify(dataVal)
 				const dataObj = JSON.parse(dataStr) as UTSJSONObject
 				
+				console.log('📋 [addGuide] API 返回 data 字段:', dataStr.substring(0, Math.min(500, dataStr.length)))
+				
 				const memberGuideKidVal = dataObj.get('memberGuideKid')
 				const imagePhotoVal = dataObj.get('imagePhoto')
 				const guideImgVal = dataObj.get('guideImg')
@@ -367,6 +383,8 @@ const loadGuideInfo = async (kid: string) => {
 				const guideDescribeVal = dataObj.get('guideDescribe')
 				const accessiblePlaceVal = dataObj.get('accessiblePlace')
 				const userFortesVal = dataObj.get('userFortes')
+				
+				console.log('🏙️ [addGuide] accessiblePlaceVal:', accessiblePlaceVal != null ? JSON.stringify(accessiblePlaceVal) : 'null', 'isArray:', Array.isArray(accessiblePlaceVal))
 				
 				if (memberGuideKidVal != null && memberGuideKidVal.toString() != '') {
 					formMemberGuideKid.value = memberGuideKidVal.toString()
@@ -389,7 +407,47 @@ const loadGuideInfo = async (kid: string) => {
 				}
 				
 				if (accessiblePlaceVal != null) {
-					accessiblePlace.value = normalizeAccessiblePlace(accessiblePlaceVal)
+					// 后端返回的是 List<String> 数组格式，直接按数组解析
+					if (Array.isArray(accessiblePlaceVal) == true) {
+						const placeArr = accessiblePlaceVal as Array<string>
+						const places: Array<string> = []
+						for (let pi = 0; pi < placeArr.length; pi = pi + 1) {
+							const p = placeArr[pi]
+							if (p != null && p.toString().trim() != '') {
+								places.push(p.toString().trim())
+							}
+						}
+						accessiblePlace.value = places
+						console.log('✅ [addGuide] 解析城市数组成功, 数量:', places.length, '城市:', places.join(','))
+					} else {
+						// 兜底：尝试将 toString() 结果按逗号分隔解析
+						const placeStr = accessiblePlaceVal.toString()
+						console.log('🏙️ [addGuide] accessiblePlace 非数组, toString:', placeStr)
+						// 处理可能的 JSON 数组字符串，如 '["北京市","上海市"]'
+						if (placeStr.indexOf('[') == 0) {
+							try {
+								const parsed = JSON.parse(placeStr)
+								if (Array.isArray(parsed) == true) {
+									const parsedArr = parsed as Array<string>
+									const places2: Array<string> = []
+									for (let pi2 = 0; pi2 < parsedArr.length; pi2 = pi2 + 1) {
+										const p2 = parsedArr[pi2]
+										if (p2 != null && p2.toString().trim() != '') {
+											places2.push(p2.toString().trim())
+										}
+									}
+									accessiblePlace.value = places2
+									console.log('✅ [addGuide] 从JSON字符串解析城市成功, 数量:', places2.length)
+								} else {
+									accessiblePlace.value = normalizeAccessiblePlace(accessiblePlaceVal)
+								}
+							} catch (parseErr) {
+								accessiblePlace.value = normalizeAccessiblePlace(accessiblePlaceVal)
+							}
+						} else {
+							accessiblePlace.value = normalizeAccessiblePlace(accessiblePlaceVal)
+						}
+					}
 				}
 				
 				// 解析 userFortes
@@ -637,7 +695,7 @@ const chooseImage = () => {
 					const resObj = JSON.parse(resStr) as UTSJSONObject
 					const tempFilePathsVal = resObj.get('tempFilePaths')
 					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
-						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						const tempFilePaths = tempFilePathsVal as Array<string>
 						if (tempFilePaths.length > 0) {
 							const firstPath = tempFilePaths[0]
 							if (firstPath != null && firstPath.toString() != '') {
@@ -655,6 +713,8 @@ const chooseImage = () => {
 
 // 城市选择相关函数
 const openCityPicker = () => {
+	// 标记：从城市选择页面返回时跳过刷新
+	skipNextRefresh.value = true
 	// 跳转到城市选择页面
 	uni.navigateTo({
 		url: '/pagesBusiness/citySelect/index'
@@ -751,6 +811,15 @@ const handlePublish = async () => {
 			languageKids: formLanguageKids.value
 		} as UTSJSONObject
 		
+		// 仅在经纬度有效（非 0）时添加，避免覆盖后端已有数据
+		console.log('📍 [addGuide] 发布时经纬度:', userLatitude.value, userLongitude.value)
+		if (userLatitude.value != 0 && userLongitude.value != 0) {
+			params.set('latitude', userLatitude.value)
+			params.set('longitude', userLongitude.value)
+		} else {
+			console.log('⚠️ [addGuide] 经纬度为0，未传递定位信息')
+		}
+		
 		await publishGuide(params)
 		
 		const title = (isEdit.value == true) ? '编辑成功' : '发布成功'
@@ -777,6 +846,25 @@ const refreshGuideData = () => {
 	if (guideKid != '') {
 		loadGuideInfo(guideKid)
 	}
+}
+
+// 获取当前位置（异步，不阻断页面加载）
+const fetchCurrentLocation = () => {
+	getLocationInfo().then((location: LocationResult) => {
+		console.log('📍 [addGuide] 定位回调, latitude:', location.latitude, 'longitude:', location.longitude)
+		
+		if (location.latitude != 0) {
+			userLatitude.value = location.latitude
+		}
+		if (location.longitude != 0) {
+			userLongitude.value = location.longitude
+		}
+		
+		console.log('📍 [addGuide] 获取当前位置成功:', userLatitude.value, userLongitude.value)
+	}).catch((error: any | null): void => {
+		// 定位失败静默处理，不阻断页面加载
+		console.log('⚠️ [addGuide] 获取当前位置失败:', error)
+	})
 }
 
 const initPageData = () => {
@@ -818,6 +906,9 @@ const initPageData = () => {
 	}
 	
 	formMemberGuideKid.value = userKid
+	
+	// 异步获取定位信息
+	fetchCurrentLocation()
 }
 
 // ==================== 生命周期 ====================
@@ -857,6 +948,14 @@ onShow(() => {
 	
 	// 后续显示才刷新（从其他页面返回时）
 	console.log('🔄 [addGuide] 从其他页面返回，刷新数据')
+	
+	// 🔧 如果是从城市选择页面返回，跳过刷新避免覆盖刚选的城市
+	if (skipNextRefresh.value == true) {
+		skipNextRefresh.value = false
+		console.log('ℹ️ [addGuide] 从城市选择返回，跳过刷新以保留选中的城市')
+		return
+	}
+	
 	refreshGuideData()
 })
 
@@ -873,8 +972,24 @@ onUnmounted(() => {
 	flex-direction: column;
 	width: 750rpx;
 	flex: 1;
-	background-color: #ffffff;
+	background-color: #F5F5F5;
 	position: relative;
+}
+
+.hear-bg {
+	width: 750rpx;
+	height: 392rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -935,6 +1050,8 @@ onUnmounted(() => {
 	background-color: #ffffff;
 	padding: 0 28rpx;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 
@@ -946,6 +1063,8 @@ onUnmounted(() => {
 	background-color: #ffffff;
 	padding: 0 28rpx;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 

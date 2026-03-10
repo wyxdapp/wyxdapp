@@ -1,0 +1,220 @@
+/**
+ * 主题状态管理模块
+ * 负责主题配色的拉取、缓存和响应式状态管理
+ */
+
+import { reactive, ref } from 'vue'
+
+// ==================== 类型定义 ====================
+
+export type ThemeState = {
+	presetId: string
+	primaryColor: string
+	primaryColorLight: string
+	primaryColorDark: string
+	accentColor: string
+	successColor: string
+	warningColor: string
+	errorColor: string
+	gradientStartColor: string
+	gradientMidColor: string
+	gradientEndColor: string
+	textPrimary: string
+	textSecondary: string
+	textInverse: string
+	buttonRadius: number
+	cardRadius: number
+}
+
+// ==================== 默认主题（清新蓝） ====================
+
+const DEFAULT_THEME: ThemeState = {
+	presetId: 'fresh-blue',
+	primaryColor: '#37B1F2',
+	primaryColorLight: '#E8F6FE',
+	primaryColorDark: '#2A8BC7',
+	accentColor: '#FF6B35',
+	successColor: '#22AA76',
+	warningColor: '#FFC300',
+	errorColor: '#F83535',
+	gradientStartColor: '#D6EAFF',
+	gradientMidColor: '#B8DBFF',
+	gradientEndColor: '#F2D0E0',
+	textPrimary: '#333333',
+	textSecondary: '#666666',
+	textInverse: '#FFFFFF',
+	buttonRadius: 16,
+	cardRadius: 16
+}
+
+// ==================== 缓存 Key ====================
+
+const THEME_CACHE_KEY = 'wyxd_theme_config'
+
+// ==================== 响应式状态 ====================
+
+export const currentTheme = reactive<ThemeState>({ ...DEFAULT_THEME })
+export const isThemeLoaded = ref<boolean>(false)
+
+// ==================== 配置 key 映射 ====================
+
+const keyMap = new Map<string, string>()
+keyMap.set('theme_preset_id', 'presetId')
+keyMap.set('theme_primary_color', 'primaryColor')
+keyMap.set('theme_primary_color_light', 'primaryColorLight')
+keyMap.set('theme_primary_color_dark', 'primaryColorDark')
+keyMap.set('theme_accent_color', 'accentColor')
+keyMap.set('theme_success_color', 'successColor')
+keyMap.set('theme_warning_color', 'warningColor')
+keyMap.set('theme_error_color', 'errorColor')
+keyMap.set('theme_gradient_start', 'gradientStartColor')
+keyMap.set('theme_gradient_mid', 'gradientMidColor')
+keyMap.set('theme_gradient_end', 'gradientEndColor')
+keyMap.set('theme_text_primary', 'textPrimary')
+keyMap.set('theme_text_secondary', 'textSecondary')
+keyMap.set('theme_text_inverse', 'textInverse')
+keyMap.set('theme_button_radius', 'buttonRadius')
+keyMap.set('theme_card_radius', 'cardRadius')
+
+/**
+ * 从 getSystemSettings 返回的全量配置中提取主题配色
+ * 在 loadFeatureToggles 的回调中调用，无需额外 API 请求
+ */
+export const initThemeFromSettings = (dataObj: UTSJSONObject): void => {
+	let hasThemeData = false
+
+	keyMap.forEach((field: string, configKey: string) => {
+		const val = dataObj.get(configKey)
+		if (val != null && val.toString() != '') {
+			hasThemeData = true
+			const strVal = val.toString()
+			if (field == 'buttonRadius' || field == 'cardRadius') {
+				const numVal = parseInt(strVal)
+				if (!isNaN(numVal)) {
+					if (field == 'buttonRadius') currentTheme.buttonRadius = numVal
+					if (field == 'cardRadius') currentTheme.cardRadius = numVal
+				}
+			} else {
+				if (field == 'presetId') currentTheme.presetId = strVal
+				if (field == 'primaryColor') currentTheme.primaryColor = strVal
+				if (field == 'primaryColorLight') currentTheme.primaryColorLight = strVal
+				if (field == 'primaryColorDark') currentTheme.primaryColorDark = strVal
+				if (field == 'accentColor') currentTheme.accentColor = strVal
+				if (field == 'successColor') currentTheme.successColor = strVal
+				if (field == 'warningColor') currentTheme.warningColor = strVal
+				if (field == 'errorColor') currentTheme.errorColor = strVal
+				if (field == 'gradientStartColor') currentTheme.gradientStartColor = strVal
+				if (field == 'gradientMidColor') currentTheme.gradientMidColor = strVal
+				if (field == 'gradientEndColor') currentTheme.gradientEndColor = strVal
+				if (field == 'textPrimary') currentTheme.textPrimary = strVal
+				if (field == 'textSecondary') currentTheme.textSecondary = strVal
+				if (field == 'textInverse') currentTheme.textInverse = strVal
+			}
+		}
+	})
+
+	if (hasThemeData) {
+		saveThemeToCache()
+		console.log('[ThemeStore] 主题配置已从服务端加载:', currentTheme.presetId)
+	} else {
+		loadThemeFromCache()
+		console.log('[ThemeStore] 服务端无主题数据，使用缓存或默认主题')
+	}
+
+	isThemeLoaded.value = true
+}
+
+/**
+ * 获取指定主题颜色值
+ */
+export const getThemeColor = (key: string): string => {
+	if (key == 'primaryColor') return currentTheme.primaryColor
+	if (key == 'primaryColorLight') return currentTheme.primaryColorLight
+	if (key == 'primaryColorDark') return currentTheme.primaryColorDark
+	if (key == 'accentColor') return currentTheme.accentColor
+	if (key == 'successColor') return currentTheme.successColor
+	if (key == 'warningColor') return currentTheme.warningColor
+	if (key == 'errorColor') return currentTheme.errorColor
+	if (key == 'gradientStartColor') return currentTheme.gradientStartColor
+	if (key == 'gradientMidColor') return currentTheme.gradientMidColor
+	if (key == 'gradientEndColor') return currentTheme.gradientEndColor
+	if (key == 'textPrimary') return currentTheme.textPrimary
+	if (key == 'textSecondary') return currentTheme.textSecondary
+	if (key == 'textInverse') return currentTheme.textInverse
+	return ''
+}
+
+// ==================== 缓存操作 ====================
+
+const saveThemeToCache = (): void => {
+	try {
+		const cacheData = JSON.stringify({
+			presetId: currentTheme.presetId,
+			primaryColor: currentTheme.primaryColor,
+			primaryColorLight: currentTheme.primaryColorLight,
+			primaryColorDark: currentTheme.primaryColorDark,
+			accentColor: currentTheme.accentColor,
+			successColor: currentTheme.successColor,
+			warningColor: currentTheme.warningColor,
+			errorColor: currentTheme.errorColor,
+			gradientStartColor: currentTheme.gradientStartColor,
+			gradientMidColor: currentTheme.gradientMidColor,
+			gradientEndColor: currentTheme.gradientEndColor,
+			textPrimary: currentTheme.textPrimary,
+			textSecondary: currentTheme.textSecondary,
+			textInverse: currentTheme.textInverse,
+			buttonRadius: currentTheme.buttonRadius,
+			cardRadius: currentTheme.cardRadius
+		})
+		uni.setStorageSync(THEME_CACHE_KEY, cacheData)
+	} catch (e) {
+		console.error('[ThemeStore] 缓存主题失败:', e)
+	}
+}
+
+const loadThemeFromCache = (): void => {
+	try {
+		const cached = uni.getStorageSync(THEME_CACHE_KEY) as string
+		if (cached != null && cached != '') {
+			const obj = JSON.parse(cached) as UTSJSONObject
+			if (obj != null) {
+				initThemeFromParsed(obj)
+			}
+		}
+	} catch (e) {
+		console.error('[ThemeStore] 读取缓存主题失败，使用默认主题:', e)
+	}
+}
+
+const initThemeFromParsed = (obj: UTSJSONObject): void => {
+	const getString = (o: UTSJSONObject, k: string, def: string): string => {
+		const v = o.get(k)
+		if (v != null && v.toString() != '') return v.toString()
+		return def
+	}
+	const getNum = (o: UTSJSONObject, k: string, def: number): number => {
+		const v = o.get(k)
+		if (v != null) {
+			const n = parseInt(v.toString())
+			if (!isNaN(n)) return n
+		}
+		return def
+	}
+
+	currentTheme.presetId = getString(obj, 'presetId', DEFAULT_THEME.presetId)
+	currentTheme.primaryColor = getString(obj, 'primaryColor', DEFAULT_THEME.primaryColor)
+	currentTheme.primaryColorLight = getString(obj, 'primaryColorLight', DEFAULT_THEME.primaryColorLight)
+	currentTheme.primaryColorDark = getString(obj, 'primaryColorDark', DEFAULT_THEME.primaryColorDark)
+	currentTheme.accentColor = getString(obj, 'accentColor', DEFAULT_THEME.accentColor)
+	currentTheme.successColor = getString(obj, 'successColor', DEFAULT_THEME.successColor)
+	currentTheme.warningColor = getString(obj, 'warningColor', DEFAULT_THEME.warningColor)
+	currentTheme.errorColor = getString(obj, 'errorColor', DEFAULT_THEME.errorColor)
+	currentTheme.gradientStartColor = getString(obj, 'gradientStartColor', DEFAULT_THEME.gradientStartColor)
+	currentTheme.gradientMidColor = getString(obj, 'gradientMidColor', DEFAULT_THEME.gradientMidColor)
+	currentTheme.gradientEndColor = getString(obj, 'gradientEndColor', DEFAULT_THEME.gradientEndColor)
+	currentTheme.textPrimary = getString(obj, 'textPrimary', DEFAULT_THEME.textPrimary)
+	currentTheme.textSecondary = getString(obj, 'textSecondary', DEFAULT_THEME.textSecondary)
+	currentTheme.textInverse = getString(obj, 'textInverse', DEFAULT_THEME.textInverse)
+	currentTheme.buttonRadius = getNum(obj, 'buttonRadius', DEFAULT_THEME.buttonRadius)
+	currentTheme.cardRadius = getNum(obj, 'cardRadius', DEFAULT_THEME.cardRadius)
+}

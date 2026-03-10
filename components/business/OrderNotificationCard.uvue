@@ -5,7 +5,7 @@
 		@click="$emit('click')"
 	>
 		<view class="card-icon-wrapper">
-			<UniIcons type="shop" :size="48" color="#37B1F2" />
+			<UniIcons type="shop" :size="48" :color="currentTheme.primaryColor" />
 			<view v-if="!props.read" class="unread-dot"></view>
 		</view>
 		
@@ -31,6 +31,7 @@
 import { computed } from 'vue'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import { fen2yuan } from '@/utils/money.uts'
+import { currentTheme } from '@/stores/theme.uts'
 
 const props = defineProps({
 	title: { type: String, required: true },

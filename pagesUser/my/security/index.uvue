@@ -1,5 +1,7 @@
 <template>
 	<view class="security-page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -367,6 +369,7 @@ import { getMobileCode, changePhone, retrievePassword, setPayPassword, updatePay
 import { post } from '@/utils/request'
 import { getAccountBalance } from '@/api/wallet.uts'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 const userStore = useUserStore()
 
@@ -1296,7 +1299,7 @@ const confirmPasswordChange = async () => {
 			}
 		}
 		
-		// 首次设置密码调用 setPassword，已有密码调用 retrievePassword
+		// 首次设置密码调用 setPassword，已有密码根据验证方式调用不同接口
 		let resRaw: UTSJSONObject | null = null
 		if (isFirstSetLoginPassword.value == true) {
 			const paramsSetObj = {
@@ -1304,10 +1307,19 @@ const confirmPasswordChange = async () => {
 				newPassword: newPassword
 			} as UTSJSONObject
 			resRaw = await post('/user/baseInfo/setPassword', paramsSetObj, false) as UTSJSONObject
+		} else if (passwordVerifyType.value == 'original') {
+			// 原密码验证方式：调用 updatePassword 接口
+			const paramsUpdateObj = {
+				userKid: userKidStr,
+				oldPassword: passwordFormOriginalRef.value,
+				newPassword: newPassword
+			} as UTSJSONObject
+			resRaw = await post('/user/baseInfo/updatePassword', paramsUpdateObj, false) as UTSJSONObject
 		} else {
+			// 短信验证方式：调用 retrievePassword 接口
 			const paramsRetrieveObj = {
 				phone: phone,
-				code: (passwordVerifyType.value == 'sms') ? passwordFormSmsCodeRef.value : '',
+				code: passwordFormSmsCodeRef.value,
 				newPassword: newPassword
 			} as UTSJSONObject
 			resRaw = await post('/user/baseInfo/retrievePassword', paramsRetrieveObj, false) as UTSJSONObject
@@ -1582,8 +1594,24 @@ onUnmounted(() => {
 <style scoped>
 .security-page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -1628,10 +1656,13 @@ onUnmounted(() => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 .section-card {
 	background-color: #ffffff;
+	margin-top: 20rpx;
 }
 
 .security-item {

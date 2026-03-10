@@ -1,7 +1,9 @@
 <template>
 	<view class="fix-page bg-light-base">
 		<!-- 背景图（使用绝对定位，与首页保持一致） -->
-		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill"></image>
+		<view class="bg-my-header" :style="headerGradientOuter()">
+			<view class="bg-my-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 顶部标题栏 -->
 		<view class="header-box" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
@@ -153,6 +155,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { useUserStore, initUserInfoAction, getUserLoginStatus, getUserId } from '@/stores/user.uts'
 import { useChatStore, initWebSocketAction, forceReconnectAction } from '@/stores/chat.uts'
 import { 
@@ -1864,22 +1867,13 @@ const showActions = (item: ConversationItem) => {
 	const pinText = item.isTop == true ? '取消置顶' : '置顶会话'
 	uni.showActionSheet({
 		itemList: [pinText, '删除会话'],
-		success: (res: any) => {
-			if (res != null) {
-				const resObj = toJsonObj(res)
-				if (resObj != null) {
-					const tapIndexVal = resObj.get('tapIndex')
-					if (tapIndexVal != null) {
-						const tapIndex = parseInt(tapIndexVal.toString())
-						if (tapIndex == 0) {
-							// 置顶/取消置顶
-							togglePin(item)
-						} else if (tapIndex == 1) {
-							// 删除会话
-							deleteConv(item)
-						}
-					}
-				}
+		success: (res) => {
+			if (res.tapIndex == 0) {
+				// 置顶/取消置顶
+				togglePin(item)
+			} else if (res.tapIndex == 1) {
+				// 删除会话
+				deleteConv(item)
 			}
 		}
 	})
@@ -1959,6 +1953,14 @@ const handleSelectGift = async (gift: UTSJSONObject | null) => {
 
 /* 顶部背景图（使用绝对定位，与首页保持一致） */
 .bg-my-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+.bg-my-header-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

@@ -270,12 +270,14 @@ export interface IdentityUserParams {
  * @param params { userKid: string, realname: string, idNumber: string, idcardFrontImage: string, idcardBackImage: string }
  */
 export const identityUser = (params: IdentityUserParams): Promise<UTSJSONObject> => {
+	// 🔧 安全提取参数：兼容 interface 实例和 UTSJSONObject
+	const paramsObj = JSON.parse(JSON.stringify(params)) as UTSJSONObject
 	const payload = {
-		userKid: params.userKid,
-		realname: params.realname,
-		idNumber: params.idNumber,
-		idcardFrontImage: params.idcardFrontImage,
-		idcardBackImage: params.idcardBackImage
+		userKid: getParamString(paramsObj, 'userKid'),
+		realname: getParamString(paramsObj, 'realname'),
+		idNumber: getParamString(paramsObj, 'idNumber'),
+		idcardFrontImage: getParamString(paramsObj, 'idcardFrontImage'),
+		idcardBackImage: getParamString(paramsObj, 'idcardBackImage')
 	} as UTSJSONObject
 	return request.post('/user/baseInfo/identityUser', payload, true)
 }
@@ -314,8 +316,11 @@ export interface QueryAuthInfoParams {
  * @param params { userKid: string }
  */
 export const queryAuthInfo = (params: QueryAuthInfoParams): Promise<UTSJSONObject> => {
+	// 🔧 安全提取参数：兼容 interface 实例和 UTSJSONObject
+	const paramsObj = JSON.parse(JSON.stringify(params)) as UTSJSONObject
+	const userKid = getParamString(paramsObj, 'userKid')
 	const payload = {
-		userKid: params.userKid
+		userKid: userKid
 	} as UTSJSONObject
 	return request.post('/user/baseInfo/v1/queryAuthInfo', payload, false)
 }
@@ -333,11 +338,14 @@ export interface GuideAuthParams {
  * @param params { userKid: string, guideAuthenticatImage: string, guideCertificateNo?: string }
  */
 export const guideAuth = (params: GuideAuthParams): Promise<UTSJSONObject> => {
+	// 🔧 安全提取参数：兼容 interface 实例和 UTSJSONObject
+	const paramsObj = JSON.parse(JSON.stringify(params)) as UTSJSONObject
 	const payload = {
-		userKid: params.userKid,
-		guideAuthenticatImage: params.guideAuthenticatImage
+		userKid: getParamString(paramsObj, 'userKid'),
+		guideAuthenticatImage: getParamString(paramsObj, 'guideAuthenticatImage')
 	} as UTSJSONObject
-	if (params.guideCertificateNo != null) { payload['guideCertificateNo'] = params.guideCertificateNo }
+	const certNo = getParamString(paramsObj, 'guideCertificateNo')
+	if (certNo != '') { payload['guideCertificateNo'] = certNo }
 	return request.post('/user/baseInfo/guideAuth', payload, true)
 }
 
@@ -354,11 +362,14 @@ export interface DriverAuthParams {
  * @param params { userKid: string, driverAuthenticatImage: string, driverLicenseNo?: string }
  */
 export const driverAuth = (params: DriverAuthParams): Promise<UTSJSONObject> => {
+	// 🔧 安全提取参数：兼容 interface 实例和 UTSJSONObject
+	const paramsObj = JSON.parse(JSON.stringify(params)) as UTSJSONObject
 	const payload = {
-		userKid: params.userKid,
-		driverAuthenticatImage: params.driverAuthenticatImage
+		userKid: getParamString(paramsObj, 'userKid'),
+		driverAuthenticatImage: getParamString(paramsObj, 'driverAuthenticatImage')
 	} as UTSJSONObject
-	if (params.driverLicenseNo != null) { payload['driverLicenseNo'] = params.driverLicenseNo }
+	const licenseNo = getParamString(paramsObj, 'driverLicenseNo')
+	if (licenseNo != '') { payload['driverLicenseNo'] = licenseNo }
 	return request.post('/user/baseInfo/driverAuth', payload, true)
 }
 

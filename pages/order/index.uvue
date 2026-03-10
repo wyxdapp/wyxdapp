@@ -1,6 +1,8 @@
 <template>
 	<view class="fix-page bg-light-base">
-		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill" />
+		<view class="bg-my-header" :style="headerGradientOuter()">
+			<view class="bg-my-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		<view class="fixed-header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
 			<!-- Tab 栏 - 与发现页面结构完全一致 -->
 			<view class="tabs-row">
@@ -240,10 +242,10 @@
 									@click="handleIncomeAction('cancel', item)"
 								><text class="gray-btn-text">取消</text></view>
 								<view
-									class="btn gray-btn ml-24"
+									class="btn blue-btn ml-24"
 									v-if="getItemOrderStatus(item) == 10"
 									@click="onChangePriceClick(item)"
-								><text class="gray-btn-text">改价</text></view>
+								><text class="blue-btn-text">改价</text></view>
 								<view
 									class="btn gray-btn ml-24"
 									v-if="canIncomeRejectAccept(item) == true"
@@ -320,6 +322,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { useUserStore, getUserLoginStatus, getUserId } from '@/stores/user.uts'
 import { useUnreadStore, updateOrderUnreadCountDirect } from '@/stores/unread.uts'
 import { 
@@ -2119,6 +2122,14 @@ watch(tabIndexComputed, (val: number) => {
 }
 
 .bg-my-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 480rpx;
+}
+
+.bg-my-header-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

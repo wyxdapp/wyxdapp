@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { likeTrend, unlikeTrend } from '@/common/services/findService.uts'
-import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+import { handleError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
 import { deepCloneObject } from '@/utils/deepClone.uts'
 import { safeGetString, safeGetNumber } from '@/utils/nullGuard.uts'
 
@@ -30,6 +30,10 @@ export const isLiked = (discoverKid: string): boolean => {
 export const getLikeCount = (discoverKid: string): number => {
 	const count = likeCountMapRef.value.get(discoverKid)
 	return (count != null) ? count : 0
+}
+
+export const hasLikeCount = (discoverKid: string): boolean => {
+	return likeCountMapRef.value.has(discoverKid)
 }
 
 export const isLikeProcessing = (discoverKid: string): boolean => {
@@ -70,7 +74,6 @@ export const getLikeStatus = (discoverKid: string): boolean => {
 export const toggleLike = async (currentUserKid: string, discoverKid: string): Promise<boolean> => {
 	// 检查是否正在处理
 	if (processingMapRef.value.get(discoverKid) === true) {
-		console.log('正在处理点赞操作，请稍候')
 		return likeMapRef.value.get(discoverKid) === true
 	}
 	
@@ -96,10 +99,8 @@ export const toggleLike = async (currentUserKid: string, discoverKid: string): P
 		// 调用后端API
 		if (newStatus == true) {
 			await likeTrend(params)
-			console.log(`✅ 点赞成功: ${discoverKid}`)
 		} else {
 			await unlikeTrend(params)
-			console.log(`✅ 取消点赞成功: ${discoverKid}`)
 		}
 		
 		return newStatus
@@ -111,7 +112,7 @@ export const toggleLike = async (currentUserKid: string, discoverKid: string): P
 		// 失败回滚
 		likeMapRef.value.set(discoverKid, oldStatus)
 		likeCountMapRef.value.set(discoverKid, oldCount)
-		throw error
+		return oldStatus
 	} finally {
 		// 移除处理中标记
 		processingMapRef.value.delete(discoverKid)
@@ -130,6 +131,7 @@ export const useLikeStore = () => {
 		// Getters
 		isLiked,
 		getLikeCount,
+		hasLikeCount,
 		isProcessing: isLikeProcessing,
 		getLikeStatus,
 		

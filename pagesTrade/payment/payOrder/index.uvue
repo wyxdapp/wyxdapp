@@ -46,7 +46,7 @@
 						<text class="payment-method-label">{{ getPayMethodLabel(item) }}</text>
 					</view>
 					<view class="payment-method-right">
-						<uniIcons v-if="payMethod == index" type="checkbox-filled" size="24" color="#37B1F2"></uniIcons>
+						<uniIcons v-if="payMethod == index" type="checkbox-filled" size="24" :color="currentTheme.primaryColor"></uniIcons>
 						<uniIcons v-else type="circle" size="24" color="#CCCCCC"></uniIcons>
 					</view>
 				</view>
@@ -113,6 +113,7 @@ import {
 	checkIsWechatBrowser
 } from '@/pagesTrade/services/wechatPay/index'
 import request from '@/utils/request'
+import { currentTheme } from '@/stores/theme.uts'
 
 // 导入支付宝支付公共模块
 import { 

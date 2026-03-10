@@ -29,6 +29,6 @@ export interface QueryUserHomePageParams {
  * 请求用户主页信息
  */
 export const requestUserHomePage = (params: UTSJSONObject) => {
-	// UTS 规范：request.post 不支持泛型，必须传递 showLoading 参数，移除类型参数
-	return request.post('/user/baseInfo/queryUserHomePage', params, true)
+	// 静默请求，不显示加载提示（页面使用缓存数据先展示，后台刷新）
+	return request.post('/user/baseInfo/queryUserHomePage', params, false)
 }

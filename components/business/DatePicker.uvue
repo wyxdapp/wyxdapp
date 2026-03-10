@@ -15,9 +15,11 @@
 			<!-- 更多按钮 -->
 			<view 
 				class="date-item date-item--more"
+				:class="{ 'date-item--active': isMoreSelected == true }"
 				@click="openDatePicker"
 			>
-				<text class="date-text">更多</text>
+				<text class="date-text">{{ moreDisplayText }}</text>
+				<text v-if="moreDisplayLabel != ''" class="date-label">{{ moreDisplayLabel }}</text>
 			</view>
 		</view>
 		
@@ -119,6 +121,10 @@ const emit = defineEmits<{
 const showPicker = ref<boolean>(false)
 const quickDates = ref<Array<QuickDateItem>>([])
 const selectedQuickIndex = ref<number>(-1)
+const isMoreSelected = ref<boolean>(false)
+const moreSelectedDate = ref<string>('')
+// 内部更新标志，防止 watch 回调覆盖 confirmPicker 设置的状态
+let isInternalUpdate = false
 
 // 年月日列表
 const yearList = ref<Array<number>>([])
@@ -136,15 +142,6 @@ const monthScrollId = ref<string>('')
 const dayScrollId = ref<string>('')
 
 // 安全访问辅助函数
-const getItemValue = (item: any): string => {
-	try {
-		const obj = item as QuickDateItem
-		const value = obj.value
-		return value
-	} catch (e) {}
-	return ''
-}
-
 const getItemDate = (item: any): string => {
 	try {
 		const obj = item as QuickDateItem
@@ -168,6 +165,26 @@ const isQuickDateSelected = (index: number): boolean => {
 	return selectedQuickIndex.value == index
 }
 
+// "更多"按钮显示文本
+const moreDisplayText = computed((): string => {
+	if (isMoreSelected.value == true && moreSelectedDate.value != '') {
+		// 显示选中的日期（MM-DD 格式）
+		const parts = moreSelectedDate.value.split('-')
+		if (parts.length >= 3) {
+			return parts[1] + '-' + parts[2]
+		}
+		return moreSelectedDate.value
+	}
+	return '更多'
+})
+
+const moreDisplayLabel = computed((): string => {
+	if (isMoreSelected.value == true && moreSelectedDate.value != '') {
+		return '已选'
+	}
+	return ''
+})
+
 // 选择日期 - 先定义，供其他函数调用
 const handleSelect = (value: string) => {
 	emit('update:modelValue', value)
@@ -176,11 +193,15 @@ const handleSelect = (value: string) => {
 
 // 快捷日期选择
 const handleQuickSelect = (index: number) => {
+	isInternalUpdate = true
 	selectedQuickIndex.value = index
+	isMoreSelected.value = false
+	moreSelectedDate.value = ''
 	if (index >= 0 && index < quickDates.value.length) {
 		const item = quickDates.value[index]
 		handleSelect(item.value)
 	}
+	isInternalUpdate = false
 }
 
 // 获取某月的天数 - 必须在 initDayList 之前定义
@@ -278,8 +299,36 @@ const confirmPicker = () => {
 	const dayStr = (tempDay.value < 10) ? ('0' + tempDay.value.toString()) : tempDay.value.toString()
 	const dateValue = tempYear.value.toString() + '-' + monthStr + '-' + dayStr
 	
-	handleSelect(dateValue)
+	// 先关闭弹窗
 	showPicker.value = false
+	
+	// 检查选中的日期是否匹配快捷日期
+	let matchedQuickIndex = -1
+	let idx = 0
+	while (idx < quickDates.value.length) {
+		const item = quickDates.value[idx]
+		if (item.value == dateValue) {
+			matchedQuickIndex = idx
+			break
+		}
+		idx = idx + 1
+	}
+	
+	// 先更新选中状态（必须在 handleSelect/emit 之前，避免 watch 回调覆盖）
+	isInternalUpdate = true
+	if (matchedQuickIndex >= 0) {
+		selectedQuickIndex.value = matchedQuickIndex
+		isMoreSelected.value = false
+		moreSelectedDate.value = ''
+	} else {
+		selectedQuickIndex.value = -1
+		isMoreSelected.value = true
+		moreSelectedDate.value = dateValue
+	}
+	
+	// 最后触发值变更（会触发 watch，但此时状态已正确设置）
+	handleSelect(dateValue)
+	isInternalUpdate = false
 }
 
 // 选择年份
@@ -348,8 +397,13 @@ const initQuickDates = () => {
 watch(
 	(): string => props.modelValue,
 	(newVal: string) => {
+		// 内部操作（confirmPicker/handleQuickSelect）已自行处理状态，跳过
+		if (isInternalUpdate == true) return
+		
 		if (newVal == '') {
 			selectedQuickIndex.value = -1
+			isMoreSelected.value = false
+			moreSelectedDate.value = ''
 			return
 		}
 		
@@ -360,6 +414,8 @@ watch(
 			const item = quickDates.value[idx]
 			if (item.value == newVal) {
 				selectedQuickIndex.value = idx
+				isMoreSelected.value = false
+				moreSelectedDate.value = ''
 				found = true
 				break
 			}
@@ -367,7 +423,10 @@ watch(
 		}
 		
 		if (found == false) {
+			// 外部设置了一个非快捷日期，标记"更多"选中
 			selectedQuickIndex.value = -1
+			isMoreSelected.value = true
+			moreSelectedDate.value = newVal
 		}
 	}
 )

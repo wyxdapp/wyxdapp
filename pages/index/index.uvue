@@ -1,11 +1,9 @@
 <template>
 	<view class="page">
-		<!-- 背景图片 -->
-		<image 
-			class="bg-index-header" 
-			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
-			mode="aspectFill"
-		></image>
+		<!-- 渐变背景 -->
+		<view class="bg-index-header" :style="headerGradientOuter()">
+			<view class="bg-index-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 顶部搜索栏 -->
 		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -169,6 +167,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import GuiderCard from '@/components/guider-card/index.uvue'
 import RouteCard from '@/components/route-card/index.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
@@ -511,6 +510,8 @@ const getLocation = async () => {
 	
 	// 保存定位前的城市名称
 	const oldCity = cityName.value
+	const oldLatitude = latitude.value
+	const oldLongitude = longitude.value
 	
 	try {
 		console.log('📍 [Index] 调用 getLocationInfo...')
@@ -524,9 +525,12 @@ const getLocation = async () => {
 		
 		console.log('📍 [Index] 城市更新为:', cityName.value)
 		
-		// 只有城市变化时才刷新列表
-		if (oldCity != location.city) {
-			console.log('📍 [Index] 城市变化，刷新列表')
+		// 城市变化 或 经纬度从无效(0)变为有效时，刷新列表以获取正确的距离
+		const cityChanged = oldCity != location.city
+		const locationBecameValid = (oldLatitude == 0 && oldLongitude == 0) && (location.latitude != 0 || location.longitude != 0)
+		
+		if (cityChanged || locationBecameValid) {
+			console.log('📍 [Index] 刷新列表, 城市变化:', cityChanged, '定位变有效:', locationBecameValid)
 			refreshAllLists()
 		}
 	} catch (err) {
@@ -720,22 +724,13 @@ const switchTab = (index: number) => {
 }
 
 // Swiper 切换
-const onSwiperChange = (e: UTSJSONObject | null) => {
-	if (e == null) return
+const onSwiperChange = (e: UniSwiperChangeEvent) => {
 	try {
-		const eObj = JSON.parse(JSON.stringify(e)) as UTSJSONObject
-		const detailVal = eObj.get('detail')
-		if (detailVal != null) {
-			const detailObj = JSON.parse(JSON.stringify(detailVal)) as UTSJSONObject
-			const currentVal = detailObj.get('current')
-			if (currentVal != null) {
-				const index = parseInt(currentVal.toString())
-				if (isNaN(index) == false && currentTab.value != index) {
-					currentTab.value = index
-				}
-				loadTabData(index, false)
-			}
+		const index = e.detail.current
+		if (currentTab.value != index) {
+			currentTab.value = index
 		}
+		loadTabData(index, false)
 	} catch (err) {}
 }
 
@@ -883,11 +878,18 @@ onShow(() => {
 .page {
 	flex-direction: column;
 	width: 750rpx;
-	background-color: #FFFFFF;
+	background-color: #F5F5F5;
 }
 
-/* ==================== 背景图片 ==================== */
+/* ==================== 渐变背景 ==================== */
 .bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+.bg-index-header-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

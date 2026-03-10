@@ -83,15 +83,15 @@ export function createLocalMessage(
 	status: string,
 	senderAvatar?: string
 ): any {
-	return {
-		id: tempId,
-		senderId: senderId,
-		type: type,
-		content: content,
-		createTime: getCurrentTimeString(),
-		status: status,
-		senderAvatar: (senderAvatar != null && senderAvatar != '') ? senderAvatar : ''
-	} as any
+	const msg = new UTSJSONObject()
+	msg.set('id', tempId)
+	msg.set('senderId', senderId)
+	msg.set('type', type)
+	msg.set('content', content)
+	msg.set('createTime', getCurrentTimeString())
+	msg.set('status', status)
+	msg.set('senderAvatar', (senderAvatar != null && senderAvatar != '') ? senderAvatar : '')
+	return msg
 }
 
 /**
@@ -106,16 +106,16 @@ export function createLocalMessageWithDuration(
 	duration: number,
 	senderAvatar?: string
 ): any {
-	return {
-		id: tempId,
-		senderId: senderId,
-		type: type,
-		content: content,
-		createTime: getCurrentTimeString(),
-		status: status,
-		duration: duration,
-		senderAvatar: senderAvatar
-	} as any
+	const msg = new UTSJSONObject()
+	msg.set('id', tempId)
+	msg.set('senderId', senderId)
+	msg.set('type', type)
+	msg.set('content', content)
+	msg.set('createTime', getCurrentTimeString())
+	msg.set('status', status)
+	msg.set('duration', duration)
+	msg.set('senderAvatar', (senderAvatar != null && senderAvatar != '') ? senderAvatar : '')
+	return msg
 }
 
 /**
@@ -193,17 +193,37 @@ export function updateMessageStatus(
 			const durationStr = getAnyString(msg, 'duration')
 			const durationNum = parseInt(durationStr)
 			const duration = isNaN(durationNum) == false ? durationNum : 0
+			const messageTypeStr = getAnyString(msg, 'messageType')
+			const messageTypeNum = parseInt(messageTypeStr)
+			const senderAvatar = getAnyString(msg, 'senderAvatar')
+			const receiverId = getAnyString(msg, 'receiverId')
+			const fromUserKid = getAnyString(msg, 'fromUserKid')
+			const toUserKid = getAnyString(msg, 'toUserKid')
 			
 			// 创建新对象替换（确保响应式生效）
-			const updatedMsg = {
-				id: messageId,
-				senderId: senderId,
-				type: type,
-				content: content,
-				createTime: createTime,
-				status: newStatus,
-				duration: duration
-			} as any
+			const updatedMsg = new UTSJSONObject()
+			updatedMsg.set('id', messageId)
+			updatedMsg.set('senderId', senderId)
+			updatedMsg.set('type', type)
+			updatedMsg.set('content', content)
+			updatedMsg.set('createTime', createTime)
+			updatedMsg.set('status', newStatus)
+			updatedMsg.set('duration', duration)
+			if (isNaN(messageTypeNum) == false) {
+				updatedMsg.set('messageType', messageTypeNum)
+			}
+			if (senderAvatar != '') {
+				updatedMsg.set('senderAvatar', senderAvatar)
+			}
+			if (receiverId != '') {
+				updatedMsg.set('receiverId', receiverId)
+			}
+			if (fromUserKid != '') {
+				updatedMsg.set('fromUserKid', fromUserKid)
+			}
+			if (toUserKid != '') {
+				updatedMsg.set('toUserKid', toUserKid)
+			}
 			
 			messageList[i] = updatedMsg
 			break
@@ -249,18 +269,19 @@ export function convertApiMessageToLocal(msgObj: UTSJSONObject): any {
 	const durationNum = parseInt(durationStr)
 	const duration = isNaN(durationNum) == false ? durationNum : 0
 	
-	return {
-		id: msgIdVal,
-		senderId: senderIdVal,
-		receiverId: receiverIdVal,
-		fromUserKid: senderIdVal,
-		toUserKid: receiverIdVal,
-		type: msgType,
-		content: getObjString(msgObj, 'content'),
-		createTime: timeVal,
-		status: 'sent',
-		duration: duration
-	} as any
+	const msg = new UTSJSONObject()
+	msg.set('id', msgIdVal)
+	msg.set('senderId', senderIdVal)
+	msg.set('receiverId', receiverIdVal)
+	msg.set('fromUserKid', senderIdVal)
+	msg.set('toUserKid', receiverIdVal)
+	msg.set('type', msgType)
+	msg.set('messageType', isNaN(messageTypeNum) == false ? messageTypeNum : 1)
+	msg.set('content', getObjString(msgObj, 'content'))
+	msg.set('createTime', timeVal)
+	msg.set('status', 'sent')
+	msg.set('duration', duration)
+	return msg
 }
 
 /**
@@ -429,18 +450,24 @@ export function setMessageProperty(msg: any, key: string, value: any): any {
 	if (msg == null || key == null || key == '') return msg
 
 	try {
-		// 使用JSON序列化方式安全设置属性
+		// 方式1：直接当作 UTSJSONObject 操作
+		const directObj = msg as UTSJSONObject
+		if (directObj != null) {
+			directObj.set(key, value)
+			return directObj
+		}
+	} catch (e) {
+		// 直接操作失败
+	}
+
+	try {
+		// 方式2：通过 JSON 序列化方式安全设置属性
 		const msgJson = JSON.stringify(msg)
 		if (msgJson == null || msgJson == '') return msg
 
 		const msgObj = JSON.parse(msgJson) as UTSJSONObject
-		// UTSJSONObject 的 set 方法
 		msgObj.set(key, value)
-
-		// 转换回普通对象
-		const resultJson = JSON.stringify(msgObj)
-		const parsedResult = (resultJson != null && resultJson != '') ? JSON.parse(resultJson) : null
-		return (parsedResult != null) ? parsedResult : msg
+		return msgObj
 	} catch (e) {
 		return msg
 	}

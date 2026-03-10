@@ -16,26 +16,6 @@ interface ProfileCacheEntry {
 	hits: number
 }
 
-// UTS 规范：不支持 Partial<T> 泛型，在顶层定义接口
-interface PartialUserHomePageInfo {
-	kid?: string
-	shortKid?: string
-	nickname?: string
-	image?: string
-	background?: string
-	signature?: string
-	extensionNumber?: string
-	vip?: number
-	vipExpireTime?: string
-	vipType?: number
-	giftLevel?: number
-	focusCount?: number
-	followerCount?: number
-	beLikedCount?: number
-	collectionCount?: number
-	isFocus?: boolean
-}
-
 // UTS 规范：data 使用 UTSJSONObject 类型
 class ProfileCacheEntryClass implements ProfileCacheEntry {
 	data: UTSJSONObject
@@ -246,9 +226,6 @@ function ensureCapacity() {
  * 获取用户资料（带缓存）
  */
 export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObject | null> {
-	console.log('[getUserProfile] 开始获取用户资料')
-	console.log('[getUserProfile] 参数:', JSON.stringify(params))
-	
 	const paramsObj = toUTSJSON(params)
 	const kid = getString(paramsObj, 'kid')
 	const focusUserkid = getString(paramsObj, 'focusUserkid')
@@ -266,17 +243,13 @@ export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObje
 	const ttlVal = (paramsObj != null) ? paramsObj.get('ttl') : null
 	const ttl = (ttlVal != null) ? parseInt(ttlVal.toString()) : DEFAULT_TTL
 	
-	console.log('[getUserProfile] kid:', kid, 'forceRefresh:', forceRefresh)
-	
 	const cacheKey = buildCacheKey(kid, focusUserkid)
 	const cachedEntry = getCacheEntry(cacheKey, forceRefresh == false)
 	if (cachedEntry != null && forceRefresh == false) {
-		console.log('[getUserProfile] 返回缓存数据')
 		return cachedEntry.data
 	}
 	const existingRequest = pendingRequests.get(cacheKey)
 	if (existingRequest != null) {
-		console.log('[getUserProfile] 返回进行中的请求')
 		return existingRequest
 	}
 	const requestPromise: Promise<UTSJSONObject | null> = (async () => {
@@ -298,11 +271,8 @@ export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObje
 				focusUserkid: focusUserkid_val,
 				notLogin: notLogin_val
 			} as UTSJSONObject
-			
-			console.log('[getUserProfile] 发起 API 请求:', JSON.stringify(queryParams))
 					
 			const response = await requestUserHomePage(queryParams)
-			console.log('[getUserProfile] API 响应:', JSON.stringify(response))
 			
 			// 使用 toUTSJSON 安全访问属性
 			const responseObj = toUTSJSON(response)
@@ -320,17 +290,13 @@ export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObje
 				}
 			}
 			
-			console.log('[getUserProfile] 响应码:', code)
-			
 			const responseDataVal = responseObj.get('data')
-			console.log('[getUserProfile] 响应数据:', JSON.stringify(responseDataVal))
 			
 			if (code == 200 && responseDataVal != null) {
 				// 存储和返回 UTSJSONObject 类型数据
 				const responseDataObj = toUTSJSON(responseDataVal)
 				if (responseDataObj != null) {
 					setCacheEntry(cacheKey, responseDataObj, ttl)
-					console.log('[getUserProfile] 数据已缓存，返回数据')
 					return responseDataObj
 				}
 			}
@@ -372,7 +338,7 @@ export async function getUserProfile(params: UTSJSONObject): Promise<UTSJSONObje
  */
 export function updateUserProfile(
 	kid: string,
-	partial: PartialUserHomePageInfo,
+	partial: UTSJSONObject,
 	focusUserkid?: string,
 	ttl?: number
 ): void {
@@ -385,8 +351,8 @@ export function updateUserProfile(
 		const existingDataJson = JSON.stringify(existingData)
 		const partialJson = JSON.stringify(partial)
 		
-		const parsedPartial = toUTSJSON(partial)
-		if (parsedPartial != null && JSON.stringify(parsedPartial) != '{}') {
+		// 通过已序列化的 JSON 字符串判断 partial 是否有效，避免 toUTSJSON 对 interface 类型转换失败
+		if (partialJson != '' && partialJson != 'null' && partialJson != '{}') {
 			const mergedStr = existingDataJson.substring(0, existingDataJson.length - 1) + ',' + partialJson.substring(1)
 			const mergedData = JSON.parse(mergedStr) as UTSJSONObject
 			setCacheEntry(cacheKey, mergedData, ttlVal)
@@ -395,8 +361,11 @@ export function updateUserProfile(
 			setCacheEntry(cacheKey, existingDataCopy, ttlVal)
 		}
 	} else if (partial != null) {
-		const partialData = partial as UTSJSONObject
-		setCacheEntry(cacheKey, partialData, ttlVal)
+		const partialStr = JSON.stringify(partial)
+		if (partialStr != '' && partialStr != 'null' && partialStr != '{}') {
+			const partialData = JSON.parse(partialStr) as UTSJSONObject
+			setCacheEntry(cacheKey, partialData, ttlVal)
+		}
 	}
 }
 
@@ -422,4 +391,4 @@ export function getCachedProfile(kid: string, focusUserkid?: string): UTSJSONObj
 	return null
 }
 
-export type { GetUserProfileParams, ProfileCacheEntry, PartialUserHomePageInfo }
+export type { GetUserProfileParams, ProfileCacheEntry }

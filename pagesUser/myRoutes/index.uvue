@@ -1,5 +1,9 @@
 <template>
 	<view class="page">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- 顶部导航栏 -->
 		<!-- #ifndef H5 -->
 		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -160,6 +164,7 @@
 <script setup lang="uts">
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import { 
@@ -193,6 +198,7 @@ import {
 // 🔧 新增：导入功能开关
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
 import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import { currentTheme } from '@/stores/theme.uts'
 import SharePopup from '@/components/common/SharePopup.uvue'
 import { 
 	getChatListRef,
@@ -350,7 +356,7 @@ const getStatusColor = (item: UTSJSONObject | null): string => {
 	if (lineStatu == 20) return '#4CAF50'
 	if (lineStatu == 30) return '#999999'
 	if (lineStatu == 40) return '#F44336'
-	if (lineStatu == 50) return '#37B1F2'
+	if (lineStatu == 50) return currentTheme.primaryColor
 	if (lineStatu == 80) return '#9E9E9E'
 	return '#999999'
 }
@@ -816,11 +822,29 @@ onShow(() => {
 	background-color: #F5F5F5;
 }
 
+.hear-bg {
+	width: 750rpx;
+	height: 392rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
 /* 顶部导航栏 */
 .header {
 	flex-direction: column;
 	width: 750rpx;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .nav-bar {
@@ -863,6 +887,8 @@ onShow(() => {
 	flex: 1;
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 
@@ -870,6 +896,8 @@ onShow(() => {
 .scroll-view-h5 {
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 

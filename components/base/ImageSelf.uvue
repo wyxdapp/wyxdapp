@@ -89,6 +89,20 @@ const containerStyle = computed((): string => {
 		}
 	}
 	
+	// 容器也需要设置 border-radius，APP 端原生渲染需要容器配合 overflow:hidden 才能正确裁剪圆角
+	const br = props.borderRadius
+	if (typeof br === 'number') {
+		const brNum = br as number
+		if (brNum > 0) {
+			style += `border-radius: ${brNum}rpx;`
+		}
+	} else if (typeof br === 'string') {
+		const brStr = br as string
+		if (brStr != '0rpx' && brStr != '0' && brStr != '') {
+			style += `border-radius: ${brStr};`
+		}
+	}
+	
 	return style
 })
 

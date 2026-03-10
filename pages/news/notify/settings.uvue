@@ -22,7 +22,7 @@
 						<UniIcons type="notification-filled" :size="36" color="#FF9800" />
 						<text class="item-label">接收通知</text>
 					</view>
-					<switch :checked="settingsEnabled" @change="handleEnabledChange" color="#37B1F2" />
+					<switch :checked="settingsEnabled" @change="handleEnabledChange" :color="currentTheme.primaryColor" />
 				</view>
 			</view>
 			
@@ -34,14 +34,14 @@
 				</view>
 				<view class="setting-item">
 					<view class="item-left">
-						<UniIcons type="shop" :size="36" color="#37B1F2" />
+						<UniIcons type="shop" :size="36" :color="currentTheme.primaryColor" />
 						<text class="item-label">订单通知</text>
 					</view>
 					<switch 
 						:checked="settingsOrderNotify" 
 						:disabled="settingsEnabled == false"
 						@change="handleOrderNotifyChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 				<view class="setting-item">
@@ -53,19 +53,19 @@
 						:checked="settingsSystemNotify" 
 						:disabled="settingsEnabled == false"
 						@change="handleSystemNotifyChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 				<view class="setting-item">
 					<view class="item-left">
-						<UniIcons type="chatbubble-filled" :size="36" color="#37B1F2" />
+						<UniIcons type="chatbubble-filled" :size="36" :color="currentTheme.primaryColor" />
 						<text class="item-label">互动通知</text>
 					</view>
 					<switch 
 						:checked="settingsInteractNotify" 
 						:disabled="settingsEnabled == false"
 						@change="handleInteractNotifyChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 			</view>
@@ -85,7 +85,7 @@
 						:checked="settingsDndEnabled" 
 						:disabled="settingsEnabled == false"
 						@change="handleDndEnabledChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 				<view v-if="settingsDndEnabled == true" class="time-picker-group">
@@ -134,7 +134,7 @@
 						:checked="settingsSoundEnabled" 
 						:disabled="settingsEnabled == false"
 						@change="handleSoundEnabledChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 				<view class="setting-item">
@@ -146,7 +146,7 @@
 						:checked="settingsVibrateEnabled" 
 						:disabled="settingsEnabled == false"
 						@change="handleVibrateEnabledChange" 
-						color="#37B1F2" 
+						:color="currentTheme.primaryColor" 
 					/>
 				</view>
 			</view>
@@ -162,6 +162,7 @@
 <script setup lang="uts">
 import { ref, onMounted } from 'vue'
 import UniIcons from '@/components/base/UniIcons.uvue'
+import { currentTheme } from '@/stores/theme.uts'
 
 // ==================== 辅助函数 ====================
 import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'

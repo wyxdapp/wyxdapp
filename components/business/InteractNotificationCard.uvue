@@ -12,7 +12,7 @@
 				:customSize="80"
 				clickMode="none"
 			/>
-			<UniIcons v-else type="chatbubble-filled" :size="48" color="#37B1F2" />
+			<UniIcons v-else type="chatbubble-filled" :size="48" :color="currentTheme.primaryColor" />
 			<view v-if="props.read == false" class="unread-dot"></view>
 		</view>
 		
@@ -36,6 +36,7 @@
 <script setup lang="uts">
 import Avatar from '@/components/base/Avatar.uvue'
 import UniIcons from '@/components/base/UniIcons.uvue'
+import { currentTheme } from '@/stores/theme.uts'
 
 const props = defineProps({
 	title: { type: String, required: true },

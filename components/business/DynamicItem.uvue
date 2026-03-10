@@ -145,6 +145,7 @@ import {
   getNumberProp as safeGetNumberProp, 
   getArrayProp as safeGetArrayProp 
 } from '@/common/utils/utsSafe.uts'
+import { isLiked as isLikedFromStore, getLikeCount as getLikeCountFromStore, hasLikeCount as hasLikeCountFromStore } from '@/stores/like.uts'
 
 // Define the interface for the Item
 type PicItem = {
@@ -351,10 +352,20 @@ const distanceStr = computed((): string => {
 })
 
 const isLike = computed((): number => {
+  // 优先从全局 like store 读取（响应式，乐观更新立即生效）
+  const itemKid = kid.value
+  if (itemKid != '') {
+    return isLikedFromStore(itemKid) == true ? 10 : 20
+  }
   return getItemNumberProp(props.item, 'isLike')
 })
 
 const likeNum = computed((): number => {
+  // 优先从全局 like store 读取（包括 0 的情况）
+  const itemKid = kid.value
+  if (itemKid != '' && hasLikeCountFromStore(itemKid)) {
+    return getLikeCountFromStore(itemKid)
+  }
   const value = getItemNumberProp(props.item, 'likeNum')
   if (value > 0) return value
   // 兼容其他可能的字段名

@@ -56,6 +56,7 @@
 				<!-- 消息气泡 -->
 				<MessageBubble
 					:message="msg"
+					:message-json="getMessageJson(msg)"
 					:is-self="isMessageSelf(msg)"
 					:avatar="getMessageAvatar(msg)"
 					:default-avatar="defaultAvatar"
@@ -188,13 +189,13 @@ import { ref, onUnmounted, computed, nextTick } from 'vue'
 
 // ========== Store 导入 ==========
 import { forceReconnectAction, getWebSocketConnectedStatus } from '@/stores/chat'
-import { useUserStore } from '@/stores/user'
+import { useUserStore, getUserAvatar as getUserAvatarFromStore } from '@/stores/user'
 import { saveCustomEmojiToServerAction } from '@/stores/emoji.uts'
 import { chatService, ChatServiceStatus } from '@/stores/chatService'
 
 // ========== 工具函数导入 ==========
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
-import { getObjString, getAnyString, mergeMessagesWithoutDuplicates } from '@/common/utils/messageHelper.uts'
+import { getObjString, getAnyString, mergeMessagesWithoutDuplicates, getMessageTypeNumber } from '@/common/utils/messageHelper.uts'
 import { getUserProfile, getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
 import { pageStatusBarHeight, pageWindowHeight, initPageLayout as initPageLayoutComposable } from '@/common/composables/usePageLayout.uts'
 import { formatChatTime } from '@/common/utils/dateUtils.uts'
@@ -295,84 +296,33 @@ const getCurrentUserKid = (): string => {
 	return getCurrentUserIdReliable()
 }
 
-const getUserInfoFromStore = (): UTSJSONObject | null => {
-	try {
-		const store = useUserStore()
-		const storeObj = toJsonObj(store)
-		if (storeObj != null) {
-			const userInfoVal = storeObj.get('userInfo')
-			if (userInfoVal != null) {
-				const userInfoStr = JSON.stringify(userInfoVal)
-				return JSON.parse(userInfoStr) as UTSJSONObject
-			}
-		}
-		return null
-	} catch (e) {
-		return null
-	}
-}
-
 // ========== 计算属性 ==========
-const userInfo = computed((): UTSJSONObject | null => {
-	return getUserInfoFromStore()
-})
 
 const currentUserId = computed((): string => {
 	return getCurrentUserKid()
 })
 
 const currentUserAvatar = computed((): string => {
-	// 优先从 store 获取，备用从 storage 读取
+	// 直接使用 store 导出的 getUserAvatar 函数
+	// 它直接访问 userInfoRef.value 的类属性，绕过 toJsonObj 序列化问题
+	const storeAvatar = getUserAvatarFromStore()
+	if (storeAvatar != '') {
+		return storeAvatar
+	}
+	
+	// fallback：从 storage 读取
 	try {
-		const info = getUserInfoFromStore()
-		if (info != null) {
-			// 优先使用 image 字段（后端返回的是 image），其次使用 avatar
-			const imageVal = getObjString(info, 'image')
-			if (imageVal != '') {
-				return imageVal
-			}
-			const avatarVal = getObjString(info, 'avatar')
-			if (avatarVal != '') {
-				return avatarVal
-			}
-		}
-		
-		// 备用方案：直接从 storage 读取（UTS 规范：uni.getStorageSync 返回 Any? 类型）
 		const userInfoRaw = safeGetStorageSync('userInfo')
-		if (userInfoRaw != null) {
-			let jsonStr = ''
-			const userInfoStr = userInfoRaw.toString()
-			if (userInfoStr != null && userInfoStr != '') {
-				// 如果已经是字符串，直接使用
-				if (typeof userInfoRaw === 'string') {
-					jsonStr = userInfoStr
-				} else {
-					// 如果是对象，序列化
-					jsonStr = JSON.stringify(userInfoRaw)
+		if (userInfoRaw != null && userInfoRaw != '') {
+			const userInfoObj = JSON.parse(userInfoRaw) as UTSJSONObject
+			if (userInfoObj != null) {
+				const imageVal = userInfoObj.get('image')
+				if (imageVal != null && imageVal.toString() != '') {
+					return imageVal.toString()
 				}
-
-				if (jsonStr != null && jsonStr != '') {
-					try {
-						const userInfoObj = JSON.parse(jsonStr) as UTSJSONObject
-						if (userInfoObj != null) {
-							const imageVal = userInfoObj.get('image')
-							if (imageVal != null) {
-								const imageStr = imageVal.toString()
-								if (imageStr != null && imageStr != '') {
-									return imageStr
-								}
-							}
-							const avatarVal = userInfoObj.get('avatar')
-							if (avatarVal != null) {
-								const avatarStr = avatarVal.toString()
-								if (avatarStr != null && avatarStr != '') {
-									return avatarStr
-								}
-							}
-						}
-					} catch (e) {
-						handleSilentError(e, '解析用户信息')
-					}
+				const avatarVal = userInfoObj.get('avatar')
+				if (avatarVal != null && avatarVal.toString() != '') {
+					return avatarVal.toString()
 				}
 			}
 		}
@@ -647,6 +597,18 @@ const initDynamicComposables = () => {
 
 
 // ========== 消息列表辅助函数 ==========
+
+// 将消息对象序列化为 JSON 字符串（供 MessageBubble 的 messageJson prop 使用）
+const getMessageJson = (msg: any): string => {
+	if (msg == null) return ''
+	try {
+		const str = JSON.stringify(msg)
+		return (str != null && str != '{}') ? str : ''
+	} catch (e) {
+		return ''
+	}
+}
+
 const getMessageKey = (msg: any, index: number): string => {
 	const msgObj = msg as UTSJSONObject
 	const id = getAnyString(msgObj, 'id')
@@ -891,8 +853,10 @@ const handleReserve = () => {
 
 const handleContact = () => {
 	const nickname = (targetUserNickname.value != '') ? targetUserNickname.value : '用户'
-	const userInfoVal = userInfo.value as any
-	handleContactAction(targetUserId.value, nickname, userInfoVal).then((): void => {
+	// 直接构造包含 kid 的对象，避免 getUserInfoFromStore 的 toJsonObj(store) 在 APP 端序列化失败
+	const userInfoForContact = new UTSJSONObject()
+	userInfoForContact.set('kid', currentUserId.value)
+	handleContactAction(targetUserId.value, nickname, userInfoForContact as any).then((): void => {
 		// 成功
 	}).catch((error: any | null): void => {
 		if (!isAuthError(error as any)) {
@@ -1165,6 +1129,169 @@ const handleMessagePhoneClick = (phone: string) => {
 
 
 // ========== 消息监听器 ==========
+// ========== ChatMessage 转换函数 ==========
+/**
+ * 将 ChatMessage 类实例转换为普通对象（plain object）
+ * 解决 MessageType/MessageStatus 枚举在 JSON.stringify 时无法正确序列化为字符串的问题
+ * 转换后的对象格式与 parseApiMessages 输出一致
+ */
+const convertChatMessageToPlainObject = (msg: any): UTSJSONObject => {
+	// 安全提取字段值，通过 JSON.stringify → JSON.parse 可能丢失枚举信息
+	// 所以直接访问 ChatMessage 实例的属性
+	let msgId = ''
+	let msgContent = ''
+	let msgSenderId = ''
+	let msgReceiverId = ''
+	let msgCreateTime = ''
+	let msgConversationId = ''
+	let typeStr = 'text'
+	let statusStr = 'pending'
+	let msgMediaUrl = ''
+	let msgThumbUrl = ''
+	let msgDuration = 0
+	let msgSendTime = ''
+
+	try {
+		// 尝试直接访问属性（ChatMessage 类实例）
+		const msgObj = msg as UTSJSONObject
+		if (msgObj != null) {
+			// 基础字段
+			const idVal = msgObj.get('id')
+			if (idVal != null) msgId = idVal.toString()
+
+			const contentVal = msgObj.get('content')
+			if (contentVal != null) msgContent = contentVal.toString()
+
+			const senderIdVal = msgObj.get('senderId')
+			if (senderIdVal != null) msgSenderId = senderIdVal.toString()
+
+			const receiverIdVal = msgObj.get('receiverId')
+			if (receiverIdVal != null) msgReceiverId = receiverIdVal.toString()
+
+			const createTimeVal = msgObj.get('createTime')
+			if (createTimeVal != null) msgCreateTime = createTimeVal.toString()
+
+			const conversationIdVal = msgObj.get('conversationId')
+			if (conversationIdVal != null) msgConversationId = conversationIdVal.toString()
+
+			// ⭐ 关键：处理 MessageType 枚举 → 字符串
+			// 枚举值的 .value 属性包含字符串值（如 'text'、'image'）
+			// 但在 UTS APP 端，直接 toString() 可能返回枚举对象的序列化形式
+			// 所以尝试多种方式提取
+			const typeVal = msgObj.get('type')
+			if (typeVal != null) {
+				const typeString = typeVal.toString()
+				// 检查是否已经是有效的类型字符串
+				if (typeString == 'text' || typeString == 'image' || typeString == 'voice' || typeString == 'video' || typeString == 'share' || typeString == 'gift' || typeString == 'system_notification') {
+					typeStr = typeString
+				} else {
+					// 枚举对象可能有 value 属性
+					try {
+						const typeJsonStr = JSON.stringify(typeVal)
+						const typeJsonObj = JSON.parse(typeJsonStr) as UTSJSONObject
+						if (typeJsonObj != null) {
+							const valueField = typeJsonObj.get('value')
+							if (valueField != null && valueField.toString() != '') {
+								typeStr = valueField.toString()
+							}
+						}
+					} catch (e) {
+						// 回退：使用默认值 'text'
+					}
+				}
+			}
+
+			// ⭐ 处理 MessageStatus 枚举 → 字符串
+			const statusVal = msgObj.get('status')
+			if (statusVal != null) {
+				const statusString = statusVal.toString()
+				if (statusString == 'pending' || statusString == 'sending' || statusString == 'sent' || statusString == 'failed' || statusString == 'received') {
+					statusStr = statusString
+				} else {
+					try {
+						const statusJsonStr = JSON.stringify(statusVal)
+						const statusJsonObj = JSON.parse(statusJsonStr) as UTSJSONObject
+						if (statusJsonObj != null) {
+							const valueField = statusJsonObj.get('value')
+							if (valueField != null && valueField.toString() != '') {
+								statusStr = valueField.toString()
+							}
+						}
+					} catch (e) {
+						// 回退：使用默认值 'pending'
+					}
+				}
+			}
+
+			// 可选字段：mediaUrl
+			const mediaUrlVal = msgObj.get('mediaUrl')
+			if (mediaUrlVal != null && mediaUrlVal.toString() != '') {
+				msgMediaUrl = mediaUrlVal.toString()
+			}
+
+			// 可选字段：thumbUrl
+			const thumbUrlVal = msgObj.get('thumbUrl')
+			if (thumbUrlVal != null && thumbUrlVal.toString() != '') {
+				msgThumbUrl = thumbUrlVal.toString()
+			}
+
+			// 可选字段：duration
+			const durationVal = msgObj.get('duration')
+			if (durationVal != null) {
+				const durationNum = parseInt(durationVal.toString())
+				if (isNaN(durationNum) == false) {
+					msgDuration = durationNum
+				}
+			}
+
+			// 可选字段：sendTime
+			const sendTimeVal = msgObj.get('sendTime')
+			if (sendTimeVal != null && sendTimeVal.toString() != '') {
+				msgSendTime = sendTimeVal.toString()
+			}
+		}
+	} catch (e) {
+		// 如果直接访问失败，尝试通过 getAnyString 提取
+		msgId = getAnyString(msg, 'id')
+		msgContent = getAnyString(msg, 'content')
+		msgSenderId = getAnyString(msg, 'senderId')
+		msgReceiverId = getAnyString(msg, 'receiverId')
+		msgCreateTime = getAnyString(msg, 'createTime')
+		msgConversationId = getAnyString(msg, 'conversationId')
+		msgMediaUrl = getAnyString(msg, 'mediaUrl')
+		msgThumbUrl = getAnyString(msg, 'thumbUrl')
+		msgSendTime = getAnyString(msg, 'sendTime')
+	}
+
+	// 如果 createTime 为空，使用 sendTime
+	if (msgCreateTime == '' && msgSendTime != '') {
+		msgCreateTime = msgSendTime
+	}
+
+	// 获取 messageType 数字值（与 parseApiMessages 输出一致）
+	const messageTypeNum = getMessageTypeNumber(typeStr)
+
+	// 构造与 parseApiMessages 输出格式一致的普通对象
+	const plainObj = new UTSJSONObject()
+	plainObj.set('id', msgId)
+	plainObj.set('senderId', msgSenderId)
+	plainObj.set('receiverId', msgReceiverId)
+	plainObj.set('fromUserKid', msgSenderId)
+	plainObj.set('toUserKid', msgReceiverId)
+	plainObj.set('type', typeStr)
+	plainObj.set('messageType', messageTypeNum)
+	plainObj.set('content', msgContent)
+	plainObj.set('createTime', msgCreateTime)
+	plainObj.set('status', statusStr)
+	plainObj.set('mediaUrl', msgMediaUrl)
+	plainObj.set('thumbUrl', msgThumbUrl)
+	plainObj.set('duration', msgDuration)
+	plainObj.set('sendTime', msgSendTime)
+	plainObj.set('conversationId', msgConversationId)
+
+	return plainObj
+}
+
 let offMessageChange: (() => void) | null = null
 
 const setupMessageListeners = () => {
@@ -1181,18 +1308,22 @@ const setupMessageListeners = () => {
 		const currentUserIdVal = currentUserId.value
 		const targetUserIdVal = targetUserId.value
 
-		// 🔧 修复：获取当前会话的所有消息
+		// 🔧 修复：获取当前会话的所有消息，并将 ChatMessage 实例转换为普通对象
 		const currentConversationMessages: Array<UTSJSONObject> = []
 		for (let i = 0; i < messages.length; i = i + 1) {
-			const msg = messages[i] as UTSJSONObject
+			const msg = messages[i]
 			if (msg == null) continue
 
+			// ⭐ 关键修复：将 ChatMessage 类实例转换为普通对象
+			// 解决 MessageType 枚举在 JSON.stringify 时无法正确序列化的问题
+			const plainMsg = convertChatMessageToPlainObject(msg)
+
 			// 获取消息的发送者和接收者
-			const msgSenderId = getAnyString(msg, 'senderId')
-			const msgReceiverId = getAnyString(msg, 'receiverId')
+			const msgSenderId = getObjString(plainMsg, 'senderId')
+			const msgReceiverId = getObjString(plainMsg, 'receiverId')
 			// 兼容 fromUserKid/toUserKid 字段
-			const fromUserKid = getAnyString(msg, 'fromUserKid')
-			const toUserKid = getAnyString(msg, 'toUserKid')
+			const fromUserKid = getObjString(plainMsg, 'fromUserKid')
+			const toUserKid = getObjString(plainMsg, 'toUserKid')
 
 			// 使用多种字段判断发送者和接收者
 			const senderIdFinal = (msgSenderId != '') ? msgSenderId : fromUserKid
@@ -1207,7 +1338,7 @@ const setupMessageListeners = () => {
 			const isReceivedMessage = senderIdFinal == targetUserIdVal
 
 			if (isCurrentConversation == true && isReceivedMessage == true) {
-				currentConversationMessages.push(msg)
+				currentConversationMessages.push(plainMsg)
 			}
 		}
 

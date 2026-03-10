@@ -1,5 +1,9 @@
 <template>
 	<view class="page bg-base animation-fade relative" v-if="initFinish == true">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
 		<!-- 顶部导航栏 -->
 		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -13,14 +17,11 @@
 		</view>
 		<!-- #endif -->
 		<view class="profile-section flex-row align-center" @click="handleUserProfile">
-			<ImageSelf
-				:width="122"
-				:height="122"
-				borderRadius="100%"
-				:preView="false"
+			<Avatar
 				:url="displayGuideImg"
-				defaultImage="https://jiasu.wyxdapp.com/iconimages/default_avatar.png"
-			></ImageSelf>
+				:customSize="122"
+				clickMode="none"
+			/>
 			<view class="profile-meta flex-column flex-1">
 				<view class="name-row flex-row align-center">
 					<NicknameWithBadges
@@ -147,6 +148,7 @@
 <script setup lang="uts">
 import { ref, computed } from 'vue'
 import { onLoad, onShow, onReachBottom } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import ImageSelf from '@/components/base/ImageSelf.uvue'
 import LoadMore from '@/components/base/LoadMore.uvue'
 import Loading from '@/components/base/Loading.uvue'
@@ -237,6 +239,28 @@ const getItemNumberProp = (item: UTSJSONObject | null, key: string): number => {
 // 从 loginHelper 获取用户 Kid（可靠版本）
 const getUserKidFromStore = (): string => {
 	return getCurrentUserIdReliable()
+}
+
+// 判断 API 响应码是否需要跳转到发布向导页面
+// code 为 404 或 400 表示向导信息不存在，需要跳转
+const shouldRedirectByCode = (code: number): boolean => {
+	return code == 404 || code == 400
+}
+
+// 判断 API 返回数据是否需要跳转到发布向导页面
+// data 为 null 或 memberGuideKid 为空字符串/null 时需要跳转
+const shouldRedirectByData = (data: UTSJSONObject | null): boolean => {
+	if (data == null) return true
+	const memberGuideKid = data.get('memberGuideKid')
+	if (memberGuideKid == null) return true
+	if (memberGuideKid.toString() == '') return true
+	return false
+}
+
+// 跳转到发布向导信息页面，携带当前用户 userKid
+const redirectToAddGuide = () => {
+	const userKid = getUserKidFromStore()
+	uni.redirectTo({ url: '/pages/index/components/addGuide?kid=' + userKid })
 }
 
 // 检查是否已登录（可靠版本）
@@ -614,11 +638,28 @@ const loadGuideInfo = async () => {
 		if (res != null) {
 			const resStr = JSON.stringify(res)
 			const resObj = JSON.parse(resStr) as UTSJSONObject
+			
+			// 错误码判断：404/400 表示向导信息不存在，跳转到发布页面
+			const codeVal = resObj.get('code')
+			if (codeVal != null) {
+				const code = parseInt(codeVal.toString())
+				if (isNaN(code) == false && shouldRedirectByCode(code)) {
+					redirectToAddGuide()
+					return
+				}
+			}
+			
 			const dataVal = resObj.get('data')
 			
 			if (dataVal != null) {
 				const dataStr = JSON.stringify(dataVal)
 				const dataObj = JSON.parse(dataStr) as UTSJSONObject
+				
+				// 数据有效性判断：memberGuideKid 为空时跳转到发布页面
+				if (shouldRedirectByData(dataObj)) {
+					redirectToAddGuide()
+					return
+				}
 				
 				// 解析各字段
 				const imagePhotoVal = dataObj.get('imagePhoto')
@@ -764,6 +805,10 @@ const loadGuideInfo = async () => {
 				}
 				
 				info.value = newInfo
+			} else {
+				// data 为 null，跳转到发布向导页面
+				redirectToAddGuide()
+				return
 			}
 		}
 	} catch (error: Error) {
@@ -1014,8 +1059,24 @@ onReachBottom(() => {
 <style scoped>
 .page {
 	flex: 1;
-	background-color: #f5f6fa;
+	background-color: #F5F5F5;
 	padding-bottom: 200rpx;
+}
+
+.hear-bg {
+	width: 750rpx;
+	height: 392rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* APP端状态栏占位 */
@@ -1029,6 +1090,8 @@ onReachBottom(() => {
 	flex-direction: column;
 	width: 750rpx;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .nav-bar {
@@ -1069,6 +1132,8 @@ onReachBottom(() => {
 	flex-direction: row;
 	align-items: center;
 	padding: 48rpx 36rpx;
+	position: relative;
+	z-index: 1;
 }
 
 .profile-meta {
@@ -1154,6 +1219,8 @@ onReachBottom(() => {
 	padding: 28rpx;
 	border-radius: 24rpx;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .info-row {
@@ -1218,6 +1285,8 @@ onReachBottom(() => {
 	padding-right: 28rpx;
 	border-radius: 24rpx 24rpx 0 0;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .title-icon {
@@ -1262,6 +1331,8 @@ onReachBottom(() => {
 	padding-left: 28rpx;
 	padding-right: 28rpx;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .commend-item {
@@ -1412,22 +1483,28 @@ onReachBottom(() => {
 .official-certification {
 	flex-direction: row;
 	align-items: center;
-	margin-left: 12rpx;
+	margin-left: 8rpx;
+	width: 138rpx;
+	height: 34rpx;
+	margin-top: 10rpx;
 }
 
 .name-authentication {
 	flex-direction: row;
 	align-items: center;
 	margin-left: 8rpx;
+	width: 140rpx;
+	height: 34rpx;
+	margin-top: 10rpx;
 }
 
 .cert-icon {
-	width: 32rpx;
-	height: 32rpx;
+	width: 138rpx;
+	height: 34rpx;
 }
 
 .auth-icon {
-	width: 32rpx;
-	height: 32rpx;
+	width: 140rpx;
+	height: 34rpx;
 }
 </style>

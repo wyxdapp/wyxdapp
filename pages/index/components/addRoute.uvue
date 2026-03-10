@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -214,6 +216,7 @@ import {
 	type RouteDraft
 } from '@/common/utils/draftManager.uts'
 import { LINE_TYPE_FREE } from '@/common/config/businessCodes.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // ==================== 页面布局 ====================
 const statusBarHeight = pageStatusBarHeight
@@ -433,7 +436,7 @@ const chooseImage = () => {
 					const resObj = JSON.parse(resStr) as UTSJSONObject
 					const tempFilePathsVal = resObj.get('tempFilePaths')
 					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
-						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						const tempFilePaths = tempFilePathsVal as Array<string>
 						const paths: Array<string> = []
 						for (let i = 0; i < tempFilePaths.length; i++) {
 							const path = tempFilePaths[i]
@@ -509,7 +512,11 @@ const handleH5PostMessage = (event: any) => {
 		
 		const dataStr = JSON.stringify(rawData)
 		if (dataStr == null || dataStr == '' || dataStr == 'null') return
-		const dataObj = JSON.parse(dataStr) as UTSJSONObject
+		
+		// 确保解析结果是有效的 JSON 对象，非对象类型（字符串、数字等）直接跳过
+		const parsed = JSON.parse(dataStr)
+		if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed) == true) return
+		const dataObj = parsed as UTSJSONObject
 		
 		// 防重复：编辑器同时发送 SDK 包装消息和直接消息，需要去重
 		const now = Date.now()
@@ -521,27 +528,31 @@ const handleH5PostMessage = (event: any) => {
 			if (innerDataVal != null) {
 				const innerDataStr = JSON.stringify(innerDataVal)
 				const innerDataObj = JSON.parse(innerDataStr) as UTSJSONObject
-				const argVal = innerDataObj.get('arg')
-				if (argVal != null) {
-					const argStr = JSON.stringify(argVal)
-					const argObj = JSON.parse(argStr) as UTSJSONObject
-					const typeVal = argObj.get('type')
-					if (typeVal != null) {
-						const typeString = typeVal.toString()
-						lastHandledTimestamp = now
-						if (typeString == 'editorContent') {
-							const contentVal = argObj.get('content')
-							if (contentVal != null && contentVal.toString() != '') {
-								formRouteDetail.value = contentVal.toString()
+				if (innerDataObj != null) {
+					const argVal = innerDataObj.get('arg')
+					if (argVal != null) {
+						const argStr = JSON.stringify(argVal)
+						const argObj = JSON.parse(argStr) as UTSJSONObject
+						if (argObj != null) {
+							const typeVal = argObj.get('type')
+							if (typeVal != null) {
+								const typeString = typeVal.toString()
+								lastHandledTimestamp = now
+								if (typeString == 'editorContent') {
+									const contentVal = argObj.get('content')
+									if (contentVal != null && contentVal.toString() != '') {
+										formRouteDetail.value = contentVal.toString()
+									}
+									showRichEditor.value = false
+									return
+								} else if (typeString == 'selectImage') {
+									selectAndUploadImage()
+									return
+								} else if (typeString == 'editorCancel') {
+									showRichEditor.value = false
+									return
+								}
 							}
-							showRichEditor.value = false
-							return
-						} else if (typeString == 'selectImage') {
-							selectAndUploadImage()
-							return
-						} else if (typeString == 'editorCancel') {
-							showRichEditor.value = false
-							return
 						}
 					}
 				}
@@ -552,9 +563,8 @@ const handleH5PostMessage = (event: any) => {
 		// 如果 SDK 包装消息刚处理过（200ms 内），跳过直接消息避免重复
 		if (now - lastHandledTimestamp < 200) return
 		
-		const directType = dataObj.get('type')
-		if (directType != null) {
-			const typeString = directType.toString()
+		if (msgType != null) {
+			const typeString = msgType.toString()
 			if (typeString == 'editorContent') {
 				const contentVal = dataObj.get('content')
 				if (contentVal != null && contentVal.toString() != '') {
@@ -607,7 +617,7 @@ const selectAndUploadImage = () => {
 					const resObj = JSON.parse(resStr) as UTSJSONObject
 				const tempFilePathsVal = resObj.get('tempFilePaths')
 				if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
-					const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+					const tempFilePaths = tempFilePathsVal as Array<string>
 					if (tempFilePaths.length > 0) {
 						const firstPath = tempFilePaths[0]
 						if (firstPath != null && firstPath.toString() != '') {
@@ -718,108 +728,32 @@ const selectAndUploadImage = () => {
 	})
 }
 
-const onEditorMessage = (e: UTSJSONObject | null) => {
-	console.log('收到编辑器消息:', JSON.stringify(e))
+const onEditorMessage = (e: UniWebViewMessageEvent) => {
+	console.log('收到编辑器消息')
 	try {
-		const eStr = JSON.stringify(e)
-		const eObj = JSON.parse(eStr) as UTSJSONObject
+		// UniWebViewMessageEvent.detail.data 是 Array<UTSJSONObject>
+		const detail = e.detail
+		const dataArr = detail.data
+		if (dataArr == null || dataArr.length == 0) {
+			console.log('编辑器消息 data 为空')
+			return
+		}
 		
-		// 尝试多种数据结构解析方式
 		let typeStr = ''
 		let contentStr = ''
 		
-		// 方式1: e.detail.data 是数组的情况 (实际结构)
-		const detailVal = eObj.get('detail')
-		if (detailVal != null) {
-			const detailStr = JSON.stringify(detailVal)
-			const detailObj = JSON.parse(detailStr) as UTSJSONObject
-			const dataVal = detailObj.get('data')
-			if (dataVal != null) {
-				// 检查 data 是否为数组
-				if (Array.isArray(dataVal) == true) {
-					const dataArr = dataVal as Array<UTSJSONObject>
-					if (dataArr.length > 0) {
-						const firstItem = dataArr[0]
-						if (firstItem != null) {
-							const itemStr = JSON.stringify(firstItem)
-							const itemObj = JSON.parse(itemStr) as UTSJSONObject
-							const typeVal = itemObj.get('type')
-							const contentVal = itemObj.get('content')
-							if (typeVal != null) {
-								typeStr = typeVal.toString()
-							}
-							if (contentVal != null) {
-								contentStr = contentVal.toString()
-							}
-							console.log('解析方式1(数组) - type:', typeStr, 'content:', contentStr)
-						}
-					}
-				} else {
-					// data 是对象的情况
-					const dataStr = JSON.stringify(dataVal)
-					const dataObj = JSON.parse(dataStr) as UTSJSONObject
-					const typeVal = dataObj.get('type')
-					const contentVal = dataObj.get('content')
-					if (typeVal != null) {
-						typeStr = typeVal.toString()
-					}
-					if (contentVal != null) {
-						contentStr = contentVal.toString()
-					}
-					console.log('解析方式1(对象) - type:', typeStr, 'content:', contentStr)
-				}
+		// data 是数组，取第一个元素
+		const firstItem = dataArr[0]
+		if (firstItem != null) {
+			const typeVal = firstItem.get('type')
+			const contentVal = firstItem.get('content')
+			if (typeVal != null) {
+				typeStr = typeVal.toString()
 			}
-		}
-		
-		// 方式2: e.data 是数组或对象
-		if (typeStr == '') {
-			const dataVal2 = eObj.get('data')
-			if (dataVal2 != null) {
-				if (Array.isArray(dataVal2) == true) {
-					const dataArr2 = dataVal2 as Array<UTSJSONObject>
-					if (dataArr2.length > 0) {
-						const firstItem2 = dataArr2[0]
-						if (firstItem2 != null) {
-							const itemStr2 = JSON.stringify(firstItem2)
-							const itemObj2 = JSON.parse(itemStr2) as UTSJSONObject
-							const typeVal2 = itemObj2.get('type')
-							const contentVal2 = itemObj2.get('content')
-							if (typeVal2 != null) {
-								typeStr = typeVal2.toString()
-							}
-							if (contentVal2 != null) {
-								contentStr = contentVal2.toString()
-							}
-							console.log('解析方式2(数组) - type:', typeStr, 'content:', contentStr)
-						}
-					}
-				} else {
-					const dataStr2 = JSON.stringify(dataVal2)
-					const dataObj2 = JSON.parse(dataStr2) as UTSJSONObject
-					const typeVal2 = dataObj2.get('type')
-					const contentVal2 = dataObj2.get('content')
-					if (typeVal2 != null) {
-						typeStr = typeVal2.toString()
-					}
-					if (contentVal2 != null) {
-						contentStr = contentVal2.toString()
-					}
-					console.log('解析方式2(对象) - type:', typeStr, 'content:', contentStr)
-				}
+			if (contentVal != null) {
+				contentStr = contentVal.toString()
 			}
-		}
-		
-		// 方式3: e.type (直接结构)
-		if (typeStr == '') {
-			const typeVal3 = eObj.get('type')
-			const contentVal3 = eObj.get('content')
-			if (typeVal3 != null) {
-				typeStr = typeVal3.toString()
-			}
-			if (contentVal3 != null) {
-				contentStr = contentVal3.toString()
-			}
-			console.log('解析方式3 - type:', typeStr, 'content:', contentStr)
+			console.log('解析编辑器消息 - type:', typeStr, 'content长度:', contentStr.length.toString())
 		}
 		
 		// 处理消息
@@ -1020,32 +954,19 @@ const loadRouteData = () => {
 	})
 }
 
-// 验证草稿字段（必填：主图、标题、价格、出发地）
+// 验证草稿字段（只要有任何数据即可保存）
 const validateDraftForm = (): string => {
-	if (formHomePics.value.length == 0) {
-		return '请上传主图'
+	// 草稿允许不完整数据，只需要至少填写了一项内容
+	const hasHomePics = formHomePics.value.length > 0
+	const hasTitle = formLineTitle.value.trim() != ''
+	const hasPrice = formTripPrice.value.trim() != ''
+	const hasAddress = formLineAddress.value.trim() != ''
+	const hasDetail = formRouteDetail.value.trim() != ''
+	
+	if (hasHomePics == false && hasTitle == false && hasPrice == false && hasAddress == false && hasDetail == false) {
+		return '请至少填写一项内容再保存草稿'
 	}
-
-	const lineTitleVal = formLineTitle.value
-	if (lineTitleVal == null || lineTitleVal == '' || lineTitleVal.trim() == '') {
-		return '请输入标题'
-	}
-
-	const tripPriceVal = formTripPrice.value
-	if (tripPriceVal == null || tripPriceVal == '' || tripPriceVal.trim() == '') {
-		return '请输入费用'
-	}
-
-	const price = parseFloat(tripPriceVal)
-	if (isNaN(price) == true || price <= 0) {
-		return '请输入有效的费用'
-	}
-
-	const lineAddressVal = formLineAddress.value
-	if (lineAddressVal == null || lineAddressVal == '' || lineAddressVal.trim() == '') {
-		return '请选择出发'
-	}
-
+	
 	return ''
 }
 
@@ -1480,8 +1401,24 @@ watch(formLineType, () => {
 	flex-direction: column;
 	width: 750rpx;
 	flex: 1;
-	background-color: #ffffff;
+	background-color: #F5F5F5;
 	position: relative;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -1545,6 +1482,8 @@ watch(formLineType, () => {
 	flex: 1;
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 
@@ -1554,6 +1493,8 @@ watch(formLineType, () => {
 	flex: 1;
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 

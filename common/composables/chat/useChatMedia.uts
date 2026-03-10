@@ -6,6 +6,7 @@
 import { Ref } from 'vue'
 import { cosUploader } from '@/utils/upload/index.uts'
 import { chatService, MessageType } from '@/stores/chatService'
+import { getUserAvatar as getUserAvatarFromStore } from '@/stores/user'
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
 import { toUTSJSON, getString } from '@/common/utils/typeConverter'
 import {
@@ -37,6 +38,13 @@ export function useChatMedia(
 	messageList: Ref<Array<any>>,
 	scrollToBottom: () => void
 ): ChatMediaResult {
+	// 辅助函数：实时获取当前用户头像，避免使用初始化时的快照
+	const getCurrentAvatar = (): string => {
+		const storeAvatar = getUserAvatarFromStore()
+		if (storeAvatar != '') return storeAvatar
+		return (currentUserAvatar != '') ? currentUserAvatar : ''
+	}
+	
 	/**
 	 * 上传图片到COS
 	 * @param filePath 本地文件路径
@@ -87,7 +95,7 @@ export function useChatMedia(
 		const tempId = generateTempMessageId('temp_img_')
 		
 		// 1. 立即添加到列表（乐观更新）
-		const message = createLocalMessage(tempId, currentUserId, 'image', filePath, 'uploading', currentUserAvatar)
+		const message = createLocalMessage(tempId, currentUserId, 'image', filePath, 'uploading', getCurrentAvatar())
 		messageList.value.push(message)
 		scrollToBottom()
 		
@@ -193,7 +201,7 @@ export function useChatMedia(
 		const tempId = generateTempMessageId('temp_video_')
 		
 		// 1. 立即添加到列表（乐观更新）
-		const message = createLocalMessage(tempId, currentUserId, 'video', filePath, 'uploading', currentUserAvatar)
+		const message = createLocalMessage(tempId, currentUserId, 'video', filePath, 'uploading', getCurrentAvatar())
 		messageList.value.push(message)
 		scrollToBottom()
 		
@@ -260,7 +268,7 @@ export function useChatMedia(
 		const tempId = generateTempMessageId('temp_voice_')
 		
 		// 1. 立即添加到列表（乐观更新）
-		const message = createLocalMessageWithDuration(tempId, currentUserId, 'voice', filePath, 'uploading', duration, currentUserAvatar)
+		const message = createLocalMessageWithDuration(tempId, currentUserId, 'voice', filePath, 'uploading', duration, getCurrentAvatar())
 		messageList.value.push(message)
 		scrollToBottom()
 		
@@ -328,7 +336,7 @@ export function useChatMedia(
 		const tempId = generateTempMessageId('temp_emoji_')
 		
 		// 1. 立即添加到列表
-		const message = createLocalMessage(tempId, currentUserId, 'image', imageUrl, 'sending', currentUserAvatar)
+		const message = createLocalMessage(tempId, currentUserId, 'image', imageUrl, 'sending', getCurrentAvatar())
 		messageList.value.push(message)
 		scrollToBottom()
 		

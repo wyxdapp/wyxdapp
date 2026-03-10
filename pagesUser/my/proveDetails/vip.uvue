@@ -23,7 +23,9 @@
 		<!-- #endif -->
 		
 		<!-- 背景图片 - 使用 absolute 定位 -->
-		<image class="hear-bg" src="https://www.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill" />
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 
 		<!-- 🎯 用户信息卡片 -->
 		<view class="user-info-card">
@@ -196,6 +198,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { useUserStore, initUserInfoAction, getUserAvatar, getUserNickname, getUserVipStatus, getUserVipExpireTime, getUserNumberProp, updateUserInfoAction } from '@/stores/user.uts'
 import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
 import { 
@@ -1572,6 +1575,14 @@ const confirmPurchase = () => {
 
 /* 背景图片 - 参考首页实现 */
 .hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

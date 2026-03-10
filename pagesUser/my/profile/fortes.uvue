@@ -7,7 +7,7 @@
 		
 		<view class="section-card">
 			<view class="section-header">
-				<uni-icons type="star-filled" :size="20" color="#37B1F2" />
+				<uni-icons type="star-filled" :size="20" :color="currentTheme.primaryColor" />
 				<view class="section-info">
 					<text class="section-title">擅长标签</text>
 					<text class="section-subtitle">选择您作为向导的专业技能</text>
@@ -70,6 +70,7 @@ import {
 	pageStatusBarHeight, 
 	initPageLayout 
 } from '@/common/composables/usePageLayout.uts'
+import { currentTheme } from '@/stores/theme.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []

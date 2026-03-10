@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -93,11 +95,13 @@
 <script setup lang="uts">
 import { ref, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { currentTheme } from '@/stores/theme.uts'
 import { handlePageError } from '@/common/utils/errorHandler.uts'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
 import { getResponseCode, getResponseData, getBoolProp } from '@/common/utils/utsSafe.uts'
 import { checkUserLoginReliable, getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
 import { post } from '@/utils/request'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 加载状态
 const loading = ref<boolean>(false)
@@ -162,7 +166,7 @@ const clearBrowseHistory = () => {
 		title: '确认清除',
 		content: '确定要清除所有浏览记录和搜索历史吗？此操作不可恢复。',
 		confirmText: '确定清除',
-		confirmColor: '#FF6B35',
+		confirmColor: currentTheme.accentColor,
 		success: (res: UniShowModalResult) => {
 			if (res.confirm == true) {
 				const userKid = getCurrentUserIdReliable()
@@ -280,8 +284,24 @@ onShow(() => {
 <style scoped>
 .page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -325,6 +345,8 @@ onShow(() => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 .section {

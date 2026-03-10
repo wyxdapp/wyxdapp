@@ -1,7 +1,9 @@
 <template>
 	<view class="login-page">
 		<!-- 背景 -->
-		<image class="bg-image" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill"></image>
+		<view class="bg-image" :style="headerGradientOuter()">
+			<view class="bg-image-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 返回按钮 -->
 		<view class="back-btn" @click="handleBack">
@@ -74,6 +76,7 @@
 
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { useUserStore, setUserInfoDataAction, setLoginStatusAction, loginAction } from '@/stores/user'
 import { getMobileCode } from '@/pagesUser/services/smsService'
 import type { GetMobileCodeParams } from '@/pagesUser/services/smsService'
@@ -1800,6 +1803,16 @@ const saveLoginData = (data: UTSJSONObject) => {
 }
 
 .bg-image {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	width: 750rpx;
+	height: 100%;
+}
+
+.bg-image-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

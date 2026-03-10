@@ -41,8 +41,22 @@ export function saveRouteDraft(draft: RouteDraft): boolean {
       draft.createdAt = now
     }
     
-    // 序列化为 JSON 字符串
-    const draftJson = JSON.stringify(draft)
+    // 手动构建 UTSJSONObject 再序列化（UTS 中 JSON.stringify(class) 可能不可靠）
+    const draftObj: UTSJSONObject = {
+      homePics: draft.homePics,
+      lineTitle: draft.lineTitle,
+      tripPrice: draft.tripPrice,
+      lineAddress: draft.lineAddress,
+      lineType: draft.lineType,
+      departureDate: draft.departureDate,
+      routeDetail: draft.routeDetail,
+      insertType: draft.insertType,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt
+    }
+    
+    const draftJson = JSON.stringify(draftObj)
+    console.log('📝 [Draft] 保存草稿, 长度:', draftJson.length.toString())
     
     // 保存到 localStorage
     uni.setStorageSync(DRAFT_STORAGE_KEY, draftJson)
@@ -65,6 +79,7 @@ export function getRouteDraft(): RouteDraft | null {
     
     // 检查是否存在
     if (draftStr == null || draftStr == '') {
+      console.log('📝 [Draft] 无草稿数据')
       return null
     }
     
@@ -75,6 +90,8 @@ export function getRouteDraft(): RouteDraft | null {
     } else {
       jsonStr = JSON.stringify(draftStr)
     }
+    
+    console.log('📝 [Draft] 读取草稿, 长度:', jsonStr.length.toString())
     
     if (jsonStr == '' || jsonStr == '{}') {
       return null

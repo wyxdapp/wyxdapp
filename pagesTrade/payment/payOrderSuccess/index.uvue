@@ -1,40 +1,47 @@
 <template>
 	<view class="success-page">
-		<view class="header-bg"></view>
+		<view class="header-bg" :style="headerGradientOuter()">
+			<view class="header-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<view class="success-content">
-			<view class="success-icon-wrapper">
-				<text class="success-icon">✓</text>
+			<view :class="iconAnimated ? 'success-icon-wrapper success-icon-animated' : 'success-icon-wrapper success-icon-initial'">
+				<text class="success-icon" :style="primaryText()">✓</text>
 			</view>
-			<text class="success-title">支付成功！</text>
-			<text class="success-subtitle">欢迎再次光临</text>
+			<text class="success-title">支付成功</text>
+			<text class="success-subtitle">感谢您的支持，欢迎再次光临</text>
 		</view>
 		
 		<view class="order-card">
 			<view class="amount-section">
-				<text class="amount-symbol">¥</text>
-				<text class="amount-value">{{ payMoney }}</text>
+				<text class="amount-symbol" :style="primaryText()">¥</text>
+				<text class="amount-value" :style="primaryText()">{{ payMoney }}</text>
 			</view>
 			
 			<view class="divider"></view>
 			
 			<view class="info-section">
-				<text class="info-item">订单编号：{{ orderNo }}</text>
-				<text class="info-item">下单时间：{{ createTime }}</text>
-				<text class="info-item">支付方式：{{ payMethodText }}</text>
-			</view>
-			
-			<view class="divider"></view>
-			
-			<view class="action-row" @click="goToOrderDetail">
-				<text class="action-text">订单详情</text>
-				<text class="arrow">›</text>
+				<view class="info-row">
+					<text class="info-label">订单编号</text>
+					<text class="info-value">{{ orderNo }}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">下单时间</text>
+					<text class="info-value">{{ createTime }}</text>
+				</view>
+				<view class="info-row">
+					<text class="info-label">支付方式</text>
+					<text class="info-value">{{ payMethodText }}</text>
+				</view>
 			</view>
 		</view>
 		
-		<view class="footer-button">
-			<view class="primary-btn" @click="goToHome">
-				<text class="primary-btn-text">返回首页</text>
+		<view class="footer-buttons">
+			<view class="btn-primary" :style="buttonStyle()" @click="goToOrderDetail">
+				<text class="btn-primary-text">查看订单</text>
+			</view>
+			<view class="btn-outline" :style="buttonOutlineStyle()" @click="goToHome">
+				<text class="btn-outline-text" :style="primaryText()">返回首页</text>
 			</view>
 		</view>
 	</view>
@@ -48,6 +55,8 @@ import { goToHome } from '@/common/utils/utsSafe.uts'
 import { initUserInfoAction, updateUserInfoAction } from '@/stores/user.uts'
 import { refreshCurrentUserProfile, invalidateCurrentUserProfile, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
 import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask, buttonStyle, buttonOutlineStyle, primaryText } from '@/common/utils/themeHelper.uts'
+import { currentTheme } from '@/stores/theme.uts'
 
 // ==================== 响应式数据（拆分为独立 ref）====================
 const payMoney = ref<string>('0.00')
@@ -58,6 +67,9 @@ const orderId = ref<string>('')
 const orderKid = ref<string>('')
 const shortKid = ref<string>('')
 const orderType = ref<number>(0)
+
+// 成功图标入场动画状态
+const iconAnimated = ref<boolean>(false)
 
 // 支付方式文本（使用独立 ref 而非 computed 访问对象属性）
 const payMethodText = computed((): string => {
@@ -70,6 +82,13 @@ const payMethodText = computed((): string => {
 		return '支付宝'
 	}
 	return '在线支付'
+})
+
+// 金额主题色样式
+const amountColorStyle = computed((): Map<string, any> => {
+	const style = new Map<string, any>()
+	style.set('color', currentTheme.primaryColor)
+	return style
 })
 
 // 跳转订单详情
@@ -189,6 +208,11 @@ onLoad((options: OnLoadOptions) => {
 			})
 		}, 2000) // 🔧 修复：增加到2秒，确保后端处理完成
 	}
+
+	// 成功图标入场动画
+	setTimeout(() => {
+		iconAnimated.value = true
+	}, 100)
 })
 
 // 🔧 优化：组件卸载时清理 useCurrentUserProfile 事件监听器，防止内存泄漏
@@ -207,25 +231,35 @@ onUnmounted(() => {
 
 .header-bg {
 	width: 750rpx;
-	height: 380rpx;
-	background-color: #37B1F2;
-	border-radius: 0 0 24rpx 24rpx;
+	height: 420rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.header-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 420rpx;
 }
 
 .success-content {
 	position: absolute;
-	top: 116rpx;
+	top: 90rpx;
 	left: 0;
 	right: 0;
 	flex-direction: column;
 	align-items: center;
+	z-index: 10;
 }
 
 .success-icon-wrapper {
-	width: 120rpx;
-	height: 120rpx;
+	width: 140rpx;
+	height: 140rpx;
 	background-color: #ffffff;
-	border-radius: 60rpx;
+	border-radius: 70rpx;
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
@@ -234,33 +268,47 @@ onUnmounted(() => {
 
 .success-icon {
 	font-size: 80rpx;
-	color: #37B1F2;
 	font-weight: bold;
 }
 
+.success-icon-initial {
+	transform: scale(0);
+}
+
+.success-icon-animated {
+	transform: scale(1);
+	transition-property: transform;
+	transition-duration: 400ms;
+	transition-timing-function: ease-out;
+}
+
 .success-title {
-	font-size: 40rpx;
+	font-size: 36rpx;
 	color: #ffffff;
 	font-weight: bold;
 	margin-bottom: 16rpx;
 }
 
 .success-subtitle {
-	font-size: 28rpx;
+	font-size: 26rpx;
 	color: #ffffff;
+	opacity: 0.8;
 }
 
 .order-card {
 	background-color: #ffffff;
-	margin-top: 280rpx;
-	margin-left: 28rpx;
-	margin-right: 28rpx;
+	margin-top: 360rpx;
+	margin-left: 30rpx;
+	margin-right: 30rpx;
 	margin-bottom: 20rpx;
-	border-radius: 16rpx;
+	border-radius: 20rpx;
 	padding-top: 32rpx;
 	padding-bottom: 32rpx;
-	padding-left: 24rpx;
-	padding-right: 24rpx;
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	box-shadow: 0 4rpx 20rpx rgba(0,0,0,0.06);
+	position: relative;
+	z-index: 10;
 }
 
 .amount-section {
@@ -273,19 +321,17 @@ onUnmounted(() => {
 
 .amount-symbol {
 	font-size: 28rpx;
-	color: #333333;
 	font-weight: bold;
 	margin-right: 8rpx;
 }
 
 .amount-value {
-	font-size: 64rpx;
-	color: #333333;
+	font-size: 56rpx;
 	font-weight: bold;
 }
 
 .divider {
-	height: 2rpx;
+	height: 1rpx;
 	background-color: #f0f0f0;
 	margin-top: 24rpx;
 	margin-bottom: 24rpx;
@@ -297,50 +343,61 @@ onUnmounted(() => {
 	padding-bottom: 16rpx;
 }
 
-.info-item {
-	font-size: 28rpx;
-	color: #666666;
-	line-height: 60rpx;
-}
-
-.action-row {
+.info-row {
 	flex-direction: row;
-	justify-content: flex-end;
+	justify-content: space-between;
 	align-items: center;
-	padding-top: 16rpx;
+	padding-top: 12rpx;
+	padding-bottom: 12rpx;
 }
 
-.action-text {
-	font-size: 28rpx;
-	color: #666666;
-	margin-right: 8rpx;
+.info-label {
+	font-size: 26rpx;
+	color: #999999;
 }
 
-.arrow {
-	font-size: 40rpx;
-	color: #cccccc;
+.info-value {
+	font-size: 26rpx;
+	color: #333333;
 }
 
-.footer-button {
+.footer-buttons {
 	position: fixed;
 	bottom: 60rpx;
-	left: 235rpx;
-	width: 280rpx;
+	left: 30rpx;
+	right: 30rpx;
+	flex-direction: row;
+	justify-content: space-between;
 }
 
-.primary-btn {
-	width: 280rpx;
+.btn-primary {
+	flex: 1;
 	height: 80rpx;
-	background-color: #37B1F2;
 	border-radius: 40rpx;
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
+	margin-right: 12rpx;
 }
 
-.primary-btn-text {
+.btn-primary-text {
 	color: #ffffff;
-	font-size: 32rpx;
+	font-size: 30rpx;
+	font-weight: bold;
+}
+
+.btn-outline {
+	flex: 1;
+	height: 80rpx;
+	border-radius: 40rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	margin-left: 12rpx;
+}
+
+.btn-outline-text {
+	font-size: 30rpx;
 	font-weight: bold;
 }
 </style>

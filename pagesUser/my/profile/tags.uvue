@@ -50,7 +50,7 @@
 
 		<view class="section-card">
 			<view class="section-header">
-				<UniIcons type="flag" :size="36" color="#37B1F2" />
+				<UniIcons type="flag" :size="36" :color="currentTheme.primaryColor" />
 				<view class="section-info">
 					<text class="section-title">个性标签</text>
 					<text class="section-subtitle">最多选择5种标签</text>
@@ -127,6 +127,7 @@ import Button from '@/components/base/Button.uvue'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import Input from '@/components/base/Input.uvue'
 import Popup from '@/components/base/Popup.uvue'
+import { currentTheme } from '@/stores/theme.uts'
 import { useUserStore } from '@/stores/user'
 import { 
 	checkUserLoginReliable, 

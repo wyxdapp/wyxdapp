@@ -133,6 +133,7 @@ import {
 import Avatar from '@/components/base/Avatar.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
 import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { currentTheme } from '@/stores/theme.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -634,7 +635,7 @@ const selectUser = (user: UTSJSONObject | ConversationItem, source: string) => {
 		title: '确认赠送',
 		content: '确定要将礼物赠送给"' + targetUserName + '"吗？',
 		confirmText: '确认赠送',
-		confirmColor: '#37B1F2',
+		confirmColor: currentTheme.primaryColor,
 		success: handleModalConfirm
 	})
 }

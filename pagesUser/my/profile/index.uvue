@@ -1,5 +1,7 @@
 <template>
 	<view class="profile-page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -212,6 +214,7 @@ import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePag
 import Avatar from '@/components/base/Avatar.uvue'
 import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
 import { saveToken } from '@/common/utils/security/tokenManager.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 const userStore = useUserStore()
 const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/my_login_bg.png'
@@ -899,7 +902,7 @@ const doChooseAvatar = () => {
 					const tempFilePathsVal = resObj.get('tempFilePaths')
 					
 					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
-						const paths = tempFilePathsVal as Array<UTSJSONObject>
+						const paths = tempFilePathsVal as Array<string>
 						if (paths.length > 0) {
 							const firstPath = paths[0]
 							if (firstPath != null && firstPath.toString() != '') {
@@ -1059,8 +1062,24 @@ const confirmContactEdit = async () => {
 <style scoped>
 .profile-page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -1110,10 +1129,13 @@ const confirmContactEdit = async () => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 .avatar-section {
 	background-color: #ffffff;
+	margin-top: 20rpx;
 	margin-bottom: 20rpx;
 	flex-direction: column;
 }

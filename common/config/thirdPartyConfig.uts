@@ -6,6 +6,8 @@
 // === 携程联盟 ===
 /** 携程联盟 ID */
 export const CTRIP_ALLIANCE_ID = '7418524'
+/** 携程联盟 SID */
+export const CTRIP_SID = '281482727'
 
 // === 腾讯云 COS ===
 /** COS Bucket ID */

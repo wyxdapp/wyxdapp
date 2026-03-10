@@ -53,6 +53,7 @@
 <script setup lang="uts">
 import { ref, watch, computed } from 'vue'
 import { getTaskStatus, completeTask } from '@/common/services/lotteryService.uts'
+import { currentTheme } from '@/stores/theme.uts'
 // 使用 uni_modules 中的 uni-icons 组件（支持字体图标）
 import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 
@@ -147,10 +148,10 @@ const getTaskIconType = (task: any): string => {
 // 任务图标颜色
 const getTaskIconColor = (task: any): string => {
 	const taskType = getTaskTypeFromTask(task)
-	if (taskType == 10) return '#FF6B35'
-	if (taskType == 20) return '#37B1F2'
+	if (taskType == 10) return currentTheme.accentColor
+	if (taskType == 20) return currentTheme.primaryColor
 	if (taskType == 30) return '#9C27B0'
-	return '#FF6B35'
+	return currentTheme.accentColor
 }
 
 // 任务图标背景样式类

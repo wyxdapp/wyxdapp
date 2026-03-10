@@ -221,3 +221,11 @@ export const checkLoginPassword = (data: CheckLoginPasswordParams) => {
   return request.post('/user/baseInfo/checkPassword', data, false)
 }
 
+
+/**
+ * 一键登录（uni.univerify）
+ * 将运营商返回的 access_token 和 openid 发送到后端完成登录验证
+ */
+export const oneClickLogin = (data: UTSJSONObject) => {
+	return request.post('/user/baseInfo/loginByUniverify', data, false)
+}

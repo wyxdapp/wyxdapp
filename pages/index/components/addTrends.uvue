@@ -1,5 +1,7 @@
 <template>
 	<view class="add-trends-page" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- 内容输入 -->
 		<view class="content-section">
 			<textarea
@@ -53,7 +55,7 @@
 		<view v-if="showMediaModal == true" class="modal-mask" @click="closeMediaModal">
 			<view class="media-modal" @click.stop>
 				<view class="modal-option" @click="chooseImage">
-					<UniIcons type="image" :size="48" color="#37B1F2" />
+					<UniIcons type="image" :size="48" :color="currentTheme.primaryColor" />
 					<text class="option-text">选择图片</text>
 				</view>
 				<view class="modal-option" @click="chooseVideo">
@@ -83,6 +85,8 @@ import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePag
 import { getLocationInfo } from '@/common/utils/location.uts'
 import { requestPermissionTip, PERMISSION_CAMERA_ALBUM } from '@/common/utils/permissionTipManager.uts'
 import { toUTSJSON, getString } from '@/common/utils/typeConverter'
+import { currentTheme } from '@/stores/theme.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // ==================== 定时器生命周期管理 ====================
 let timerHandles: number[] = []
@@ -434,7 +438,7 @@ const chooseImage = () => {
 					const resObj = JSON.parse(resStr) as UTSJSONObject
 					const tempFilePathsVal = resObj.get('tempFilePaths')
 					if (tempFilePathsVal != null && Array.isArray(tempFilePathsVal) == true) {
-						const tempFilePaths = tempFilePathsVal as Array<UTSJSONObject>
+						const tempFilePaths = tempFilePathsVal as Array<string>
 						const paths: Array<string> = []
 						for (let i = 0; i < tempFilePaths.length; i++) {
 							const path = tempFilePaths[i]
@@ -778,10 +782,26 @@ onUnmounted(() => {
 .add-trends-page {
 	flex: 1;
 	flex-direction: column;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	padding-bottom: 20rpx;
 	padding-left: 28rpx;
 	padding-right: 28rpx;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 .content-section {
@@ -789,6 +809,8 @@ onUnmounted(() => {
 	border-radius: 12rpx;
 	padding: 20rpx;
 	margin-bottom: 20rpx;
+	position: relative;
+	z-index: 1;
 }
 
 .content-input {
@@ -809,6 +831,8 @@ onUnmounted(() => {
 
 .media-preview-section {
 	margin-bottom: 20rpx;
+	position: relative;
+	z-index: 1;
 }
 
 .video-preview-container {
@@ -863,6 +887,8 @@ onUnmounted(() => {
 
 .media-select-bar {
 	margin-bottom: 40rpx;
+	position: relative;
+	z-index: 1;
 }
 
 .media-btn {
@@ -895,6 +921,8 @@ onUnmounted(() => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
+	position: relative;
+	z-index: 1;
 }
 
 .submit-text {

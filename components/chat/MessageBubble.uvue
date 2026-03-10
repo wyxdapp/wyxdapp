@@ -157,6 +157,7 @@ interface MessageBubbleMessage {
 // 使用运行时 prop 声明避免编译器问题
 const props = defineProps({
 	message: { type: Object, required: true },
+	messageJson: { type: String, default: '' },
 	isSelf: { type: Boolean, required: true },
 	avatar: { type: String, default: '' },
 	defaultAvatar: { type: String, required: true },
@@ -185,21 +186,67 @@ const emit = defineEmits<{
 	phoneClick: [phone: string]
 }>()
 
-// 辅助方法：安全访问 message 属性（使用 JSON 序列化方式兼容 APP 端）
+// 辅助方法：将 messageJson 解析为 UTSJSONObject（每个组件实例独立）
+// 使用 computed 风格：当 messageJson 变化时自动重新解析
+const parsedMessageObj = computed((): UTSJSONObject | null => {
+	const jsonStr = props.messageJson
+	if (jsonStr != null && jsonStr != '') {
+		try {
+			const parsed = JSON.parse(jsonStr) as UTSJSONObject
+			return parsed
+		} catch (e) {
+			// JSON 解析失败
+		}
+	}
+	return null
+})
+
+// 辅助方法：安全访问 message 属性（兼容 APP 端）
 const getMessageProp = (key: string): any => {
-	const msgAny = props.message as any
-	try {
-		// UTS 规范：使用 JSON 序列化方式访问属性，兼容 APP 端
-		const msgStr = JSON.stringify(msgAny)
-		const msgObj = JSON.parse(msgStr) as UTSJSONObject
+	// 优先使用 parsedMessageObj（从 messageJson 解析，组件实例独立）
+	const msgObj = parsedMessageObj.value
+	if (msgObj != null) {
 		const val = msgObj.get(key)
 		if (val != null) {
 			return val
 		}
 		return ''
-	} catch (e) {
-		return ''
 	}
+	
+	// fallback：使用 message 对象 prop
+	const msgAny = props.message
+	if (msgAny == null) return ''
+	
+	// 方式1：直接当作 UTSJSONObject 使用
+	try {
+		const directObj = msgAny as UTSJSONObject
+		if (directObj != null) {
+			const val = directObj.get(key)
+			if (val != null) {
+				return val
+			}
+		}
+	} catch (e) {
+		// 直接访问失败
+	}
+	
+	// 方式2：通过 JSON 序列化
+	try {
+		const msgStr = JSON.stringify(msgAny)
+		if (msgStr != null && msgStr != '' && msgStr != '{}') {
+			const parsed2 = JSON.parse(msgStr) as UTSJSONObject
+			if (parsed2 != null) {
+				const val = parsed2.get(key)
+				if (val != null) {
+					return val
+				}
+			}
+		}
+	} catch (e2) {
+		// 序列化也失败
+	}
+	
+	return ''
 }
 
 const formatTime = (time: any): string => {
@@ -275,11 +322,11 @@ const isTextMessage = (): boolean => {
 	const messageType = getMessageProp('messageType')
 	const typeStr = type.toString()
 	const msgTypeNum = parseInt(messageType.toString())
-	// 🔧 修复：排除分享消息（messageType=6），避免分享消息被误判为文本消息
+	// 排除分享消息（messageType=6）
 	if (msgTypeNum == 6 || typeStr == 'share') {
 		return false
 	}
-	// 🔧 修复：排除系统通知消息（messageType=10），避免内部链接 JSON 被当作文本渲染
+	// 排除系统通知消息（messageType=10）
 	if (msgTypeNum == 10 || typeStr == 'system_notification') {
 		return false
 	}
@@ -345,19 +392,10 @@ const getMessageContent = (): string => {
 	const content = getMessageProp('content')
 	if (content != {} && content != '') {
 		const contentStr = content.toString()
-		// 🔧 调试：打印消息内容（仅在开发模式）
-		// #ifdef DEBUG
 		if (contentStr.length > 0) {
-			const preview = (contentStr.length > 30) ? contentStr.substring(0, 30) + '...' : contentStr
-			console.log('📝 [MessageBubble] 消息内容:', preview)
+			return contentStr
 		}
-		// #endif
-		return contentStr
 	}
-	// 🔧 调试：如果内容为空，打印警告
-	// #ifdef DEBUG
-	console.warn('⚠️ [MessageBubble] 消息内容为空')
-	// #endif
 	return ''
 }
 
@@ -655,13 +693,9 @@ const handleImageLongPress = () => {
 	
 	uni.showActionSheet({
 		itemList: ['添加到表情', '保存到相册', '删除'],
-		success: (res: any) => {
-			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
-			const tapIndexVal = resObj.get('tapIndex')
-			if (tapIndexVal == null) return
-			
-			const tapIndex = parseInt(tapIndexVal.toString())
-			if (isNaN(tapIndex) == true) return
+		success: (res) => {
+			if (res == null) return
+			const tapIndex = res.tapIndex
 			
 			if (tapIndex == 0) {
 				// 添加到表情
@@ -694,13 +728,9 @@ const handleVoiceLongPress = () => {
 	
 	uni.showActionSheet({
 		itemList: ['删除'],
-		success: (res: any) => {
-			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
-			const tapIndexVal = resObj.get('tapIndex')
-			if (tapIndexVal == null) return
-			
-			const tapIndex = parseInt(tapIndexVal.toString())
-			if (isNaN(tapIndex) == true) return
+		success: (res) => {
+			if (res == null) return
+			const tapIndex = res.tapIndex
 			
 			if (tapIndex == 0) {
 				// 删除消息
@@ -719,13 +749,9 @@ const handleVideoLongPress = () => {
 	
 	uni.showActionSheet({
 		itemList: ['删除'],
-		success: (res: any) => {
-			const resObj = JSON.parse(JSON.stringify(res)) as UTSJSONObject
-			const tapIndexVal = resObj.get('tapIndex')
-			if (tapIndexVal == null) return
-			
-			const tapIndex = parseInt(tapIndexVal.toString())
-			if (isNaN(tapIndex) == true) return
+		success: (res) => {
+			if (res == null) return
+			const tapIndex = res.tapIndex
 			
 			if (tapIndex == 0) {
 				// 删除消息

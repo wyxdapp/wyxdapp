@@ -23,14 +23,16 @@
 		<view class="page-header">
 			<!-- H5端保留返回和分享按钮 -->
 			<view class="header-left-btn" @click="goBack">
-				<Icon name="back" :size="40" color="#FFFFFF" />
+				<Icon name="back" :size="40" color="#333333" />
 			</view>
 			<view class="header-right-btn" @click="handleShare">
-				<Icon name="share" :size="40" color="#FFFFFF" />
+				<Icon name="share" :size="40" color="#333333" />
 			</view>
 		<!-- #endif -->
-			<!-- 背景图片 -->
-			<image class="page-header-bg" src="https://jiasu.wyxdapp.com/iconimages/order_details_bg.png" mode="aspectFill" />
+			<!-- 渐变背景（与订单列表页统一） -->
+			<view class="page-header-bg" :style="headerGradientOuter()">
+				<view class="page-header-bg-mask" :style="headerGradientMask()"></view>
+			</view>
 			<!-- 状态标题 -->
 			<view class="header-content">
 				<view class="status-row">
@@ -74,17 +76,17 @@
 				<view class="order-main">
 					<!-- 导游预约 -->
 					<template v-if="orderType == 20 || orderType == ORDER_TYPE_CUSTOM">
-						<view class="order-avatar" @click="goToGuideInfo">
+						<view class="order-avatar" @click="type == 1 ? goToGuideInfo() : goToTouristInfo()">
 							<Avatar
 								:url="orderCardDisplayPic"
-								:userId="guideKid"
+								:userId="type == 1 ? guideKid : touristKid"
 								:customSize="120"
 								clickMode="none"
 							/>
 						</view>
 						<view class="order-info">
 							<view class="order-name-row">
-								<text class="order-name">{{guideName}}</text>
+								<text class="order-name">{{type == 1 ? guideName : touristNickname}}</text>
 								<!-- 推广订单标签 -->
 								<view v-if="isPromotionOrder == true" class="promotion-badge">
 									<text class="promotion-badge-text">推广</text>
@@ -269,8 +271,8 @@
 				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_PENDING || orderStatu == 5) && refundStatu != REFUND_STATUS_PENDING" @click="handleIncomeCancelOrder">
 					<text class="footer-btn-text">取消订单</text>
 				</view>
-				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="(orderStatu == ORDER_STATUS_PENDING || orderStatu == 5) && refundStatu != REFUND_STATUS_PENDING" @click="handleModifyPrice">
-					<text class="footer-btn-text">改价</text>
+				<view class="footer-btn footer-btn-primary footer-btn-half" v-if="(orderStatu == ORDER_STATUS_PENDING || orderStatu == 5) && refundStatu != REFUND_STATUS_PENDING" @click="handleModifyPrice">
+					<text class="footer-btn-text footer-btn-primary-text">改价</text>
 				</view>
 				<view class="footer-btn footer-btn-cancel footer-btn-half" v-if="orderStatu == ORDER_STATUS_IN_PROGRESS && refundStatu != REFUND_STATUS_PENDING" @click="handleRejectOrder">
 					<text class="footer-btn-text">拒绝</text>
@@ -317,6 +319,7 @@ import { getNotificationHistory, markNotificationRead } from '@/api/notification
 import { GetNotificationHistoryParams } from '@/api/types/notificationTypes.uts'
 import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import SharePopup from '@/components/common/SharePopup.uvue'
 import { 
 	getChatList as getChatListFn, 
@@ -435,6 +438,7 @@ const guideName = ref<string>('')
 const guideKid = ref<string>('')
 const guidePhone = ref<string>('')
 const touristName = ref<string>('')
+const touristNickname = ref<string>('') // 游客账号昵称（用于收入订单卡片显示）
 const touristKid = ref<string>('')
 const touristPhone = ref<string>('')
 const touristOrderDetailsPic = ref<string>('')
@@ -622,9 +626,25 @@ const updateOrderFields = (data: UTSJSONObject | null) => {
 	guideKid.value = getObjString(data, 'guideKid')
 	guidePhone.value = getObjString(data, 'guidePhone')
 	touristName.value = getObjString(data, 'touristName')
+	// 收入订单卡片显示游客昵称：优先使用 userName/userNickname（游客账号昵称）
+	// touristName 是下单联系人姓名，在游客信息卡片中单独展示
+	touristNickname.value = getObjString(data, 'userName')
+	if (touristNickname.value == '') {
+		touristNickname.value = getObjString(data, 'userNickname')
+	}
+	if (touristNickname.value == '') {
+		touristNickname.value = touristName.value
+	}
 	touristKid.value = getObjString(data, 'touristKid')
 	touristPhone.value = getObjString(data, 'touristPhone')
 	touristOrderDetailsPic.value = getObjString(data, 'touristOrderDetailsPic')
+	// 兼容后端返回的游客头像字段：优先 touristOrderDetailsPic，其次 userAvatar，最后 userImg
+	if (touristOrderDetailsPic.value == '') {
+		touristOrderDetailsPic.value = getObjString(data, 'userAvatar')
+	}
+	if (touristOrderDetailsPic.value == '') {
+		touristOrderDetailsPic.value = getObjString(data, 'userImg')
+	}
 	// 兼容后端返回的向导头像字段：优先 guideAvatar，其次 guideImg
 	guideAvatar.value = getObjString(data, 'guideAvatar')
 	if (guideAvatar.value == '') {
@@ -1247,6 +1267,14 @@ const goToGuideInfo = () => {
 	}
 }
 
+// 跳转到游客主页（收入订单时使用）
+const goToTouristInfo = () => {
+	const kid = touristKid.value
+	if (kid != '') {
+		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + kid })
+	}
+}
+
 // 取消订单（实现函数必须在调用前定义）
 const doCancelOrder = async () => {
 	loading.value = true
@@ -1717,7 +1745,7 @@ onUnmounted(() => {
 }
 
 .nav-title {
-	font-size: 34rpx;
+	font-size: 36rpx;
 	color: #333333;
 	font-weight: bold;
 }
@@ -1743,6 +1771,14 @@ onUnmounted(() => {
 }
 
 .page-header-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 320rpx;
+}
+
+.page-header-bg-mask {
 	position: absolute;
 	top: 0;
 	left: 0;
@@ -1792,15 +1828,15 @@ onUnmounted(() => {
 }
 
 .header-title {
-	font-size: 36rpx;
-	color: #FFFFFF;
+	font-size: 40rpx;
+	color: #333333;
 	font-weight: bold;
 	margin-bottom: 12rpx;
 }
 
 .header-subtitle {
-	font-size: 24rpx;
-	color: rgba(255, 255, 255, 0.8);
+	font-size: 26rpx;
+	color: #666666;
 }
 
 .header-countdown {
@@ -1820,8 +1856,8 @@ onUnmounted(() => {
 .order-card {
 	width: 100%;
 	background-color: #FFFFFF;
-	border-radius: 16rpx;
-	padding: 24rpx;
+	border-radius: 24rpx;
+	padding: 28rpx;
 	margin-bottom: 20rpx;
 }
 
@@ -1850,7 +1886,7 @@ onUnmounted(() => {
 }
 
 .order-name {
-	font-size: 28rpx;
+	font-size: 32rpx;
 	color: #333333;
 	font-weight: bold;
 }
@@ -1894,7 +1930,8 @@ onUnmounted(() => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: flex-end;
-	padding-top: 20rpx;
+	padding-top: 24rpx;
+	padding-bottom: 24rpx;
 	border-top-width: 1rpx;
 	border-top-style: solid;
 	border-top-color: #F5F5F5;
@@ -1920,15 +1957,15 @@ onUnmounted(() => {
 .info-card {
 	width: 100%;
 	background-color: #FFFFFF;
-	border-radius: 16rpx;
-	padding: 24rpx;
+	border-radius: 24rpx;
+	padding: 28rpx;
 	margin-bottom: 20rpx;
 }
 
 .info-card-header {
 	flex-direction: row;
 	align-items: center;
-	margin-bottom: 24rpx;
+	margin-bottom: 20rpx;
 }
 
 .card-title-line {
@@ -1940,7 +1977,7 @@ onUnmounted(() => {
 }
 
 .card-title {
-	font-size: 28rpx;
+	font-size: 32rpx;
 	color: #333333;
 	font-weight: bold;
 }
@@ -2004,9 +2041,9 @@ onUnmounted(() => {
 
 .action-btn {
 	flex: 1;
-	height: 88rpx;
+	height: 96rpx;
 	background-color: #FFFFFF;
-	border-radius: 44rpx;
+	border-radius: 24rpx;
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
@@ -2045,12 +2082,15 @@ onUnmounted(() => {
 	align-items: center;
 	justify-content: flex-end;
 	padding: 0 24rpx;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #F5F5F5;
 }
 
 .footer-btn {
 	height: 72rpx;
 	padding: 0 40rpx;
-	border-radius: 36rpx;
+	border-radius: 28rpx;
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
@@ -2062,11 +2102,14 @@ onUnmounted(() => {
 	background-color: #FFFFFF;
 	border-width: 2rpx;
 	border-style: solid;
-	border-color: #37B1F2;
+	border-color: #cccccc;
 }
 
 .footer-btn-primary {
 	background-color: #37B1F2;
+	border-width: 2rpx;
+	border-style: solid;
+	border-color: #37B1F2;
 }
 
 .footer-btn-half {
@@ -2077,7 +2120,7 @@ onUnmounted(() => {
 
 .footer-btn-text {
 	font-size: 28rpx;
-	color: #37B1F2;
+	color: #666666;
 }
 
 .footer-btn-primary-text {

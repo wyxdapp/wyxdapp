@@ -1,5 +1,7 @@
 <template>
 	<view class="feedback-page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -70,6 +72,7 @@ import { ref, onMounted } from 'vue'
 import { handlePageError } from '@/common/utils/errorHandler.uts'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
 import { ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 返回按钮处理
 const handleBack = () => {
@@ -231,8 +234,24 @@ onMounted(() => {
 <style scoped>
 .feedback-page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -277,6 +296,8 @@ onMounted(() => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 .section {

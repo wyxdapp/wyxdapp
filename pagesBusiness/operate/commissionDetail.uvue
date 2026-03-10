@@ -1,5 +1,9 @@
 <template>
 	<view class="page">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -132,6 +136,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { queryTutorCommission } from '@/pagesBusiness/api/operator.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { 
@@ -550,7 +555,23 @@ onShow(() => {
 	flex-direction: column;
 	width: 750rpx;
 	flex: 1;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
+}
+
+.hear-bg {
+	width: 750rpx;
+	height: 392rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -596,6 +617,8 @@ onShow(() => {
 .content-area {
 	flex: 1;
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 /* 统计卡片 */

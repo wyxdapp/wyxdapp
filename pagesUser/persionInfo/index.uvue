@@ -60,7 +60,9 @@
 		<!-- 用户信息区域 -->
 		<view class="user-info-container ptb-28 plr-32 relative">
 			<!-- 彩色渐变背景图 -->
-			<image class="user-info-bg" src="https://jiasu.wyxdapp.com/iconimages/n_persionInfo_bg.png" mode="scaleToFill" />
+			<view class="user-info-bg" :style="headerGradientOuter()">
+				<view class="user-info-bg-mask" :style="headerGradientMask()"></view>
+			</view>
 			
 			<view class="flex-row align-center relative z-10">
 				<view class="profile-avatar-wrapper relative">
@@ -364,6 +366,7 @@
 <script setup lang="uts">
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 // #ifdef MP-WEIXIN
 import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 // #endif
@@ -445,7 +448,6 @@ import {
 	getCachedProfile, 
 	DEFAULT_TTL 
 } from '@/common/composables/useUserProfileCache.uts'
-import type { PartialUserHomePageInfo } from '@/common/composables/useUserProfileCache.uts'
 import { 
 	prepareShareData as prepareShareDataFn, 
 	handleAutoJumpToApp as handleAutoJumpToAppFn, 
@@ -897,7 +899,6 @@ const updateUserInfoDisplay = (userInfo: UTSJSONObject | null) => {
 	// 🔧 缓存当前用户的 shortKid（用于分享推广链接的 fallback）
 	const userInfoKidForCache = getInfoStringProperty(info.value, 'kid')
 	const shortKidForCache = getInfoStringProperty(info.value, 'shortKid')
-	console.log('[PersionInfo] shortKid缓存检查 - userInfoKid:', userInfoKidForCache, 'shortKid:', shortKidForCache)
 	if (userInfoKidForCache != '' && shortKidForCache != '') {
 		const currentUserKidForCache = getCurrentUserKid()
 		if (currentUserKidForCache == userInfoKidForCache) {
@@ -907,7 +908,6 @@ const updateUserInfoDisplay = (userInfo: UTSJSONObject | null) => {
 				const existingShortKid = getUserShortKid()
 				if (existingShortKid == '') {
 					updateUserInfoAction({ shortKid: shortKidForCache } as UTSJSONObject)
-					console.log('[PersionInfo] 已同步 shortKid 到 userStore:', shortKidForCache)
 				}
 			} catch (e) {}
 		}
@@ -973,13 +973,19 @@ const setDefaultUserInfo = (userId: string) => {
  * 同步数据到缓存
  */
 const syncProfileCache = (payload: UTSJSONObject) => {
-	const infoKidStr = getInfoStringProperty(info.value, 'kid')
-	if (infoKidStr == '') return
-	
-	const focusKid = viewerKid.value
-	const payloadStr = JSON.stringify(payload)
-	const payloadObj = JSON.parse(payloadStr) as UTSJSONObject
-	updateUserProfile(infoKidStr, payloadObj as PartialUserHomePageInfo, focusKid, DEFAULT_TTL)
+	try {
+		const infoKidStr = getInfoStringProperty(info.value, 'kid')
+		if (infoKidStr == '') return
+		
+		const focusKid = viewerKid.value
+		// 确保 payload 是纯 UTSJSONObject，通过 JSON 序列化/反序列化转换
+		const payloadStr = JSON.stringify(payload)
+		if (payloadStr == '' || payloadStr == 'null' || payloadStr == '{}') return
+		const safePayload = JSON.parse(payloadStr) as UTSJSONObject
+		updateUserProfile(infoKidStr, safePayload, focusKid, DEFAULT_TTL)
+	} catch (e) {
+		handleSilentError(e, 'syncProfileCache')
+	}
 }
 
 /**
@@ -1195,7 +1201,6 @@ const uploadBackground = () => {
 				
 				// 使用 cosUploader 上传（背景图使用 dynamic 类型）
 				cosUploader.uploadDynamic(filePath!, (progress: number) => {
-					console.log('背景图上传进度:', progress.toString() + '%')
 				}).then((result: UTSJSONObject) => {
 					backgroundLoading.value = false
 					
@@ -1279,7 +1284,6 @@ const uploadAvatar = () => {
 				
 				// 使用 cosUploader 上传头像
 				cosUploader.uploadAvatar(filePath!, (progress: number) => {
-					console.log('头像上传进度:', progress.toString() + '%')
 				}).then((result: UTSJSONObject) => {
 					avatarLoading.value = false
 					
@@ -1454,10 +1458,10 @@ const handleAction = async () => {
 		updateInfoData()
 		
 		// 同步到缓存
-		syncProfileCache({
-			followerCount: getInfoNumberProperty(info.value, 'followerCount'),
-			isFocus: newStatus
-		})
+		const followCacheObj = new UTSJSONObject()
+		followCacheObj.set('followerCount', getInfoNumberProperty(info.value, 'followerCount'))
+		followCacheObj.set('isFocus', newStatus)
+		syncProfileCache(followCacheObj)
 		
 		uni.showToast({
 			title: newStatus == true ? '关注成功' : '已取消关注',
@@ -1483,10 +1487,10 @@ const onFollowChange = (isFollow: boolean, targetUserKid: string) => {
 	updateInfoData()
 	
 	// 同步到缓存
-	syncProfileCache({
-		followerCount: getInfoNumberProperty(info.value, 'followerCount'),
-		isFocus: isFollow
-	})
+	const followChangeCacheObj = new UTSJSONObject()
+	followChangeCacheObj.set('followerCount', getInfoNumberProperty(info.value, 'followerCount'))
+	followChangeCacheObj.set('isFocus', isFollow)
+	syncProfileCache(followChangeCacheObj)
 }
 
 // ==================== 动态列表事件 ====================
@@ -1545,7 +1549,8 @@ const onLike = async (item: UTSJSONObject | null) => {
 		const likeCountVal = getLikeCount(itemKid)
 		const newIsLike = (isLikedVal == true) ? 10 : 20
 		
-		// 更新列表项
+		// 更新列表项并强制触发响应式
+		const updatedList: UTSJSONObject[] = []
 		for (let i = 0; i < trendsPageInfo.value.list.length; i = i + 1) {
 			const listItem = trendsPageInfo.value.list[i]
 			if (listItem != null) {
@@ -1556,24 +1561,33 @@ const onLike = async (item: UTSJSONObject | null) => {
 						const listItemObj = JSON.parse(listItemStr) as UTSJSONObject
 						listItemObj.set('isLike', newIsLike)
 						listItemObj.set('likeNum', likeCountVal)
-						const updatedStr = JSON.stringify(listItemObj)
-						trendsPageInfo.value.list[i] = JSON.parse(updatedStr) as UTSJSONObject
+						updatedList.push(listItemObj)
 					} catch (eUpdate) {
 						handleSilentError(eUpdate, '更新动态点赞状态')
+						updatedList.push(listItem)
 					}
-					break
+				} else {
+					updatedList.push(listItem)
 				}
 			}
 		}
+		trendsPageInfo.value.list = updatedList
 		
 		// 同步个人主页「获赞」统计
 		const infoValKid = getInfoStringProperty(info.value, 'kid')
 		if (infoValKid != '') {
 			const beLikedCountVal = getInfoNumberProperty(info.value, 'beLikedCount')
 			const delta = (newStatus == true) ? 1 : -1
-			setInfoProperty(info.value, 'beLikedCount', Math.max(0, beLikedCountVal + delta))
+			const newBeLikedCount = Math.max(0, beLikedCountVal + delta)
+			setInfoProperty(info.value, 'beLikedCount', newBeLikedCount)
 			updateInfoData()
-			syncProfileCache({ beLikedCount: getInfoNumberProperty(info.value, 'beLikedCount') })
+			try {
+				const cacheObj = new UTSJSONObject()
+				cacheObj.set('beLikedCount', newBeLikedCount)
+				syncProfileCache(cacheObj)
+			} catch (_ignore) {
+				// 缓存同步失败不影响功能
+			}
 		}
 	} catch (error) {
 		handlePageError(error, '点赞操作', null)
@@ -2021,22 +2035,17 @@ const handleShare = async () => {
 		let referrerShortKid = ''
 		try {
 			referrerShortKid = getUserShortKid()
-			console.log('[handleShare] getUserShortKid() 返回:', referrerShortKid)
-			// 🔧 fallback：如果 userStore 中没有 shortKid，尝试从当前用户主页信息获取
+			// fallback：如果 userStore 中没有 shortKid，尝试从当前用户主页信息获取
 			if (referrerShortKid == '') {
 				const currentUserKidVal = getCurrentUserKid()
-				console.log('[handleShare] currentUserKidVal:', currentUserKidVal, 'userKid(guiderKid):', userKid)
-				// 🔧 修复：分享时 referrerShortKid 应该是当前登录用户的短号，不是被查看用户的
-				// 所以从 info.value 获取时，需要确认 info.value 是当前登录用户的数据
+				// 分享时 referrerShortKid 应该是当前登录用户的短号，不是被查看用户的
 				if (currentUserKidVal != '' && currentUserKidVal == userKid) {
 					const infoShortKid = getInfoStringProperty(infoVal, 'shortKid')
-					console.log('[handleShare] info.value shortKid:', infoShortKid)
 					if (infoShortKid != '') {
 						referrerShortKid = infoShortKid
-						console.log('[handleShare] 从主页信息获取推广短号:', referrerShortKid)
 					}
 				}
-				// 🔧 修复APP端：从缓存的当前用户 profile 中获取 shortKid
+				// 从缓存的当前用户 profile 中获取 shortKid
 				if (referrerShortKid == '' && currentUserKidVal != '') {
 					try {
 						const cachedMyProfile = getCachedProfile(currentUserKidVal, currentUserKidVal)
@@ -2044,7 +2053,6 @@ const handleShare = async () => {
 							const cachedShortKidVal = cachedMyProfile.get('shortKid')
 							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
 								referrerShortKid = cachedShortKidVal.toString()
-								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
 								// 同步到 userStore 和 localStorage，后续分享不再需要此 fallback
 								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
 								try {
@@ -2058,15 +2066,12 @@ const handleShare = async () => {
 				if (referrerShortKid == '' && currentUserKidVal != '') {
 					try {
 						const storedInfo = uni.getStorageSync('user_shortKid_' + currentUserKidVal) as string
-						console.log('[handleShare] localStorage user_shortKid_' + currentUserKidVal + ':', storedInfo)
 						if (storedInfo != null && storedInfo != '') {
 							referrerShortKid = storedInfo
-							console.log('[handleShare] 从缓存获取推广短号:', referrerShortKid)
 						}
 					} catch (e2) {}
 				}
 			}
-			console.log('[handleShare] 推广短号:', referrerShortKid)
 			if (referrerShortKid != '') {
 				// 添加推广参数到链接
 				if (shareLink.indexOf('?') >= 0) {
@@ -2093,12 +2098,6 @@ const handleShare = async () => {
 		
 		sharePayload.value = newPayload
 		
-		console.log('[handleShare] 分享数据构建完成:')
-		console.log('[handleShare] - title:', shareTitle)
-		console.log('[handleShare] - desc:', shareDesc)
-		console.log('[handleShare] - imageUrl:', imageStr)
-		console.log('[handleShare] - link:', shareLink)
-		console.log('[handleShare] - userId:', userKid)
 	} catch (e) {
 		handleSilentError(e, '[handleShare] 构建分享数据')
 		// 使用默认值
@@ -2117,13 +2116,10 @@ const handleShare = async () => {
 	// 获取会话列表（异步请求） - 允许失败但仍显示弹窗
 	try {
 		const result = await getChatListFn(userStore)
-		// 使用 JSON.stringify 安全记录返回结果（避免直接访问 length 导致编译问题）
-		console.log('[PersionInfo] getChatListFn result:', JSON.stringify(result))
 		try {
 			// 如果返回的是数组，直接使用；否则尝试从模块级 chatList ref 中读取
 			if (result != null && Array.isArray(result) == true) {
 				shareChatList.value = result as Array<UTSJSONObject>
-				console.log('[PersionInfo] assigned result to shareChatList, new length:', shareChatList.value.length)
 			} else {
 				// fallback: 安全解析模块级 chatList（兼容 ref / 包装对象）
 				try {
@@ -2183,13 +2179,10 @@ const handleShare = async () => {
 						handleSilentError(e, '[PersionInfo] 解析chatList降级处理(分享)')
 					}
 					shareChatList.value = (fallbackArr.length > 0) ? fallbackArr : []
-					console.log('[PersionInfo] used fallback chatList, length:', shareChatList.value.length)
 				} catch (e) {
 					shareChatList.value = []
 				}
 			}
-			console.log('[PersionInfo] after getChatListFn, shareChatList length:', shareChatList.value.length)
-			console.log('[PersionInfo] after getChatListFn, shareChatList first item:', shareChatList.value.length > 0 ? JSON.stringify(shareChatList.value[0]) : 'empty')
 		} catch (e) {
 			handleSilentError(e, '[PersionInfo] 会话列表赋值')
 		}
@@ -2387,7 +2380,6 @@ onShareAppMessage((): UTSJSONObject => {
 	const title = data.get('title')
 	const path = data.get('path')
 	const imageUrl = data.get('imageUrl')
-	console.log('[MP-SHARE] onShareAppMessage:', title, path)
 	return {
 		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
 		path: (path != null) ? path.toString() : '/pagesUser/persionInfo/index',
@@ -2404,7 +2396,6 @@ onShareTimeline((): UTSJSONObject => {
 	const pathStr = (path != null) ? path.toString() : ''
 	const queryIndex = pathStr.indexOf('?')
 	const queryStr = (queryIndex >= 0) ? pathStr.substring(queryIndex + 1) : ''
-	console.log('[MP-SHARE] onShareTimeline:', title, queryStr)
 	return {
 		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
 		query: queryStr,
@@ -2414,9 +2405,7 @@ onShareTimeline((): UTSJSONObject => {
 // #endif
 
 onLoad((options: OnLoadOptions) => {
-	console.log('个人主页加载，参数:', options)
-
-	// 🔧 修复：主动调用 initUserInfoAction 确保用户信息被初始化（解决 APP 端聊天列表不显示问题）
+	// 主动调用 initUserInfoAction 确保用户信息被初始化
 	initUserInfoAction()
 
 	// 初始化页面布局

@@ -1,11 +1,12 @@
 <template>
 	<view class="search-result-page">
 		<!-- 背景图片 -->
-		<image 
+		<view 
 			class="bg-index-header" 
-			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
-			mode="aspectFill"
-		></image>
+			:style="headerGradientOuter()"
+		>
+			<view class="bg-index-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 搜索栏 -->
 		<view class="search-header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -336,6 +337,7 @@
 <script setup lang="uts">
 import { ref, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import SectionTitle from '@/components/base/SectionTitle.uvue'
@@ -1210,12 +1212,20 @@ onMounted(() => {
 
 .search-result-page {
 	min-height: 2000rpx;
-	background-color: #FFFFFF;
+	background-color: #F5F5F5;
 	flex-direction: column;
 }
 
 /* ==================== 背景图片 ==================== */
 .bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+.bg-index-header-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

@@ -13,7 +13,9 @@
 		</view>
 		<!-- #endif -->
 		<!-- 背景图片 -->
-		<image class="hear-bg" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill" />
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
 		<view class="realname-page" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
 		<!-- #endif -->
@@ -52,37 +54,45 @@
 			<!-- 审核中 -->
 			<view v-else-if="authStatus === 20" class="pending-page">
 				<view class="pending-content">
-					<view class="pending-title-row">
-						<uni-icons type="spinner-cycle" size="36" color="#666666"></uni-icons>
-						<text class="pending-title">实名认证审核中</text>
+					<view class="pending-icon-wrapper">
+						<uni-icons type="spinner-cycle" size="48" color="#FF8C00"></uni-icons>
 					</view>
+					<text class="pending-title">实名认证审核中</text>
 					<text class="pending-desc">我们将在1-2个工作日内完成审核，请耐心等待。审核结果将通过消息通知您。</text>
 					
-					<view v-if="getAuthField('realName') != ''" class="auth-result">
-						<view class="result-item">
-							<text class="result-label">真实姓名</text>
-							<text class="result-value">{{ maskedName }}</text>
+					<view class="auth-result">
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">真实姓名</text>
+								<view class="form-value">
+									<text class="value-text value-text--filled">{{ maskedName }}</text>
+								</view>
+							</view>
 						</view>
-						<view class="result-divider"></view>
-						<view class="result-item">
-							<text class="result-label">身份证号</text>
-							<text class="result-value">{{ maskedIdCard }}</text>
+						<view class="form-divider"></view>
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">身份证号</text>
+								<view class="form-value">
+									<text class="value-text value-text--filled">{{ maskedIdCard }}</text>
+								</view>
+							</view>
 						</view>
 					</view>
 					
-					<view v-if="getAuthField('idcardFrontImage') != ''" class="pending-images">
+					<view v-if="pendingHasFrontImage" class="pending-images">
 						<view class="image-card">
-							<image class="id-image" :src="getAuthField('idcardFrontImage')" mode="aspectFill"></image>
+							<image class="id-image" :src="pendingFrontImage" mode="aspectFill"></image>
 							<text class="image-label">人像面</text>
 						</view>
 						<view class="image-card">
-							<image class="id-image" :src="getAuthField('idcardBackImage')" mode="aspectFill"></image>
+							<image class="id-image" :src="pendingBackImage" mode="aspectFill"></image>
 							<text class="image-label">国徽面</text>
 						</view>
 					</view>
 					
 					<view class="pending-tips">
-						<uni-icons type="info" size="16" color="#FF6B35"></uni-icons>
+						<uni-icons type="info" size="16" :color="currentTheme.accentColor"></uni-icons>
 						<text class="tips-text">审核期间无法修改认证信息，如需重新提交，请等待审核结果。</text>
 					</view>
 				</view>
@@ -112,9 +122,9 @@
 							<view class="form-value">
 								<text
 									class="value-text"
-									:class="(getFormField('realName') != '') ? 'value-text--filled' : 'value-text--placeholder'"
+									:class="(formData.realName != '') ? 'value-text--filled' : 'value-text--placeholder'"
 								>
-									{{ ((getFormField('realName') != null && getFormField('realName') != '') ? getFormField('realName') : '请输入姓名') + ' ›' }}
+									{{ (formData.realName != '' ? formData.realName : '请输入姓名') + ' ›' }}
 								</text>
 							</view>
 						</view>
@@ -128,9 +138,9 @@
 							<view class="form-value">
 								<text
 									class="value-text"
-								:class="(getFormField('idCard') != '') ? 'value-text--filled' : 'value-text--placeholder'"
+								:class="(formData.idCard != '') ? 'value-text--filled' : 'value-text--placeholder'"
 								>
-									{{ ((getFormField('idCard') != null && getFormField('idCard') != '') ? getFormField('idCard') : '请输入身份证号码') + ' ›' }}
+									{{ (formData.idCard != '' ? formData.idCard : '请输入身份证号码') + ' ›' }}
 								</text>
 							</view>
 						</view>
@@ -144,9 +154,9 @@
 					<text class="section-desc">请确保图片清晰完整，信息可见</text>
 					<view class="upload-item" @click="uploadImage('front')">
 						<image
-							v-if="getFormField('idcardFrontImage') != ''"
+							v-if="formData.idcardFrontImage != ''"
 							class="upload-image"
-							:src="getFormField('idcardFrontImage')"
+							:src="formData.idcardFrontImage"
 							mode="aspectFill"
 						/>
 						<view v-else class="upload-placeholder">
@@ -158,9 +168,9 @@
 					<view class="upload-spacing"></view>
 					<view class="upload-item" @click="uploadImage('back')">
 						<image
-							v-if="getFormField('idcardBackImage') != ''"
+							v-if="formData.idcardBackImage != ''"
 							class="upload-image"
-							:src="getFormField('idcardBackImage')"
+							:src="formData.idcardBackImage"
 							mode="aspectFill"
 						/>
 						<view v-else class="upload-placeholder">
@@ -179,41 +189,55 @@
 			</view>
 		</view>
 
-		<!-- 姓名输入弹层 -->
+		<!-- 姓名输入弹窗 -->
 		<view v-if="showNameInput" class="popup-mask" @click="closeNameInput">
-			<view class="input-popup" @click.stop>
+			<view class="popup-container" @click.stop="">
 				<view class="popup-header">
-					<text class="popup-title">输入姓名</text>
-					<text class="popup-close" @click="closeNameInput">✕</text>
+					<text class="popup-title">编辑姓名</text>
 				</view>
 				<view class="popup-content">
-					<Input
-						v-model="tempName"
+					<input
+						class="edit-input"
+						:value="tempName"
 						placeholder="请输入真实姓名"
 						:maxlength="20"
+						:focus="showNameInput"
+						@input="onNameInput"
 					/>
-					<view class="popup-btn" @click="confirmName">
-						<text class="btn-text">确定</text>
+				</view>
+				<view class="popup-actions">
+					<view class="action-btn cancel-btn" @click="closeNameInput">
+						<text class="cancel-btn-text">取消</text>
+					</view>
+					<view class="action-btn confirm-btn" @click="confirmName">
+						<text class="confirm-btn-text">确认</text>
 					</view>
 				</view>
 			</view>
 		</view>
 
-		<!-- 身份证号输入弹层 -->
+		<!-- 身份证号输入弹窗 -->
 		<view v-if="showIdCardInput" class="popup-mask" @click="closeIdCardInput">
-			<view class="input-popup" @click.stop>
+			<view class="popup-container" @click.stop="">
 				<view class="popup-header">
-					<text class="popup-title">输入身份证号码</text>
-					<text class="popup-close" @click="closeIdCardInput">✕</text>
+					<text class="popup-title">编辑身份证号码</text>
 				</view>
 				<view class="popup-content">
-					<Input
-						v-model="tempIdCard"
+					<input
+						class="edit-input"
+						:value="tempIdCard"
 						placeholder="请输入身份证号码"
 						:maxlength="18"
+						:focus="showIdCardInput"
+						@input="onIdCardInput"
 					/>
-					<view class="popup-btn" @click="confirmIdCard">
-						<text class="btn-text">确定</text>
+				</view>
+				<view class="popup-actions">
+					<view class="action-btn cancel-btn" @click="closeIdCardInput">
+						<text class="cancel-btn-text">取消</text>
+					</view>
+					<view class="action-btn confirm-btn" @click="confirmIdCard">
+						<text class="confirm-btn-text">确认</text>
 					</view>
 				</view>
 			</view>
@@ -226,10 +250,10 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { currentTheme } from '@/stores/theme.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
-import Button from '@/components/base/Button.uvue'
-import Input from '@/components/base/Input.uvue'
-import { identityUser, queryAuthInfo, QueryAuthInfoParams, IdentityUserParams } from '@/api/travel.uts'
+import request from '@/utils/request'
 import { getUserId, getUserLoginStatus, initUserInfoAction } from '@/stores/user.uts'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
 import { 
@@ -268,17 +292,24 @@ class RealNameFormData {
 
 const formData = ref<RealNameFormData>(new RealNameFormData())
 
-// 🔧 安全更新 formData 单个字段，避免 UTSJSONObject 类型替换导致响应式丢失
+// 🔧 安全更新 formData 单个字段 — 必须替换整个 ref.value 才能触发响应式更新
 const updateFormData = (key: string, value: string) => {
+	const prev = formData.value
+	const next = new RealNameFormData()
+	next.realName = prev.realName
+	next.idCard = prev.idCard
+	next.idcardFrontImage = prev.idcardFrontImage
+	next.idcardBackImage = prev.idcardBackImage
 	if (key == 'realName') {
-		formData.value.realName = value
+		next.realName = value
 	} else if (key == 'idCard') {
-		formData.value.idCard = value
+		next.idCard = value
 	} else if (key == 'idcardFrontImage') {
-		formData.value.idcardFrontImage = value
+		next.idcardFrontImage = value
 	} else if (key == 'idcardBackImage') {
-		formData.value.idcardBackImage = value
+		next.idcardBackImage = value
 	}
+	formData.value = next
 }
 
 const authData = ref<RealNameFormData>(new RealNameFormData())
@@ -330,24 +361,20 @@ const loadAuthStatus = async () => {
 			handleSilentError(new Error('用户未登录'), '加载实名认证信息')
 			return
 		}
-		// 构造参数并调用（避免匿名对象类型）
-		const paramsJson = JSON.stringify({ userKid: userKid })
-		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
-		const params = paramsParsed as QueryAuthInfoParams
-
-		const res = await queryAuthInfo(params)
-		// 安全解析返回值
-		const resJson = JSON.stringify(res)
-		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
+		
+		// 直接调用 request.post，绕过 interface 参数类型在 Android 上的 ClassCastException
+		const payload = { userKid: userKid } as UTSJSONObject
+		const res = await request.post('/user/baseInfo/v1/queryAuthInfo', payload, false)
+		// 安全解析返回值 — request.post 已返回 UTSJSONObject，无需再 JSON.stringify/parse
 		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
-		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
-		const code = (codeGetVal != null) ? codeGetVal : ''
-		if (!(code === 200 || code === '200')) {
-			handleSilentError(new Error('查询认证信息失败'), '加载实名认证信息')
+		try { codeGetVal = res.get('code') } catch (e) {}
+		const codeStr = (codeGetVal != null) ? codeGetVal.toString() : ''
+		if (codeStr != '200') {
+			handleSilentError(new Error('查询认证信息失败, code=' + codeStr), '加载实名认证信息')
 			return
 		}
 		let dataGetVal: string | number | boolean | UTSJSONObject | null = null
-		try { dataGetVal = (resObj != null) ? resObj.get('data') : null } catch (e) {}
+		try { dataGetVal = res.get('data') } catch (e) {}
 		if (dataGetVal == null || dataGetVal == '') {
 			return
 		}
@@ -360,16 +387,13 @@ const loadAuthStatus = async () => {
 
 		let idAuthGetVal: string | number | boolean | UTSJSONObject | null = null
 		try { idAuthGetVal = (dataObj != null) ? dataObj.get('idAuth') : null } catch (e) {}
-		const statusValInt = (idAuthGetVal != null && idAuthGetVal != '') ? parseInt(idAuthGetVal.toString()) : 10
-		// 手动检查有效状态，避免 includes 的类型期望问题
+		const statusStr = (idAuthGetVal != null && idAuthGetVal != '') ? idAuthGetVal.toString() : '10'
+		// 手动检查有效状态
 		let finalStatus = 10
-		const validStatuses = [10, 20, 30, 40]
-		for (let i = 0; i < validStatuses.length; i++) {
-			if (statusValInt === validStatuses[i]) {
-				finalStatus = statusValInt
-				break
-			}
-		}
+		if (statusStr == '10') { finalStatus = 10 }
+		else if (statusStr == '20') { finalStatus = 20 }
+		else if (statusStr == '30') { finalStatus = 30 }
+		else if (statusStr == '40') { finalStatus = 40 }
 		authStatus.value = finalStatus
 
 		let realNameGetVal: string | number | boolean | UTSJSONObject | null = null
@@ -439,12 +463,13 @@ const maskedName = computed((): string => {
 	try {
 		const authName = getAuthRealName()
 		const formName = getFormRealName()
-	const name = (authName != null && authName != '') ? authName : formName
-	if (name == null) return ''
-		if (name.length <= 2) return name.charAt(0) + '*'
-	return name.charAt(0) + '*'.repeat(name.length - 2) + name.charAt(name.length - 1)
+		const name = (authName != null && authName != '') ? authName : formName
+		if (name == null || name == '') return '--'
+		if (name.length == 1) return name.charAt(0) + '*'
+		if (name.length == 2) return name.charAt(0) + '*'
+		return name.charAt(0) + '*'.repeat(name.length - 2) + name.charAt(name.length - 1)
 	} catch (e) {}
-	return ''
+	return '--'
 })
 
 const getAuthIdCard = (): string => {
@@ -500,15 +525,66 @@ const maskedIdCard = computed((): string => {
 	try {
 		const authIdCard = getAuthIdCard()
 		const formIdCard = getFormIdCard()
-	const idCard = (authIdCard != null && authIdCard != '') ? authIdCard : formIdCard
-		if (idCard == null || idCard == '') return ''
-	if (idCard.length <= 6) return idCard
-	return idCard.substring(0, 2) + '******' + idCard.substring(idCard.length - 4)
+		const idCard = (authIdCard != null && authIdCard != '') ? authIdCard : formIdCard
+		if (idCard == null || idCard == '') return '--'
+		if (idCard.length <= 6) return idCard
+		return idCard.substring(0, 3) + '**********' + idCard.substring(idCard.length - 4)
 	} catch (e) {}
+	return '--'
+})
+
+// 审核中页面 — 安全读取 authData 字段
+const pendingHasFrontImage = computed((): boolean => {
+	try {
+		const v = getAuthField('idcardFrontImage')
+		return (v != null && v != '')
+	} catch (e) {}
+	return false
+})
+
+const pendingFrontImage = computed((): string => {
+	try { return getAuthField('idcardFrontImage') } catch (e) {}
+	return ''
+})
+
+const pendingBackImage = computed((): string => {
+	try { return getAuthField('idcardBackImage') } catch (e) {}
 	return ''
 })
 
  
+
+// 原生 input 事件处理 — 安全提取输入值
+const getInputValue = (e: UniInputEvent): string => {
+	try {
+		const eStr = JSON.stringify(e)
+		if (eStr != null && eStr != '') {
+			const eObj = JSON.parse(eStr) as UTSJSONObject
+			if (eObj != null) {
+				const detailVal = eObj.get('detail')
+				if (detailVal != null) {
+					const detailStr = JSON.stringify(detailVal)
+					if (detailStr != null && detailStr != '') {
+						const detail = JSON.parse(detailStr) as UTSJSONObject
+						const valueVal = detail.get('value')
+						if (valueVal != null) {
+							return valueVal.toString()
+						}
+					}
+				}
+			}
+		}
+	} catch (err) {}
+	return ''
+}
+
+const onNameInput = (e: UniInputEvent) => {
+	tempName.value = getInputValue(e)
+}
+
+const onIdCardInput = (e: UniInputEvent) => {
+	tempIdCard.value = getInputValue(e)
+}
 
 const openNameInput = () => {
 	if (isEditable.value == null || isEditable.value == false) return
@@ -687,33 +763,23 @@ const handleSubmit = async () => {
 	submitting.value = true
 	try {
 		const fd = formData.value
-		console.log('📋 [realNameAuth] 提交参数:', JSON.stringify({
-			userKid: userKid,
-			realname: realNameVal,
-			idNumber: idCardVal,
-			idcardFrontImage: fd.idcardFrontImage,
-			idcardBackImage: fd.idcardBackImage
-		}))
-		// 构造 plain params object
-		const paramsJson2 = JSON.stringify({
+		// 构造参数对象
+		const submitPayload = {
 			userKid: userKid as string,
 			realname: (realNameVal != null ? realNameVal.trim() : ''),
 			idNumber: (idCardVal != null ? idCardVal.trim() : ''),
 			idcardFrontImage: (fd.idcardFrontImage != null ? fd.idcardFrontImage.trim() : ''),
 			idcardBackImage: (fd.idcardBackImage != null ? fd.idcardBackImage.trim() : '')
-		})
-		const paramsParsed2 = (paramsJson2 != null && paramsJson2 != '') ? JSON.parse(paramsJson2) as UTSJSONObject : {} as UTSJSONObject
-		const paramsFinal = paramsParsed2 as IdentityUserParams
+		} as UTSJSONObject
 
-		console.log('🚀 [realNameAuth] 开始调用 identityUser API')
-		const res = await identityUser(paramsFinal)
+		const res = await request.post('/user/baseInfo/identityUser', submitPayload, true)
 		// 安全解析返回
 		const resJson = JSON.stringify(res)
 		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
 		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
 		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
-		const code = (codeGetVal != null) ? codeGetVal : ''
-		if (code === 200 || code === '200') {
+		const codeSubmitStr = (codeGetVal != null) ? codeGetVal.toString() : ''
+		if (codeSubmitStr == '200') {
 			uni.showToast({ title: '提交成功，请等待审核', icon: 'none' })
 			// 🎯 刷新用户信息缓存（更新认证状态）
 			refreshCurrentUserProfile().then((profile: any | null) => {
@@ -744,8 +810,10 @@ onUnmounted(() => {
 
 <style scoped>
 .page {
-	background-color: #FFFFFF;
-	position: relative;
+	flex-direction: column;
+	width: 750rpx;
+	height: 100%;
+	background-color: #F5F5F5;
 	padding-bottom: 150rpx;
 }
 
@@ -790,12 +858,19 @@ onUnmounted(() => {
 /* #endif */
 
 .hear-bg {
-	width: 100%;
+	width: 750rpx;
 	height: 392rpx;
-	position: fixed;
+	position: absolute;
 	top: 0;
 	left: 0;
-	z-index: 1;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 .realname-page {
@@ -807,9 +882,9 @@ onUnmounted(() => {
 .success-page,
 .pending-page {
 	display: flex;
-	flex-direction: row;
-	align-items: flex-start;
-	justify-content: center;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
 	padding: 20rpx 28rpx;
 }
 
@@ -830,19 +905,22 @@ onUnmounted(() => {
 }
 
 .pending-content {
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	padding: 32rpx 32rpx;
-	text-align: center;
 	width: 100%;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+	padding-top: 48rpx;
+	padding-bottom: 40rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	text-align: center;
 }
 
-.pending-title-row {
+.pending-icon-wrapper {
 	display: flex;
-	flex-direction: row;
 	align-items: center;
 	justify-content: center;
-	margin-bottom: 16rpx;
+	margin-bottom: 24rpx;
 }
 
 .success-icon-wrapper {
@@ -875,52 +953,33 @@ onUnmounted(() => {
 	text-align: center;
 }
 
-.pending-icon {
-	margin-bottom: 32rpx;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
 .pending-title {
-	font-size: 36rpx;
+	font-size: 40rpx;
 	color: #333333;
 	font-weight: bold;
-	margin-left: 12rpx;
+	margin-bottom: 20rpx;
+	display: flex;
+	justify-content: center;
+	text-align: center;
 }
 
 .pending-desc {
 	font-size: 26rpx;
-	color: #666666;
+	color: #999999;
 	line-height: 1.6;
-	margin-bottom: 28rpx;
+	margin-bottom: 32rpx;
 	display: flex;
+	text-align: center;
 }
 
 .auth-result {
 	margin-top: 24rpx;
 }
 
-.result-label {
-	font-size: 28rpx;
-	color: #666666;
-}
-
-.result-value {
-	font-size: 28rpx;
-	color: #333333;
-	font-weight: bold;
-}
-
-.result-divider {
-	height: 2rpx;
-	background-color: #e0e0e0;
-	margin: 8rpx 0;
-}
-
 .pending-images {
 	display: flex;
 	margin-bottom: 32rpx;
+	margin-top: 24rpx;
 }
 
 .image-card {
@@ -1213,22 +1272,6 @@ onUnmounted(() => {
 	padding: 0 28rpx 40rpx;
 }
 
-.form-section .wy-input {
-	width: 100%;
-}
-
-.form-section .wy-input__wrapper {
-	background-color: transparent;
-	border-width: 0;
-	padding: 0;
-	height: auto;
-	justify-content: flex-end;
-}
-
-.form-section .wy-input__field {
-	text-align: right;
-}
-
 
 .popup-mask {
 	position: fixed;
@@ -1236,66 +1279,84 @@ onUnmounted(() => {
 	left: 0;
 	right: 0;
 	bottom: 0;
-	background-color: rgba(0, 0, 0, 0.45);
+	background-color: rgba(0, 0, 0, 0.5);
 	z-index: 50;
-	display: flex;
-	align-items: flex-end;
+	flex-direction: column;
 	justify-content: center;
+	align-items: center;
 }
 
-.input-popup {
-	width: 100%;
-	background-color: #FFFFFF;
-	border-top-left-radius: 24rpx;
-	border-top-right-radius: 24rpx;
-	padding: 32rpx;
+.popup-container {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	flex-direction: column;
 }
 
 .popup-header {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	justify-content: space-between;
-	padding-bottom: 24rpx;
-	border-bottom-width: 2rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	border-bottom-width: 1rpx;
 	border-bottom-style: solid;
-	border-bottom-color: #F5F5F5;
-	margin-bottom: 32rpx;
+	border-bottom-color: #f0f0f0;
+	flex-direction: row;
+	justify-content: center;
 }
 
 .popup-title {
 	font-size: 32rpx;
-	font-weight: bold;
 	color: #333333;
-}
-
-.popup-close {
-	font-size: 32rpx;
-	color: #999999;
+	font-weight: bold;
 }
 
 .popup-content {
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	flex-direction: column;
 }
 
-.popup-btn {
-	width: 100%;
-	height: 88rpx;
-	background-color: #37B1F2;
-	border-radius: 44rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	margin-top: 32rpx;
-}
-
-.date-display {
-	margin-top: 8rpx;
-	padding: 24rpx;
-	border-radius: 12rpx;
-	border-width: 2rpx;
+.edit-input {
+	width: 540rpx;
+	height: 80rpx;
+	border-width: 1rpx;
 	border-style: solid;
-	border-color: #F0F0F0;
-	align-items: center;
+	border-color: #e0e0e0;
+	border-radius: 10rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	font-size: 28rpx;
+}
+
+.popup-actions {
+	flex-direction: row;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.action-btn {
+	flex: 1;
+	height: 90rpx;
+	flex-direction: row;
 	justify-content: center;
+	align-items: center;
+}
+
+.cancel-btn {
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.cancel-btn-text {
+	font-size: 30rpx;
+	color: #666666;
+}
+
+.confirm-btn-text {
+	font-size: 30rpx;
+	color: #07c160;
 }
 </style>

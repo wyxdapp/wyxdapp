@@ -6,6 +6,7 @@
 import { ref, nextTick } from 'vue'
 import { getHistoryMessages, GetHistoryParams, clearChatHistory, ClearChatHistoryParams } from '@/api/chat'
 import { chatService, MessageType } from '@/stores/chatService'
+import { getUserAvatar as getUserAvatarFromStore } from '@/stores/user'
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
 import {
 	getObjString,
@@ -153,19 +154,18 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 							}
 						}
 						
-						const convertedMsg = {
-							id: msgIdVal,
-							senderId: senderIdVal,
-							receiverId: receiverIdVal,
-							fromUserKid: senderIdVal,
-							toUserKid: receiverIdVal,
-							type: msgType,
-							messageType: messageTypeNum,
-							content: getObjString(msgObj, 'content'),
-							createTime: timeVal,
-							status: 'sent',
-							duration: durationVal
-						} as any
+						const convertedMsg = new UTSJSONObject()
+						convertedMsg.set('id', msgIdVal)
+						convertedMsg.set('senderId', senderIdVal)
+						convertedMsg.set('receiverId', receiverIdVal)
+						convertedMsg.set('fromUserKid', senderIdVal)
+						convertedMsg.set('toUserKid', receiverIdVal)
+						convertedMsg.set('type', msgType)
+						convertedMsg.set('messageType', messageTypeNum)
+						convertedMsg.set('content', getObjString(msgObj, 'content'))
+						convertedMsg.set('createTime', timeVal)
+						convertedMsg.set('status', 'sent')
+						convertedMsg.set('duration', durationVal)
 						
 						messagesAny.push(convertedMsg)
 					}
@@ -193,8 +193,15 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 		)
 		
 		if (cachedMessages.length > 0) {
-			// 有缓存：立即展示
-			messageList.value = cachedMessages
+			// 有缓存：过滤掉临时消息（temp_ 开头的 id），避免重复显示
+			const filteredCache: Array<any> = []
+			for (let i = 0; i < cachedMessages.length; i = i + 1) {
+				const msgId = getAnyString(cachedMessages[i], 'id')
+				if (msgId.indexOf('temp_') != 0) {
+					filteredCache.push(cachedMessages[i])
+				}
+			}
+			messageList.value = filteredCache
 			scrollToBottom()
 			
 			// 2. 后台增量同步
@@ -381,8 +388,11 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 		const tempId = generateTempMessageId('temp_text_')
 
 		// 1. 立即添加到列表（乐观更新）
-		// 获取当前用户的头像
-		const currentAvatar = (options.currentUserAvatar != null && options.currentUserAvatar != '') ? options.currentUserAvatar : ''
+		// 获取当前用户的头像（每次实时获取，避免快照过期）
+		let currentAvatar = getUserAvatarFromStore()
+		if (currentAvatar == '') {
+			currentAvatar = (options.currentUserAvatar != null && options.currentUserAvatar != '') ? options.currentUserAvatar : ''
+		}
 		// 🔧 修复：使用正确的 type 字符串创建消息
 		const message = createLocalMessage(tempId, options.currentUserId, typeStr, content, 'sending', currentAvatar)
 		// UTS 规范：使用安全的属性设置方法
@@ -393,8 +403,30 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 		// 2. 发送消息
 		const type = mapNumberToMessageType(msgType)
 		chatService.sendMessage(content, options.targetUserId, type).then((messageId: string): void => {
-			// 更新状态为已发送
-			updateMessageStatus(messageList.value, tempId, 'sent', '')
+			// 用正式 id 替换临时 id，并更新状态为已发送
+			for (let i = 0; i < messageList.value.length; i = i + 1) {
+				const m = messageList.value[i]
+				const mId = getAnyString(m, 'id')
+				if (mId == tempId) {
+					const updatedMsg = new UTSJSONObject()
+					updatedMsg.set('id', messageId)
+					updatedMsg.set('senderId', options.currentUserId)
+					updatedMsg.set('type', typeStr)
+					updatedMsg.set('messageType', msgType)
+					updatedMsg.set('content', content)
+					updatedMsg.set('createTime', getAnyString(m, 'createTime'))
+					updatedMsg.set('status', 'sent')
+					updatedMsg.set('senderAvatar', currentAvatar)
+					messageList.value[i] = updatedMsg
+					break
+				}
+			}
+			// 保存到本地存储（临时 id 已替换为正式 id）
+			chatLocalStorageManager.saveMessages(
+				options.currentUserId,
+				options.targetUserId,
+				messageList.value
+			)
 		}).catch((error: any | null): void => {
 			console.error('❌ [useChatMessages] 发送消息失败:', error)
 			// 更新状态为发送失败
@@ -420,24 +452,46 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 		const msgType = getAnyString(msg, 'type')
 		const msgContent = getAnyString(msg, 'content')
 		const msgCreateTime = getAnyString(msg, 'createTime')
+		const msgMessageTypeStr = getAnyString(msg, 'messageType')
+		const msgDurationStr = getAnyString(msg, 'duration')
+		const msgSenderAvatar = getAnyString(msg, 'senderAvatar')
 		
-		// 更新状态为发送中
-		for (let i = 0; i < messageList.value.length; i = i + 1) {
-			const m = messageList.value[i]
-			const mId = getAnyString(m, 'id')
-			if (mId == msgId) {
-				const updatedMsg = {
-					id: msgId,
-					senderId: msgSenderId,
-					type: msgType,
-					content: msgContent,
-					createTime: msgCreateTime,
-					status: 'sending'
-				} as any
-				messageList.value[i] = updatedMsg
-				break
+		// 辅助：根据状态更新消息列表中的对应消息
+		const updateRetryStatus = (status: string) => {
+			for (let i = 0; i < messageList.value.length; i = i + 1) {
+				const m = messageList.value[i]
+				const mId = getAnyString(m, 'id')
+				if (mId == msgId) {
+					const updatedMsg = new UTSJSONObject()
+					updatedMsg.set('id', msgId)
+					updatedMsg.set('senderId', msgSenderId)
+					updatedMsg.set('type', msgType)
+					updatedMsg.set('content', msgContent)
+					updatedMsg.set('createTime', msgCreateTime)
+					updatedMsg.set('status', status)
+					if (msgMessageTypeStr != '') {
+						const mtNum = parseInt(msgMessageTypeStr)
+						if (isNaN(mtNum) == false) {
+							updatedMsg.set('messageType', mtNum)
+						}
+					}
+					if (msgDurationStr != '') {
+						const durNum = parseInt(msgDurationStr)
+						if (isNaN(durNum) == false) {
+							updatedMsg.set('duration', durNum)
+						}
+					}
+					if (msgSenderAvatar != '') {
+						updatedMsg.set('senderAvatar', msgSenderAvatar)
+					}
+					messageList.value[i] = updatedMsg
+					break
+				}
 			}
 		}
+		
+		// 更新状态为发送中
+		updateRetryStatus('sending')
 		
 		// 确定消息类型
 		let messageType = MessageType.TEXT
@@ -449,45 +503,10 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 		
 		// 重试发送
 		chatService.sendMessage(msgContent, options.targetUserId, messageType).then((): void => {
-			
-			// 更新状态为已发送
-			for (let i = 0; i < messageList.value.length; i = i + 1) {
-				const m = messageList.value[i]
-				const mId = getAnyString(m, 'id')
-				if (mId == msgId) {
-					const updatedMsg = {
-						id: msgId,
-						senderId: msgSenderId,
-						type: msgType,
-						content: msgContent,
-						createTime: msgCreateTime,
-						status: 'sent'
-					} as any
-					messageList.value[i] = updatedMsg
-					break
-				}
-			}
+			updateRetryStatus('sent')
 		}).catch((error: any | null): void => {
 			console.error('❌ [useChatMessages] 消息重试失败:', error)
-			
-			// 更新状态为失败
-			for (let i = 0; i < messageList.value.length; i = i + 1) {
-				const m = messageList.value[i]
-				const mId = getAnyString(m, 'id')
-				if (mId == msgId) {
-					const updatedMsg = {
-						id: msgId,
-						senderId: msgSenderId,
-						type: msgType,
-						content: msgContent,
-						createTime: msgCreateTime,
-						status: 'failed'
-					} as any
-					messageList.value[i] = updatedMsg
-					break
-				}
-			}
-			
+			updateRetryStatus('failed')
 			uni.showToast({
 				title: '重试失败',
 				icon: 'none'
@@ -517,15 +536,32 @@ export function useChatMessages(options: ChatMessagesOptions): ChatMessagesResul
 				const msgType = getAnyString(m, 'type')
 				const msgCreateTime = getAnyString(m, 'createTime')
 				const content = (newContent != '') ? newContent : getAnyString(m, 'content')
+				const msgMessageTypeStr = getAnyString(m, 'messageType')
+				const msgDurationStr = getAnyString(m, 'duration')
+				const msgSenderAvatar = getAnyString(m, 'senderAvatar')
 				
-				const updatedMsg = {
-					id: messageId,
-					senderId: msgSenderId,
-					type: msgType,
-					content: content,
-					createTime: msgCreateTime,
-					status: status
-				} as any
+				const updatedMsg = new UTSJSONObject()
+				updatedMsg.set('id', messageId)
+				updatedMsg.set('senderId', msgSenderId)
+				updatedMsg.set('type', msgType)
+				updatedMsg.set('content', content)
+				updatedMsg.set('createTime', msgCreateTime)
+				updatedMsg.set('status', status)
+				if (msgMessageTypeStr != '') {
+					const mtNum = parseInt(msgMessageTypeStr)
+					if (isNaN(mtNum) == false) {
+						updatedMsg.set('messageType', mtNum)
+					}
+				}
+				if (msgDurationStr != '') {
+					const durNum = parseInt(msgDurationStr)
+					if (isNaN(durNum) == false) {
+						updatedMsg.set('duration', durNum)
+					}
+				}
+				if (msgSenderAvatar != '') {
+					updatedMsg.set('senderAvatar', msgSenderAvatar)
+				}
 				messageList.value[i] = updatedMsg
 				break
 			}

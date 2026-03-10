@@ -1,5 +1,9 @@
 <template>
 	<view class="page">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- 顶部导航栏 -->
 		<!-- #ifndef H5 -->
 		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -128,6 +132,7 @@
 <script setup lang="uts">
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
 import DynamicItem from '@/components/business/DynamicItem.uvue'
 import LoadMore from '@/components/base/LoadMore.uvue'
@@ -787,11 +792,29 @@ onShow(() => {
 	background-color: #F5F5F5;
 }
 
+.hear-bg {
+	width: 750rpx;
+	height: 392rpx;
+	position: absolute;
+	top: 0;
+	left: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
 /* 顶部导航栏 */
 .header {
 	flex-direction: column;
 	width: 750rpx;
 	background-color: #FFFFFF;
+	position: relative;
+	z-index: 1;
 }
 
 .nav-bar {
@@ -834,6 +857,8 @@ onShow(() => {
 	flex: 1;
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 
@@ -841,6 +866,8 @@ onShow(() => {
 .scroll-view-h5 {
 	flex-direction: column;
 	width: 750rpx;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 

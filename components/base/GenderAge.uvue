@@ -77,6 +77,7 @@ const displayAge = computed((): string => {
 .gender-age-container.male {
 	width: 96rpx;
 	height: 38rpx;
+	margin-top: 6rpx;
 }
 
 /* 背景图片 - 填满容器 */

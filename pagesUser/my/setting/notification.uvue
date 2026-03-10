@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -33,7 +35,7 @@
 				<switch 
 					:checked="pushEnabled" 
 					@change="onPushEnabledChange"
-					color="#37B1F2"
+					:color="currentTheme.primaryColor"
 				/>
 			</view>
 		</view>
@@ -53,7 +55,7 @@
 				<switch 
 					:checked="chatPushEnabled" 
 					@change="onChatPushChange"
-					color="#37B1F2"
+					:color="currentTheme.primaryColor"
 				/>
 			</view>
 			
@@ -73,7 +75,7 @@
 					<switch 
 						:checked="smsNotificationEnabled" 
 						@change="onSmsSwitchClick"
-						color="#37B1F2"
+						:color="currentTheme.primaryColor"
 					/>
 				</view>
 			</view>
@@ -94,7 +96,7 @@
 					<switch 
 						:checked="wechatNotificationEnabled" 
 						@change="onWechatNotificationChange"
-						color="#37B1F2"
+						:color="currentTheme.primaryColor"
 					/>
 				</view>
 			</view>
@@ -109,7 +111,7 @@
 					<switch 
 						:checked="miniProgramNotificationEnabled" 
 						@change="onMiniProgramNotificationChange"
-						color="#37B1F2"
+						:color="currentTheme.primaryColor"
 					/>
 				</view>
 			</view>
@@ -131,8 +133,10 @@ import { getPushConfig, updatePushConfig, PushConfigData, updateSmsNotificationE
 import { getResponseCode, getResponseData, getStringProp, getBoolProp } from '@/common/utils/utsSafe.uts'
 import { getCurrentUserIdReliable, checkUserLoginReliable } from '@/common/utils/loginHelper.uts'
 import QRCodeModal from '@/components/wechat/QRCodeModal.uvue'
+import { currentTheme } from '@/stores/theme.uts'
 // 🔧 新增：导入功能开关
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 推送开关状态
 const pushEnabled = ref<boolean>(true)
@@ -535,8 +539,24 @@ onShow(() => {
 <style scoped>
 .page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -580,6 +600,8 @@ onShow(() => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 .section {

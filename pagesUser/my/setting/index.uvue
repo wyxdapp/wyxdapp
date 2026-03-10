@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -30,7 +32,7 @@
 				@click="handleCellClick(item)"
 			>
 				<view class="cell-icon">
-					<uni-icons :type="getItemIconType(item)" :size="22" color="#37B1F2"></uni-icons>
+					<uni-icons :type="getItemIconType(item)" :size="22" :color="currentTheme.primaryColor"></uni-icons>
 				</view>
 				<text class="cell-label">{{ getItemLabel(item) }}</text>
 				<!-- 版本更新项显示版本号 -->
@@ -128,6 +130,8 @@ import {
 	DownloadProgress
 } from '@/common/services/downloadManager.uts'
 import { safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { currentTheme } from '@/stores/theme.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // Stores
 const chatStore = useChatStore()
@@ -581,9 +585,25 @@ const loginOut = () => {
 <style scoped>
 .page {
 	min-height: 2000rpx;
-	background-color: #f5f5f5;
+	background-color: #F5F5F5;
 	padding-bottom: 160rpx;
 	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* #ifndef H5 */
@@ -628,6 +648,8 @@ const loginOut = () => {
 
 .content-area {
 	flex-direction: column;
+	position: relative;
+	z-index: 1;
 }
 
 /* 菜单组 */

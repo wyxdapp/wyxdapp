@@ -168,6 +168,7 @@
 
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { currentTheme } from '@/stores/theme.uts'
 import Avatar from '@/components/base/Avatar.uvue'
 import ComplaintPopup from '@/components/common/ComplaintPopup.uvue'
 import * as wxsdk from '@/uni_modules/tt-wechat-pro'
@@ -309,7 +310,7 @@ const shareOptions = ref<Array<any>>([
 		name: '举报',
 		iconType: 'uni-icon',
 		iconName: 'hand-down-filled',
-		iconColor: '#FF6B35',
+		iconColor: currentTheme.accentColor,
 		iconSize: 40
 	}
 ])

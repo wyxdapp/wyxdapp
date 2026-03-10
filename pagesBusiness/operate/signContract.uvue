@@ -1,14 +1,33 @@
 <template>
 	<view class="page">
 		<!-- 背景图片 -->
-		<image 
-			class="bg-index-header" 
-			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
-			mode="aspectFill"
-		></image>
+		<view 
+			class="hear-bg" 
+			:style="headerGradientOuter()"
+		>
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">向导推荐</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
 		
 		<!-- 顶部搜索栏 -->
+		<!-- #ifndef H5 -->
+		<view class="header" :style="{ paddingTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
 		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<!-- #endif -->
 			<view class="search-bar">
 				<view class="location" @click="openCityPicker">
 					<image class="location-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_location.png" mode="aspectFit"></image>
@@ -94,6 +113,7 @@
 
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import GuiderCard from '@/components/guider-card/index.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import SharePopup from '@/components/common/SharePopup.uvue'
@@ -134,6 +154,16 @@ import {
 
 // ==================== Store 实例 ====================
 const userStore = useUserStore()
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/my/index' })
+		}
+	})
+}
 
 // ==================== 响应式状态 ====================
 
@@ -285,8 +315,13 @@ const initPage = () => {
 	// 使用 composable 初始化布局
 	initPageLayoutComposable()
 	
-	// 计算头部高度（状态栏 + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
+	// 计算头部高度（状态栏 + 导航栏44px(APP端) + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
+	// #ifndef H5
+	headerHeight.value = pageStatusBarHeight.value + 44 + 87
+	// #endif
+	// #ifdef H5
 	headerHeight.value = pageStatusBarHeight.value + 87
+	// #endif
 	
 	// 计算内容区域高度（窗口高度 - 头部高度）
 	if (pageWindowHeight.value > 0) {
@@ -557,22 +592,71 @@ onUnmounted(() => {
 </script>
 
 
-<style>
+<style scoped>
 /* ==================== 页面基础样式 ==================== */
 .page {
 	flex-direction: column;
 	width: 750rpx;
-	background-color: #FFFFFF;
+	height: 100%;
+	background-color: #F5F5F5;
 }
 
 /* ==================== 背景图片 ==================== */
-.bg-index-header {
+.hear-bg {
 	position: absolute;
 	top: 0;
 	left: 0;
 	width: 750rpx;
 	height: 450rpx;
 }
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
 
 /* ==================== 顶部固定区域 ==================== */
 .header {
@@ -726,6 +810,8 @@ onUnmounted(() => {
 	flex-direction: column;
 	width: 750rpx;
 	background-color: transparent;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 
@@ -735,6 +821,8 @@ onUnmounted(() => {
 	flex-direction: column;
 	width: 750rpx;
 	background-color: transparent;
+	position: relative;
+	z-index: 1;
 }
 /* #endif */
 

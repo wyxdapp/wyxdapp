@@ -21,7 +21,7 @@
 					<switch 
 						:checked="homeShowEnabled" 
 						@change="handleHomeShowChange"
-						color="#37B1F2"
+						:color="currentTheme.primaryColor"
 					/>
 				</view>
 				
@@ -39,7 +39,7 @@
 					<switch 
 						:checked="topRecommendEnabled" 
 						@change="handleTopRecommendChange"
-						color="#37B1F2"
+						:color="currentTheme.primaryColor"
 					/>
 				</view>
 				
@@ -81,6 +81,7 @@
 import { ref, watch } from 'vue'
 import { isUserVip } from '@/stores/user.uts'
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { currentTheme } from '@/stores/theme.uts'
 
 // Props定义
 const props = defineProps({

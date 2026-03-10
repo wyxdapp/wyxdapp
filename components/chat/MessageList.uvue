@@ -37,6 +37,7 @@
 			<!-- 消息气泡 -->
 			<MessageBubble
 				:message="msg"
+				:message-json="getMessageJson(msg)"
 				:is-self="isMessageFromSelf(msg)"
 				:avatar="getAvatar(msg)"
 				:default-avatar="defaultAvatar"
@@ -250,6 +251,17 @@ const getMessageTimeText = (msg: any): string => {
 		}
 	}
 	return formatTime(time)
+}
+
+// 将消息对象序列化为 JSON 字符串（供 MessageBubble 的 messageJson prop 使用）
+const getMessageJson = (msg: any): string => {
+	if (msg == null) return ''
+	try {
+		const str = JSON.stringify(msg)
+		return (str != null && str != '{}') ? str : ''
+	} catch (e) {
+		return ''
+	}
 }
 
 const isMessageFromSelf = (msg: any): boolean => {

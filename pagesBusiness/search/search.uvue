@@ -1,11 +1,12 @@
 <template>
 	<view class="page" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
 		<!-- 背景图片 -->
-		<image 
+		<view 
 			class="bg-index-header" 
-			src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" 
-			mode="aspectFill"
-		></image>
+			:style="headerGradientOuter()"
+		>
+			<view class="bg-index-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 顶部搜索栏 -->
 		<view class="search-header" :style="{ paddingRight: (menuButtonRight > 0 ? menuButtonRight + 6 : 24) + 'px' }">
@@ -68,6 +69,7 @@
 
 <script setup lang="uts">
 import { ref, onMounted, computed } from 'vue'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import { 
 	pageStatusBarHeight, 
@@ -210,11 +212,19 @@ const handleBack = () => {
 .page {
 	flex: 1;
 	flex-direction: column;
-	background-color: #FFFFFF;
+	background-color: #F5F5F5;
 }
 
 /* ==================== 背景图片 ==================== */
 .bg-index-header {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 450rpx;
+}
+
+.bg-index-header-mask {
 	position: absolute;
 	top: 0;
 	left: 0;

@@ -12,7 +12,9 @@
 			</view>
 		</view>
 		<!-- #endif -->
-		<image class="hear-bg" src="https://jiasu.wyxdapp.com/iconimages/n_index_head.png" mode="aspectFill" />
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
 		<view class="driver-page" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
 		<!-- #endif -->
@@ -26,11 +28,14 @@
 					</view>
 					<text class="success-title">审核已通过！</text>
 					<view class="auth-result">
-						<view class="result-row">
-							<text class="result-label">驾驶证号</text>
-							<text class="result-value">{{ (maskedLicenseNum != null && maskedLicenseNum != '') ? maskedLicenseNum : '--' }}</text>
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">驾驶证号</text>
+								<view class="form-value">
+									<text class="value-text value-filled">{{ (maskedLicenseNum != null && maskedLicenseNum != '') ? maskedLicenseNum : '--' }}</text>
+								</view>
+							</view>
 						</view>
-
 					</view>
 				</view>
 				<view v-if="authDriverImage != null && authDriverImage != ''" class="success-image-wrapper">
@@ -40,22 +45,25 @@
 			</view>
 			<view v-else-if="isPending" class="pending-page">
 				<view class="pending-content">
-					<view class="pending-title-row">
-						<uni-icons type="spinner-cycle" size="36" color="#666666"></uni-icons>
-						<text class="pending-title">驾照认证审核中</text>
+					<view class="pending-icon-wrapper">
+						<uni-icons type="spinner-cycle" size="48" color="#FF8C00"></uni-icons>
 					</view>
-					<text class="pending-desc">
-						我们将在1-2个工作日内完成审核，请耐心等待。审核结果将通过消息通知您。
-					</text>
+					<text class="pending-title">驾照认证审核中</text>
+					<text class="pending-desc">我们将在1-2个工作日内完成审核，请耐心等待。审核结果将通过消息通知您。</text>
+					
 					<view class="auth-result">
-						<view v-if="authDriverNum != null && authDriverNum != ''" class="result-row">
-							<text class="result-label">驾驶证号</text>
-							<text class="result-value">{{ (maskedLicenseNum != null && maskedLicenseNum != '') ? maskedLicenseNum : '--' }}</text>
+						<view class="form-item">
+							<view class="form-row">
+								<text class="form-label">驾驶证号</text>
+								<view class="form-value">
+									<text class="value-text value-filled">{{ (maskedLicenseNum != null && maskedLicenseNum != '') ? maskedLicenseNum : '--' }}</text>
+								</view>
+							</view>
 						</view>
-
 					</view>
-					<view v-if="authDriverImage != null && authDriverImage != ''" class="pending-image-card">
-						<image :src="authDriverImage" mode="aspectFill" class="pending-image" />
+					
+					<view v-if="pendingHasDriverImage" class="pending-image-card">
+						<image :src="pendingDriverImage" mode="aspectFill" class="pending-image" />
 						<text class="image-label">已提交驾驶证</text>
 					</view>
 					<view class="pending-tips">
@@ -110,20 +118,28 @@
 					<text class="btn-text">{{ submitting ? '提交中...' : (isRejected ? '重新提交' : '提交') }}</text>
 				</view>
 			</view>
+			<!-- 驾驶证号码输入弹窗 -->
 			<view v-if="showLicenseInput" class="popup-mask" @click="closeLicenseInput">
-				<view class="input-popup" @click.stop>
+				<view class="popup-container" @click.stop="">
 					<view class="popup-header">
-						<text class="popup-title">输入驾驶证号码</text>
-						<text class="popup-close" @click="closeLicenseInput">✕</text>
+						<text class="popup-title">编辑驾驶证号码</text>
 					</view>
 					<view class="popup-content">
-						<Input
-							v-model="tempLicenseNum"
+						<input
+							class="edit-input"
+							:value="tempLicenseNum"
 							placeholder="请输入驾驶证号码"
 							:maxlength="20"
+							:focus="showLicenseInput"
+							@input="onLicenseNumInput"
 						/>
-						<view class="popup-btn" @click="confirmLicenseNum">
-							<text class="btn-text">确定</text>
+					</view>
+					<view class="popup-actions">
+						<view class="action-btn cancel-btn" @click="closeLicenseInput">
+							<text class="cancel-btn-text">取消</text>
+						</view>
+						<view class="action-btn confirm-btn" @click="confirmLicenseNum">
+							<text class="confirm-btn-text">确认</text>
 						</view>
 					</view>
 				</view>
@@ -136,9 +152,9 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
-import Input from '@/components/base/Input.uvue'
-import { queryAuthInfo, driverAuth, QueryAuthInfoParams, DriverAuthParams } from '@/api/travel.uts'
+import request from '@/utils/request'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
 import { 
 	checkUserLoginReliable, 
@@ -342,11 +358,11 @@ const maskedLicenseNum = computed((): string => {
 		const formStr = getString(formObj, 'driverAuthenticatNum')
 
 		const licenseNum = (authStr != '') ? authStr : formStr
-		if (licenseNum == '') return ''
+		if (licenseNum == '') return '--'
 		if (licenseNum.length <= 6) return licenseNum
 		return licenseNum.substring(0, 3) + '****' + licenseNum.substring(licenseNum.length - 3)
 	} catch (e) {}
-	return ''
+	return '--'
 })
 
 // Auth data safe getters exposed to template
@@ -394,6 +410,20 @@ const authDriverNum = computed((): string => {
 	return ''
 })
 
+// 审核中页面 — 安全读取 authData 字段
+const pendingHasDriverImage = computed((): boolean => {
+	try {
+		const v = getAuthDriverImage()
+		return (v != null && v != '')
+	} catch (e) {}
+	return false
+})
+
+const pendingDriverImage = computed((): string => {
+	try { return getAuthDriverImage() } catch (e) {}
+	return ''
+})
+
 const authExpiryDisplay = computed((): string => {
 	try {
 		const v = getAuthExpiryDate()
@@ -432,18 +462,15 @@ const loadAuthStatus = async () => {
 			return
 		}
 
-		// 使用 JSON.stringify/parse + 类型断言构造参数，避免匿名对象字面量导致的 error17
-		const paramsJson = JSON.stringify({ userKid: userKid })
-		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
-		const params = paramsParsed as QueryAuthInfoParams
+		const paramsPayload = { userKid: userKid } as UTSJSONObject
 
-		const res = await queryAuthInfo(params)
+		const res = await request.post('/user/baseInfo/v1/queryAuthInfo', paramsPayload, false)
 		const resJson = JSON.stringify(res)
 		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
 		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
 		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
-		const codeVal = (codeGetVal != null) ? codeGetVal : ''
-		if (!((codeVal === 200) || (codeVal === '200'))) {
+		const codeStr = (codeGetVal != null) ? codeGetVal.toString() : ''
+		if (codeStr != '200') {
 			handleSilentError(new Error('查询认证信息失败'), '加载驾照认证信息')
 			return
 		}
@@ -512,6 +539,34 @@ const loadAuthStatus = async () => {
 	} catch (error) {
 		handlePageError(error, '加载驾照认证信息', null)
 	}
+}
+
+// 原生 input 事件处理 — 安全提取输入值
+const getInputValue = (e: UniInputEvent): string => {
+	try {
+		const eStr = JSON.stringify(e)
+		if (eStr != null && eStr != '') {
+			const eObj = JSON.parse(eStr) as UTSJSONObject
+			if (eObj != null) {
+				const detailVal = eObj.get('detail')
+				if (detailVal != null) {
+					const detailStr = JSON.stringify(detailVal)
+					if (detailStr != null && detailStr != '') {
+						const detail = JSON.parse(detailStr) as UTSJSONObject
+						const valueVal = detail.get('value')
+						if (valueVal != null) {
+							return valueVal.toString()
+						}
+					}
+				}
+			}
+		}
+	} catch (err) {}
+	return ''
+}
+
+const onLicenseNumInput = (e: UniInputEvent) => {
+	tempLicenseNum.value = getInputValue(e)
 }
 
 const openLicenseInput = () => {
@@ -708,23 +763,20 @@ const handleSubmit = async () => {
 	try {
 		const driverImage = (imageVal != null && imageVal != '') ? imageVal : ''
 		const driverNum = (driverNumVal != null && driverNumVal != '') ? driverNumVal : ''
-		// 构造 DriverAuthParams，避免匿名对象字面量触发 error17
-		const paramsJson = JSON.stringify({
+		const submitPayload = {
 			userKid: userKid,
 			driverAuthenticatImage: driverImage,
 			driverLicenseNo: driverNum
-		})
-		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {} as UTSJSONObject
-		const params = paramsParsed as DriverAuthParams
+		} as UTSJSONObject
 
-		const res = await driverAuth(params)
+		const res = await request.post('/user/baseInfo/driverAuth', submitPayload, true)
 		// 使用 UTSJSONObject 安全读取返回值
 		const resJson = JSON.stringify(res)
 		const resObj = (resJson != null && resJson != '') ? JSON.parse(resJson) as UTSJSONObject : null
 		let codeGetVal: string | number | boolean | UTSJSONObject | null = null
 		try { codeGetVal = (resObj != null) ? resObj.get('code') : null } catch (e) {}
-		const code = (codeGetVal != null) ? codeGetVal : ''
-		if ((code === 200) || (code === '200')) {
+		const codeSubmitStr = (codeGetVal != null) ? codeGetVal.toString() : ''
+		if (codeSubmitStr == '200') {
 			uni.showToast({ title: '提交成功，请等待审核', icon: 'none' })
 			// 🎯 刷新用户信息缓存（更新认证状态）
 			refreshCurrentUserProfile().then((profile: any | null) => {
@@ -760,8 +812,10 @@ onUnmounted(() => {
 
 <style scoped>
 .page {
-	background-color: #FFFFFF;
-	position: relative;
+	flex-direction: column;
+	width: 750rpx;
+	height: 100%;
+	background-color: #F5F5F5;
 	padding-bottom: 150rpx;
 }
 
@@ -806,12 +860,19 @@ onUnmounted(() => {
 /* #endif */
 
 .hear-bg {
-	width: 100%;
+	width: 750rpx;
 	height: 392rpx;
-	position: fixed;
+	position: absolute;
 	top: 0;
 	left: 0;
-	z-index: 1;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
 }
 
 .driver-page {
@@ -830,9 +891,9 @@ onUnmounted(() => {
 
 .pending-page {
 	display: flex;
-	flex-direction: row;
-	align-items: flex-start;
-	justify-content: center;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
 	padding: 20rpx 28rpx;
 }
 
@@ -879,31 +940,6 @@ onUnmounted(() => {
 	margin-top: 24rpx;
 }
 
-.result-row {
-	display: flex;
-	flex-direction: row;
-	justify-content: space-between;
-	align-items: center;
-	margin-bottom: 8rpx;
-}
-
-.result-label {
-	font-size: 28rpx;
-	color: #666666;
-}
-
-.result-value {
-	font-size: 28rpx;
-	color: #333333;
-	font-weight: bold;
-}
-
-.result-divider {
-	height: 2rpx;
-	background-color: #e0e0e0;
-	margin: 16rpx 0;
-}
-
 .success-image-wrapper {
 	margin-top: 24rpx;
 	margin-right: 0;
@@ -928,34 +964,41 @@ onUnmounted(() => {
 }
 
 .pending-content {
-	background-color: #ffffff;
-	border-radius: 16rpx;
-	padding: 32rpx 32rpx;
-	text-align: center;
 	width: 100%;
+	background-color: #ffffff;
+	border-radius: 24rpx;
+	box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+	padding-top: 48rpx;
+	padding-bottom: 40rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	text-align: center;
 }
 
-.pending-title-row {
+.pending-icon-wrapper {
 	display: flex;
-	flex-direction: row;
 	align-items: center;
 	justify-content: center;
-	margin-bottom: 16rpx;
+	margin-bottom: 24rpx;
 }
 
 .pending-title {
-	font-size: 36rpx;
+	font-size: 40rpx;
 	color: #333333;
 	font-weight: bold;
-	margin-left: 12rpx;
+	margin-bottom: 20rpx;
+	display: flex;
+	justify-content: center;
+	text-align: center;
 }
 
 .pending-desc {
 	font-size: 26rpx;
-	color: #666666;
+	color: #999999;
 	line-height: 1.6;
-	margin-bottom: 28rpx;
+	margin-bottom: 32rpx;
 	display: flex;
+	text-align: center;
 }
 
 .pending-image-card {
@@ -1185,66 +1228,84 @@ onUnmounted(() => {
 	left: 0;
 	right: 0;
 	bottom: 0;
-	background-color: rgba(0, 0, 0, 0.45);
+	background-color: rgba(0, 0, 0, 0.5);
 	z-index: 50;
-	display: flex;
-	align-items: flex-end;
+	flex-direction: column;
 	justify-content: center;
+	align-items: center;
 }
 
-.input-popup {
-	width: 100%;
-	background-color: #FFFFFF;
-	border-top-left-radius: 24rpx;
-	border-top-right-radius: 24rpx;
-	padding: 32rpx;
+.popup-container {
+	width: 600rpx;
+	background-color: #ffffff;
+	border-radius: 20rpx;
+	flex-direction: column;
 }
 
 .popup-header {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	justify-content: space-between;
-	padding-bottom: 24rpx;
-	border-bottom-width: 2rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	border-bottom-width: 1rpx;
 	border-bottom-style: solid;
-	border-bottom-color: #F5F5F5;
-	margin-bottom: 32rpx;
+	border-bottom-color: #f0f0f0;
+	flex-direction: row;
+	justify-content: center;
 }
 
 .popup-title {
 	font-size: 32rpx;
-	font-weight: bold;
 	color: #333333;
-}
-
-.popup-close {
-	font-size: 32rpx;
-	color: #999999;
+	font-weight: bold;
 }
 
 .popup-content {
+	padding-left: 30rpx;
+	padding-right: 30rpx;
+	padding-top: 30rpx;
+	padding-bottom: 30rpx;
+	flex-direction: column;
 }
 
-.popup-btn {
-	width: 100%;
-	height: 88rpx;
-	background-color: #37B1F2;
-	border-radius: 44rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	margin-top: 32rpx;
-}
-
-.date-display {
-	margin-top: 8rpx;
-	padding: 24rpx;
-	border-radius: 12rpx;
-	border-width: 2rpx;
+.edit-input {
+	width: 540rpx;
+	height: 80rpx;
+	border-width: 1rpx;
 	border-style: solid;
-	border-color: #F0F0F0;
-	align-items: center;
+	border-color: #e0e0e0;
+	border-radius: 10rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+	font-size: 28rpx;
+}
+
+.popup-actions {
+	flex-direction: row;
+	border-top-width: 1rpx;
+	border-top-style: solid;
+	border-top-color: #f0f0f0;
+}
+
+.action-btn {
+	flex: 1;
+	height: 90rpx;
+	flex-direction: row;
 	justify-content: center;
+	align-items: center;
+}
+
+.cancel-btn {
+	border-right-width: 1rpx;
+	border-right-style: solid;
+	border-right-color: #f0f0f0;
+}
+
+.cancel-btn-text {
+	font-size: 30rpx;
+	color: #666666;
+}
+
+.confirm-btn-text {
+	font-size: 30rpx;
+	color: #07c160;
 }
 </style>

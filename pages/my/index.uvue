@@ -1,7 +1,9 @@
 <template>
 	<view class="fix-page bg-light-base">
 		<!-- 顶部背景 -->
-		<image class="bg-my-header" src="https://jiasu.wyxdapp.com/iconimages/my_bg_head.png" mode="aspectFill"></image>
+		<view class="bg-my-header" :style="headerGradientOuter()">
+			<view class="bg-my-header-mask" :style="headerGradientMask()"></view>
+		</view>
 		
 		<!-- 用户信息区域 -->
 		<view class="login-box" :style="{ top: loginBoxTop + 'px' }">
@@ -71,6 +73,7 @@
 			</view>
 			
 			<!-- 第三方平台入口 -->
+			<!-- #ifndef MP-WEIXIN -->
 			<view v-if="showThirdPartyCard == true" class="third-party-box">
 				<view 
 					v-for="(link, index) in thirdPartyLinks" 
@@ -82,6 +85,7 @@
 					<text class="third-party-label">{{ link.label }}</text>
 				</view>
 			</view>
+			<!-- #endif -->
 			
 			<!-- 功能菜单网格 -->
 			<view class="item-box">
@@ -121,10 +125,12 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { getUserLoginStatus, getUserId, getUserNickname, getUserShortKid, getUserAvatar, getUserPhone, initUserInfoAction, updateUserInfoAction, getUserVipStatus, getUserVipExpireTime, getUserNumberProp } from '@/stores/user.uts'
 import { useChatStore } from '@/stores/chat.uts'
 import { getCurrentUserProfile, refreshCurrentUserProfile, hasValidCache, destroyEventListeners } from '@/common/composables/useCurrentUserProfile.uts'
 import { onLoginStatusChange, onUserInfoUpdate } from '@/common/composables/useAuth.uts'
+import { currentTheme } from '@/stores/theme.uts'
 import Avatar from '@/components/base/Avatar.uvue'
 import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
@@ -133,7 +139,7 @@ import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { getSystemSettings } from '@/api/config.uts'
 import { VIP_NOT_ACTIVATED, VIP_ACTIVATED, VIP_TYPE_YEARLY } from '@/common/config/businessCodes.uts'
 import { LOGIN_BOX_TOP_MY, HEAD_BOX_TOP_DEFAULT, HEAD_BOX_OFFSET } from '@/common/config/uiConfig.uts'
-import { CTRIP_ALLIANCE_ID, ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
+import { CTRIP_ALLIANCE_ID, CTRIP_SID, ICP_RECORD_NUMBER } from '@/common/config/thirdPartyConfig.uts'
 import { 
 	pageStatusBarHeight, 
 	initPageLayout as initPageLayoutComposable 
@@ -355,29 +361,29 @@ const thirdPartyLinks = ref<Array<ThirdPartyLinkItem>>([
 	new ThirdPartyLinkItem(
 		'酒店',
 		'home-filled',
-		'#FF6B35',
-		'https://m.ctrip.com/webapp/hotel?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		currentTheme.accentColor,
+		'https://m.ctrip.com/webapp/hotel?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=' + CTRIP_SID,
 		'酒店'
 	),
 	new ThirdPartyLinkItem(
 		'门票',
 		'flag-filled',
 		'#FF9800',
-		'https://m.ctrip.com/tangram/ticket?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'https://m.ctrip.com/tangram/ticket?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=' + CTRIP_SID,
 		'门票'
 	),
 	new ThirdPartyLinkItem(
 		'机票',
 		'paperplane-filled',
 		'#5B8DEF',
-		'https://m.ctrip.com/html5/flight/home?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		'https://m.ctrip.com/html5/flight/home?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=' + CTRIP_SID,
 		'机票'
 	),
 	new ThirdPartyLinkItem(
 		'火车票',
 		'navigate-filled',
-		'#37B1F2',
-		'https://m.ctrip.com/webapp/train?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=281482727',
+		currentTheme.primaryColor,
+		'https://m.ctrip.com/webapp/train?ouid=kfptpctool&allianceid=' + CTRIP_ALLIANCE_ID + '&sid=' + CTRIP_SID,
 		'火车票'
 	)
 ])
@@ -916,7 +922,9 @@ onShow(() => {
 	console.log('[My] onShow - 登录状态:', currentLoginStatus, '之前状态:', wasLoggedIn)
 	
 	if (currentLoginStatus == true) {
-		tryLoadUserHomePage(true)
+		// 🔧 优化：有缓存时静默后台刷新（不阻塞UI），无缓存或登录状态变化时才强制刷新
+		const needForceRefresh = (wasLoggedIn == false && currentLoginStatus == true) || hasValidCache() == false
+		tryLoadUserHomePage(needForceRefresh)
 	}
 })
 
@@ -1170,6 +1178,14 @@ const goToIcpQuery = () => {
 	z-index: 1;
 }
 
+.bg-my-header-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 474rpx;
+}
+
 /* 登录区域 */
 .login-box {
 	width: 750rpx;
@@ -1231,6 +1247,8 @@ const goToIcpQuery = () => {
 .user-info-box {
 	margin-left: 28rpx;
 	flex-direction: column;
+	flex: 1;
+	overflow: hidden;
 }
 
 .nickname {
@@ -1249,6 +1267,7 @@ const goToIcpQuery = () => {
 	padding-right: 12rpx;
 	flex-direction: row;
 	align-items: center;
+	align-self: flex-start;
 }
 
 .extension-text {
@@ -1407,31 +1426,6 @@ const goToIcpQuery = () => {
 	font-size: 24rpx;
 	color: #333333;
 	margin-top: 24rpx;
-}
-
-/* 第三方平台入口 */
-.third-party-box {
-	margin-top: 24rpx;
-	background-color: #ffffff;
-	border-radius: 24rpx;
-	flex-direction: row;
-	justify-content: space-around;
-	align-items: center;
-	padding-top: 24rpx;
-	padding-bottom: 24rpx;
-}
-
-.third-party-item {
-	width: 175rpx;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-}
-
-.third-party-label {
-	font-size: 24rpx;
-	color: #333333;
-	margin-top: 12rpx;
 }
 
 /* 备案号样式 */

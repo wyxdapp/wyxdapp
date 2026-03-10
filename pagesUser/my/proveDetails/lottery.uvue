@@ -82,7 +82,9 @@
 			<!-- 幸运值兑换组件 (彩色渐变卡片区域) -->
 			<view class="lottery-info-container">
 				<!-- 彩色渐变背景图 -->
-				<image class="lottery-info-bg" src="https://jiasu.wyxdapp.com/iconimages/n_persionInfo_bg.png" mode="scaleToFill" />
+				<view class="lottery-info-bg" :style="headerGradientOuter()">
+					<view class="lottery-info-bg-mask" :style="headerGradientMask()"></view>
+				</view>
 				
 				<LotteryExchangePanel
 					:userKid="userKidDisplay"
@@ -141,6 +143,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow, onLoad } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import LotteryResult from '@/components/lottery/LotteryResult.uvue'
@@ -1438,6 +1441,16 @@ const handleCopyLink = () => {
 	width: 750rpx;
 	height: 800rpx;
 	z-index: 0;
+	border-top-left-radius: 40rpx;
+	border-top-right-radius: 40rpx;
+}
+
+.lottery-info-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 800rpx;
 	border-top-left-radius: 40rpx;
 	border-top-right-radius: 40rpx;
 }

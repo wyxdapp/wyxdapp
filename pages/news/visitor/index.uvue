@@ -1,10 +1,30 @@
 <template>
 	<view class="fix-page bg-light-base">
 		<!-- 头部背景 -->
-		<image class="header-bg" src="https://jiasu.wyxdapp.com/iconimages/order_bg.png" mode="widthFix"></image>
+		<view class="header-bg" :style="headerGradientOuter()">
+			<view class="header-bg-mask" :style="headerGradientMask()"></view>
+		</view>
+		
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">访客</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
 		
 		<!-- Tab 栏 -->
+		<!-- #ifndef H5 -->
+		<view class="tabs-wrapper" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
+		<!-- #endif -->
+		<!-- #ifdef H5 -->
 		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<!-- #endif -->
 			<view class="tabs-row">
 				<view 
 					v-for="(tab, index) in tabItems" 
@@ -86,6 +106,7 @@
 <script setup lang="uts">
 import { ref, computed, onMounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { getUserId } from '@/stores/user.uts'
 import { markAllRead, getVisitorsWithType } from '@/common/services/visitorService.uts'
 import { resetMessageReminderCount, ResetMessageReminderParams } from '@/api/chat'
@@ -112,6 +133,16 @@ const currentUserId = computed((): string => {
 })
 
 // ==================== 布局相关 ====================
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/news/index' })
+		}
+	})
+}
+
 // 头部高度（状态栏 + Tab栏）
 const headerHeight = ref<number>(0)
 // 内容区域高度
@@ -121,8 +152,8 @@ const contentHeight = ref<number>(0)
 const initPageLayout = () => {
 	initPageLayoutComposable()
 	
-	// 计算头部高度（状态栏 + Tab栏约 90rpx ≈ 45px）
-	headerHeight.value = pageStatusBarHeight.value + 45
+	// 计算头部高度（状态栏 + 导航栏44 + Tab栏约 90rpx ≈ 45px）
+	headerHeight.value = pageStatusBarHeight.value + 44 + 45
 	
 	// 计算内容区域高度（窗口高度 - 头部高度）
 	if (pageWindowHeight.value > 0) {
@@ -613,6 +644,54 @@ onShow(() => {
 	width: 750rpx;
 	height: 300rpx;
 }
+
+.header-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 300rpx;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	background-color: #ffffff;
+	z-index: 100;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
 
 .tabs-wrapper {
 	padding-left: 28rpx;

@@ -1,6 +1,6 @@
 import { ref } from 'vue'
-import { addGuideFocus, cancelGuideFocus, AddGuideFocusParams, CancelGuideFocusParams } from '@/api/discover.uts'
-import { handleError, handleSilentError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+import { handleError, ErrorHandleOptions } from '@/common/utils/errorHandler.uts'
+import request from '@/utils/request.uts'
 
 /**
  * 关注状态管理 Store - 使用 Vue 响应式 API
@@ -53,7 +53,6 @@ export const getFollowStatus = (userKid: string): boolean => {
 export const toggleFollow = async (currentUserKid: string, targetUserKid: string): Promise<boolean> => {
 	// 检查是否正在处理
 	if (processingMapRef.value.get(targetUserKid) == true) {
-		console.log('正在处理关注操作，请稍候')
 		return false
 	}
 	
@@ -62,23 +61,18 @@ export const toggleFollow = async (currentUserKid: string, targetUserKid: string
 	
 	try {
 		const currentStatus = followMapRef.value.get(targetUserKid) == true
-		// UTS 规范：使用 JSON.parse + 接口类型转换来传递参数
-		const dataJson = JSON.stringify({ userKid: currentUserKid, focusUserKid: targetUserKid })
-		const dataParsed = JSON.parse(dataJson) as UTSJSONObject
 		
 		if (currentStatus == true) {
 			// 取消关注
-			const cancelParams = dataParsed as CancelGuideFocusParams
-			await cancelGuideFocus(cancelParams)
+			const cancelUrl = '/user/userFocus/cancelFocus?userKid=' + currentUserKid + '&focusUserKid=' + targetUserKid
+			await request.post(cancelUrl, null, true)
 			followMapRef.value.set(targetUserKid, false)
-			console.log('已取消关注用户: ' + targetUserKid)
 			return false
 		} else {
 			// 关注
-			const addParams = dataParsed as AddGuideFocusParams
-			await addGuideFocus(addParams)
+			const addUrl = '/user/userFocus/addFocus?userKid=' + currentUserKid + '&focusUserKid=' + targetUserKid
+			await request.post(addUrl, null, true)
 			followMapRef.value.set(targetUserKid, true)
-			console.log('已关注用户: ' + targetUserKid)
 			return true
 		}
 	} catch (error: any) {
@@ -86,7 +80,7 @@ export const toggleFollow = async (currentUserKid: string, targetUserKid: string
 		errorOptions.showToast = false
 		errorOptions.rethrow = false
 		handleError(error, '关注操作', errorOptions)
-		throw error
+		return followMapRef.value.get(targetUserKid) == true
 	} finally {
 		// 移除处理中标记
 		processingMapRef.value.delete(targetUserKid)

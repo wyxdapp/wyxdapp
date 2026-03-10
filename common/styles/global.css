@@ -275,7 +275,7 @@ view, text, image {
 .bg-white { background-color: #FFFFFF; }
 .bg-light-gray { background-color: #E5E5E5; }
 .bg-light-base { background-color: #EEEEEE; }
-.bg-base { background-color: #EDEDED; }
+.bg-base { background-color: #F5F5F5; }
 .bg-F2 { background-color: #F2F2F2; }
 .bg-transparent { background-color: transparent !important; }
 .bg-mask { background: rgba(0,0,0,.35); }

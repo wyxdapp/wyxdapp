@@ -75,7 +75,7 @@
 						:class="{ 'city-item-active': currentCity == locationCity }"
 						@click="selectCity(locationCity)"
 					>
-						<uni-icons type="location-filled" :size="16" :color="currentCity == locationCity ? '#37B1F2' : '#666666'" class="location-icon"></uni-icons>
+						<uni-icons type="location-filled" :size="16" :color="currentCity == locationCity ? currentTheme.primaryColor : '#666666'" class="location-icon"></uni-icons>
 						<text class="city-text" :class="{ 'city-text-active': currentCity == locationCity }">{{ locationCity }}</text>
 					</view>
 				</view>
@@ -173,6 +173,7 @@ import {
 } from '@/common/utils/systemInfo.uts'
 import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { currentTheme } from '@/stores/theme.uts'
 const statusBarHeight = ref<number>(0)
 const navBarHeight = ref<number>(44)
 const contentHeight = ref<number>(600)

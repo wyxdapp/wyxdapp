@@ -450,62 +450,56 @@ const handleShare = () => {
 	const itemList: Array<string> = ['分享到微信', '分享到朋友圈', '复制链接']
 	uni.showActionSheet({
 		itemList: itemList,
-		success: (res: any | null) => {
-			// 使用 JSON 序列化访问 tapIndex
-			if (res != null) {
-				const resStr = JSON.stringify(res)
-				const resObj = JSON.parse(resStr) as UTSJSONObject
-				const tapIndexVal = resObj.get('tapIndex')
-				if (tapIndexVal != null) {
-					const tapIndex = parseInt(tapIndexVal.toString())
-					if (tapIndex == 0) {
-						// 分享到微信
-						// #ifdef APP-PLUS
-						uni.share({
-							provider: 'weixin',
-							scene: 'WXSceneSession',
-							type: 0,
-							href: promoLink.value,
-							title: '网约向导 - 发现专业向导',
-							summary: '点击链接，发现专业向导，定制专属行程',
-							success: () => {
-								uni.showToast({ title: '分享成功', icon: 'success' })
-							},
-							fail: (err: Error) => {
-								handleSilentError(err, '微信分享')
-								copyPromoLink()
-							}
-						})
-						// #endif
-						// #ifndef APP-PLUS
-						copyPromoLink()
-						// #endif
-					} else if (tapIndex == 1) {
-						// 分享到朋友圈
-						// #ifdef APP-PLUS
-						uni.share({
-							provider: 'weixin',
-							scene: 'WXSceneTimeline',
-							type: 0,
-							href: promoLink.value,
-							title: '网约向导 - 发现专业向导',
-							summary: '点击链接，发现专业向导，定制专属行程',
-							success: () => {
-								uni.showToast({ title: '分享成功', icon: 'success' })
-							},
-							fail: (err: Error) => {
-								handleSilentError(err, '朋友圈分享')
-								copyPromoLink()
-							}
-						})
-						// #endif
-						// #ifndef APP-PLUS
-						copyPromoLink()
-						// #endif
-					} else if (tapIndex == 2) {
+		success: (res) => {
+			if (res == null) return
+			const tapIndex = res.tapIndex
+			
+			if (tapIndex == 0) {
+				// 分享到微信
+				// #ifdef APP-PLUS
+				uni.share({
+					provider: 'weixin',
+					scene: 'WXSceneSession',
+					type: 0,
+					href: promoLink.value,
+					title: '网约向导 - 发现专业向导',
+					summary: '点击链接，发现专业向导，定制专属行程',
+					success: () => {
+						uni.showToast({ title: '分享成功', icon: 'success' })
+					},
+					fail: (err: Error) => {
+						handleSilentError(err, '微信分享')
 						copyPromoLink()
 					}
-				}
+				})
+				// #endif
+				// #ifndef APP-PLUS
+				copyPromoLink()
+				// #endif
+			} else if (tapIndex == 1) {
+				// 分享到朋友圈
+				// #ifdef APP-PLUS
+				uni.share({
+					provider: 'weixin',
+					scene: 'WXSceneTimeline',
+					type: 0,
+					href: promoLink.value,
+					title: '网约向导 - 发现专业向导',
+					summary: '点击链接，发现专业向导，定制专属行程',
+					success: () => {
+						uni.showToast({ title: '分享成功', icon: 'success' })
+					},
+					fail: (err: Error) => {
+						handleSilentError(err, '朋友圈分享')
+						copyPromoLink()
+					}
+				})
+				// #endif
+				// #ifndef APP-PLUS
+				copyPromoLink()
+				// #endif
+			} else if (tapIndex == 2) {
+				copyPromoLink()
 			}
 		}
 	})

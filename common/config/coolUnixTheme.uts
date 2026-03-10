@@ -2,53 +2,55 @@
  * Cool Unix 主题配置
  * 
  * 本文件定义了项目使用 cool-unix 组件库时的主题色配置
- * 与 uni.scss 中的颜色变量保持一致
+ * 已改造为从 themeStore 动态读取，保持向后兼容
  * 
  * @author WYXD Team
  * @date 2025-12-27
  */
 
-// ==================== 主题色配置 ====================
+import { currentTheme } from '@/stores/theme.uts'
+
+// ==================== 主题色配置（动态读取） ====================
 
 /**
- * 主色调 - 项目品牌色
+ * 主色调 - 从主题状态动态获取
  */
-export const PRIMARY_COLOR = '#37B1F2'
+export const getPrimaryColor = (): string => currentTheme.primaryColor
+export const PRIMARY_COLOR = '#37B1F2' // 保留静态常量用于编译期引用
 
 /**
- * 成功色 - 用于成功状态、微信登录按钮等
+ * 成功色
  */
-export const SUCCESS_COLOR = '#07C160'
+export const getSuccessColor = (): string => currentTheme.successColor
+export const SUCCESS_COLOR = '#22AA76'
 
 /**
- * 警告色 - 用于警告提示
+ * 警告色
  */
-export const WARNING_COLOR = '#FF9800'
+export const getWarningColor = (): string => currentTheme.warningColor
+export const WARNING_COLOR = '#FFC300'
 
 /**
- * 错误色 - 用于错误提示、删除操作等
+ * 错误色
  */
-export const ERROR_COLOR = '#F44336'
+export const getErrorColor = (): string => currentTheme.errorColor
+export const ERROR_COLOR = '#F83535'
 
 /**
- * 信息色 - 用于一般信息提示
+ * 信息色 - 暂不纳入商户可配置范围
  */
 export const INFO_COLOR = '#909399'
 
 // ==================== 文字颜色配置 ====================
 
-/**
- * 主要文字颜色 - 标题、重要内容
- */
+export const getTextPrimary = (): string => currentTheme.textPrimary
 export const TEXT_PRIMARY = '#333333'
 
-/**
- * 次要文字颜色 - 正文、描述
- */
+export const getTextSecondary = (): string => currentTheme.textSecondary
 export const TEXT_SECONDARY = '#666666'
 
 /**
- * 占位符颜色 - 输入框占位文字
+ * 占位符颜色 - 暂不纳入商户可配置范围
  */
 export const TEXT_PLACEHOLDER = '#999999'
 
@@ -58,49 +60,30 @@ export const TEXT_PLACEHOLDER = '#999999'
 export const TEXT_DISABLED = '#CCCCCC'
 
 /**
- * 反色文字 - 深色背景上的文字
+ * 反色文字
  */
+export const getTextInverse = (): string => currentTheme.textInverse
 export const TEXT_INVERSE = '#FFFFFF'
 
 // ==================== 背景颜色配置 ====================
 
-/**
- * 主背景色 - 页面主背景
- */
 export const BG_PRIMARY = '#FFFFFF'
-
-/**
- * 次要背景色 - 卡片、输入框背景
- */
 export const BG_SECONDARY = '#F5F5F5'
-
-/**
- * 悬停背景色 - 点击态
- */
 export const BG_HOVER = '#F1F1F1'
-
-/**
- * 遮罩背景色
- */
 export const BG_MASK = 'rgba(0, 0, 0, 0.5)'
 
 // ==================== 边框颜色配置 ====================
 
-/**
- * 边框颜色 - 分割线、边框
- */
 export const BORDER_COLOR = '#EEEEEE'
+export const BORDER_FOCUS = '#37B1F2' // 静态 fallback
+export const getBorderFocus = (): string => currentTheme.primaryColor
 
-/**
- * 聚焦边框颜色
- */
-export const BORDER_FOCUS = '#37B1F2'
+// ==================== 强调色（动态） ====================
+
+export const getAccentColor = (): string => currentTheme.accentColor
 
 // ==================== 主题配置对象 ====================
 
-/**
- * 主题配置接口
- */
 interface ThemeConfig {
 	primaryColor: string
 	successColor: string
@@ -121,27 +104,26 @@ interface ThemeConfig {
 }
 
 /**
- * 获取主题配置对象
- * @returns ThemeConfig 主题配置
+ * 获取主题配置对象（从 themeStore 动态读取）
  */
 export function getThemeConfig(): ThemeConfig {
 	const config: ThemeConfig = {
-		primaryColor: PRIMARY_COLOR,
-		successColor: SUCCESS_COLOR,
-		warningColor: WARNING_COLOR,
-		errorColor: ERROR_COLOR,
+		primaryColor: currentTheme.primaryColor,
+		successColor: currentTheme.successColor,
+		warningColor: currentTheme.warningColor,
+		errorColor: currentTheme.errorColor,
 		infoColor: INFO_COLOR,
-		textPrimary: TEXT_PRIMARY,
-		textSecondary: TEXT_SECONDARY,
+		textPrimary: currentTheme.textPrimary,
+		textSecondary: currentTheme.textSecondary,
 		textPlaceholder: TEXT_PLACEHOLDER,
 		textDisabled: TEXT_DISABLED,
-		textInverse: TEXT_INVERSE,
+		textInverse: currentTheme.textInverse,
 		bgPrimary: BG_PRIMARY,
 		bgSecondary: BG_SECONDARY,
 		bgHover: BG_HOVER,
 		bgMask: BG_MASK,
 		borderColor: BORDER_COLOR,
-		borderFocus: BORDER_FOCUS
+		borderFocus: currentTheme.primaryColor
 	}
 	return config
 }
@@ -149,17 +131,15 @@ export function getThemeConfig(): ThemeConfig {
 // ==================== TailwindCSS 颜色映射 ====================
 
 /**
- * 获取 TailwindCSS 类名对应的颜色值
- * @param colorName 颜色名称（如 'primary', 'success' 等）
- * @returns 颜色值
+ * 获取 TailwindCSS 类名对应的颜色值（从 themeStore 动态读取）
  */
 export function getTailwindColor(colorName: string): string {
-	if (colorName == 'primary') return PRIMARY_COLOR
-	if (colorName == 'success') return SUCCESS_COLOR
-	if (colorName == 'warning' || colorName == 'warn') return WARNING_COLOR
-	if (colorName == 'error' || colorName == 'danger') return ERROR_COLOR
+	if (colorName == 'primary') return currentTheme.primaryColor
+	if (colorName == 'success') return currentTheme.successColor
+	if (colorName == 'warning' || colorName == 'warn') return currentTheme.warningColor
+	if (colorName == 'error' || colorName == 'danger') return currentTheme.errorColor
 	if (colorName == 'info') return INFO_COLOR
-	if (colorName == 'light') return TEXT_INVERSE
-	if (colorName == 'dark') return TEXT_PRIMARY
+	if (colorName == 'light') return currentTheme.textInverse
+	if (colorName == 'dark') return currentTheme.textPrimary
 	return ''
 }

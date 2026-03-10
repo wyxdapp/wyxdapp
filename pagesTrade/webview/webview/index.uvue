@@ -1,4 +1,16 @@
 <template>
+	<!-- #ifdef MP-WEIXIN -->
+	<!-- 小程序端：web-view 必须作为页面唯一根组件 -->
+	<web-view 
+		v-if="url != ''"
+		:src="url"
+		@load="handleLoad"
+		@error="handleError"
+	></web-view>
+	<!-- #endif -->
+	
+	<!-- #ifndef MP-WEIXIN -->
+	<!-- 非小程序端：保留自定义导航栏和其他 UI 组件 -->
 	<view class="webview-page">
 		<!-- APP端状态栏占位 -->
 		<!-- #ifndef H5 -->
@@ -44,6 +56,7 @@
 			@share="onShareComplete"
 		/>
 	</view>
+	<!-- #endif -->
 </template>
 
 <script setup lang="uts">
@@ -216,6 +229,12 @@ onLoad((options: OnLoadOptions) => {
 				finalTitle = decodedTitle
 			}
 			pageTitle.value = finalTitle
+			// #ifdef MP-WEIXIN
+			// 小程序端使用原生导航栏标题
+			uni.setNavigationBarTitle({
+				title: finalTitle
+			})
+			// #endif
 		}
 	}
 })

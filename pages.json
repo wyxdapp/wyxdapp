@@ -205,21 +205,24 @@
                                               "path":  "my/proveDetails/realNameAuth",
                                               "style":  {
                                                             "navigationBarTitleText":  "实名认证",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
                                           {
                                               "path":  "my/proveDetails/guide",
                                               "style":  {
                                                             "navigationBarTitleText":  "导游认证",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
                                           {
                                               "path":  "my/proveDetails/driver",
                                               "style":  {
                                                             "navigationBarTitleText":  "司机认证",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
 
@@ -325,8 +328,9 @@
                                           {
                                               "path":  "operate/signContract",
                                               "style":  {
-                                                            "navigationBarTitleText":  "用户管理",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationBarTitleText":  "向导推荐",
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
                                           {
@@ -354,7 +358,8 @@
                                               "path":  "operate/massMessage",
                                               "style":  {
                                                             "navigationBarTitleText":  "群发消息",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
 
@@ -459,7 +464,9 @@
                                               "path":  "webview/webview/index",
                                               "style":  {
                                                             "navigationBarTitleText":  "网页浏览",
+                                                            // #ifndef MP-WEIXIN
                                                             "navigationStyle":  "custom"
+                                                            // #endif
                                                         }
                                           },
                                           {
