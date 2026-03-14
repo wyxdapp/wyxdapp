@@ -179,8 +179,6 @@ import {
 } from '@/common/utils/utsSafe.uts'
 import { 
 	getUserId, 
-	getUserVipStatus, 
-	getUserVipExpireTime,
 	getUserLoginStatus,
 	useUserStore
 } from '@/stores/user.uts'
@@ -195,8 +193,8 @@ import {
 	pageWindowHeight, 
 	initPageLayout 
 } from '@/common/composables/usePageLayout.uts'
-// 🔧 新增：导入功能开关
-import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+// 导入会员权限守卫
+import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
 import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
 import { currentTheme } from '@/stores/theme.uts'
 import SharePopup from '@/components/common/SharePopup.uvue'
@@ -371,22 +369,6 @@ const getStatusBgColor = (item: UTSJSONObject | null): string => {
 	if (lineStatu == 50) return '#E3F2FD'
 	if (lineStatu == 80) return '#F5F5F5'
 	return '#F5F5F5'
-}
-
-// 检查 VIP 状态
-const checkVipStatus = (): boolean => {
-	const vipStatus = getUserVipStatus()
-	const vipExpireTime = getUserVipExpireTime()
-	
-	if (vipStatus != 20) return false
-	
-	if (vipExpireTime != null && vipExpireTime != '') {
-		const expireDate = new Date(vipExpireTime)
-		const now = new Date()
-		return expireDate > now
-	}
-	
-	return true
 }
 
 // 更新列表项状态
@@ -633,26 +615,8 @@ const onShareToChat = (data: UTSJSONObject | null) => {
 const handleTopRoute = () => {
 	if (selectedItem.value == null) return
 	
-	if (checkVipStatus() == false) {
-		// 🔧 新增：检查会员功能是否开启
-		if (isMemberFeatureEnabled() == false) {
-			uni.showToast({
-				title: '会员功能暂未开放',
-				icon: 'none'
-			})
-			return
-		}
-		
-		uni.showModal({
-			title: '提示',
-			content: '顶置功能需要开通会员',
-			confirmText: '去开通',
-			success: (res: UniShowModalResult) => {
-				if (res.confirm == true) {
-					uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
-				}
-			}
-		})
+	// 使用统一会员权限守卫检查
+	if (checkMemberGuard('routes_top', '您没有权限此操作', '顶置功能需要开通会员，是否前往开通？') == false) {
 		return
 	}
 	
@@ -828,6 +792,7 @@ onShow(() => {
 	position: absolute;
 	top: 0;
 	left: 0;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -836,6 +801,7 @@ onShow(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* 顶部导航栏 */
@@ -889,6 +855,7 @@ onShow(() => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 /* #endif */
 
@@ -898,6 +865,7 @@ onShow(() => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 /* #endif */
 
@@ -1070,6 +1038,7 @@ onShow(() => {
 	padding-top: 20rpx;
 	padding-bottom: 40rpx;
 	background-color: transparent;
+	z-index: 999;
 }
 
 .publish-btn {

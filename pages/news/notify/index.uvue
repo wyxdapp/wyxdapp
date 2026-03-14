@@ -570,11 +570,26 @@ const handleNotificationClick = async (item: NotificationItem) => {
 			}
 		}
 	} else if (item.type == 'INTERACT') {
-		const trendsId = getItemDataString(item, 'trendsId')
-		if (trendsId != '') {
-			uni.navigateTo({
-				url: '/packageB/trendsDetails/index?id=' + trendsId
-			})
+		// 向导推荐通知 - 跳转到向导个人主页
+		if (item.source == 'GUIDE_RECOMMEND') {
+			const linkUrl = getItemDataString(item, 'linkUrl')
+			if (linkUrl != '') {
+				uni.navigateTo({ url: linkUrl })
+			} else {
+				const guideKid = getItemDataString(item, 'guideKid')
+				if (guideKid != '') {
+					uni.navigateTo({
+						url: '/pagesUser/persionInfo/index?kid=' + guideKid
+					})
+				}
+			}
+		} else {
+			const trendsId = getItemDataString(item, 'trendsId')
+			if (trendsId != '') {
+				uni.navigateTo({
+					url: '/packageB/trendsDetails/index?id=' + trendsId
+				})
+			}
 		}
 	}
 }

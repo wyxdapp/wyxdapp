@@ -112,6 +112,8 @@ export class MessageStateManager {
   private tempToRealIdMap: Map<string, string> = new Map()  // 临时ID到真实ID的映射
   private persistTimer: number | null = null  // 防抖定时器
   private readonly PERSIST_DELAY = 500  // 500ms防抖延迟
+  // 🔧 修复：活跃会话 key，persistToStorage 跳过该会话，避免与 chatLocalStorageManager 互相覆盖
+  private activeConversationKey: string = ''
 
   /**
    * 添加临时消息
@@ -141,6 +143,37 @@ export class MessageStateManager {
     
     console.log('📝 [MessageStateManager] 添加临时消息:', tempId)
     return tempId
+  }
+
+  /**
+   * 使用指定的 tempId 注册临时消息（不生成新 ID）
+   * 用于 useChatMessages 已经生成临时消息的场景，确保 messageStateManager 中有记录
+   * 这样 handleMessageSent 的 findTempMessageByContent 才能找到它完成 tempId→realId 映射
+   */
+  registerTempMessage(tempId: string, message: AddTempMessageParams): void {
+    // 如果已存在则跳过
+    if (this.messages.has(tempId)) {
+      return
+    }
+    
+    const tempMessage = new ChatMessage()
+    tempMessage.id = tempId
+    tempMessage.content = message.content
+    tempMessage.type = message.type
+    tempMessage.senderId = message.senderId
+    tempMessage.receiverId = message.receiverId
+    tempMessage.mediaUrl = message.mediaUrl
+    tempMessage.thumbUrl = message.thumbUrl
+    tempMessage.duration = message.duration
+    tempMessage.createTime = new Date().toISOString()
+    tempMessage.conversationId = message.conversationId
+    tempMessage.sendTime = message.sendTime
+    tempMessage.status = MessageStatus.SENDING
+    tempMessage.isTemp = true
+
+    this.messages.set(tempId, tempMessage)
+    // 不调用 notifyStateChange()，避免触发 onMessageChange 回调产生干扰
+    console.log('📝 [MessageStateManager] 注册临时消息(复用ID):', tempId)
   }
 
   /**
@@ -187,6 +220,14 @@ export class MessageStateManager {
       this.tempToRealIdMap.set(messageId, actualRealId)
       
       console.log('🔄 [MessageStateManager] 消息ID映射:', messageId, '->', actualRealId)
+      
+      // ⭐ 发射事件通知聊天页面更新临时消息状态
+      uni.$emit('chat:messageSentConfirmed', {
+        tempId: messageId,
+        realId: actualRealId,
+        status: status.value,
+        createTime: updatedMessage.createTime
+      })
     } else {
       // 只更新状态，但仍创建新对象
       this.messages.set(messageId, updatedMessage)
@@ -345,6 +386,33 @@ export class MessageStateManager {
       this.notifyStateChange()
       console.log('🗑️ [MessageStateManager] 清理用户会话消息:', userId1, '<->', userId2, '共', idsToDelete.length, '条')
     }
+  }
+
+  /**
+   * 更新消息的 createTime（用服务端时间替换本地时间）
+   * 在 handleMessageSent 中 updateMessageStatus 之前调用，不触发 notifyStateChange
+   */
+  updateMessageTime(messageId: string, serverTime: string): void {
+    const message = this.messages.get(messageId)
+    if (message == null) return
+    message.createTime = serverTime
+  }
+
+  /**
+   * 设置活跃会话（聊天详情页打开时调用）
+   * persistToStorage 将跳过该会话，由 useChatMessages 独占写入
+   */
+  setActiveConversation(key: string): void {
+    this.activeConversationKey = key
+    console.log('🔒 [MessageStateManager] 设置活跃会话:', key)
+  }
+
+  /**
+   * 清除活跃会话（聊天详情页关闭时调用）
+   */
+  clearActiveConversation(): void {
+    console.log('🔓 [MessageStateManager] 清除活跃会话:', this.activeConversationKey)
+    this.activeConversationKey = ''
   }
 
   /**
@@ -632,10 +700,20 @@ export class MessageStateManager {
           keyToUsers.set(convKey, [first, second])
         }
         // 转为普通对象以便 JSON 序列化
+        // 🔧 修复：同时保存 messageType 数字字段，确保从缓存恢复时类型不丢失
+        let messageTypeNum = 1
+        if (msg.type == MessageType.IMAGE) { messageTypeNum = 2 }
+        else if (msg.type == MessageType.VIDEO) { messageTypeNum = 3 }
+        else if (msg.type == MessageType.VOICE) { messageTypeNum = 4 }
+        else if (msg.type == MessageType.SHARE) { messageTypeNum = 6 }
+        else if (msg.type == MessageType.GIFT) { messageTypeNum = 7 }
+        else if (msg.type == MessageType.SYSTEM_NOTIFICATION) { messageTypeNum = 10 }
+        
         const msgObj = {
           id: msg.id,
           content: msg.content,
           type: msg.type,
+          messageType: messageTypeNum,
           senderId: msg.senderId,
           receiverId: msg.receiverId,
           status: msg.status,
@@ -645,8 +723,13 @@ export class MessageStateManager {
         group.push(msgObj)
       }
 
-      // 按会话分区写入
+      // 按会话分区写入（跳过活跃会话，由 useChatMessages 独占写入）
+      const activeKey = this.activeConversationKey
       groups.forEach((msgList: Array<any>, convKey: string) => {
+        // 🔧 修复：跳过活跃会话，避免与 chatLocalStorageManager.saveMessages 互相覆盖
+        if (activeKey != '' && convKey == activeKey) {
+          return
+        }
         const users = keyToUsers.get(convKey)
         if (users != null && users.length == 2) {
           chatLocalStorageManager.saveMessages(users[0], users[1], msgList)

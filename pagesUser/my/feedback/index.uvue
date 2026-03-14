@@ -233,7 +233,7 @@ onMounted(() => {
 
 <style scoped>
 .feedback-page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #F5F5F5;
 	flex-direction: column;
 }
@@ -244,6 +244,7 @@ onMounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -252,6 +253,7 @@ onMounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */
@@ -298,6 +300,7 @@ onMounted(() => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 
 .section {

@@ -330,6 +330,34 @@ export const isIOS = (): boolean => {
 }
 
 /**
+ * 判断 iOS H5 端是否存在底部工具栏（Safari 返回/前进栏 或 微信浏览器底部栏）
+ * Safari 非全屏模式、微信浏览器在有浏览历史时都会显示底部工具栏（约44-50px）
+ * @returns {boolean} 是否存在底部工具栏
+ */
+export const hasIOSBottomToolbar = (): boolean => {
+	// #ifdef H5
+	if (isIOS() == false) return false
+	// 微信浏览器有底部工具栏
+	if (isWechatBrowser() == true) return true
+	// Safari / 其他 iOS 浏览器：非 standalone 模式下都有底部工具栏
+	try {
+		if (typeof window != 'undefined' && window.navigator != null) {
+			// standalone 模式（添加到主屏幕）没有底部工具栏
+			const nav = window.navigator as any
+			if (nav.standalone == true) return false
+		}
+	} catch (_e) {
+		// ignore
+	}
+	// iOS 非 standalone 浏览器默认有底部工具栏
+	return true
+	// #endif
+	// #ifndef H5
+	return false
+	// #endif
+}
+
+/**
  * 获取登录类型
  * @returns {number} 30: 小程序, 20: H5（公众号）, 10: App
  * 

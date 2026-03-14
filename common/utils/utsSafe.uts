@@ -63,10 +63,15 @@ export function safeClone(obj: any): UTSJSONObject {
  */
 export const getStringProp = (obj: any, key: string): string => {
   const val = safeGet(obj, key)
-  // safeGet 返回 '' 或有效值，不会返回 null
-  if (val.toString() != '') {
-    return val.toString()
-  }
+  // 防止嵌套对象被当作字符串（Android 上 UTSJSONObject 强转 String 会 ClassCastException）
+  if (val == null || val == '') return ''
+  try {
+    const str = val.toString()
+    // 过滤掉对象的 toString 结果
+    if (str != '' && str.indexOf('[object') != 0) {
+      return str
+    }
+  } catch (e) {}
   return ''
 }
 
@@ -78,14 +83,16 @@ export const getStringProp = (obj: any, key: string): string => {
  */
 export const getNumberProp = (obj: any, key: string): number => {
   const val = safeGet(obj, key)
-  // safeGet 返回 '' 或有效值，不会返回 null
-  const valStr = val.toString()
-  if (valStr != '') {
-    const num = parseInt(valStr)
-    if (isNaN(num) == false) {
-      return num
+  if (val == null || val == '') return 0
+  try {
+    const valStr = val.toString()
+    if (valStr != '') {
+      const num = parseInt(valStr)
+      if (isNaN(num) == false) {
+        return num
+      }
     }
-  }
+  } catch (e) {}
   return 0
 }
 

@@ -115,39 +115,10 @@ export const getUserTrends = (params: GetUserTrendsParams) => {
  * UTS 规范：API 函数参数使用类型定义，避免 Android ClassCastException
  */
 export const getUserLines = (params: GetUserLinesParams) => {
-	// 手动构造查询字符串，避免使用 Object.keys
-	// 使用 JSON 序列化安全访问属性
-	let userKid = ''
-	let pageNumber = 1
-	let pageSize = 10
-	
-	try {
-		const paramsStr = JSON.stringify(params)
-		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
-		
-		const userKidVal = paramsObj.get('userKid')
-		if (userKidVal != null && userKidVal.toString() != '') {
-			userKid = userKidVal.toString()
-		}
-		
-		const pageNumberVal = paramsObj.get('pageNumber')
-		if (pageNumberVal != null) {
-			const pn = parseInt(pageNumberVal.toString())
-			if (isNaN(pn) == false) {
-				pageNumber = pn
-			}
-		}
-		
-		const pageSizeVal = paramsObj.get('pageSize')
-		if (pageSizeVal != null) {
-			const ps = parseInt(pageSizeVal.toString())
-			if (isNaN(ps) == false) {
-				pageSize = ps
-			}
-		}
-	} catch (e) {
-		// param parse error
-	}
+	// 直接访问 class 属性（避免 JSON.stringify 在 Android 上对 class 实例序列化不完整）
+	const userKid = (params.userKid != null && params.userKid != '') ? params.userKid : ''
+	const pageNumber = (params.pageNumber > 0) ? params.pageNumber : 1
+	const pageSize = (params.pageSize > 0) ? params.pageSize : 10
 	
 	let queryParts: Array<string> = []
 	if (userKid != '') {

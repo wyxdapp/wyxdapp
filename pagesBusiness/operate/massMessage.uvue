@@ -542,6 +542,7 @@ onLoad((options: OnLoadOptions) => {
 	position: absolute;
 	top: 0;
 	left: 0;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -550,6 +551,7 @@ onLoad((options: OnLoadOptions) => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */

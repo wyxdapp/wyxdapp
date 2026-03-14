@@ -210,13 +210,45 @@ export class WebSocketEventHandler {
    */
   private handleMessageSent(dataObj: UTSJSONObject): void {
     
-    const content = dataObj.getString('content')
-    const fromUserId = dataObj.getString('fromUserId')
+    // ⭐ 策略1：优先通过 tempId 直接匹配（服务端原样返回的 tempId）
+    const serverTempId = dataObj.getString('tempId')
+    let tempId: string | null = null
     
-    // 查找对应的临时消息
-    const contentStr = content != null ? content : ''
-    const fromUserIdStr = fromUserId != null ? fromUserId : ''
-    const tempId = this.findTempMessageByContent(contentStr, fromUserIdStr)
+    if (serverTempId != null && serverTempId != '') {
+      // 检查 messageStateManager 中是否存在该 tempId
+      const allMessages = messageStateManager.getAllMessages()
+      for (let i = 0; i < allMessages.length; i++) {
+        const msg = allMessages[i]
+        if (msg.id == serverTempId && msg.isTemp == true) {
+          tempId = serverTempId
+          break
+        }
+      }
+    }
+    
+    // ⭐ 策略2：通过 content + fromUserId 匹配
+    if (tempId == null || tempId == '') {
+      const content = dataObj.getString('content')
+      const fromUserId = dataObj.getString('fromUserId')
+      const contentStr = content != null ? content : ''
+      const fromUserIdStr = fromUserId != null ? fromUserId : ''
+      if (contentStr != '') {
+        tempId = this.findTempMessageByContent(contentStr, fromUserIdStr)
+      }
+    }
+    
+    // ⭐ 策略3：如果以上都匹配不到，查找最近一条 SENDING 状态的临时消息
+    if (tempId == null || tempId == '') {
+      const allMessages = messageStateManager.getAllMessages()
+      for (let i = allMessages.length - 1; i >= 0; i--) {
+        const msg = allMessages[i]
+        if (msg.isTemp == true && msg.status == MessageStatus.SENDING) {
+          tempId = msg.id
+          console.log('🔄 [WebSocketEventHandler] 通过 SENDING 状态 fallback 匹配:', tempId)
+          break
+        }
+      }
+    }
     
     // UTS 规范：String? 不能直接用于条件判断
     const hasTempId = tempId != null && tempId != ''
@@ -231,6 +263,15 @@ export class WebSocketEventHandler {
         console.warn('⚠️ [WebSocketEventHandler] 发送确认消息缺少消息ID (kid/messageId)')
       }
       
+      // 🔧 修复：先用服务端时间更新 createTime（不触发通知），再更新状态（触发通知）
+      // 这样 onMessageChange 回调拿到的 createTime 就是服务端时间
+      const sendTime = dataObj.getString('sendTime')
+      const createTime = dataObj.getString('createTime')
+      const serverTime = sendTime != null ? sendTime : (createTime != null ? createTime : '')
+      if (serverTime != '') {
+        messageStateManager.updateMessageTime(actualTempId, serverTime)
+      }
+      
       const success = messageStateManager.updateMessageStatus(
         actualTempId, 
         MessageStatus.SENT, 
@@ -238,7 +279,7 @@ export class WebSocketEventHandler {
       )
       
       if (success == true) {
-        // 消息状态更新成功
+        // 消息状态更新成功，tempId→realId 映射完成
       } else {
         console.warn('⚠️ [WebSocketEventHandler] 消息状态更新失败:', actualTempId)
       }
@@ -334,7 +375,15 @@ export class WebSocketEventHandler {
     const conversationId = dataObj.getString('conversationId')
     const conversationIdVal = conversationId != null ? conversationId : this.generateConversationId(senderIdVal, receiverIdVal)
     
-    const messageType = dataObj.getString('messageType')
+    // 🔧 修复：messageType 可能是数字或字符串，需要兼容处理
+    // 后端推送的 messageType 是 Integer 类型，getString 可能返回 null
+    let messageType: string | null = null
+    const messageTypeNum = dataObj.getNumber('messageType')
+    if (messageTypeNum != null) {
+      messageType = Math.floor(messageTypeNum as number).toString()
+    } else {
+      messageType = dataObj.getString('messageType')
+    }
     const mediaUrl = dataObj.getString('mediaUrl')
     const thumbUrl = dataObj.getString('thumbUrl')
     
@@ -372,11 +421,21 @@ export class WebSocketEventHandler {
 
     // ⭐ 持久化到本地会话分区存储
     try {
+      // 🔧 修复：同时保存 type（字符串枚举）和 messageType（数字），确保从缓存恢复时类型不丢失
+      let messageTypeNumVal = 1
+      if (message.type == MessageType.IMAGE) { messageTypeNumVal = 2 }
+      else if (message.type == MessageType.VIDEO) { messageTypeNumVal = 3 }
+      else if (message.type == MessageType.VOICE) { messageTypeNumVal = 4 }
+      else if (message.type == MessageType.SHARE) { messageTypeNumVal = 6 }
+      else if (message.type == MessageType.GIFT) { messageTypeNumVal = 7 }
+      else if (message.type == MessageType.SYSTEM_NOTIFICATION) { messageTypeNumVal = 10 }
+      
       const localMsg = {
         id: message.id,
         senderId: message.senderId,
         receiverId: message.receiverId,
         type: message.type,
+        messageType: messageTypeNumVal,
         content: message.content,
         createTime: message.createTime,
         status: 'received'

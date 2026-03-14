@@ -1411,6 +1411,7 @@ watch(formLineType, () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -1419,6 +1420,7 @@ watch(formLineType, () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */
@@ -1484,6 +1486,7 @@ watch(formLineType, () => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 /* #endif */
 
@@ -1495,6 +1498,7 @@ watch(formLineType, () => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 /* #endif */
 

@@ -12,7 +12,7 @@ import {
 	getCurrentUserKid 
 } from '@/common/utils/utsSafe.uts'
 import { getUserTrends, getUserLines } from '@/api/home.uts'
-import { GetUserTrendsParams } from '@/api/types/homeTypes.uts'
+import { GetUserTrendsParams, GetUserLinesParams } from '@/api/types/homeTypes.uts'
 import { setLikeStatus } from '@/stores/like.uts'
 
 // ==================== 类型定义 ====================
@@ -240,12 +240,12 @@ export const loadUserRoutes = async (pageInfo: PageInfoData): Promise<boolean> =
 	pageInfo.status = 'loading'
 	
 	try {
-		const routeParams = new UTSJSONObject()
-		routeParams.set('userKid', pageInfo.userKid)
-		routeParams.set('pageNumber', pageInfo.pageNumber)
-		routeParams.set('pageSize', pageInfo.pageSize)
+		const routeParams = new GetUserLinesParams()
+		routeParams.userKid = pageInfo.userKid
+		routeParams.pageNumber = pageInfo.pageNumber
+		routeParams.pageSize = pageInfo.pageSize
 		
-		const responseRaw = await getUserLines(routeParams as UTSJSONObject)
+		const responseRaw = await getUserLines(routeParams)
 		const response = responseRaw as UTSJSONObject
 		
 		let entities: UTSJSONObject[] = []

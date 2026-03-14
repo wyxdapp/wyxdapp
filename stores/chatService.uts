@@ -168,11 +168,8 @@ export class ChatService {
     messageStateManager.subscribe((messages: ChatMessage[]) => {
       self.notifyMessageUpdate(messages)
       
-      // 持久化状态（UTS 规范：显式比较布尔值）
-      const shouldPersist = self.config.persistMessages
-      if (shouldPersist == true) {
-        messageStateManager.persistToStorage()
-      }
+      // 🔧 移除直接调用 persistToStorage()，避免与 notifyStateChange 内部的 debouncedPersistToStorage 双重持久化
+      // messageStateManager.notifyStateChange() 已经内置了防抖持久化逻辑
     })
 
     // 监听队列状态变化
@@ -219,12 +216,14 @@ export class ChatService {
 
   /**
    * 发送消息
+   * @param existingTempId 可选，已有的临时消息ID。传入时跳过 addTempMessage，避免双重临时消息
    */
   async sendMessage(
     content: string,
     receiverId: string,
     type: MessageType = MessageType.TEXT,
-    options: SendMessageOptions = new SendMessageOptions()
+    options: SendMessageOptions = new SendMessageOptions(),
+    existingTempId: string = ''
   ): Promise<string> {
     // 确保服务已初始化
     this.ensureInitialized()
@@ -249,7 +248,13 @@ export class ChatService {
 
       // 添加到发送队列（UTS 规范：直接访问类属性）
       const priority = options.priority
-      const messageId = messageQueueManager.enqueue(message, priority)
+      let messageId = ''
+      // 🔧 修复：如果传入了已有的 tempId，使用 enqueueWithExistingTempId 跳过 addTempMessage
+      if (existingTempId != '') {
+        messageId = messageQueueManager.enqueueWithExistingTempId(existingTempId, message, priority)
+      } else {
+        messageId = messageQueueManager.enqueue(message, priority)
+      }
 
       console.log('📤 [ChatService] 消息已发送:', messageId)
       return messageId
@@ -446,6 +451,7 @@ export class ChatService {
    * 通知消息更新
    */
   private notifyMessageUpdate(messages: ChatMessage[]): void {
+    console.log('🔔 [ChatService] notifyMessageUpdate, listeners:', this.messageListeners.size, 'messages:', messages.length)
     this.messageListeners.forEach(listener => {
       try {
         listener(messages)

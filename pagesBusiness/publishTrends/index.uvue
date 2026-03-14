@@ -265,7 +265,7 @@ const handlePublish = () => {
 
 <style scoped>
 .publish-page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #ffffff;
 	padding: 28rpx;
 }

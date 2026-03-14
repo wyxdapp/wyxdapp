@@ -391,7 +391,7 @@ import { getUrlParams } from '@/common/utils/security/urlValidator.uts'
 import { toUTSJSON, getString, getNumber } from '@/common/utils/typeConverter'
 
 // ==================== Store 导入 ====================
-import { useUserStore, initUserInfoAction, getUserShortKid, getUserVipStatus, getUserVipExpireTime, updateUserInfoAction } from '@/stores/user.uts'
+import { useUserStore, initUserInfoAction, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
 import { VIP_ACTIVATED, VIP_TYPE_YEARLY } from '@/common/config/businessCodes.uts'
 import { 
 	isFollowing as isFollowingFn, 
@@ -488,6 +488,7 @@ import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
 import GiftSelector from '@/components/lottery/GiftSelector.uvue'
 import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
 import { deleteTrends, setTrendsTop, setTrendsPrivate } from '@/common/services/trendsService.uts'
 import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
 
@@ -1667,21 +1668,6 @@ const onMoreClick = (item: UTSJSONObject | null) => {
 }
 
 /**
- * 检查 VIP 状态
- */
-const checkVipStatusForTrends = (): boolean => {
-	const vipStatus = getUserVipStatus()
-	const vipExpireTime = getUserVipExpireTime()
-	if (vipStatus != VIP_ACTIVATED) return false
-	if (vipExpireTime != null && vipExpireTime != '') {
-		const expireDate = new Date(vipExpireTime)
-		const now = new Date()
-		return expireDate > now
-	}
-	return true
-}
-
-/**
  * 更新动态列表项状态
  */
 const updateTrendsItemStatus = (kid: string, key: string, value: number) => {
@@ -1829,28 +1815,13 @@ const handleTrendsShare = async () => {
 }
 
 /**
- * 顶置操作
+ * 顶置操作（使用统一会员守卫）
  */
 const handleTrendsTop = () => {
 	if (selectedTrendsItem.value == null) return
 	const selectedItem = selectedTrendsItem.value as any
-	if (checkVipStatusForTrends() == false) {
-		if (isMemberFeatureEnabled() == false) {
-			uni.showToast({ title: '会员功能暂未开放', icon: 'none' })
-			return
-		}
-		uni.showModal({
-			title: '提示',
-			content: '顶置功能需要开通会员',
-			confirmText: '去开通',
-			success: (res: UniShowModalResult) => {
-				if (res.confirm == true) {
-					uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
-				}
-			}
-		})
-		return
-	}
+	// 使用统一会员守卫检查权限
+	if (checkMemberGuard('trends_top', '您没有权限此操作', '顶置功能需要开通会员，是否前往开通？') == false) return
 	const kid = getStringProp(selectedItem, 'kid')
 	const onTop = getNumberProp(selectedItem, 'onTop')
 	const isCurrentlyTop = onTop == 10

@@ -122,6 +122,16 @@
 						<text class="system-notification-link">查看详情 ></text>
 					</view>
 				</view>
+				
+				<!-- ⭐ 兜底：未识别类型的消息，按文本显示内容 -->
+				<view v-else class="text-content">
+					<RichTextContent 
+						:content="getMessageContent()"
+						:isSelf="isSelf"
+						@linkClick="handleLinkClick"
+						@phoneClick="handlePhoneClick"
+					/>
+				</view>
 			</view>
 		</view>
 	</view>
@@ -230,7 +240,7 @@ const getMessageProp = (key: string): any => {
 		// 直接访问失败
 	}
 	
-	// 方式2：通过 JSON 序列化
+	// 方式2：通过 JSON 序列化（APP 端 UTSJSONObject 可能需要这种方式）
 	try {
 		const msgStr = JSON.stringify(msgAny)
 		if (msgStr != null && msgStr != '' && msgStr != '{}') {
@@ -244,6 +254,23 @@ const getMessageProp = (key: string): any => {
 		}
 	} catch (e2) {
 		// 序列化也失败
+	}
+	
+	// ⭐ 方式3：APP 端最终 fallback - 尝试通过 messageJson 重新解析
+	// 某些情况下 computed 可能未及时更新
+	const jsonStr = props.messageJson
+	if (jsonStr != null && jsonStr != '') {
+		try {
+			const parsed3 = JSON.parse(jsonStr) as UTSJSONObject
+			if (parsed3 != null) {
+				const val = parsed3.get(key)
+				if (val != null) {
+					return val
+				}
+			}
+		} catch (e3) {
+			// 最终 fallback 也失败
+		}
 	}
 	
 	return ''
@@ -330,6 +357,14 @@ const isTextMessage = (): boolean => {
 	if (msgTypeNum == 10 || typeStr == 'system_notification') {
 		return false
 	}
+	// 🔧 排除 content 为分享卡片 JSON 的情况（类型信息丢失时的 fallback）
+	const content = getMessageProp('content')
+	if (content != '' && content != {}) {
+		const contentStr = content.toString()
+		if (contentStr.charAt(0) == '{' && contentStr.indexOf('"cardType"') >= 0) {
+			return false
+		}
+	}
 	return typeStr == 'text' || msgTypeNum == 1
 }
 
@@ -362,7 +397,19 @@ const isShareMessage = (): boolean => {
 	const messageType = getMessageProp('messageType')
 	const typeStr = type.toString()
 	const msgTypeNum = parseInt(messageType.toString())
-	return typeStr == 'share' || msgTypeNum == 6
+	if (typeStr == 'share' || msgTypeNum == 6) {
+		return true
+	}
+	// 🔧 fallback：如果类型信息丢失，通过 content 内容识别分享卡片
+	// 分享卡片的 content 是 JSON 格式且包含 cardType 字段
+	const content = getMessageProp('content')
+	if (content != '' && content != {}) {
+		const contentStr = content.toString()
+		if (contentStr.charAt(0) == '{' && contentStr.indexOf('"cardType"') >= 0) {
+			return true
+		}
+	}
+	return false
 }
 
 const isOrderMessage = (): boolean => {
@@ -844,6 +891,10 @@ const getImageClass = (): string => {
 	max-width: 520rpx;
 	flex-direction: column;
 	margin-left: 20rpx;
+	/* #ifdef H5 */
+	overflow: hidden;
+	min-width: 0;
+	/* #endif */
 }
 
 .message-bubble-wrapper.is-self .bubble-content {
@@ -884,6 +935,12 @@ const getImageClass = (): string => {
 	border-radius: 12rpx; /* 小圆角，更商务简洁 */
 	/* box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.03); */
 	position: relative;
+	overflow: hidden;
+	/* #ifdef H5 */
+	word-break: break-all;
+	white-space: normal;
+	min-width: 0;
+	/* #endif */
 }
 
 .bubble-other {
@@ -904,6 +961,21 @@ const getImageClass = (): string => {
 .text-inner {
 	font-size: 32rpx; /* 加大字号 */
 	line-height: 48rpx; /* 1.5 倍行高 */
+	/* #ifdef H5 */
+	word-break: break-all;
+	/* #endif */
+}
+
+/* 文本消息容器 */
+.text-content {
+	/* #ifdef H5 */
+	max-width: 100%;
+	display: block;
+	overflow: hidden;
+	word-break: break-all;
+	white-space: normal;
+	min-width: 0;
+	/* #endif */
 }
 
 .bubble-other .text-inner {

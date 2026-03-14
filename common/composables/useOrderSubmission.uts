@@ -13,6 +13,17 @@ export interface SubmissionConfig {
   onError?: (error: any) => void
 }
 
+// SubmissionConfig 实现类（避免对象字面量 as any as Interface 在 Android 上的 ClassCastException）
+export class SubmissionConfigImpl implements SubmissionConfig {
+  successMessage: string | null = null
+  navigationDelay: number | null = null
+  shouldNavigateBack: boolean | null = null
+  shouldNavigateToPayment: boolean | null = null
+  paymentUrl: string | null = null
+  onSuccess: ((result: any) => void) | null = null
+  onError: ((result: any) => void) | null = null
+}
+
 // API函数类型
 type OrderApiFunction = (params: any) => Promise<any>
 
@@ -74,16 +85,14 @@ export function useOrderSubmission(
   const onSuccessVal = (configVal != null) ? configVal.onSuccess : null
   const onErrorVal = (configVal != null) ? configVal.onError : null
   
-  const defaultConfigRaw = {
-    successMessage: successMessageVal,
-    navigationDelay: navigationDelayVal,
-    shouldNavigateBack: shouldNavigateBackVal,
-    shouldNavigateToPayment: shouldNavigateToPaymentVal,
-    paymentUrl: paymentUrlVal,
-    onSuccess: onSuccessVal,
-    onError: onErrorVal
-  } as any
-  const defaultConfig = defaultConfigRaw as SubmissionConfig
+  const defaultConfig = new SubmissionConfigImpl()
+  defaultConfig.successMessage = successMessageVal
+  defaultConfig.navigationDelay = navigationDelayVal
+  defaultConfig.shouldNavigateBack = shouldNavigateBackVal
+  defaultConfig.shouldNavigateToPayment = shouldNavigateToPaymentVal
+  defaultConfig.paymentUrl = paymentUrlVal
+  defaultConfig.onSuccess = onSuccessVal
+  defaultConfig.onError = onErrorVal
 
   // 提交状态
   const isSubmitting = ref(false)

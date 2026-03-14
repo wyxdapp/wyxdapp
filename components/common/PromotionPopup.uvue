@@ -79,8 +79,7 @@
 
 <script setup lang="uts">
 import { ref, watch } from 'vue'
-import { isUserVip } from '@/stores/user.uts'
-import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
 import { currentTheme } from '@/stores/theme.uts'
 
 // Props定义
@@ -152,18 +151,8 @@ const handleHomeShowChange = (e: any) => {
 }
 
 const handleTopRecommendChange = (e: any) => {
-	const isVip = isUserVip()
-	if (isVip == false) {
-		// 检查会员功能是否开启
-		if (isMemberFeatureEnabled() == false) {
-			uni.showToast({
-				title: '会员功能暂未开放',
-				icon: 'none'
-			})
-			return
-		}
-		// 用户不是会员，跳转到会员开通页面
-		uni.navigateTo({ url: '/pagesUser/my/proveDetails/vip' })
+	// 使用统一会员守卫检查权限
+	if (checkMemberGuard('top_recommend') == false) {
 		return
 	}
 	// 用户是会员，直接设置顶置推荐状态

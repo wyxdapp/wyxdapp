@@ -113,6 +113,37 @@ export class MessageQueueManager {
   }
 
   /**
+   * 使用已有的临时ID添加消息到队列（跳过 addTempMessage）
+   * 用于 useChatMessages 已经生成临时消息的场景，避免双重临时消息
+   */
+  enqueueWithExistingTempId(tempId: string, message: AddTempMessageParams, priority: number = 0): string {
+    // 🔧 修复：将消息注册到 messageStateManager（使用传入的 tempId，不生成新 ID）
+    // 这样 handleMessageSent 的 findTempMessageByContent 才能找到它，完成 tempId→realId 映射
+    messageStateManager.registerTempMessage(tempId, message)
+    
+    // 更新状态为发送中
+    messageStateManager.updateMessageStatus(tempId, MessageStatus.SENDING, '')
+    
+    // 创建队列项
+    const queueItem = new QueueItem()
+    queueItem.id = tempId
+    queueItem.message = message
+    queueItem.retryCount = 0
+    queueItem.nextRetryTime = Date.now()
+    queueItem.priority = priority
+    
+    // 添加到队列并排序
+    this.sendQueue.push(queueItem)
+    this.sortQueue()
+    
+    // 开始处理队列
+    this.processQueue()
+    
+    console.log('📤 [MessageQueue] 消息已入队(复用tempId):', tempId)
+    return tempId
+  }
+
+  /**
    * 处理队列
    */
   private async processQueue(): Promise<void> {
@@ -162,9 +193,10 @@ export class MessageQueueManager {
   private async sendMessage(queueItem: QueueItem): Promise<void> {
     const { message } = queueItem
     
-    // 构造WebSocket消息
+    // 构造WebSocket消息（携带 tempId 以便服务端在 sent 回执中原样返回）
     const wsMessage = {
       type: 'chat_message',
+      tempId: queueItem.id,
       toUserKid: message.receiverId,
       messageType: this.mapMessageTypeToparseFloat(message.type),
       content: message.content,
@@ -179,6 +211,9 @@ export class MessageQueueManager {
 
   /**
    * 发送WebSocket消息
+   * 🔧 修复：使用 socketTask.send() 替代 uni.sendSocketMessage()
+   * uni.sendSocketMessage 是全局 API，会发送到最后创建的 WebSocket 连接上
+   * 在多用户同时在线时会导致消息发送到错误用户的连接，造成身份混淆
    */
   private async sendWebSocketMessage(message: UTSJSONObject): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -190,13 +225,10 @@ export class MessageQueueManager {
         reject(new Error('WebSocket未连接'))
         return
       }
-      
-      // 🔄 验证socketTask的有效性（UTS 规范：不能直接访问 any 类型的属性）
-      // 使用 uni.sendSocketMessage 替代直接调用 socketTask.send
 
-      // 发送消息
+      // 🔧 修复：使用 socketTask.send() 确保消息通过当前用户的连接发送
       try {
-        uni.sendSocketMessage({
+        socketTask.send({
           data: JSON.stringify(message),
           success: () => {
             resolve()

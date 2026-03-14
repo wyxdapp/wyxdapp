@@ -104,14 +104,26 @@ watch(contentComputed, () => {
 
 <style>
 .rich-text-content {
+	/* #ifndef H5 */
 	flex-direction: row;
 	flex-wrap: wrap;
+	/* #endif */
+	/* #ifdef H5 */
+	display: block;
+	word-break: break-all;
+	white-space: normal;
+	overflow-wrap: break-word;
+	/* #endif */
 }
 
 /* 普通文本段落 */
 .text-segment {
 	font-size: 32rpx;
 	line-height: 48rpx;
+	/* #ifdef H5 */
+	word-break: break-all;
+	white-space: normal;
+	/* #endif */
 }
 
 .text-segment-self {
@@ -129,6 +141,10 @@ watch(contentComputed, () => {
 	/* text-decoration 不支持，使用边框模拟下划线 */
 	border-bottom-width: 1rpx;
 	border-bottom-style: solid;
+	/* #ifdef H5 */
+	word-break: break-all;
+	white-space: normal;
+	/* #endif */
 }
 
 .link-segment-self {

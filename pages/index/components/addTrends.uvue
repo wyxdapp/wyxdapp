@@ -794,6 +794,7 @@ onUnmounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -802,6 +803,7 @@ onUnmounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .content-section {

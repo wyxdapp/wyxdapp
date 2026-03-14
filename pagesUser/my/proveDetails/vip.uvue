@@ -1580,6 +1580,7 @@ const confirmPurchase = () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -1588,6 +1589,7 @@ const confirmPurchase = () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* 用户信息卡片 - 使用 relative 定位和 z-index 确保在背景图上方 */

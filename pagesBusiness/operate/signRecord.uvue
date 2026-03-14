@@ -743,7 +743,7 @@ onUnmounted(() => {
 
 <style scoped>
 .sign-record-page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #f5f5f5;
 	padding-top: 20rpx;
 	padding-bottom: 20rpx;

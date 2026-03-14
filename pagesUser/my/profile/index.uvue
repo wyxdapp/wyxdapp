@@ -56,15 +56,13 @@
 					</view>
 				</view>
 				
-				<picker mode="date" :value="formBirthDate" @change="onBirthDateChange" @cancel="onBirthDateCancel">
-					<view class="profile-item">
-						<text class="item-label">出生日期</text>
-						<view class="item-value">
-							<text class="value-text">{{ displayBirthDate }}</text>
-							<text class="arrow">›</text>
-						</view>
+				<view class="profile-item" @click="openBirthDatePicker">
+					<text class="item-label">出生日期</text>
+					<view class="item-value">
+						<text class="value-text">{{ displayBirthDate }}</text>
+						<text class="arrow">›</text>
 					</view>
-				</picker>
+				</view>
 				
 				<view class="profile-item" @click="handleEdit('occupation', displayOccupation, '职业')">
 					<text class="item-label">职业</text>
@@ -116,7 +114,7 @@
 				</view>
 				
 				<view v-if="isTextInput == true" class="popup-content">
-					<input v-model="editValue" class="edit-input" :placeholder="'请输入' + currentEditTitle" :maxlength="getMaxLength()" />
+					<input v-model="editValue" class="edit-input" :placeholder="'请输入' + currentEditTitle" :maxlength="getMaxLength()" :adjust-position="true" :cursor-spacing="200" />
 				</view>
 				
 				<view v-if="currentEditType == 'sex'" class="popup-content">
@@ -154,45 +152,75 @@
 		
 		<!-- 联系方式编辑弹窗 -->
 		<view v-if="showContactPopup == true" class="popup-mask" @click="cancelContactEdit">
-			<view class="popup-container" @click.stop="">
-				<view class="popup-header">
-					<text class="popup-title">编辑联系方式</text>
+			<scroll-view scroll-y="true" class="popup-scroll-wrapper" @click.stop="">
+				<view class="popup-container popup-container-static" @click.stop="">
+					<view class="popup-header">
+						<text class="popup-title">编辑联系方式</text>
+					</view>
+					
+					<view class="popup-content contact-form">
+						<view class="form-item">
+							<text class="form-label">联系姓名</text>
+							<input v-model="contactFormRealname" class="form-input" placeholder="请输入联系姓名" maxlength="20" :adjust-position="true" :cursor-spacing="200" />
+						</view>
+						
+						<view class="form-item">
+							<text class="form-label">手机号码</text>
+							<input v-model="contactFormPhone" class="form-input" placeholder="请输入手机号码" type="number" maxlength="11" :adjust-position="true" :cursor-spacing="200" />
+						</view>
+						
+						<view class="form-item">
+							<text class="form-label">QQ号码</text>
+							<input v-model="contactFormQQ" class="form-input" placeholder="请输入QQ号码" type="number" maxlength="15" :adjust-position="true" :cursor-spacing="200" />
+						</view>
+						
+						<view class="form-item">
+							<text class="form-label">微信号</text>
+							<input v-model="contactFormWeixin" class="form-input" placeholder="请输入微信号" maxlength="30" :adjust-position="true" :cursor-spacing="200" />
+						</view>
+						
+						<view class="form-item">
+							<text class="form-label">邮箱</text>
+							<input v-model="contactFormEmail" class="form-input" placeholder="请输入邮箱地址" maxlength="50" :adjust-position="true" :cursor-spacing="200" />
+						</view>
+					</view>
+					
+					<view class="popup-actions">
+						<view class="action-btn cancel-btn" @click="cancelContactEdit">
+							<text class="cancel-btn-text">取消</text>
+						</view>
+						<view class="action-btn confirm-btn" @click="confirmContactEdit">
+							<text class="confirm-btn-text">确认</text>
+						</view>
+					</view>
 				</view>
-				
-				<view class="popup-content contact-form">
-					<view class="form-item">
-						<text class="form-label">联系姓名</text>
-						<input v-model="contactFormRealname" class="form-input" placeholder="请输入联系姓名" maxlength="20" />
-					</view>
-					
-					<view class="form-item">
-						<text class="form-label">手机号码</text>
-						<input v-model="contactFormPhone" class="form-input" placeholder="请输入手机号码" type="number" maxlength="11" />
-					</view>
-					
-					<view class="form-item">
-						<text class="form-label">QQ号码</text>
-						<input v-model="contactFormQQ" class="form-input" placeholder="请输入QQ号码" type="number" maxlength="15" />
-					</view>
-					
-					<view class="form-item">
-						<text class="form-label">微信号</text>
-						<input v-model="contactFormWeixin" class="form-input" placeholder="请输入微信号" maxlength="30" />
-					</view>
-					
-					<view class="form-item">
-						<text class="form-label">邮箱</text>
-						<input v-model="contactFormEmail" class="form-input" placeholder="请输入邮箱地址" maxlength="50" />
-					</view>
+			</scroll-view>
+		</view>
+		
+		<!-- 出生日期选择器弹窗 -->
+		<view v-if="showBirthDatePicker == true" class="picker-mask" @click="closeBirthDatePicker">
+			<view class="picker-popup" @click.stop="">
+				<view class="picker-header">
+					<text class="picker-cancel" @click="closeBirthDatePicker">取消</text>
+					<text class="picker-title">选择日期</text>
+					<text class="picker-confirm" @click="confirmBirthDate">确定</text>
 				</view>
-				
-				<view class="popup-actions">
-					<view class="action-btn cancel-btn" @click="cancelContactEdit">
-						<text class="cancel-btn-text">取消</text>
-					</view>
-					<view class="action-btn confirm-btn" @click="confirmContactEdit">
-						<text class="confirm-btn-text">确认</text>
-					</view>
+				<view class="picker-body">
+					<scroll-view class="picker-column" :scroll-y="true" :scroll-into-view="bdYearScrollId">
+						<view v-for="(year, yIndex) in (bdYearList as Array<number>)" :key="yIndex" :id="'bdyear-' + year.toString()" class="picker-item" :class="{ 'picker-item-active': bdTempYear == year }" @click="bdSelectYear(year)">
+							<text class="picker-item-text" :class="{ 'picker-item-text-active': bdTempYear == year }">{{ year }}年</text>
+						</view>
+					</scroll-view>
+					<scroll-view class="picker-column" :scroll-y="true" :scroll-into-view="bdMonthScrollId">
+						<view v-for="(month, mIndex) in (bdMonthList as Array<number>)" :key="mIndex" :id="'bdmonth-' + month.toString()" class="picker-item" :class="{ 'picker-item-active': bdTempMonth == month }" @click="bdSelectMonth(month)">
+							<text class="picker-item-text" :class="{ 'picker-item-text-active': bdTempMonth == month }">{{ month }}月</text>
+						</view>
+					</scroll-view>
+					<scroll-view class="picker-column" :scroll-y="true" :scroll-into-view="bdDayScrollId">
+						<view v-for="(day, dIndex) in (bdDayList as Array<number>)" :key="dIndex" :id="'bdday-' + day.toString()" class="picker-item" :class="{ 'picker-item-active': bdTempDay == day }" @click="bdSelectDay(day)">
+							<text class="picker-item-text" :class="{ 'picker-item-text-active': bdTempDay == day }">{{ day }}日</text>
+						</view>
+					</scroll-view>
 				</view>
 			</view>
 		</view>
@@ -661,8 +689,105 @@ const handleEdit = (type: string, value: string, title: string) => {
 const closeEditPopup = () => { showEditPopup.value = false }
 const selectSex = (sex: string) => { editValue.value = sex }
 const selectEducation = (edu: string) => { editValue.value = edu }
-const onBirthDateCancel = () => {
-	// 用户取消选择，无需处理
+
+// ========== 出生日期滚轮选择器 ==========
+const showBirthDatePicker = ref<boolean>(false)
+const bdYearList = ref<Array<number>>([])
+const bdMonthList = ref<Array<number>>([])
+const bdDayList = ref<Array<number>>([])
+const bdTempYear = ref<number>(1990)
+const bdTempMonth = ref<number>(1)
+const bdTempDay = ref<number>(1)
+const bdYearScrollId = ref<string>('')
+const bdMonthScrollId = ref<string>('')
+const bdDayScrollId = ref<string>('')
+
+const bdGetDaysInMonth = (year: number, month: number): number => {
+	const date = new Date(year, month, 0)
+	return date.getDate()
+}
+
+const bdInitDayList = () => {
+	const days: Array<number> = []
+	const daysInMonth = bdGetDaysInMonth(bdTempYear.value, bdTempMonth.value)
+	let i = 1
+	while (i <= daysInMonth) {
+		days.push(i)
+		i = i + 1
+	}
+	bdDayList.value = days
+}
+
+const openBirthDatePicker = () => {
+	// 初始化年份列表（1920 ~ 当前年份）
+	const years: Array<number> = []
+	const currentYear = new Date().getFullYear()
+	let y = 1920
+	while (y <= currentYear) {
+		years.push(y)
+		y = y + 1
+	}
+	bdYearList.value = years
+	
+	// 初始化月份列表
+	const months: Array<number> = []
+	let m = 1
+	while (m <= 12) {
+		months.push(m)
+		m = m + 1
+	}
+	bdMonthList.value = months
+	
+	// 解析当前出生日期
+	const currentValue = formBirthDate.value
+	if (currentValue != null && currentValue != '') {
+		const parts = currentValue.split('-')
+		if (parts.length >= 3) {
+			const yVal = parseInt(parts[0])
+			if (isNaN(yVal) == false) bdTempYear.value = yVal
+			const mVal = parseInt(parts[1])
+			if (isNaN(mVal) == false) bdTempMonth.value = mVal
+			const dVal = parseInt(parts[2])
+			if (isNaN(dVal) == false) bdTempDay.value = dVal
+		}
+	} else {
+		bdTempYear.value = 1990
+		bdTempMonth.value = 1
+		bdTempDay.value = 1
+	}
+	
+	bdInitDayList()
+	
+	// 设置滚动定位
+	bdYearScrollId.value = 'bdyear-' + bdTempYear.value.toString()
+	bdMonthScrollId.value = 'bdmonth-' + bdTempMonth.value.toString()
+	bdDayScrollId.value = 'bdday-' + bdTempDay.value.toString()
+	
+	showBirthDatePicker.value = true
+}
+
+const closeBirthDatePicker = () => {
+	showBirthDatePicker.value = false
+}
+
+const bdSelectYear = (year: number) => {
+	bdTempYear.value = year
+	bdInitDayList()
+	if (bdTempDay.value > bdDayList.value.length) {
+		bdTempDay.value = bdDayList.value.length
+	}
+}
+
+const bdSelectMonth = (month: number) => {
+	bdTempMonth.value = month
+	bdInitDayList()
+	if (bdTempDay.value > bdDayList.value.length) {
+		bdTempDay.value = bdDayList.value.length
+	}
+}
+
+const bdSelectDay = (day: number) => {
+	bdTempDay.value = day
 }
 
 const validateInput = (): boolean => {
@@ -747,24 +872,6 @@ const submitUpdate = async () => {
 	}
 }
 
-const onBirthDateChange = (e: UTSJSONObject | null) => {
-	try {
-		const raw = (e != null) ? JSON.stringify(e) : ''
-		if (raw != null && raw != '') {
-			const m = raw.match(/"value"\s*:\s*"([^"]+)"/)
-			if (m != null && m[1] != null) {
-				const newDate = m[1].toString()
-				if (newDate != formBirthDate.value) {
-					currentEditType.value = 'birthDate'
-					editValue.value = newDate
-					originalValue.value = formBirthDate.value
-					submitUpdate()
-				}
-			}
-		}
-	} catch (err) {}
-}
-
 const confirmEdit = async () => {
 	if (validateInput() == false) return
 	if (editValue.value == originalValue.value) {
@@ -772,6 +879,20 @@ const confirmEdit = async () => {
 		return
 	}
 	await submitUpdate()
+}
+
+const confirmBirthDate = () => {
+	const monthStr = (bdTempMonth.value < 10) ? ('0' + bdTempMonth.value.toString()) : bdTempMonth.value.toString()
+	const dayStr = (bdTempDay.value < 10) ? ('0' + bdTempDay.value.toString()) : bdTempDay.value.toString()
+	const dateValue = bdTempYear.value.toString() + '-' + monthStr + '-' + dayStr
+	
+	showBirthDatePicker.value = false
+	
+	// 提交更新
+	currentEditType.value = 'birthDate'
+	editValue.value = dateValue
+	originalValue.value = formBirthDate.value
+	submitUpdate()
 }
 
 const uploadAvatar = (tempFilePath: string) => {
@@ -1061,7 +1182,7 @@ const confirmContactEdit = async () => {
 
 <style scoped>
 .profile-page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #F5F5F5;
 	flex-direction: column;
 }
@@ -1072,6 +1193,7 @@ const confirmContactEdit = async () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -1080,6 +1202,7 @@ const confirmContactEdit = async () => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */
@@ -1131,6 +1254,7 @@ const confirmContactEdit = async () => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 
 .avatar-section {
@@ -1193,9 +1317,16 @@ const confirmContactEdit = async () => {
 	right: 0;
 	bottom: 0;
 	background-color: rgba(0, 0, 0, 0.5);
+	display: flex;
 	flex-direction: column;
 	justify-content: center;
 	align-items: center;
+	z-index: 999;
+}
+
+.popup-scroll-wrapper {
+	width: 600rpx;
+	max-height: 800rpx;
 }
 
 .popup-container {
@@ -1203,6 +1334,10 @@ const confirmContactEdit = async () => {
 	background-color: #ffffff;
 	border-radius: 20rpx;
 	flex-direction: column;
+}
+
+.popup-container-static {
+	width: 600rpx;
 }
 
 .popup-header {
@@ -1322,5 +1457,88 @@ const confirmContactEdit = async () => {
 	padding-left: 15rpx;
 	padding-right: 15rpx;
 	font-size: 26rpx;
+}
+
+/* 出生日期滚轮选择器 */
+.picker-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.picker-popup {
+	width: 750rpx;
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.picker-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.picker-cancel {
+	font-size: 30rpx;
+	color: #999999;
+}
+
+.picker-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.picker-confirm {
+	font-size: 30rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.picker-body {
+	flex-direction: row;
+	height: 400rpx;
+}
+
+.picker-column {
+	flex: 1;
+	height: 400rpx;
+}
+
+.picker-item {
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.picker-item-active {
+	background-color: #E6F7FF;
+}
+
+.picker-item-text {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.picker-item-text-active {
+	color: #37B1F2;
+	font-weight: bold;
 }
 </style>

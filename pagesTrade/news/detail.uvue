@@ -22,8 +22,8 @@
 			id="messageScrollView"
 			class="message-scroll-view"
 			scroll-y="true"
-			:scroll-into-view="scrollIntoViewId"
-			:scroll-with-animation="false"
+			:scroll-top="scrollTopValue"
+			:scroll-with-animation="scrollWithAnimation"
 			@scrolltoupper="loadMoreHistory"
 		>
 			<!-- 加载更多提示 -->
@@ -96,7 +96,6 @@
 			:has-more="hasMoreHistory"
 			:loading="loadingHistory"
 			:list-height="messageListHeight"
-			:auto-scroll-to-bottom="autoScrollToBottom"
 			:target-medal-level="targetUserGiftLevel"
 			:target-vip-type="getVipTypeString(targetUserVip, targetUserVipType)"
 			@load-more="handleLoadMoreHistory"
@@ -192,17 +191,19 @@ import { forceReconnectAction, getWebSocketConnectedStatus } from '@/stores/chat
 import { useUserStore, getUserAvatar as getUserAvatarFromStore } from '@/stores/user'
 import { saveCustomEmojiToServerAction } from '@/stores/emoji.uts'
 import { chatService, ChatServiceStatus } from '@/stores/chatService'
+import { messageStateManager } from '@/stores/messageStateManager'
+import { chatLocalStorageManager } from '@/common/services/chatLocalStorage.uts'
 
 // ========== 工具函数导入 ==========
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
 import { getObjString, getAnyString, mergeMessagesWithoutDuplicates, getMessageTypeNumber } from '@/common/utils/messageHelper.uts'
 import { getUserProfile, getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
-import { pageStatusBarHeight, pageWindowHeight, initPageLayout as initPageLayoutComposable } from '@/common/composables/usePageLayout.uts'
+import { pageStatusBarHeight, pageWindowHeight, initPageLayout as initPageLayoutComposable, resetPageLayout } from '@/common/composables/usePageLayout.uts'
 import { formatChatTime } from '@/common/utils/dateUtils.uts'
 import { handleContact as handleContactAction } from '@/common/composables/useChatActions.uts'
 import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
 import { parseShareCardContent, handleShareCardNavigation } from '@/common/utils/shareCardHelper.uts'
-import { getSafeAreaBottom } from '@/common/utils/systemInfo.uts'
+import { getSafeAreaBottom, isIOS, isWechatBrowser, hasIOSBottomToolbar } from '@/common/utils/systemInfo.uts'
 import { secureLog } from '@/common/utils/security/secureLogger.uts'
 import { safeGetStorageSync, safeSetStorageSync } from '@/common/utils/storageHelper'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
@@ -244,10 +245,9 @@ const showEmoji = ref<boolean>(false)
 const defaultAvatar = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
 const messageListRef = ref<string>('')
 const chatInputRef = ref<string>('')
-const scrollIntoView = ref<string>('')
-const scrollIntoViewId = ref<string>('')
+const scrollTopValue = ref<number>(0)
+const scrollWithAnimation = ref<boolean>(false)
 const messageListHeight = ref<number>(0)
-const autoScrollToBottom = ref<boolean>(true)
 
 // 目标用户信息
 const targetUserNickname = ref<string>('')
@@ -355,15 +355,9 @@ const scrollToBottom = chatMessages.scrollToBottom
 const deleteLocalMessage = chatMessages.deleteLocalMessage
 const copyMessageContent = chatMessages.copyMessageContent
 
-// 加载更多历史消息（禁用自动滚动）
+// 加载更多历史消息
 const handleLoadMoreHistory = () => {
-	// 加载历史消息时禁用自动滚动
-	autoScrollToBottom.value = false
 	loadMoreHistory()
-	// 加载完成后恢复自动滚动（延迟恢复，等待数据更新完成）
-	setTimeout(() => {
-		autoScrollToBottom.value = true
-	}, 500)
 }
 
 // 连接状态 - 直接使用 store 函数，不使用 Composable
@@ -603,10 +597,38 @@ const getMessageJson = (msg: any): string => {
 	if (msg == null) return ''
 	try {
 		const str = JSON.stringify(msg)
-		return (str != null && str != '{}') ? str : ''
+		if (str != null && str != '{}' && str != '') {
+			return str
+		}
 	} catch (e) {
-		return ''
+		// JSON.stringify 失败，尝试手动构建
 	}
+	
+	// ⭐ APP 端 fallback：JSON.stringify 可能对某些对象返回 '{}'
+	// 手动通过 UTSJSONObject.get() 逐字段提取，重新构建 JSON 字符串
+	try {
+		const msgObj = msg as UTSJSONObject
+		if (msgObj != null) {
+			const rebuilt = new UTSJSONObject()
+			const keys = ['id', 'tempId', 'senderId', 'receiverId', 'fromUserKid', 'toUserKid', 'fromUserId',
+				'type', 'messageType', 'content', 'createTime', 'sendTime', 'status',
+				'senderAvatar', 'mediaUrl', 'thumbUrl', 'duration', 'conversationId']
+			for (let i = 0; i < keys.length; i = i + 1) {
+				const key = keys[i]
+				const val = msgObj.get(key)
+				if (val != null) {
+					rebuilt.set(key, val)
+				}
+			}
+			const rebuiltStr = JSON.stringify(rebuilt)
+			if (rebuiltStr != null && rebuiltStr != '{}' && rebuiltStr != '') {
+				return rebuiltStr
+			}
+		}
+	} catch (e2) {
+		// fallback 也失败
+	}
+	return ''
 }
 
 const getMessageKey = (msg: any, index: number): string => {
@@ -1136,9 +1158,8 @@ const handleMessagePhoneClick = (phone: string) => {
  * 转换后的对象格式与 parseApiMessages 输出一致
  */
 const convertChatMessageToPlainObject = (msg: any): UTSJSONObject => {
-	// 安全提取字段值，通过 JSON.stringify → JSON.parse 可能丢失枚举信息
-	// 所以直接访问 ChatMessage 实例的属性
 	let msgId = ''
+	let msgTempId = ''
 	let msgContent = ''
 	let msgSenderId = ''
 	let msgReceiverId = ''
@@ -1152,107 +1173,90 @@ const convertChatMessageToPlainObject = (msg: any): UTSJSONObject => {
 	let msgSendTime = ''
 
 	try {
-		// 尝试直接访问属性（ChatMessage 类实例）
-		const msgObj = msg as UTSJSONObject
-		if (msgObj != null) {
-			// 基础字段
-			const idVal = msgObj.get('id')
+		// ⭐ 修复：通过 JSON.stringify → JSON.parse 安全转换 ChatMessage 类实例
+		// 在 APP 端，class 实例不能直接 as UTSJSONObject，get() 会返回 null
+		const jsonStr = JSON.stringify(msg)
+		const jsonObj = JSON.parse(jsonStr) as UTSJSONObject
+		if (jsonObj != null) {
+			const idVal = jsonObj.get('id')
 			if (idVal != null) msgId = idVal.toString()
 
-			const contentVal = msgObj.get('content')
+			const tempIdVal = jsonObj.get('tempId')
+			if (tempIdVal != null && tempIdVal.toString() != '') msgTempId = tempIdVal.toString()
+
+			const contentVal = jsonObj.get('content')
 			if (contentVal != null) msgContent = contentVal.toString()
 
-			const senderIdVal = msgObj.get('senderId')
+			const senderIdVal = jsonObj.get('senderId')
 			if (senderIdVal != null) msgSenderId = senderIdVal.toString()
 
-			const receiverIdVal = msgObj.get('receiverId')
+			const receiverIdVal = jsonObj.get('receiverId')
 			if (receiverIdVal != null) msgReceiverId = receiverIdVal.toString()
 
-			const createTimeVal = msgObj.get('createTime')
+			const createTimeVal = jsonObj.get('createTime')
 			if (createTimeVal != null) msgCreateTime = createTimeVal.toString()
 
-			const conversationIdVal = msgObj.get('conversationId')
+			const conversationIdVal = jsonObj.get('conversationId')
 			if (conversationIdVal != null) msgConversationId = conversationIdVal.toString()
 
-			// ⭐ 关键：处理 MessageType 枚举 → 字符串
-			// 枚举值的 .value 属性包含字符串值（如 'text'、'image'）
-			// 但在 UTS APP 端，直接 toString() 可能返回枚举对象的序列化形式
-			// 所以尝试多种方式提取
-			const typeVal = msgObj.get('type')
+			// 处理 MessageType 枚举（可能序列化为 {value: "text"} 或直接 "text"）
+			const typeVal = jsonObj.get('type')
 			if (typeVal != null) {
 				const typeString = typeVal.toString()
-				// 检查是否已经是有效的类型字符串
 				if (typeString == 'text' || typeString == 'image' || typeString == 'voice' || typeString == 'video' || typeString == 'share' || typeString == 'gift' || typeString == 'system_notification') {
 					typeStr = typeString
 				} else {
-					// 枚举对象可能有 value 属性
+					// 枚举对象序列化为 {value: "xxx"} 的情况
 					try {
-						const typeJsonStr = JSON.stringify(typeVal)
-						const typeJsonObj = JSON.parse(typeJsonStr) as UTSJSONObject
+						const typeJsonObj = JSON.parse(JSON.stringify(typeVal)) as UTSJSONObject
 						if (typeJsonObj != null) {
 							const valueField = typeJsonObj.get('value')
 							if (valueField != null && valueField.toString() != '') {
 								typeStr = valueField.toString()
 							}
 						}
-					} catch (e) {
-						// 回退：使用默认值 'text'
-					}
+					} catch (e2) {}
 				}
 			}
 
-			// ⭐ 处理 MessageStatus 枚举 → 字符串
-			const statusVal = msgObj.get('status')
+			// 处理 MessageStatus 枚举
+			const statusVal = jsonObj.get('status')
 			if (statusVal != null) {
 				const statusString = statusVal.toString()
 				if (statusString == 'pending' || statusString == 'sending' || statusString == 'sent' || statusString == 'failed' || statusString == 'received') {
 					statusStr = statusString
 				} else {
 					try {
-						const statusJsonStr = JSON.stringify(statusVal)
-						const statusJsonObj = JSON.parse(statusJsonStr) as UTSJSONObject
+						const statusJsonObj = JSON.parse(JSON.stringify(statusVal)) as UTSJSONObject
 						if (statusJsonObj != null) {
 							const valueField = statusJsonObj.get('value')
 							if (valueField != null && valueField.toString() != '') {
 								statusStr = valueField.toString()
 							}
 						}
-					} catch (e) {
-						// 回退：使用默认值 'pending'
-					}
+					} catch (e2) {}
 				}
 			}
 
-			// 可选字段：mediaUrl
-			const mediaUrlVal = msgObj.get('mediaUrl')
-			if (mediaUrlVal != null && mediaUrlVal.toString() != '') {
-				msgMediaUrl = mediaUrlVal.toString()
-			}
+			const mediaUrlVal = jsonObj.get('mediaUrl')
+			if (mediaUrlVal != null && mediaUrlVal.toString() != '') msgMediaUrl = mediaUrlVal.toString()
 
-			// 可选字段：thumbUrl
-			const thumbUrlVal = msgObj.get('thumbUrl')
-			if (thumbUrlVal != null && thumbUrlVal.toString() != '') {
-				msgThumbUrl = thumbUrlVal.toString()
-			}
+			const thumbUrlVal = jsonObj.get('thumbUrl')
+			if (thumbUrlVal != null && thumbUrlVal.toString() != '') msgThumbUrl = thumbUrlVal.toString()
 
-			// 可选字段：duration
-			const durationVal = msgObj.get('duration')
+			const durationVal = jsonObj.get('duration')
 			if (durationVal != null) {
 				const durationNum = parseInt(durationVal.toString())
-				if (isNaN(durationNum) == false) {
-					msgDuration = durationNum
-				}
+				if (isNaN(durationNum) == false) msgDuration = durationNum
 			}
 
-			// 可选字段：sendTime
-			const sendTimeVal = msgObj.get('sendTime')
-			if (sendTimeVal != null && sendTimeVal.toString() != '') {
-				msgSendTime = sendTimeVal.toString()
-			}
+			const sendTimeVal = jsonObj.get('sendTime')
+			if (sendTimeVal != null && sendTimeVal.toString() != '') msgSendTime = sendTimeVal.toString()
 		}
 	} catch (e) {
-		// 如果直接访问失败，尝试通过 getAnyString 提取
+		// fallback：逐字段提取
 		msgId = getAnyString(msg, 'id')
+		msgTempId = getAnyString(msg, 'tempId')
 		msgContent = getAnyString(msg, 'content')
 		msgSenderId = getAnyString(msg, 'senderId')
 		msgReceiverId = getAnyString(msg, 'receiverId')
@@ -1274,6 +1278,7 @@ const convertChatMessageToPlainObject = (msg: any): UTSJSONObject => {
 	// 构造与 parseApiMessages 输出格式一致的普通对象
 	const plainObj = new UTSJSONObject()
 	plainObj.set('id', msgId)
+	plainObj.set('tempId', msgTempId)
 	plainObj.set('senderId', msgSenderId)
 	plainObj.set('receiverId', msgReceiverId)
 	plainObj.set('fromUserKid', msgSenderId)
@@ -1302,55 +1307,210 @@ const setupMessageListeners = () => {
 		offMessageChange = null
 	}
 	
-	// 监听消息变化（保留用于接收其他用户的消息）
+	// 监听消息变化（保留用于接收其他用户的消息 + 处理自发消息确认）
 	offMessageChange = chatService.onMessageChange((messages) => {
-		// ⭐ 过滤只属于当前会话的消息（主要是接收到的消息）
+		console.log('🔔 [detail] onMessageChange 触发, 消息数:', messages.length)
 		const currentUserIdVal = currentUserId.value
 		const targetUserIdVal = targetUserId.value
 
-		// 🔧 修复：获取当前会话的所有消息，并将 ChatMessage 实例转换为普通对象
+		// 🔧 修复：同时处理两类消息
+		// 1. 接收到的对方消息 → 合并到 messageList
+		// 2. 自己发送的已确认消息（tempId→realId 映射完成）→ 更新 messageList 中的临时消息 ID 和 createTime
 		const currentConversationMessages: Array<UTSJSONObject> = []
+		
 		for (let i = 0; i < messages.length; i = i + 1) {
 			const msg = messages[i]
 			if (msg == null) continue
 
-			// ⭐ 关键修复：将 ChatMessage 类实例转换为普通对象
-			// 解决 MessageType 枚举在 JSON.stringify 时无法正确序列化的问题
 			const plainMsg = convertChatMessageToPlainObject(msg)
 
-			// 获取消息的发送者和接收者
 			const msgSenderId = getObjString(plainMsg, 'senderId')
 			const msgReceiverId = getObjString(plainMsg, 'receiverId')
-			// 兼容 fromUserKid/toUserKid 字段
 			const fromUserKid = getObjString(plainMsg, 'fromUserKid')
 			const toUserKid = getObjString(plainMsg, 'toUserKid')
 
-			// 使用多种字段判断发送者和接收者
 			const senderIdFinal = (msgSenderId != '') ? msgSenderId : fromUserKid
 			const receiverIdFinal = (msgReceiverId != '') ? msgReceiverId : toUserKid
 
-			// 检查是否属于当前会话（双向匹配）
 			const isCurrentConversation =
 				(senderIdFinal == currentUserIdVal && receiverIdFinal == targetUserIdVal) ||
 				(senderIdFinal == targetUserIdVal && receiverIdFinal == currentUserIdVal)
 
-			// 只处理接收到的消息（发送的消息已经通过直接添加处理）
-			const isReceivedMessage = senderIdFinal == targetUserIdVal
+			if (isCurrentConversation == false) continue
 
-			if (isCurrentConversation == true && isReceivedMessage == true) {
+			console.log('🔔 [detail] 匹配到当前会话消息, sender:', senderIdFinal, 'receiver:', receiverIdFinal, 'status:', getObjString(plainMsg, 'status'))
+
+			const isReceivedMessage = senderIdFinal == targetUserIdVal
+			const isSentByMe = senderIdFinal == currentUserIdVal
+
+			if (isReceivedMessage == true) {
+				// 对方消息 → 收集后合并
 				currentConversationMessages.push(plainMsg)
+			} else if (isSentByMe == true) {
+				// 🔧 修复：自己发送的已确认消息 → 检查是否需要更新 messageList 中的临时消息
+				const msgId = getObjString(plainMsg, 'id')
+				const msgTempId = getObjString(plainMsg, 'tempId')
+				const msgStatus = getObjString(plainMsg, 'status')
+				const serverCreateTime = getObjString(plainMsg, 'createTime')
+				
+				// 如果有 tempId 且状态为 sent，说明 handleMessageSent 已完成 tempId→realId 映射
+				if (msgTempId != '' && msgId != '' && msgId != msgTempId) {
+					// 在 messageList 中查找临时消息并替换
+					for (let j = 0; j < messageList.value.length; j = j + 1) {
+						const existingMsg = messageList.value[j]
+						const existingId = getAnyString(existingMsg, 'id')
+						if (existingId == msgTempId) {
+							// 用服务端确认的 realId 和 createTime 替换临时消息
+							const updatedMsg = new UTSJSONObject()
+							updatedMsg.set('id', msgId)
+							updatedMsg.set('senderId', senderIdFinal)
+							updatedMsg.set('receiverId', receiverIdFinal)
+							updatedMsg.set('type', getAnyString(existingMsg, 'type'))
+							updatedMsg.set('messageType', getAnyString(existingMsg, 'messageType'))
+							updatedMsg.set('content', getAnyString(existingMsg, 'content'))
+							// 🔧 关键：用服务端时间替换本地时间，确保排序正确
+							updatedMsg.set('createTime', (serverCreateTime != '') ? serverCreateTime : getAnyString(existingMsg, 'createTime'))
+							updatedMsg.set('status', (msgStatus != '') ? msgStatus : 'sent')
+							updatedMsg.set('senderAvatar', getAnyString(existingMsg, 'senderAvatar'))
+							messageList.value[j] = updatedMsg
+							// 保存到本地存储（临时 ID 已替换为正式 ID）
+							chatLocalStorageManager.saveMessages(
+								currentUserIdVal,
+								targetUserIdVal,
+								messageList.value
+							)
+							break
+						}
+					}
+				}
 			}
 		}
 
-		// 🔧 修复：合并接收到的消息
+		// 合并接收到的对方消息
 		if (currentConversationMessages.length > 0) {
 			const mergedMessages = mergeMessagesWithoutDuplicates(currentConversationMessages as Array<any>, messageList.value as Array<any>)
 			messageList.value = mergedMessages
 
-			// 滚动到底部
 			nextTick(() => {
 				scrollToBottom()
 			})
+		}
+	})
+	
+	// ⭐ 直接监听发送确认事件（绕过 onMessageChange 链路，确保 APP 端可靠）
+	uni.$on('chat:messageSentConfirmed', (data: any) => {
+		try {
+			const eventData = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+			const tempIdVal = eventData.getString('tempId')
+			const realIdVal = eventData.getString('realId')
+			const statusVal = eventData.getString('status')
+			const createTimeVal = eventData.getString('createTime')
+			
+			if (tempIdVal == null || tempIdVal == '') return
+			
+			console.log('✅ [detail] 收到发送确认事件, tempId:', tempIdVal, '-> realId:', realIdVal)
+			
+			// 在 messageList 中查找临时消息并更新
+			for (let j = 0; j < messageList.value.length; j = j + 1) {
+				const existingMsg = messageList.value[j]
+				const existingId = getAnyString(existingMsg, 'id')
+				if (existingId == tempIdVal) {
+					const updatedMsg = new UTSJSONObject()
+					updatedMsg.set('id', (realIdVal != null && realIdVal != '') ? realIdVal : tempIdVal)
+					updatedMsg.set('tempId', tempIdVal)
+					updatedMsg.set('senderId', getAnyString(existingMsg, 'senderId'))
+					updatedMsg.set('receiverId', getAnyString(existingMsg, 'receiverId'))
+					updatedMsg.set('fromUserKid', getAnyString(existingMsg, 'senderId'))
+					updatedMsg.set('toUserKid', getAnyString(existingMsg, 'receiverId'))
+					updatedMsg.set('type', getAnyString(existingMsg, 'type'))
+					updatedMsg.set('messageType', getAnyString(existingMsg, 'messageType'))
+					updatedMsg.set('content', getAnyString(existingMsg, 'content'))
+					updatedMsg.set('createTime', (createTimeVal != null && createTimeVal != '') ? createTimeVal : getAnyString(existingMsg, 'createTime'))
+					updatedMsg.set('status', (statusVal != null && statusVal != '') ? statusVal : 'sent')
+					updatedMsg.set('senderAvatar', getAnyString(existingMsg, 'senderAvatar'))
+					updatedMsg.set('mediaUrl', getAnyString(existingMsg, 'mediaUrl'))
+					updatedMsg.set('thumbUrl', getAnyString(existingMsg, 'thumbUrl'))
+					// 触发响应式更新：替换整个数组
+					const newList = messageList.value.slice(0)
+					newList[j] = updatedMsg
+					messageList.value = newList
+					break
+				}
+			}
+		} catch (e) {
+			console.error('❌ [detail] 处理发送确认事件失败:', e)
+		}
+	})
+	
+	// ⭐ 直接监听新消息接收事件
+	uni.$on('chat:newMessageReceived', (data: any) => {
+		try {
+			const eventData = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+			const msgSenderId = eventData.getString('senderId')
+			const msgReceiverId = eventData.getString('receiverId')
+			
+			if (msgSenderId == null || msgReceiverId == null) return
+			
+			const currentUserIdVal = currentUserId.value
+			const targetUserIdVal = targetUserId.value
+			
+			// 只处理当前会话的消息
+			const isCurrentConversation =
+				(msgSenderId == currentUserIdVal && msgReceiverId == targetUserIdVal) ||
+				(msgSenderId == targetUserIdVal && msgReceiverId == currentUserIdVal)
+			
+			if (isCurrentConversation == false) return
+			
+			const msgId = eventData.getString('messageId')
+			const msgContent = eventData.getString('content')
+			const msgCreateTime = eventData.getString('createTime')
+			const msgTypeNum = eventData.getNumber('messageType')
+			const conversationId = eventData.getString('conversationId')
+			
+			console.log('📨 [detail] 收到新消息事件, id:', msgId, 'from:', msgSenderId)
+			
+			// 检查是否已存在（避免重复）
+			let alreadyExists = false
+			for (let j = 0; j < messageList.value.length; j = j + 1) {
+				const existingId = getAnyString(messageList.value[j], 'id')
+				if (existingId == msgId) {
+					alreadyExists = true
+					break
+				}
+			}
+			if (alreadyExists == true) return
+			
+			// 构造消息对象
+			let typeStr = 'text'
+			if (msgTypeNum == 2) typeStr = 'image'
+			else if (msgTypeNum == 3) typeStr = 'video'
+			else if (msgTypeNum == 4) typeStr = 'voice'
+			else if (msgTypeNum == 6) typeStr = 'share'
+			else if (msgTypeNum == 7) typeStr = 'gift'
+			
+			const newMsg = new UTSJSONObject()
+			newMsg.set('id', msgId != null ? msgId : '')
+			newMsg.set('senderId', msgSenderId)
+			newMsg.set('receiverId', msgReceiverId != null ? msgReceiverId : '')
+			newMsg.set('fromUserKid', msgSenderId)
+			newMsg.set('toUserKid', msgReceiverId != null ? msgReceiverId : '')
+			newMsg.set('type', typeStr)
+			newMsg.set('messageType', msgTypeNum != null ? msgTypeNum : 1)
+			newMsg.set('content', msgContent != null ? msgContent : '')
+			newMsg.set('createTime', msgCreateTime != null ? msgCreateTime : '')
+			newMsg.set('status', 'received')
+			newMsg.set('conversationId', conversationId != null ? conversationId : '')
+			
+			// 追加到消息列表
+			const newList = messageList.value.slice(0)
+			newList.push(newMsg)
+			messageList.value = newList
+			
+			nextTick(() => {
+				scrollToBottom()
+			})
+		} catch (e) {
+			console.error('❌ [detail] 处理新消息事件失败:', e)
 		}
 	})
 }
@@ -1361,6 +1521,9 @@ const cleanupMessageListeners = () => {
 		existingMessageChange()
 		offMessageChange = null
 	}
+	// 清理 uni.$on 事件监听
+	uni.$off('chat:messageSentConfirmed')
+	uni.$off('chat:newMessageReceived')
 }
 
 // ========== 页面初始化 ==========
@@ -1368,12 +1531,28 @@ const initPageHeight = () => {
 	initPageLayoutComposable()
 	
 	if (pageWindowHeight.value > 0) {
+		// H5端不显示自定义导航栏，只有快捷功能栏
+		// APP端显示状态栏 + 导航栏 + 快捷功能栏
+		let chatHeaderPx = 0
+		// #ifndef H5
 		const navBarPx = 44
 		const actionBarPx = 60
-		const chatHeaderPx = pageStatusBarHeight.value + navBarPx + actionBarPx
+		chatHeaderPx = pageStatusBarHeight.value + navBarPx + actionBarPx
+		// #endif
+		// #ifdef H5
+		const h5ActionBarPx = 60
+		chatHeaderPx = h5ActionBarPx
+		// #endif
+		
 		// 输入框基础高度（padding-top 10px + input-wrapper 40px + padding-bottom 18px ≈ 68px）+ 安全区域高度
 		const safeAreaBottomPx = getSafeAreaBottom()
-		const chatInputPx = 68 + safeAreaBottomPx
+		let chatInputPx = 68 + safeAreaBottomPx
+		// #ifdef H5
+		// iOS 浏览器底部有前进/后退工具栏（Safari约44px、微信约44px），需要额外预留空间
+		if (hasIOSBottomToolbar() == true) {
+			chatInputPx = chatInputPx + 44
+		}
+		// #endif
 		
 		const listHeight = pageWindowHeight.value - chatHeaderPx - chatInputPx
 		
@@ -1395,8 +1574,8 @@ const updateComposableOptions = () => {
 	messagesOptions.currentUserId = currentUserId.value
 	messagesOptions.targetUserId = targetUserId.value
 	messagesOptions.currentUserAvatar = currentUserAvatar.value
-	messagesOptions.scrollIntoView = scrollIntoView
-	messagesOptions.scrollIntoViewId = scrollIntoViewId
+	messagesOptions.scrollTopValue = scrollTopValue
+	messagesOptions.scrollWithAnimation = scrollWithAnimation
 
 	// 初始化需要参数的 Composables
 	initDynamicComposables()
@@ -1456,6 +1635,12 @@ const markConversationAsRead = async () => {
 const doInitChatPage = () => {
 	// 设置当前用户ID
 	chatService.setCurrentUserId(currentUserId.value)
+
+	// 🔧 修复：设置活跃会话，阻止 messageStateManager.persistToStorage 覆盖当前会话的存储
+	const convKey = chatLocalStorageManager.getConversationKey(currentUserId.value, targetUserId.value)
+	if (convKey != '') {
+		messageStateManager.setActiveConversation(convKey)
+	}
 
 	// ⭐ 新增：标记会话已读，清零未读数
 	markConversationAsRead()
@@ -1631,9 +1816,54 @@ onLoad((options: OnLoadOptions) => {
 	initChatPage()
 })
 
+// #ifdef H5
+// 🔧 修复：iOS Safari BFCache 导致返回/前进时页面不重新渲染
+// Safari 通过返回/前进按钮导航时会从 BFCache 恢复页面，onLoad 不会重新触发
+// 监听 pageshow 事件的 persisted 标志来检测 BFCache 恢复，重新计算页面高度
+const handlePageShow = (e: any) => {
+	try {
+		const eStr = JSON.stringify(e)
+		const eObj = JSON.parse(eStr) as UTSJSONObject
+		const persisted = eObj.get('persisted')
+		if (persisted == true) {
+			console.log('🔄 [Detail] Safari BFCache 恢复，重新初始化页面高度')
+			// 重置布局缓存，确保重新获取窗口尺寸
+			resetPageLayout()
+			// 延迟执行，确保页面 DOM 完全恢复
+			setTimeout(() => {
+				initPageHeight()
+			}, 100)
+		}
+	} catch (_e) {
+		// 兜底：无论是否 persisted，都尝试重新计算
+		resetPageLayout()
+		setTimeout(() => {
+			initPageHeight()
+		}, 100)
+	}
+}
+if (typeof window != 'undefined') {
+	window.addEventListener('pageshow', handlePageShow)
+}
+// #endif
+
+// 🔧 修复：onShow 处理页面重新显示时重新计算高度
+// iOS H5 端从其他页面返回时，窗口高度可能因浏览器工具栏变化而不同
+onShow(() => {
+	// #ifdef H5
+	console.log('📱 [Detail] onShow 触发，重新计算页面高度')
+	setTimeout(() => {
+		initPageHeight()
+	}, 50)
+	// #endif
+})
+
 onUnmounted(() => {
 	// 标记需要刷新会话列表
 	safeSetStorageSync('shouldRefreshConversations', 'true')
+	
+	// 🔧 修复：清除活跃会话标记，恢复 messageStateManager 对该会话的持久化能力
+	messageStateManager.clearActiveConversation()
 	
 	// 清理监听器
 	cleanupConnectionListeners()
@@ -1641,6 +1871,12 @@ onUnmounted(() => {
 	cleanupMessageListeners()
 	// 🔧 修复：清理联系方式弹窗事件监听
 	cleanupContactPopupListener()
+	// 🔧 修复：清理 pageshow 事件监听
+	// #ifdef H5
+	if (typeof window != 'undefined') {
+		window.removeEventListener('pageshow', handlePageShow)
+	}
+	// #endif
 })
 </script>
 
@@ -1778,4 +2014,5 @@ onUnmounted(() => {
 	font-size: 22rpx;
 	color: #999999;
 }
+
 </style>

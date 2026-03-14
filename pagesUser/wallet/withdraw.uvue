@@ -1650,8 +1650,8 @@ const handleWithdraw = () => {
 <style scoped>
 /* #ifndef MP-WEIXIN */
 .withdraw-page {
+	flex: 1;
 	background-color: #f5f5f5;
-	min-height: 2000rpx;
 	padding: 20rpx;
 	padding-bottom: 200rpx;
 	/* padding-top 通过 :style 动态设置，使用 pageStatusBarHeight */
@@ -1943,6 +1943,8 @@ const handleWithdraw = () => {
 	right: 0;
 	bottom: 0;
 	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 999;
+	display: flex;
 	align-items: center;
 	justify-content: center;
 }

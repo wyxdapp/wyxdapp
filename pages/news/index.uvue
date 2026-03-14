@@ -2237,6 +2237,7 @@ const handleSelectGift = async (gift: UTSJSONObject | null) => {
 	lines: 1;
 	text-overflow: ellipsis;
 	overflow: hidden;
+	white-space: nowrap;
 }
 
 .message-preview.bold {

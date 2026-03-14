@@ -178,7 +178,7 @@ import {
 	type AddTravelUserParams,
 	type DelTravelUserParams
 } from '@/api/order.uts'
-import { useOrderSubmission, SubmissionConfig } from '@/common/composables/useOrderSubmission.uts'
+import { useOrderSubmission, SubmissionConfigImpl } from '@/common/composables/useOrderSubmission.uts'
 import { buildGuiderOrderData, type GuiderOrderParams } from '@/common/utils/orderBuilder.uts'
 import { 
 	checkUserLoginReliable, 
@@ -320,12 +320,10 @@ const serverPrice = ref(0)
 const contactId = ref('')
 
 // 使用订单提交 composable（避免解构赋值，直接获取整个对象）
-const orderSubmissionConfigRaw = {
-	successMessage: '下单成功',
-	shouldNavigateToPayment: true,
-	shouldNavigateBack: false
-} as any
-const orderSubmissionConfig = orderSubmissionConfigRaw as SubmissionConfig
+const orderSubmissionConfig = new SubmissionConfigImpl()
+orderSubmissionConfig.successMessage = '下单成功'
+orderSubmissionConfig.shouldNavigateToPayment = true
+orderSubmissionConfig.shouldNavigateBack = false
 
 // 将 createGuiderOrder 包装为符合 OrderApiFunction 类型的函数
 // UTS 规范：直接使用 as any（不能用 as any as Interface，Android 会报 ClassCastException）

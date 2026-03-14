@@ -27,7 +27,7 @@
 						<view v-if="currentTab == 0" class="tab-underline"></view>
 					</view>
 					<view class="tab-item" @click="switchTab(1)">
-						<text class="tab-text" :class="{ 'tab-text-active': currentTab == 1 }">定制</text>
+						<text class="tab-text" :class="{ 'tab-text-active': currentTab == 1 }">接单</text>
 						<view v-if="currentTab == 1" class="tab-underline"></view>
 					</view>
 				</view>
@@ -86,57 +86,91 @@
 				</scroll-view>
 			</swiper-item>
 			
-			<!-- 定制列表 -->
-			<!-- #ifdef H5 -->
-			<swiper-item>
-				<scroll-view 
-					class="scroll-view scroll-view-h5"
-					:style="{ height: contentHeight + 'px' }"
-					scroll-y="true"
-					refresher-enabled="true"
-					:refresher-triggered="routeRefreshing"
-					:show-scrollbar="false"
-					@refresherrefresh="onRefresh"
-					@scrolltolower="loadMore"
-				>
-			<!-- #endif -->
-			<!-- #ifndef H5 -->
+			<!-- 接单列表 -->
 			<swiper-item>
 				<scroll-view 
 					class="scroll-view"
+					:style="{ height: contentHeight + 'px' }"
 					scroll-y="true"
-					refresher-enabled="true"
-					:refresher-triggered="routeRefreshing"
 					:show-scrollbar="false"
+					refresher-enabled="true"
+					:refresher-triggered="grabOrderRefreshing"
 					@refresherrefresh="onRefresh"
 					@scrolltolower="loadMore"
 				>
-			<!-- #endif -->
-					<ListStatus 
-						v-if="routeLoading == true && routeListLength == 0" 
-						status="loading" 
-					/>
-					<ListStatus 
-						v-else-if="routeListLength == 0" 
-						status="empty" 
-						emptyText="暂无定制" 
-					/>
-					<view v-else class="route-list">
-						<route-card 
-							v-for="(item, index) in routeList" 
-							:key="getRouteKey(item, index)"
-							:data="item"
-							@click="goToRouteDetail"
-						/>
+					<view v-if="grabOrderLoading == true && grabOrderListLength == 0" class="loading">
+						<text class="loading-text">加载中...</text>
 					</view>
+					
 					<ListStatus 
-						v-if="routeHasMore == true && routeLoading == false && routeListLength > 0" 
-						status="loadMore" 
+						v-else-if="grabOrderListLength == 0" 
+						status="empty" 
+						emptyText="暂无接单"
 					/>
-					<ListStatus 
-						v-if="routeHasMore == false && routeListLength > 0" 
-						status="noMore" 
-					/>
+					
+					<view v-else class="list grab-order-list">
+						<view 
+							v-for="(item, index) in grabOrderList" 
+							:key="getGrabOrderItemKey(item, index)"
+							class="order-card"
+							@click="handleGrabOrderClick(item)"
+						>
+							<!-- 头部：头像 + 用户名 + 分享按钮 -->
+							<view class="order-card-header">
+								<view class="order-card-user" @click.stop="handleGrabOrderUserClick(item)">
+									<Avatar
+										:url="getGrabOrderAvatar(item)"
+										:userId="getGrabOrderUserKid(item)"
+										size="small"
+										clickMode="none"
+									/>
+									<text class="order-username">{{ getGrabOrderUserName(item) }}</text>
+								</view>
+								<view class="order-share-btn" @click.stop="handleGrabOrderShare(item)">
+									<uni-icons type="redo" :size="24" color="#999999"></uni-icons>
+								</view>
+							</view>
+							<!-- 分割线 -->
+							<view class="order-divider"></view>
+							<!-- 订单编号 -->
+							<view class="order-info-row">
+								<text class="order-info-label">订单编号：</text>
+								<text class="order-info-value">{{ getGrabOrderNo(item) }}</text>
+							</view>
+							<!-- 订单描述 -->
+							<view class="order-desc-row">
+								<text class="order-desc-text">{{ getGrabOrderTitle(item) }}</text>
+							</view>
+							<!-- 出发时间 -->
+							<view class="order-time-row">
+								<image
+									class="order-time-icon"
+									src="https://jiasu.wyxdapp.com/iconimages/order_icon_startTime.png"
+									mode="aspectFill"
+								/>
+								<text class="order-time-label">出发时间：</text>
+								<text class="order-time-value">{{ getGrabOrderTime(item) }}</text>
+							</view>
+							<!-- 操作按钮行：预算 + 抢单按钮 -->
+							<view class="order-btn-row" @click.stop>
+								<view class="order-budget-box">
+									<text class="order-budget-label">预算：</text>
+									<text class="order-price-symbol">¥</text>
+									<text class="order-price-value">{{ getGrabOrderPrice(item) }}</text>
+								</view>
+								<view class="order-btn order-btn-primary" @click="handleGrabOrder(item)">
+									<text class="order-btn-primary-text">立即抢单</text>
+								</view>
+							</view>
+						</view>
+					</view>
+					
+					<!-- 加载更多 -->
+					<view v-if="grabOrderListLength > 0" class="load-status">
+						<text v-if="grabOrderLoadStatus == 'loading'" class="status-text">加载中...</text>
+						<text v-else-if="grabOrderLoadStatus == 'nomore'" class="status-text">没有更多了</text>
+						<text v-else class="status-text-more">上拉加载更多</text>
+					</view>
 				</scroll-view>
 			</swiper-item>
 		</swiper>
@@ -160,20 +194,34 @@
 			@agree="handlePrivacyAgree"
 			@disagree="handlePrivacyDisagree"
 		/>
+		
+		<!-- 分享弹窗组件 -->
+		<SharePopup
+			v-model:visity="showSharePopup"
+			:shareData="sharePayload"
+			:chatList="shareChatList"
+			@share-to-chat="handleShareToChat"
+			@wechat-share="handleShareWechat"
+			@moments-share="handleShareMoments"
+			@copy-link="handleCopyLink"
+			@show-qrcode="handleShowQrcode">
+		</SharePopup>
 	</view>
 </template>
 
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import GuiderCard from '@/components/guider-card/index.uvue'
-import RouteCard from '@/components/route-card/index.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import MarketingPopup from '@/components/common/MarketingPopup.uvue'
 import PrivacyPopup from '@/components/common/PrivacyPopup.uvue'
-import { getGuiderList, getRouteList } from '@/common/services/homeService.uts'
+import Avatar from '@/components/base/Avatar.uvue'
+import SharePopup from '@/components/common/SharePopup.uvue'
+import request from '@/utils/request'
+import { getGuiderList } from '@/common/services/homeService.uts'
 import { isSharedDataDisplayEnabled, isFeatureTogglesLoaded } from '@/common/composables/useFeatureToggles.uts'
 import { getLocationInfo } from '@/common/utils/location.uts'
 import { isPrivacyAgreed, PRIVACY_AGREED_EVENT, broadcastPrivacyAgreed } from '@/common/utils/privacyManager.uts'
@@ -188,8 +236,8 @@ import {
 	getResponseData, 
 	getEntities, 
 	getDataCount,
-	getItemKey,
-	getItemKeyByField 
+	getItemKeyByField,
+	toJsonObj
 } from '@/common/utils/utsSafe.uts'
 import {
 	MARKETING_POPUP_TRIGGER,
@@ -204,10 +252,78 @@ import {
 	getOnlineStatusDirect, 
 	setOnlineStatusDirect 
 } from '@/stores/onlineStatus.uts'
+import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
+import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
+import { 
+	getChatList as getChatListFn, 
+	getChatListRef,
+	handleShareToChat as handleShareToChatFn
+} from '@/common/composables/useChatAndShare.uts'
+import { 
+	handleShareWechat as handleShareWechatFn,
+	handleShareMoments as handleShareMomentsFn,
+	handleCopyLink as handleCopyLinkFn,
+	handleShowQrcode as handleShowQrcodeFn
+} from '@/common/composables/useShareUi.uts'
+import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
+import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
+import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
 
 // ==================== 类型定义 ====================
 
-// 不再使用 class，改用独立的 ref 变量
+class PageListData {
+	pageNumber: number = 1
+	pageSize: number = 10
+	status: string = 'loadmore'
+	total: number = 0
+}
+
+// ==================== 辅助函数（必须在使用前定义）====================
+
+// 获取字符串属性
+const getItemStringProp = (item: UTSJSONObject, key: string): string => {
+	if (item == null) return ''
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		return (val != null && val.toString() != '') ? val.toString() : ''
+	} catch (e) {
+		return ''
+	}
+}
+
+// 获取数字属性
+const getItemNumberProp = (item: UTSJSONObject, key: string): number => {
+	if (item == null) return 0
+	try {
+		const itemObj = JSON.parse(JSON.stringify(item)) as UTSJSONObject
+		const val = itemObj.get(key)
+		if (val != null) {
+			const num = parseInt(val.toString())
+			if (isNaN(num) == false) return num
+		}
+	} catch (e) {}
+	return 0
+}
+
+// 内联金额格式化
+const formatMoney = (value: number): string => {
+	if (isNaN(value)) return '0.00'
+	const cents = Math.round(value * 100)
+	const absCents = (cents < 0) ? -cents : cents
+	const yuan = Math.floor(absCents / 100)
+	const fen = absCents % 100
+	const fenStr = (fen < 10) ? ('0' + fen.toString()) : fen.toString()
+	const result = yuan.toString() + '.' + fenStr
+	return (cents < 0) ? ('-' + result) : result
+}
+
+
+// 从 loginHelper 获取用户 Kid（可靠版本）
+const getUserKidFromStore = (): string => {
+	return getCurrentUserIdReliable()
+}
 
 // ==================== 响应式状态 ====================
 
@@ -239,13 +355,27 @@ const guiderLoading = ref<boolean>(false)
 const guiderRefreshing = ref<boolean>(false)
 const guiderHasMore = ref<boolean>(true)
 
-// 定制列表状态（独立 ref）
-const routeList = ref<Array<UTSJSONObject>>([])
-const routePage = ref<number>(1)
-const routeTotal = ref<number>(0)
-const routeLoading = ref<boolean>(false)
-const routeRefreshing = ref<boolean>(false)
-const routeHasMore = ref<boolean>(true)
+// 接单列表状态
+const grabOrderList = ref<Array<UTSJSONObject>>([])
+const grabOrderLoading = ref<boolean>(false)
+const grabOrderRefreshing = ref<boolean>(false)
+const grabOrderPageData = ref<PageListData>(new PageListData())
+
+// 分享相关状态
+const showSharePopup = ref(false)
+const sharePayload = ref<UTSJSONObject>({
+	title: '',
+	desc: '',
+	summary: '',
+	link: '',
+	url: '',
+	imageUrl: '',
+	userId: '',
+	referrerShortKid: ''
+} as UTSJSONObject)
+const shareChatList = ref<Array<UTSJSONObject>>([])
+const userStore = useUserStore()
+const currentShareItem = ref({} as UTSJSONObject)
 
 // ==================== 计算属性 ====================
 
@@ -260,9 +390,9 @@ const guiderListLength = computed((): number => {
 	return 0
 })
 
-const routeListLength = computed((): number => {
+const grabOrderListLength = computed((): number => {
 	try {
-		const list = routeList.value
+		const list = grabOrderList.value
 		if (list != null && Array.isArray(list) == true) {
 			return (list as Array<UTSJSONObject>).length
 		}
@@ -270,14 +400,17 @@ const routeListLength = computed((): number => {
 	return 0
 })
 
+const grabOrderLoadStatus = computed((): string => {
+	try {
+		return grabOrderPageData.value.status
+	} catch (e) {}
+	return 'loadmore'
+})
+
 // ==================== 模板辅助函数 ====================
 
 const getGuiderKey = (item: UTSJSONObject | null, index: number): string => {
 	return getItemKeyByField(item as any, index, 'memberGuideKid')
-}
-
-const getRouteKey = (item: UTSJSONObject | null, index: number): string => {
-	return getItemKey(item as any, index)
 }
 
 // 获取向导在线状态
@@ -327,6 +460,61 @@ const getCityNameForApi = (): string => {
 		return ''
 	}
 	return city
+}
+
+// ==================== 抢单属性获取辅助函数 ====================
+
+// 抢单列表 key
+const getGrabOrderItemKey = (item: UTSJSONObject, index: number): string => {
+	const kid = getItemStringProp(item, 'kid')
+	return (kid != '') ? kid : index.toString()
+}
+
+// 抢单属性获取
+const getGrabOrderTitle = (item: UTSJSONObject): string => {
+	let title = getItemStringProp(item, 'orderDescribe')
+	if (title == '') title = getItemStringProp(item, 'orderTitle')
+	return (title != '') ? title : '待抢订单'
+}
+
+const getGrabOrderPrice = (item: UTSJSONObject): string => {
+	let price = getItemNumberProp(item, 'orderPrice')
+	if (price == 0) price = getItemNumberProp(item, 'totalMoney')
+	return formatMoney(price)
+}
+
+const getGrabOrderTime = (item: UTSJSONObject): string => {
+	let time = getItemStringProp(item, 'startTime')
+	if (time == '') time = getItemStringProp(item, 'serviceTime')
+	if (time == '') time = getItemStringProp(item, 'travelDate')
+	return (time != '') ? time : '-'
+}
+
+const getGrabOrderNo = (item: UTSJSONObject): string => {
+	let orderNo = getItemStringProp(item, 'orderNo')
+	if (orderNo == '') orderNo = getItemStringProp(item, 'shortKid')
+	return (orderNo != '') ? orderNo : '-'
+}
+
+const getGrabOrderAvatar = (item: UTSJSONObject): string => {
+	let avatar = getItemStringProp(item, 'touristAvatar')
+	if (avatar == '') avatar = getItemStringProp(item, 'userImg')
+	if (avatar == '') avatar = getItemStringProp(item, 'avatar')
+	return (avatar != '') ? avatar : DEFAULT_AVATAR_LOCAL
+}
+
+const getGrabOrderUserName = (item: UTSJSONObject): string => {
+	let name = getItemStringProp(item, 'touristName')
+	if (name == '') name = getItemStringProp(item, 'userNickname')
+	if (name == '') name = getItemStringProp(item, 'nickname')
+	return (name != '') ? name : '游客'
+}
+
+// 获取抢单用户 ID
+const getGrabOrderUserKid = (item: UTSJSONObject): string => {
+	let userKid = getItemStringProp(item, 'touristKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userKid')
+	return userKid
 }
 
 // ==================== 数据加载函数 ====================
@@ -403,61 +591,320 @@ const loadGuiderList = async (refresh: boolean) => {
 	}
 }
 
-// 加载定制列表
-const loadRouteList = async (refresh: boolean) => {
-	if (refresh == true) {
-		routePage.value = 1
-		routeList.value = []
-	}
-	
-	if (routeLoading.value == true) return
-	routeLoading.value = true
-	
+// 获取接单列表
+const fetchGrabOrderList = async (isRefresh: boolean) => {
 	try {
-		const params = {
-			pageNumber: routePage.value,
-			pageSize: 10,
-			userCityName: getCityNameForApi()
-		} as UTSJSONObject
-		// 功能开关已加载时才传递 sharedDataEnabled，否则让后端从数据库查询商户配置
-		if (isFeatureTogglesLoaded() == true) {
-			params['sharedDataEnabled'] = isSharedDataDisplayEnabled()
+		if (isRefresh == true) {
+			grabOrderPageData.value.pageNumber = 1
+			grabOrderPageData.value.status = 'loadmore'
 		}
 		
-		const res = await getRouteList(params)
-		const code = getResponseCode(res)
-		const dataObj = getResponseData(res)
+		if (grabOrderPageData.value.status == 'nomore') return
 		
-		if (code == 200 && dataObj != null) {
-			const items = getEntities(dataObj)
-			const totalCount = getDataCount(dataObj)
+		grabOrderLoading.value = true
+		grabOrderPageData.value.status = 'loading'
+		
+		const params = {
+			pageNumber: grabOrderPageData.value.pageNumber,
+			pageSize: grabOrderPageData.value.pageSize
+		} as UTSJSONObject
+		
+		const res = await request.post('/order/guide/queryGrabOrder', params, false)
+		
+		if (res != null) {
+			const resStr = JSON.stringify(res)
+			const resObj = JSON.parse(resStr) as UTSJSONObject
 			
-			routeTotal.value = totalCount
-			
-			// 转换数组类型
-			const typedItems: UTSJSONObject[] = []
-			for (let i = 0; i < items.length; i = i + 1) {
-				typedItems.push(items[i] as UTSJSONObject)
+			// 先获取 data 字段
+			const dataVal = resObj.get('data')
+			let dataObj: UTSJSONObject | null = null
+			if (dataVal != null) {
+				const dataStr = JSON.stringify(dataVal)
+				dataObj = JSON.parse(dataStr) as UTSJSONObject
 			}
 			
-			if (refresh == true) {
-				routeList.value = typedItems
-			} else {
-				for (let i = 0; i < typedItems.length; i = i + 1) {
-					routeList.value.push(typedItems[i])
+			// 从 data 中获取 entities 和 count
+			let entities: Array<UTSJSONObject> = []
+			let count = 0
+			
+			if (dataObj != null) {
+				const entitiesVal = dataObj.get('entities')
+				const countVal = dataObj.get('count')
+				
+				if (entitiesVal != null && Array.isArray(entitiesVal) == true) {
+					entities = entitiesVal as Array<UTSJSONObject>
+				}
+				
+				if (countVal != null) {
+					const num = parseInt(countVal.toString())
+					if (isNaN(num) == false) count = num
 				}
 			}
 			
-			routeHasMore.value = routeList.value.length < routeTotal.value
+			if (isRefresh == true) {
+				grabOrderList.value = entities
+			} else {
+				const currentList = grabOrderList.value
+				for (let i = 0; i < entities.length; i = i + 1) {
+					currentList.push(entities[i])
+				}
+				grabOrderList.value = currentList
+			}
+			
+			grabOrderPageData.value.total = count
+			
+			const currentLength = grabOrderList.value.length
+			if (currentLength >= count || entities.length < grabOrderPageData.value.pageSize) {
+				grabOrderPageData.value.status = 'nomore'
+			} else {
+				grabOrderPageData.value.status = 'loadmore'
+				grabOrderPageData.value.pageNumber = grabOrderPageData.value.pageNumber + 1
+			}
 		}
-	} catch (error) {
+	} catch (error: Error) {
 		if (!isAuthError(error)) {
-			handlePageError(error, '加载定制列表', routeLoading)
+			handlePageError(error, '获取接单列表', null)
 		}
+		grabOrderPageData.value.status = 'loadmore'
 	} finally {
-		routeLoading.value = false
-		routeRefreshing.value = false
+		grabOrderLoading.value = false
 	}
+}
+
+// ==================== 抢单操作函数 ====================
+
+// 抢单操作
+const handleGrabOrder = async (item: UTSJSONObject) => {
+	// 会员权限守卫：内部已包含登录检查、会员状态检查和功能开关检查
+	if (checkMemberGuard('grab_order') == false) {
+		return
+	}
+	
+	const userKid = getUserKidFromStore()
+	const orderKid = getItemStringProp(item, 'kid')
+	
+	if (userKid == '' || orderKid == '') return
+	
+	try {
+		const params = {
+			orderKid: orderKid,
+			guideKid: userKid
+		} as UTSJSONObject
+		
+		await request.post('/order/guide/grabOrder', params, true)
+		
+		uni.showToast({
+			title: '抢单成功',
+			icon: 'success'
+		})
+		
+		// 刷新列表
+		fetchGrabOrderList(true)
+	} catch (error: Error) {
+		if (!isAuthError(error)) {
+			handlePageError(error, '抢单', null)
+		}
+	}
+}
+
+// 抢单点击 - 跳转订单详情
+const handleGrabOrderClick = (item: UTSJSONObject) => {
+	const orderKid = getItemStringProp(item, 'kid')
+	if (orderKid != '') {
+		uni.navigateTo({
+			url: '/pagesTrade/orderDetails/index?orderKid=' + orderKid
+		})
+	}
+}
+
+// 抢单用户头像/昵称点击 - 跳转个人主页
+const handleGrabOrderUserClick = (item: UTSJSONObject) => {
+	let userKid = getItemStringProp(item, 'touristKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userKid')
+	if (userKid == '') userKid = getItemStringProp(item, 'userId')
+	
+	if (userKid != '') {
+		uni.navigateTo({
+			url: '/pagesUser/persionInfo/index?id=' + userKid
+		})
+	}
+}
+
+// 抢单分享按钮点击
+const handleGrabOrderShare = async (item: UTSJSONObject) => {
+	console.log('[Index] handleGrabOrderShare called')
+	currentShareItem.value = item
+	
+	try {
+		// 构建分享标题
+		const orderTitle = getGrabOrderTitle(item)
+		const shareTitle = '待抢订单：' + orderTitle
+		
+		// 构建分享描述
+		const orderNo = getGrabOrderNo(item)
+		const price = getGrabOrderPrice(item)
+		const time = getGrabOrderTime(item)
+		const shareDesc = '订单编号：' + orderNo + '\n价格：¥' + price + '\n出发时间：' + time
+		
+		// 构建分享链接
+		const kid = getItemStringProp(item, 'kid')
+		let shareLink = 'https://m.wyxdapp.com/#/pagesTrade/orderDetails/index?orderKid=' + kid
+		
+		// 获取推广短号
+		let referrerShortKid = ''
+		try {
+			referrerShortKid = getUserShortKid()
+			if (referrerShortKid == '') {
+				// 使用 toJsonObj 安全访问 store
+				const userStoreObj = toJsonObj(userStore)
+				if (userStoreObj != null) {
+					const userInfoVal = userStoreObj.get('userInfo')
+					if (userInfoVal != null) {
+						const userInfoJson = JSON.stringify(userInfoVal)
+						if (userInfoJson != null && userInfoJson != '') {
+							const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
+							const shortKidVal = userInfoObj.get('shortKid')
+							if (shortKidVal != null && shortKidVal.toString() != '') {
+								referrerShortKid = shortKidVal.toString()
+							}
+						}
+					}
+				}
+			}
+			// 从缓存的当前用户 profile 中获取 shortKid
+			if (referrerShortKid == '') {
+				const currentUserKidForRef = getUserKidFromStore()
+				if (currentUserKidForRef != '') {
+					try {
+						const cachedMyProfile = getCachedProfile(currentUserKidForRef, currentUserKidForRef)
+						if (cachedMyProfile != null) {
+							const cachedShortKidVal = cachedMyProfile.get('shortKid')
+							if (cachedShortKidVal != null && cachedShortKidVal.toString() != '') {
+								referrerShortKid = cachedShortKidVal.toString()
+								console.log('[handleShare] 从缓存profile获取推广短号:', referrerShortKid)
+								updateUserInfoAction({ shortKid: referrerShortKid } as UTSJSONObject)
+							}
+						}
+					} catch (e2) {}
+				}
+			}
+			if (referrerShortKid != '') {
+				shareLink = shareLink + '&ref=' + referrerShortKid
+			}
+		} catch (e) {
+			handleSilentError(e, '获取推广短号')
+		}
+		
+		// 构建分享数据
+		const newPayload = {
+			title: shareTitle,
+			summary: shareDesc,
+			desc: shareDesc,
+			link: shareLink,
+			url: shareLink,
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			userId: '',
+			referrerShortKid: referrerShortKid,
+			orderKid: kid
+		}
+		
+		sharePayload.value = newPayload
+		
+		console.log('[handleGrabOrderShare] 分享数据构建完成')
+	} catch (e) {
+		handleSilentError(e, '构建抢单分享数据')
+		sharePayload.value = {
+			title: '待抢订单',
+			summary: '精彩订单，等你来抢！',
+			desc: '精彩订单，等你来抢！',
+			link: 'https://m.wyxdapp.com',
+			url: 'https://m.wyxdapp.com',
+			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			userId: '',
+			referrerShortKid: ''
+		}
+	}
+	
+	// 获取会话列表
+	try {
+		const result = await getChatListFn(userStore)
+		if (result != null && Array.isArray(result) == true) {
+			shareChatList.value = result as Array<UTSJSONObject>
+		} else {
+			shareChatList.value = []
+		}
+	} catch (e) {
+		handleSilentError(e, '获取抢单会话列表')
+		shareChatList.value = []
+	}
+	
+	showSharePopup.value = true
+}
+
+// 分享事件处理函数
+const handleShareToChat = (data: UTSJSONObject) => {
+	console.log('[Index] handleShareToChat called with data:', JSON.stringify(data))
+	
+	if (currentShareItem.value == null) {
+		uni.showToast({
+			title: '分享失败，请重试',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 从 data 中提取 chatItem
+	let chatItem: UTSJSONObject = {} as UTSJSONObject
+	try {
+		const dataObj = JSON.parse(JSON.stringify(data)) as UTSJSONObject
+		const chatItemVal = dataObj.get('chatItem')
+		if (chatItemVal != null) {
+			chatItem = chatItemVal as UTSJSONObject
+		}
+	} catch (e) {
+		handleSilentError(e, '解析分享数据')
+	}
+	
+	if (chatItem == null) {
+		uni.showToast({
+			title: '分享失败，会话信息不完整',
+			icon: 'none'
+		})
+		return
+	}
+	
+	// 订单分享
+	const orderInfo = {
+		kid: getItemStringProp(currentShareItem.value, 'kid'),
+		orderNo: getGrabOrderNo(currentShareItem.value),
+		orderTitle: getGrabOrderTitle(currentShareItem.value),
+		totalMoney: getGrabOrderPrice(currentShareItem.value),
+		travelDate: getGrabOrderTime(currentShareItem.value),
+		touristName: getGrabOrderUserName(currentShareItem.value),
+		touristAvatar: getGrabOrderAvatar(currentShareItem.value)
+	}
+	
+	const shareData = {
+		chatItem: chatItem
+	} as UTSJSONObject
+	
+	handleShareToChatFn(shareData, orderInfo)
+}
+
+const handleShareWechat = () => {
+	handleShareWechatFn(sharePayload.value)
+}
+
+const handleShareMoments = () => {
+	handleShareMomentsFn(sharePayload.value)
+}
+
+const handleCopyLink = () => {
+	handleCopyLinkFn(sharePayload.value)
+}
+
+const handleShowQrcode = () => {
+	handleShowQrcodeFn(sharePayload.value)
 }
 
 // 加载当前 Tab 数据
@@ -467,8 +914,8 @@ const loadTabData = (index: number, refresh: boolean) => {
 			loadGuiderList(refresh)
 		}
 	} else if (index == 1) {
-		if (refresh == true || routeListLength.value == 0) {
-			loadRouteList(refresh)
+		if (refresh == true || grabOrderListLength.value == 0) {
+			fetchGrabOrderList(refresh)
 		}
 	}
 }
@@ -483,13 +930,11 @@ const refreshAllLists = () => {
 	guiderRefreshing.value = false
 	guiderHasMore.value = true
 	
-	// 重置定制列表
-	routeList.value = []
-	routePage.value = 1
-	routeTotal.value = 0
-	routeLoading.value = false
-	routeRefreshing.value = false
-	routeHasMore.value = true
+	// 重置接单列表
+	grabOrderList.value = []
+	grabOrderLoading.value = false
+	grabOrderRefreshing.value = false
+	grabOrderPageData.value = new PageListData()
 	
 	loadTabData(currentTab.value, true)
 }
@@ -740,8 +1185,9 @@ const onRefresh = async () => {
 		guiderRefreshing.value = true
 		await loadGuiderList(true)
 	} else if (currentTab.value == 1) {
-		routeRefreshing.value = true
-		await loadRouteList(true)
+		grabOrderRefreshing.value = true
+		await fetchGrabOrderList(true)
+		grabOrderRefreshing.value = false
 	}
 }
 
@@ -750,9 +1196,8 @@ const loadMore = () => {
 	if (currentTab.value == 0 && guiderLoading.value == false && guiderHasMore.value == true) {
 		guiderPage.value = guiderPage.value + 1
 		loadGuiderList(false)
-	} else if (currentTab.value == 1 && routeLoading.value == false && routeHasMore.value == true) {
-		routePage.value = routePage.value + 1
-		loadRouteList(false)
+	} else if (currentTab.value == 1 && grabOrderPageData.value.status == 'loadmore') {
+		fetchGrabOrderList(false)
 	}
 }
 
@@ -795,8 +1240,8 @@ const goToPublish = () => {
 		// 向导Tab - 跳转到添加向导页面
 		uni.navigateTo({ url: '/pages/index/components/addGuide' })
 	} else {
-		// 定制Tab - 跳转到添加定制路线页面
-		uni.navigateTo({ url: '/pages/index/components/addRoute' })
+		// 接单Tab - 跳转到提交订单页面
+		uni.navigateTo({ url: '/pagesUser/submitOrder/index' })
 	}
 }
 
@@ -810,14 +1255,6 @@ const goToGuiderDetail = (item: UTSJSONObject | null) => {
 	const kid = getStringProp(item as any, 'memberGuideKid')
 	if (kid != '') {
 		uni.navigateTo({ url: '/pagesUser/persionInfo/index?id=' + kid })
-	}
-}
-
-// 跳转定制详情
-const goToRouteDetail = (item: UTSJSONObject | null) => {
-	const kid = getStringProp(item as any, 'kid')
-	if (kid != '') {
-		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?lineKid=' + kid })
 	}
 }
 
@@ -1070,18 +1507,6 @@ onShow(() => {
 	background-color: transparent;
 }
 
-.route-list {
-	flex-direction: row;
-	flex-wrap: wrap;
-	justify-content: space-between;
-	width: 750rpx;
-	padding-top: 20rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
-	padding-bottom: 120rpx;
-	background-color: transparent;
-}
-
 /* ==================== 找向导悬浮按钮 ==================== */
 .find-guide-btn {
 	position: fixed;
@@ -1101,5 +1526,200 @@ onShow(() => {
 	font-size: 28rpx;
 	color: #FFFFFF;
 	font-weight: bold;
+}
+
+/* ==================== 抢单列表样式 ==================== */
+.list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 120rpx;
+}
+
+.grab-order-list {
+	flex-direction: column;
+	width: 750rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 120rpx;
+}
+
+.order-card {
+	flex-direction: column;
+	width: 702rpx;
+	background-color: #FFFFFF;
+	border-radius: 16rpx;
+	padding: 24rpx 28rpx;
+	margin-bottom: 20rpx;
+}
+
+.order-card-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 16rpx;
+}
+
+.order-card-user {
+	flex-direction: row;
+	align-items: center;
+	flex: 1;
+}
+
+.order-username {
+	font-size: 28rpx;
+	color: #333333;
+	font-weight: bold;
+	margin-left: 16rpx;
+}
+
+.order-share-btn {
+	width: 60rpx;
+	height: 60rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.order-divider {
+	width: 646rpx;
+	height: 2rpx;
+	background-color: #F0F0F0;
+	margin-bottom: 16rpx;
+}
+
+.order-info-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.order-info-label {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.order-info-value {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.order-desc-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 12rpx;
+}
+
+.order-desc-text {
+	font-size: 28rpx;
+	color: #333333;
+	lines: 2;
+	text-overflow: ellipsis;
+}
+
+.order-time-row {
+	flex-direction: row;
+	align-items: center;
+	margin-bottom: 16rpx;
+}
+
+.order-time-icon {
+	width: 28rpx;
+	height: 28rpx;
+	margin-right: 8rpx;
+}
+
+.order-time-label {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.order-time-value {
+	font-size: 24rpx;
+	color: #666666;
+}
+
+.order-btn-row {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 8rpx;
+}
+
+.order-budget-box {
+	flex-direction: row;
+	align-items: flex-end;
+}
+
+.order-budget-label {
+	font-size: 24rpx;
+	color: #999999;
+	margin-right: 4rpx;
+}
+
+.order-price-symbol {
+	font-size: 24rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.order-price-value {
+	font-size: 36rpx;
+	color: #FF6B35;
+	font-weight: bold;
+}
+
+.order-btn {
+	height: 64rpx;
+	border-radius: 32rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+}
+
+.order-btn-primary {
+	background-color: #37B1F2;
+}
+
+.order-btn-primary-text {
+	font-size: 26rpx;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+
+/* ==================== 加载状态样式 ==================== */
+.loading {
+	flex-direction: column;
+	width: 750rpx;
+	padding-top: 100rpx;
+	padding-bottom: 100rpx;
+	align-items: center;
+	justify-content: center;
+}
+
+.loading-text {
+	font-size: 28rpx;
+	color: #999999;
+}
+
+.load-status {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding-top: 20rpx;
+	padding-bottom: 40rpx;
+}
+
+.status-text {
+	font-size: 24rpx;
+	color: #999999;
+}
+
+.status-text-more {
+	font-size: 24rpx;
+	color: #CCCCCC;
 }
 </style>

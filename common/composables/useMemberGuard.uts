@@ -1,5 +1,5 @@
 ﻿/**
- * 会员认证守卡
+ * 会员认证守卫
  * 用于检查用户是否为会员，非会员时引导开通
  * 
  * 注意：此文件从 pagesBusiness/composables/useMemberGuard.uts 移动到主包
@@ -9,32 +9,64 @@
 
 import { isUserVip, getUserLoginStatus } from '@/stores/user'
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
-
-// 缓存数据类
-export class CacheData {
-	time: number = 0
-	value: boolean | null = null
-}
-
-// 轻量内存缓存（60秒）
-let _cache: CacheData = new CacheData()
+import { VIP_ACTIVATED } from '@/common/config/businessCodes.uts'
 
 /**
- * 会员认证检查
+ * 判断用户是否为有效会员（纯逻辑，无副作用）
+ * 规则：
+ * - vip == VIP_ACTIVATED(20) 且 vipExpireTime 为空 → 有效
+ * - vip == VIP_ACTIVATED(20) 且 vipExpireTime 未过期 → 有效
+ * - vip == VIP_ACTIVATED(20) 且 vipExpireTime 已过期 → 无效
+ * - vip != VIP_ACTIVATED(20) → 无效
+ * - vipExpireTime 格式异常时 Date 解析失败视为无效会员
+ * @param vip VIP状态码
+ * @param vipExpireTime VIP到期时间字符串
+ * @returns 是否为有效会员
+ */
+export function isValidMember(vip: number, vipExpireTime: string): boolean {
+	try {
+		// vip 状态必须为已开通
+		if (vip != VIP_ACTIVATED) {
+			return false
+		}
+		// vipExpireTime 为空字符串，视为永久有效
+		if (vipExpireTime == '') {
+			return true
+		}
+		// 解析到期时间，判断是否过期
+		const expireDate = new Date(vipExpireTime)
+		// Date 解析失败时 getTime() 返回 NaN，视为无效会员
+		if (isNaN(expireDate.getTime())) {
+			return false
+		}
+		const now = new Date()
+		return expireDate > now
+	} catch (e) {
+		// 解析异常视为无效会员
+		return false
+	}
+}
+
+/**
+ * 会员认证检查（异步版本）
  * @param api API实例（已废弃，保留参数兼容性）
  * @param store 用户store（已废弃，保留参数兼容性）
  * @param feature 功能标识，默认为 'contact_view'
+ * @param denyMessage 非会员且功能关闭时的提示文案，默认为 '您没有权限此操作'
+ * @param confirmMessage 确认对话框的提示内容，默认为 '该功能仅对会员开放，是否前往开通？'
  * @returns 是否为会员
  */
 export async function useMemberGuard(
 	api: any, 
 	store: any, 
-	feature: string = 'contact_view'
+	feature: string = 'contact_view',
+	denyMessage: string = '您没有权限此操作',
+	confirmMessage: string = '该功能仅对会员开放，是否前往开通？'
 ): Promise<boolean> {
 	try {
 		console.log('🔍 [useMemberGuard] 开始会员认证检查')
 
-		// 🔧 修复：使用导出的函数检查登录状态，避免 JSON 序列化丢失 computed 属性
+		// 检查登录状态
 		const isLogin = getUserLoginStatus()
 		if (isLogin == false) {
 			uni.showToast({ 
@@ -44,8 +76,7 @@ export async function useMemberGuard(
 			return false
 		}
 
-		// 🔧 修复：使用导出的 isUserVip 函数检查会员状态
-		// 之前通过 JSON.stringify(store) 方式无法获取 computed 属性 isMember
+		// 检查会员状态
 		const isMember = isUserVip()
 		
 		console.log('📊 [useMemberGuard] 会员状态:', isMember)
@@ -55,11 +86,10 @@ export async function useMemberGuard(
 		}
 
 		// 非会员时检查会员功能是否开启
-		// 🔧 新增：检查会员功能是否开启
 		if (isMemberFeatureEnabled() == false) {
-			// 会员功能关闭，不允许开通
+			// 会员功能关闭，使用 denyMessage 提示
 			uni.showToast({
-				title: '会员功能暂未开放',
+				title: denyMessage,
 				icon: 'none'
 			})
 			return false
@@ -68,7 +98,7 @@ export async function useMemberGuard(
 		// 会员功能开启，引导开通
 		uni.showModal({
 			title: '会员专享',
-			content: '该功能仅对会员开放，是否前往开通？',
+			content: confirmMessage,
 			success: (res) => {
 				if (res.confirm) {
 					uni.navigateTo({ 
@@ -88,4 +118,72 @@ export async function useMemberGuard(
 	}
 }
 
-export default { useMemberGuard }
+/**
+ * 会员权限同步检查
+ * 内部逻辑与 useMemberGuard 一致：检查登录 → 检查会员 → 检查功能开关 → 提示/引导
+ * @param feature 功能标识
+ * @param denyMessage 非会员且功能关闭时的提示文案，默认为 '您没有权限此操作'
+ * @param confirmMessage 确认对话框的提示内容，默认为 '该功能仅对会员开放，是否前往开通？'
+ * @returns 是否为有效会员
+ */
+export function checkMemberGuard(
+	feature: string = 'default',
+	denyMessage: string = '您没有权限此操作',
+	confirmMessage: string = '该功能仅对会员开放，是否前往开通？'
+): boolean {
+	try {
+		console.log('🔍 [checkMemberGuard] 开始会员权限同步检查, feature:', feature)
+
+		// 检查登录状态
+		const isLogin = getUserLoginStatus()
+		if (isLogin == false) {
+			uni.showToast({
+				title: '请先登录',
+				icon: 'none'
+			})
+			return false
+		}
+
+		// 检查会员状态
+		const isMember = isUserVip()
+		
+		console.log('📊 [checkMemberGuard] 会员状态:', isMember)
+
+		if (isMember == true) {
+			return true
+		}
+
+		// 非会员时检查会员功能是否开启
+		if (isMemberFeatureEnabled() == false) {
+			// 会员功能关闭，使用 denyMessage 提示
+			uni.showToast({
+				title: denyMessage,
+				icon: 'none'
+			})
+			return false
+		}
+
+		// 会员功能开启，引导开通
+		uni.showModal({
+			title: '会员专享',
+			content: confirmMessage,
+			success: (res) => {
+				if (res.confirm) {
+					uni.navigateTo({
+						url: '/pagesUser/my/proveDetails/vip'
+					})
+				}
+			}
+		})
+		return false
+	} catch (e) {
+		console.error('会员权限同步检查失败:', e)
+		uni.showToast({
+			title: '校验失败，请稍后重试',
+			icon: 'none'
+		})
+		return false
+	}
+}
+
+export default { useMemberGuard, checkMemberGuard, isValidMember }

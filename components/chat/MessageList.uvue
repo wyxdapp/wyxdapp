@@ -1,33 +1,23 @@
 <template>
 	<scroll-view
-		class="message-list"
+		class="message-list message-list-reversed"
 		:style="listStyle"
 		scroll-y
-		:scroll-into-view="scrollIntoView"
-		:scroll-with-animation="true"
-		@scrolltoupper="handleLoadMore"
+		@scrolltolower="handleLoadMore"
 	>
-		<!-- 加载更多提示 -->
-		<view v-if="loading == true" class="load-more">
-			<text class="load-text">加载中...</text>
-		</view>
-		<view v-else-if="hasMore == false && Array.isArray(messages) == true && (messages as Array<any>).length > 0" class="load-more">
-			<text class="load-text">— 没有更多消息了 —</text>
-		</view>
-		
 		<!-- 空状态 -->
-		<view v-if="Array.isArray(messages) == true && (messages as Array<any>).length == 0" class="empty-state">
+		<view v-if="Array.isArray(messages) == true && (messages as Array<any>).length == 0" class="empty-state message-item-flip">
 			<UniIcons type="chatbubble" :size="60" color="#CCCCCC" />
 			<text class="empty-text">暂无聊天记录</text>
 			<text class="empty-hint">开始与对方聊天吧</text>
 		</view>
 		
-		<!-- 消息列表 -->
+		<!-- 消息列表（倒序渲染，容器翻转后最新消息自然显示在底部） -->
 		<view
-			v-for="(msg, index) in (messages as Array<any>)"
+			v-for="(msg, index) in reversedMessages"
 			:key="getMessageKey(msg, index)"
 			:id="getMessageId(msg, index)"
-			class="message-item"
+			class="message-item message-item-flip"
 		>
 			<!-- 时间分割线 -->
 			<view v-if="shouldShowTimeDivider(msg, index)" class="time-divider">
@@ -56,11 +46,19 @@
 				@system-notification-click="handleSystemNotificationClick"
 			/>
 		</view>
+		
+		<!-- 加载更多提示（翻转后在视觉顶部，滚动到历史消息方向时显示） -->
+		<view v-if="loading == true" class="load-more message-item-flip">
+			<text class="load-text">加载中...</text>
+		</view>
+		<view v-else-if="hasMore == false && Array.isArray(messages) == true && (messages as Array<any>).length > 0" class="load-more message-item-flip">
+			<text class="load-text">— 没有更多消息了 —</text>
+		</view>
 	</scroll-view>
 </template>
 
 <script setup lang="uts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { computed } from 'vue'
 import MessageBubble from './MessageBubble.uvue'
 import { formatChatTime } from '@/common/utils/dateUtils.uts'
 import UniIcons from '@/components/base/UniIcons.uvue'
@@ -83,8 +81,6 @@ const props = defineProps({
 	hasMore: { type: Boolean, default: false },
 	loading: { type: Boolean, default: false },
 	listHeight: { type: Number, default: 0 },
-	autoScrollToBottom: { type: Boolean, default: true },
-	// 🎯 新增：目标用户勋章相关 props
 	targetMedalLevel: { type: Number, default: 0 },
 	targetVipType: { type: String, default: '' }
 })
@@ -102,9 +98,7 @@ const emit = defineEmits<{
 	systemNotificationClick: [linkUrl: string, orderKid: string]
 }>()
 
-const scrollIntoView = ref('')
-
-// 辅助方法：安全访问消息属性（提前定义，供 watch 使用）
+// 辅助方法：安全访问消息属性
 const getMessageProp = (msg: any, key: string): string => {
 	try {
 		const msgStr = JSON.stringify(msg)
@@ -119,75 +113,18 @@ const getMessageProp = (msg: any, key: string): string => {
 	}
 }
 
-// 滚动到底部
-const doScrollToBottom = () => {
-	nextTick(() => {
-		const msgArr = props.messages as Array<any>
-		if (msgArr.length > 0) {
-			const lastMsg = msgArr[msgArr.length - 1] as any
-			const id = getMessageProp(lastMsg, 'id')
-			const finalId = (id != '') ? id : (msgArr.length - 1).toString()
-			
-			// 先清空再设置，确保触发滚动
-			scrollIntoView.value = ''
-			setTimeout(() => {
-				scrollIntoView.value = 'msg-' + finalId
-			}, 50)
-		}
-	})
-}
-
-// 记录上一次最后一条消息的ID
-let prevLastMessageId: string = ''
-// 是否是首次加载
-let isFirstLoad: boolean = true
-
-// 获取最后一条消息的ID
-const getLastMessageId = (msgArr: Array<any>): string => {
-	if (msgArr.length == 0) return ''
-	const lastMsg = msgArr[msgArr.length - 1] as any
-	const id = getMessageProp(lastMsg, 'id')
-	return (id != '') ? id : ''
-}
-
-// 使用 computed 包装 props.messages 来监听
-const messagesValue = computed((): Array<any> => {
-	return props.messages as Array<any>
+// ⭐ 核心：将消息数组倒序，配合 CSS transform 翻转实现自然底部对齐
+// 原始数组：[旧消息...新消息]，倒序后：[新消息...旧消息]
+// CSS rotateX(180deg) 翻转容器后，新消息显示在视觉底部（scroll-view 顶部位置）
+const reversedMessages = computed((): Array<any> => {
+	const msgArr = props.messages as Array<any>
+	if (msgArr.length == 0) return []
+	const reversed: Array<any> = []
+	for (let i = msgArr.length - 1; i >= 0; i = i - 1) {
+		reversed.push(msgArr[i])
+	}
+	return reversed
 })
-
-// 监听消息列表变化，自动滚动到底部
-watch(messagesValue, (newVal: Array<any>, oldVal: Array<any>) => {
-	// 如果禁用了自动滚动，直接返回
-	if (props.autoScrollToBottom == false) return
-	
-	const newArr = newVal
-	const oldArr = oldVal
-	
-	// 消息数量没变化，不处理
-	if (newArr.length == oldArr.length) return
-	
-	const newLastId = getLastMessageId(newArr)
-	
-	// 首次加载（从空到有消息）- 滚动到底部
-	if (isFirstLoad == true && newArr.length > 0) {
-		isFirstLoad = false
-		prevLastMessageId = newLastId
-		doScrollToBottom()
-		return
-	}
-	
-	// 判断是新消息还是历史消息
-	// 如果最后一条消息ID变了，说明是新消息（末尾添加），需要滚动
-	// 如果最后一条消息ID没变，说明是历史消息（头部添加），不滚动
-	if (newLastId != prevLastMessageId && newLastId != '') {
-		// 新消息，滚动到底部
-		prevLastMessageId = newLastId
-		doScrollToBottom()
-	} else {
-		// 历史消息，不滚动，只更新记录
-		prevLastMessageId = newLastId
-	}
-}, { deep: true })
 
 // 计算列表样式
 const listStyle = computed((): any => {
@@ -253,7 +190,6 @@ const getMessageTimeText = (msg: any): string => {
 	return formatTime(time)
 }
 
-// 将消息对象序列化为 JSON 字符串（供 MessageBubble 的 messageJson prop 使用）
 const getMessageJson = (msg: any): string => {
 	if (msg == null) return ''
 	try {
@@ -270,19 +206,14 @@ const isMessageFromSelf = (msg: any): boolean => {
 	const fromUserIdStr = getMessageProp(msg, 'fromUserId')
 	const currentId = props.currentUserId
 	
-	if (senderIdStr != '' && senderIdStr == currentId) {
-		return true
-	}
-	if (fromUserKidStr != '' && fromUserKidStr == currentId) {
-		return true
-	}
-	if (fromUserIdStr != '' && fromUserIdStr == currentId) {
-		return true
-	}
-	
+	if (senderIdStr != '' && senderIdStr == currentId) return true
+	if (fromUserKidStr != '' && fromUserKidStr == currentId) return true
+	if (fromUserIdStr != '' && fromUserIdStr == currentId) return true
 	return false
 }
 
+// ⭐ 时间分割线判断（注意：reversedMessages 是倒序的，index 越小越新）
+// 需要和下一条（更旧的）消息比较时间
 const shouldShowTimeDivider = (msg: any, index: number): boolean => {
 	const timeText = getMessageTimeText(msg)
 	return timeText != '' && timeText.length > 0
@@ -297,56 +228,28 @@ const getAvatar = (msg: any): string => {
 	return isSelf ? currentAvatarResult : targetAvatarResult
 }
 
+// ⭐ 翻转后，滚动到底部（视觉上的历史消息方向）触发加载更多
 const handleLoadMore = () => {
 	if (props.loading == false && props.hasMore == true) {
 		emit('loadMore')
 	}
 }
 
-const handlePreviewImage = (url: string) => {
-	emit('previewImage', url)
-}
+const handlePreviewImage = (url: string) => { emit('previewImage', url) }
+const handlePlayVoice = (message: Message) => { emit('playVoice', message) }
+const handlePlayVideo = (message: Message) => { emit('playVideo', message) }
+const handleRetry = (message: Message) => { emit('retry', message) }
+const handleOrderClick = (orderId: string) => { emit('orderClick', orderId) }
+const handleShareCardClick = (userKid: string) => { emit('shareCardClick', userKid) }
+const handleAddToEmoji = (imageUrl: string) => { emit('addToEmoji', imageUrl) }
+const handleSaveToAlbum = (imageUrl: string) => { emit('saveToAlbum', imageUrl) }
+const handleSystemNotificationClick = (linkUrl: string, orderKid: string) => { emit('systemNotificationClick', linkUrl, orderKid) }
+const handleAvatarClick = (userId: string) => { emit('avatarClick', userId) }
 
-const handlePlayVoice = (message: Message) => {
-	emit('playVoice', message)
-}
-
-const handlePlayVideo = (message: Message) => {
-	emit('playVideo', message)
-}
-
-const handleRetry = (message: Message) => {
-	emit('retry', message)
-}
-
-const handleOrderClick = (orderId: string) => {
-	emit('orderClick', orderId)
-}
-
-const handleShareCardClick = (userKid: string) => {
-	emit('shareCardClick', userKid)
-}
-
-const handleAddToEmoji = (imageUrl: string) => {
-	emit('addToEmoji', imageUrl)
-}
-
-const handleSaveToAlbum = (imageUrl: string) => {
-	emit('saveToAlbum', imageUrl)
-}
-
-const handleSystemNotificationClick = (linkUrl: string, orderKid: string) => {
-	emit('systemNotificationClick', linkUrl, orderKid)
-}
-
-const handleAvatarClick = (userId: string) => {
-	emit('avatarClick', userId)
-}
-
-// 暴露方法供父组件调用
+// 暴露方法供父组件调用（倒置方案下不需要滚动，但保留接口兼容）
 defineExpose({
 	scrollToBottom: () => {
-		doScrollToBottom()
+		// 倒置方案下，新消息自动出现在顶部（视觉底部），无需滚动
 	}
 })
 </script>
@@ -370,6 +273,16 @@ defineExpose({
 	overflow-y: auto;
 }
 /* #endif */
+
+/* ⭐ 倒置滚动核心样式：翻转容器，内容从底部开始 */
+.message-list-reversed {
+	transform: rotateX(180deg);
+}
+
+/* ⭐ 每个子元素翻转回来，恢复正常显示 */
+.message-item-flip {
+	transform: rotateX(180deg);
+}
 
 .load-more {
 	padding: 20rpx 0;

@@ -818,6 +818,7 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 	position: absolute;
 	top: 0;
 	left: 0;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -826,6 +827,7 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* 顶部导航栏 */
@@ -869,7 +871,8 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 /* #endif */
 
 .wallet-container {
-	min-height: 2000rpx;
+	flex: 1;
+	background-color: #f5f5f5;
 	padding: 20rpx;
 	position: relative;
 	z-index: 1;

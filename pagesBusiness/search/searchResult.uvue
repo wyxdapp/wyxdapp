@@ -1211,7 +1211,7 @@ onMounted(() => {
 @import '@/common/styles/tabs.css';
 
 .search-result-page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #F5F5F5;
 	flex-direction: column;
 }

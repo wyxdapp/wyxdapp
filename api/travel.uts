@@ -34,18 +34,9 @@ const getParamString = (obj: UTSJSONObject | null, key: string): string => {
  * GET /line/newLine/querySchedule
  */
 export const getTravelDetail = (params: GetTravelDetailParams) => {
-	// 使用 JSON 序列化方式访问 any 类型属性
-	let kid = ''
-	let userKid = ''
-	try {
-		const paramsStr = JSON.stringify(params)
-		const paramsObj = JSON.parse(paramsStr) as UTSJSONObject
-		kid = getParamString(paramsObj, 'kid')
-		userKid = getParamString(paramsObj, 'userKid')
-	} catch (e) {
-		kid = ''
-		userKid = ''
-	}
+	// 直接访问 class 属性（避免 JSON.stringify 在 Android 上对 class 实例序列化不完整）
+	const kid = (params.kid != null && params.kid != '') ? params.kid : ''
+	const userKid = (params.userKid != null && params.userKid != '') ? params.userKid : ''
 	
 	let queryParts: Array<string> = []
 	if (kid != '') {

@@ -1,5 +1,5 @@
 <template>
-	<view class="chat-input-container">
+	<view class="chat-input-container" :style="h5BottomStyle">
 		<view class="input-wrapper">
 			<view class="input-left">
 				<!-- 语音/键盘切换图标 -->
@@ -73,14 +73,18 @@
 				<image v-if="voiceMode == true" class="input-icon" src="https://jiasu.wyxdapp.com/iconimages/icon_news_add.png" mode="aspectFit" @click="handleShowMore"></image>
 			</view>
 		</view>
-		<!-- 底部安全区域填充（动态高度，白色背景） -->
+		<!-- 底部安全区域填充 -->
+		<!-- #ifndef H5 -->
+		<!-- APP端：动态高度（iPhone X+ 等设备） -->
 		<view v-if="safeAreaBottom > 0" class="safe-area-bottom-fill" :style="{ height: safeAreaBottom + 'px' }"></view>
+		<!-- #endif -->
 	</view>
 </template>
 
 <script setup lang="uts">
 import { ref, watch } from 'vue'
 import { getSafeAreaBottom as getSafeAreaBottomUtil } from '@/common/utils/systemInfo.uts'
+import { isIOS, isWechatBrowser, hasIOSBottomToolbar } from '@/common/utils/systemInfo.uts'
 
 // ✅ 运行时 Props 声明 (符合 uni-app x 规范)
 const props = defineProps({
@@ -130,6 +134,18 @@ const cancelThreshold = 100 // 上滑取消阈值（像素）
 
 // 获取设备底部安全区域高度
 const safeAreaBottom = ref<number>(getSafeAreaBottomUtil())
+
+// H5端：iOS 浏览器底部工具栏适配（Safari 返回/前进栏、微信浏览器底部栏）
+const h5BottomStyle = ref<string>('')
+// #ifdef H5
+const initH5BottomPadding = () => {
+	if (hasIOSBottomToolbar() == true) {
+		// iOS 浏览器底部工具栏约 44-50px，加上基础 padding 18px
+		h5BottomStyle.value = 'padding-bottom: 62px'
+	}
+}
+initH5BottomPadding()
+// #endif
 
 watch(inputValue, (newVal: string) => {
 	// 可以在这里添加输入监听逻辑
@@ -339,6 +355,7 @@ defineExpose({
 </script>
 
 <style>
+/* #ifndef H5 */
 .chat-input-container {
 	background-color: #ffffff;
 	padding-top: 20rpx;
@@ -349,6 +366,20 @@ defineExpose({
 	border-top-style: solid;
 	border-top-color: #f5f5f5;
 }
+/* #endif */
+
+/* #ifdef H5 */
+.chat-input-container {
+	background-color: #ffffff;
+	padding-top: 20rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+	padding-bottom: 36rpx;
+	border-top-width: 2rpx;
+	border-top-style: solid;
+	border-top-color: #f5f5f5;
+}
+/* #endif */
 
 /* 底部安全区域填充（iPhone X+ 等设备） */
 .safe-area-bottom-fill {

@@ -283,7 +283,7 @@ onShow(() => {
 
 <style scoped>
 .page {
-	min-height: 2000rpx;
+	flex: 1;
 	background-color: #F5F5F5;
 	flex-direction: column;
 }
@@ -294,6 +294,7 @@ onShow(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -302,6 +303,7 @@ onShow(() => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */
@@ -347,6 +349,7 @@ onShow(() => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 
 .section {

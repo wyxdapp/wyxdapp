@@ -355,6 +355,7 @@ const navigateToAuth = (type: string) => {
 	position: absolute;
 	top: 0;
 	left: 0;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -363,6 +364,7 @@ const navigateToAuth = (type: string) => {
 	left: 0;
 	width: 750rpx;
 	height: 392rpx;
+	z-index: 0;
 }
 
 /* #ifndef H5 */
@@ -409,6 +411,7 @@ const navigateToAuth = (type: string) => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
+	background-color: #F5F5F5;
 }
 
 .auth-list {

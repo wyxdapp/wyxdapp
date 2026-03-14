@@ -1,10 +1,9 @@
 <template>
 	<view class="chat-header">
-		<!-- APP端状态栏占位 -->
 		<!-- #ifndef H5 -->
+		<!-- APP端状态栏占位 -->
 		<view class="status-bar-placeholder" :style="{ height: statusBarHeight + 'px' }"></view>
-		<!-- #endif -->
-		<!-- 顶部导航栏 -->
+		<!-- 顶部导航栏（仅APP端显示，H5端使用浏览器自带导航栏） -->
 		<view class="nav-bar">
 			<view class="nav-left" @click="handleBack">
 				<!-- 使用CSS绘制精简返回箭头 -->
@@ -22,6 +21,7 @@
 				</view>
 			</view>
 		</view>
+		<!-- #endif -->
 		
 		<!-- 快捷功能栏 -->
 		<view class="action-buttons">

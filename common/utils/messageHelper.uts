@@ -379,7 +379,9 @@ export function mergeMessagesWithoutDuplicates(
 		existingFingerprints.push(fingerprint)
 	}
 	
-	// 合并消息：现有消息 + 不重复的新消息
+	// 合并消息：现有消息 + 不重复的新消息（追加到末尾，保持已有消息的相对顺序）
+	// 🔧 修复：不对整个列表重新排序，避免客户端/服务端时间偏差导致排序错乱
+	// 新消息（实时接收的对方消息）天然是最新的，追加到末尾即可
 	const mergedMessages: Array<any> = []
 	for (let i = 0; i < existingMessages.length; i = i + 1) {
 		mergedMessages.push(existingMessages[i])
