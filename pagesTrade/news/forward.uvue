@@ -1,12 +1,10 @@
 <template>
 	<view class="forward-page">
-		<!-- 头部导航栏 -->
+		<!-- 渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
+		<!-- 头部导航栏 -->
 		<view class="header-box" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<view class="header-box">
-		<!-- #endif -->
 			<view class="header-content">
 				<view class="back-btn" @click="handleCancel">
 					<view class="back-arrow"></view>
@@ -15,6 +13,7 @@
 				<view class="placeholder"></view>
 			</view>
 		</view>
+		<!-- #endif -->
 		
 		<!-- 消息预览 -->
 		<view class="message-preview">
@@ -82,6 +81,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePageLayout.uts'
 import Avatar from '@/components/base/Avatar.uvue'
 import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -321,8 +321,24 @@ onUnmounted(() => {
 	background-color: #f5f5f5;
 }
 
+/* 渐变背景 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	width: 750rpx;
+	height: 392rpx;
+}
+
 .header-box {
-	background-color: #ffffff;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

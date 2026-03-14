@@ -17,14 +17,8 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<!-- APP端内容区域（需要留出导航栏空间） -->
-		<view class="wallet-container" :style="{ marginTop: (statusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<!-- H5端内容区域 -->
+		<!-- 内容区域 -->
 		<view class="wallet-container">
-		<!-- #endif -->
 			<!-- 钱包余额卡片 -->
 		<view class="balance-card">
 			<!-- 装饰性背景图片 -->
@@ -833,12 +827,8 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 /* 顶部导航栏 */
 /* #ifndef H5 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -872,7 +862,7 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 
 .wallet-container {
 	flex: 1;
-	background-color: #f5f5f5;
+	background-color: transparent;
 	padding: 20rpx;
 	position: relative;
 	z-index: 1;

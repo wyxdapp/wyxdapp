@@ -1,5 +1,7 @@
 ﻿<template>
 	<view class="page" v-if="initDataFlag == true">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -13,14 +15,7 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<!-- APP端内容区域（需要留出导航栏空间） -->
-		<view class="content-area" :style="{ marginTop: (statusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<!-- H5端内容区域（无需额外 margin） -->
 		<view class="content-area">
-		<!-- #endif -->
 		
 		<!-- 订单信息卡片 -->
 		<view class="order-info-card">
@@ -85,6 +80,7 @@ import { ref, onUnmounted } from 'vue'
 import { onLoad, onUnload, onShow } from '@dcloudio/uni-app'
 import { getGuiderOrderInfo } from '@/common/services/orderService.uts'
 import { balancePay } from '@/common/services/paymentService'
+import { checkBalancePayEnabled } from '@/utils/paymentRouter'
 import { 
 	checkUserLoginReliable, 
 	getCurrentUserIdReliable,
@@ -133,6 +129,7 @@ import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
 import { ORDER_STATUS_PENDING, ORDER_STATUS_PAID, ORDER_STATUS_CONFIRMED, ORDER_STATUS_CLOSED, ORDER_TYPE_CUSTOM, ORDER_TYPE_GUIDE, ORDER_TYPE_LINE } from '@/common/config/businessCodes.uts'
 import { getUrlParams, safeDecodeURIComponent } from '@/common/utils/security/urlValidator.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -714,6 +711,19 @@ const getOrderInfo = async (id: string) => {
 				}
 				
 				initDataFlag.value = true
+				
+				// 🔧 修复：订单加载后自动检查零钱支付资格（不依赖调用方传参）
+				try {
+					const userKid = getUserKid()
+					const ot = orderType.value
+					const guideKidVal = (dataObj != null) ? getObjString(dataObj, 'guideKid') : ''
+					const balanceResult = await checkBalancePayEnabled(userKid, guideKidVal, ot)
+					balancePayEnabled.value = balanceResult.balancePayEnabled
+				} catch (e: any) {
+					console.log('零钱支付资格检查失败，降级隐藏', e)
+				}
+				// 重新初始化支付方式列表（零钱资格可能已更新）
+				initPayMethodList()
 				
 				// 缓存订单号
 				try {
@@ -1492,15 +1502,29 @@ onUnmounted(() => {
 	padding-bottom: 140rpx;
 }
 
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
 /* #ifndef H5 */
 /* APP端导航栏样式 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

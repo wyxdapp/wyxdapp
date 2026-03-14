@@ -103,14 +103,16 @@ onMounted(() => {
 
 <style>
 .chat-header {
-	background-color: #f7f8fa;
+	background-color: transparent;
 	border-bottom: none;
 	flex-direction: column;
+	position: relative;
+	z-index: 10;
 }
 
 .status-bar-placeholder {
 	width: 750rpx;
-	background-color: #ffffff;
+	background-color: transparent;
 }
 
 .nav-bar {
@@ -120,7 +122,7 @@ onMounted(() => {
 	justify-content: space-between;
 	padding-left: 10rpx;
 	padding-right: 10rpx;
-	background-color: #ffffff;
+	background-color: transparent;
 }
 
 .nav-left, .nav-right {
@@ -182,7 +184,7 @@ onMounted(() => {
 	padding-bottom: 20rpx;
 	padding-left: 40rpx;
 	padding-right: 40rpx;
-	background-color: #f7f8fa;
+	background-color: transparent;
 }
 
 .btn {

@@ -5,26 +5,20 @@
 			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
 		</view>
 		<!-- #ifndef H5 -->
-		<!-- APP端导航栏 -->
+		<!-- APP端导航栏（流式布局，透明背景） -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
 			<view class="nav-content">
 				<view class="nav-back" @click="goBack">
 					<uni-icons type="left" :size="22" color="#333333" />
 				</view>
 				<text class="nav-title">添加向导</text>
-				<view class="nav-action"></view>
+				<view class="nav-placeholder"></view>
 			</view>
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<!-- APP端滚动内容（需要留出导航栏空间） -->
-		<scroll-view class="add-guide-page" :style="{ marginTop: (statusBarHeight + 44) + 'px' }" scroll-y="true">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<!-- H5端滚动内容（无需额外 margin） -->
-		<scroll-view class="add-guide-page-h5" scroll-y="true">
-		<!-- #endif -->
+		<!-- 内容区域 -->
+		<scroll-view class="add-guide-content" scroll-y="true">
 		
 		<!-- 形象照 -->
 		<view class="section">
@@ -58,9 +52,10 @@
 						v-for="(city, index) in accessiblePlace" 
 						:key="index" 
 						class="city-chip"
+						:style="{ backgroundColor: currentTheme.primaryColorLight }"
 						@click="handleCityChipClick(city, index)"
 					>
-						<text class="city-chip-text">{{ city }}</text>
+						<text class="city-chip-text" :style="{ color: currentTheme.primaryColor }">{{ city }}</text>
 					</view>
 					<view class="chip-add" @click="openCityPicker">
 						<uni-icons type="plus" :size="20" color="#909399" />
@@ -81,9 +76,10 @@
 						v-for="(item, index) in selectedSpecialities"
 						:key="getSpecialityKey(item, index)"
 						class="speciality-chip"
+						:style="{ backgroundColor: currentTheme.primaryColorLight }"
 						@click="handleSpecialityChipClick(item)"
 					>
-						<text class="speciality-chip-text">{{ item.name }}</text>
+						<text class="speciality-chip-text" :style="{ color: currentTheme.primaryColor }">{{ item.name }}</text>
 					</view>
 					<view class="chip-add" @click="goToTagManager">
 						<uni-icons type="plus" :size="20" color="#909399" />
@@ -120,7 +116,7 @@
 
 		<!-- 提交按钮 -->
 		<view class="btn-container">
-			<view :class="submitBtnClass" @click="handlePublish">
+			<view :class="submitBtnClass" :style="submitBtnStyle" @click="handlePublish">
 				<text class="btn-text">{{ displayBtnText }}</text>
 			</view>
 		</view>
@@ -261,6 +257,15 @@ const submitBtnClass = computed((): string => {
 		return 'btn btn-disabled'
 	}
 	return 'btn'
+})
+
+// 提交按钮动态样式（使用主题色）
+const submitBtnStyle = computed((): Map<string, any> => {
+	const style = new Map<string, any>()
+	if (submitting.value != true) {
+		style.set('backgroundColor', currentTheme.primaryColor)
+	}
+	return style
 })
 
 // ==================== 模板辅助函数 ====================
@@ -995,18 +1000,10 @@ onUnmounted(() => {
 }
 
 /* #ifndef H5 */
-/* APP端导航栏样式 */
+/* APP端导航栏样式（流式布局，透明背景） */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	width: 750rpx;
-	background-color: #ffffff;
-	border-bottom-width: 1rpx;
-	border-bottom-style: solid;
-	border-bottom-color: #eeeeee;
-	z-index: 1000;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -1015,12 +1012,12 @@ onUnmounted(() => {
 	align-items: center;
 	justify-content: space-between;
 	height: 88rpx;
-	padding-left: 24rpx;
-	padding-right: 24rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
 }
 
 .nav-back {
-	width: 88rpx;
+	width: 80rpx;
 	height: 88rpx;
 	flex-direction: row;
 	align-items: center;
@@ -1028,57 +1025,38 @@ onUnmounted(() => {
 }
 
 .nav-title {
-	flex: 1;
-	font-size: 32rpx;
+	font-size: 34rpx;
 	font-weight: bold;
 	color: #333333;
-	text-align: center;
 }
 
-.nav-action {
-	width: 88rpx;
-	height: 88rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: flex-end;
+.nav-placeholder {
+	width: 80rpx;
 }
 /* #endif */
 
-/* APP端滚动区域 */
-/* #ifndef H5 */
-.add-guide-page {
+/* 内容滚动区域（透明背景，显示渐变） */
+.add-guide-content {
 	flex: 1;
 	flex-direction: column;
-	background-color: #ffffff;
-	padding: 0 28rpx;
+	background-color: transparent;
+	padding: 20rpx 28rpx 0;
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
 }
-/* #endif */
-
-/* H5端滚动区域 */
-/* #ifdef H5 */
-.add-guide-page-h5 {
-	flex: 1;
-	flex-direction: column;
-	background-color: #ffffff;
-	padding: 0 28rpx;
-	width: 750rpx;
-	position: relative;
-	z-index: 1;
-}
-/* #endif */
 
 /* 表单分区 */
 .section {
-	margin-bottom: 32rpx;
+	margin-bottom: 20rpx;
+	background-color: #ffffff;
+	border-radius: 16rpx;
+	padding: 20rpx 24rpx;
 }
 
 .section-header {
 	flex-direction: row;
 	align-items: center;
-	padding: 20rpx 0 0;
 }
 
 .section-title-text {

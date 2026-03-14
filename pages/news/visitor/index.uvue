@@ -19,12 +19,7 @@
 		<!-- #endif -->
 		
 		<!-- Tab 栏 -->
-		<!-- #ifndef H5 -->
-		<view class="tabs-wrapper" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<view class="tabs-wrapper" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
-		<!-- #endif -->
+		<view class="tabs-wrapper">
 			<view class="tabs-row">
 				<view 
 					v-for="(tab, index) in tabItems" 
@@ -656,12 +651,8 @@ onShow(() => {
 /* #ifndef H5 */
 /* APP端导航栏样式 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

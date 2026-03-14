@@ -1,7 +1,19 @@
 <template>
-	<view class="add-trends-page" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+	<view class="add-trends-page">
 		<!-- 顶部渐变背景 -->
 		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏（流式布局） -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">发布动态</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
 		<!-- 内容输入 -->
 		<view class="content-section">
 			<textarea
@@ -760,6 +772,16 @@ const initPageData = () => {
 	}
 }
 
+// 返回按钮
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/index/index' })
+		}
+	})
+}
+
 // ==================== 生命周期 ====================
 
 onMounted(() => {
@@ -788,6 +810,44 @@ onUnmounted(() => {
 	padding-right: 28rpx;
 }
 
+/* #ifndef H5 */
+/* APP端导航栏样式（流式布局） */
+.nav-bar {
+	position: relative;
+	z-index: 10;
+	flex-direction: column;
+	margin-left: -28rpx;
+	margin-right: -28rpx;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
 .hear-bg {
 	position: absolute;
 	top: 0;
@@ -810,6 +870,7 @@ onUnmounted(() => {
 	background-color: #ffffff;
 	border-radius: 12rpx;
 	padding: 20rpx;
+	margin-top: 20rpx;
 	margin-bottom: 20rpx;
 	position: relative;
 	z-index: 1;

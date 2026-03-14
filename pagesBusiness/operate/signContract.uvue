@@ -8,9 +8,10 @@
 			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
 		</view>
 		
+		<!-- 顶部固定区域（导航栏 + 搜索栏合并，背景透明让渐变透出） -->
 		<!-- #ifndef H5 -->
-		<!-- APP端导航栏 -->
-		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<!-- APP端导航栏（内嵌在 header 中） -->
 			<view class="nav-content">
 				<view class="nav-back" @click="handleBack">
 					<uni-icons type="left" size="22" color="#333333"></uni-icons>
@@ -18,12 +19,6 @@
 				<text class="nav-title">向导推荐</text>
 				<view class="nav-placeholder"></view>
 			</view>
-		</view>
-		<!-- #endif -->
-		
-		<!-- 顶部搜索栏 -->
-		<!-- #ifndef H5 -->
-		<view class="header" :style="{ paddingTop: (pageStatusBarHeight + 44) + 'px' }">
 		<!-- #endif -->
 		<!-- #ifdef H5 -->
 		<view class="header" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -315,7 +310,7 @@ const initPage = () => {
 	// 使用 composable 初始化布局
 	initPageLayoutComposable()
 	
-	// 计算头部高度（状态栏 + 导航栏44px(APP端) + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
+	// 计算头部高度（状态栏 + 导航栏88rpx≈44px + 搜索栏84rpx≈42px + Tab栏90rpx≈45px）
 	// #ifndef H5
 	headerHeight.value = pageStatusBarHeight.value + 44 + 87
 	// #endif
@@ -608,6 +603,7 @@ onUnmounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 450rpx;
+	z-index: 0;
 }
 
 .hear-bg-mask {
@@ -616,27 +612,30 @@ onUnmounted(() => {
 	left: 0;
 	width: 750rpx;
 	height: 450rpx;
+	z-index: 0;
 }
 
-/* #ifndef H5 */
-/* APP端导航栏样式 */
-.nav-bar {
+/* ==================== 顶部固定区域（导航+搜索合并，透明背景） ==================== */
+.header {
 	position: fixed;
 	top: 0;
 	left: 0;
-	right: 0;
-	background-color: #ffffff;
+	width: 750rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
+	padding-bottom: 0;
 	z-index: 100;
-	flex-direction: column;
 }
 
+/* APP端导航栏内容（内嵌在 header 中） */
+/* #ifndef H5 */
 .nav-content {
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
 	height: 88rpx;
-	padding-left: 20rpx;
-	padding-right: 20rpx;
+	margin-left: -8rpx;
+	margin-right: -8rpx;
 }
 
 .nav-back {
@@ -657,18 +656,6 @@ onUnmounted(() => {
 	width: 80rpx;
 }
 /* #endif */
-
-/* ==================== 顶部固定区域 ==================== */
-.header {
-	position: fixed;
-	top: 0;
-	left: 0;
-	width: 750rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
-	padding-bottom: 0;
-	z-index: 100;
-}
 
 /* ==================== 搜索栏 ==================== */
 .search-bar {

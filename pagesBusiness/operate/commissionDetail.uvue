@@ -18,12 +18,7 @@
 		<!-- #endif -->
 		
 		<!-- 内容区域 -->
-		<!-- #ifndef H5 -->
-		<view class="content-area" :style="{ marginTop: (statusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
 		<view class="content-area">
-		<!-- #endif -->
 			<!-- 顶部统计卡片 -->
 			<view class="stats-card">
 				<view class="stats-item">
@@ -577,14 +572,10 @@ onShow(() => {
 }
 
 /* #ifndef H5 */
-/* APP端导航栏样式 */
+/* APP端导航栏样式（流式布局） */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -621,7 +612,7 @@ onShow(() => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 
 /* 统计卡片 */

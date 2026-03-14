@@ -1,20 +1,11 @@
 <template>
 	<view class="visitor-page">
-		<!-- 头部背景 -->
-		<!-- #ifndef H5 -->
-		<view class="header-bg" :style="{ height: (pageStatusBarHeight + 90) + 'px' }"></view>
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<view class="header-bg" :style="{ height: '90px' }"></view>
-		<!-- #endif -->
+		<!-- 渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		
-		<!-- 标题栏 -->
 		<!-- #ifndef H5 -->
+		<!-- 标题栏 -->
 		<view class="header-box" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<view class="header-box">
-		<!-- #endif -->
 			<view class="header-content">
 				<view class="back-btn" @click="handleBack">
 					<view class="back-arrow"></view>
@@ -25,6 +16,7 @@
 				</view>
 			</view>
 		</view>
+		<!-- #endif -->
 		
 		<!-- 内容区 -->
 		<scroll-view 
@@ -105,6 +97,7 @@ import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePag
 import Avatar from '@/components/base/Avatar.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { safeGetArray } from '@/utils/nullGuard.uts'
 
 // 访客数据类
@@ -352,16 +345,24 @@ onMounted(() => {
 	background-color: #f5f5f5;
 }
 
-.header-bg {
+/* 渐变背景 */
+.hear-bg {
 	position: absolute;
 	top: 0;
 	left: 0;
 	width: 750rpx;
-	background-color: #667eea;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	width: 750rpx;
+	height: 392rpx;
 }
 
 .header-box {
-	background-color: #667eea;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -386,16 +387,16 @@ onMounted(() => {
 	height: 20rpx;
 	border-left-width: 4rpx;
 	border-left-style: solid;
-	border-left-color: #ffffff;
+	border-left-color: #333333;
 	border-bottom-width: 4rpx;
 	border-bottom-style: solid;
-	border-bottom-color: #ffffff;
+	border-bottom-color: #333333;
 	transform: rotate(45deg);
 }
 
 .header-title {
 	font-size: 32rpx;
-	color: #ffffff;
+	color: #333333;
 	font-weight: bold;
 }
 
@@ -404,14 +405,14 @@ onMounted(() => {
 	padding-bottom: 8rpx;
 	padding-left: 20rpx;
 	padding-right: 20rpx;
-	background-color: rgba(255, 255, 255, 0.2);
+	background-color: rgba(0, 0, 0, 0.06);
 	border-radius: 32rpx;
 	margin-left: 200rpx;
 }
 
 .btn-text {
 	font-size: 24rpx;
-	color: #ffffff;
+	color: #666666;
 }
 
 .scroll-view {

@@ -15,12 +15,7 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
 		<view class="content-area">
-		<!-- #endif -->
 		
 		<!-- 权限管理 -->
 		<view class="section">
@@ -308,12 +303,8 @@ onShow(() => {
 
 /* #ifndef H5 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -349,7 +340,7 @@ onShow(() => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 
 .section {

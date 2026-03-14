@@ -1,5 +1,7 @@
 <template>
 	<view class="refund-page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -13,12 +15,7 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
 		<view class="content-area">
-		<!-- #endif -->
 		
 		<!-- 订单信息卡片 -->
 		<view class="order-card">
@@ -107,6 +104,7 @@ import { pageStatusBarHeight, initPageLayout } from '@/common/composables/usePag
 
 import { toJsonObj, countArrayItems } from '@/common/utils/utsSafe.uts'
 import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 // ==================== 辅助函数（必须在使用前定义）====================
 
 // 从对象获取字符串属性
@@ -397,15 +395,29 @@ onLoad((options: OnLoadOptions) => {
 	padding-bottom: 120rpx;
 }
 
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
 /* #ifndef H5 */
 /* APP端导航栏样式 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

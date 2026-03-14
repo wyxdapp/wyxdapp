@@ -15,14 +15,8 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<!-- APP端内容区域（需要留出导航栏空间） -->
-		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
-		<!-- H5端内容区域（无需额外 margin） -->
+		<!-- 内容区域 -->
 		<view class="content-area">
-		<!-- #endif -->
 			<!-- 头像区域 -->
 			<view class="avatar-section">
 				<view class="profile-item" @click="handleAvatarEdit">
@@ -92,6 +86,14 @@
 					<text class="item-label">个性签名</text>
 					<view class="item-value">
 						<text class="value-text">{{ displaySignature }}</text>
+						<text class="arrow">›</text>
+					</view>
+				</view>
+				
+				<view class="profile-item" @click="goToTags">
+					<text class="item-label">个性标签</text>
+					<view class="item-value">
+						<text class="value-text">设置标签</text>
 						<text class="arrow">›</text>
 					</view>
 				</view>
@@ -1086,6 +1088,11 @@ const handleAvatarEdit = () => {
 		}
 	})
 }
+const goToTags = () => {
+	uni.navigateTo({
+		url: '/pagesUser/my/profile/tags'
+	})
+}
 const handleContactEdit = () => {
 	contactFormRealname.value = formRealname.value
 	contactFormPhone.value = formContactPhone.value
@@ -1206,14 +1213,10 @@ const confirmContactEdit = async () => {
 }
 
 /* #ifndef H5 */
-/* APP端导航栏样式 */
+/* APP端导航栏样式（流式布局） */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -1254,7 +1257,7 @@ const confirmContactEdit = async () => {
 	flex-direction: column;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 
 .avatar-section {

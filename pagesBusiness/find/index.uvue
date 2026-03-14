@@ -1205,13 +1205,12 @@ onShow(() => {
 
 /* ==================== 顶部固定区域 ==================== */
 /* #ifndef H5 */
-/* APP端导航栏样式 */
+/* APP端导航栏样式（透明背景，显示渐变） */
 .nav-bar {
 	position: fixed;
 	top: 0;
 	left: 0;
 	right: 0;
-	background-color: #ffffff;
 	z-index: 100;
 	flex-direction: column;
 }

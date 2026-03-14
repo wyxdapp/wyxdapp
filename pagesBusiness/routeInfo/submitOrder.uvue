@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -15,7 +17,7 @@
 		
 		<!-- 滚动内容 -->
 		<!-- #ifndef H5 -->
-		<scroll-view class="scroll-view" :style="{ marginTop: (statusBarHeight + 44) + 'px' }" :scroll-y="true">
+		<scroll-view class="scroll-view" :scroll-y="true">
 		<!-- #endif -->
 		<!-- #ifdef H5 -->
 		<scroll-view class="scroll-view" :scroll-y="true">
@@ -185,6 +187,7 @@ import { getStatusBarHeight } from '@/common/utils/systemInfo.uts'
 import { multiplyMoney } from '@/utils/money.uts'
 import { checkBalancePayEnabled } from '@/utils/paymentRouter'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 let timerHandles: number[] = []
 
 function safeSetTimeout(callback: () => void, ms: number): number {
@@ -964,6 +967,24 @@ onUnmounted(() => {
 	position: relative;
 }
 
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
 /* 滚动区域 */
 .scroll-view {
 	flex: 1;
@@ -976,12 +997,8 @@ onUnmounted(() => {
 /* #ifndef H5 */
 /* APP端导航栏 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

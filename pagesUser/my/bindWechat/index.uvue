@@ -1,5 +1,7 @@
 ﻿<template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
 		<!-- APP端导航栏 -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
@@ -13,12 +15,7 @@
 		</view>
 		<!-- #endif -->
 		
-		<!-- #ifndef H5 -->
-		<view class="content-area" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
 		<view class="content-area">
-		<!-- #endif -->
 		
 		<!-- 绑定说明 -->
 		<view class="bind-info">
@@ -89,6 +86,7 @@ import { getCurrentUserIdReliable, checkUserLoginReliable } from '@/common/utils
 import { bindWechatMp } from '@/api/wechat.uts'
 import { getResponseCode, getResponseData, getStringProp } from '@/common/utils/utsSafe.uts'
 import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 绑定状态
 const binding = ref<boolean>(false)
@@ -270,18 +268,35 @@ onLoad((options: OnLoadOptions) => {
 <style scoped>
 .page {
 	flex: 1;
+	background-color: #F5F5F5;
+	flex-direction: column;
+}
+
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
 	background-color: #f5f5f5;
 	flex-direction: column;
 }
 
 /* #ifndef H5 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 

@@ -1084,16 +1084,14 @@ onReachBottom(() => {
 /* APP端状态栏占位 */
 .status-bar-placeholder {
 	width: 750rpx;
-	background-color: #D0E6FE;
 }
 
 /* 顶部导航栏 */
 .header {
 	flex-direction: column;
 	width: 750rpx;
-	background-color: #FFFFFF;
 	position: relative;
-	z-index: 1;
+	z-index: 10;
 }
 
 .nav-bar {
@@ -1101,16 +1099,16 @@ onReachBottom(() => {
 	align-items: center;
 	justify-content: space-between;
 	height: 88rpx;
-	padding-left: 24rpx;
-	padding-right: 24rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
 }
 
 .back-btn {
-	width: 60rpx;
-	height: 60rpx;
+	width: 80rpx;
+	height: 88rpx;
 	flex-direction: row;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-start;
 }
 
 .back-icon {
@@ -1120,14 +1118,14 @@ onReachBottom(() => {
 }
 
 .nav-title {
-	font-size: 36rpx;
+	font-size: 34rpx;
 	font-weight: bold;
 	color: #333333;
 }
 
 .nav-right {
-	width: 60rpx;
-	height: 60rpx;
+	width: 80rpx;
+	height: 88rpx;
 }
 
 .profile-section {

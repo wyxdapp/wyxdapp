@@ -27,7 +27,6 @@
 		<!-- #ifndef H5 -->
 		<scroll-view 
 			class="scroll-view"
-			:style="{ marginTop: (statusBarHeight + 44) + 'px' }"
 			scroll-y="true"
 		>
 		<!-- #endif -->
@@ -743,17 +742,25 @@ const onEditorMessage = (e: UniWebViewMessageEvent) => {
 		let contentStr = ''
 		
 		// data 是数组，取第一个元素
-		const firstItem = dataArr[0]
-		if (firstItem != null) {
-			const typeVal = firstItem.get('type')
-			const contentVal = firstItem.get('content')
-			if (typeVal != null) {
-				typeStr = typeVal.toString()
+		// iOS 端 dataArr[0] 可能不是 UTSJSONObject，没有 .get() 方法
+		// 需要通过 JSON.stringify + JSON.parse 转换为 UTSJSONObject
+		const rawFirstItem = dataArr[0]
+		if (rawFirstItem != null) {
+			const firstItemStr = JSON.stringify(rawFirstItem)
+			if (firstItemStr != null && firstItemStr != '' && firstItemStr != 'null') {
+				const firstItem = JSON.parse(firstItemStr) as UTSJSONObject
+				if (firstItem != null) {
+					const typeVal = firstItem.get('type')
+					const contentVal = firstItem.get('content')
+					if (typeVal != null) {
+						typeStr = typeVal.toString()
+					}
+					if (contentVal != null) {
+						contentStr = contentVal.toString()
+					}
+					console.log('解析编辑器消息 - type:', typeStr, 'content长度:', contentStr.length.toString())
+				}
 			}
-			if (contentVal != null) {
-				contentStr = contentVal.toString()
-			}
-			console.log('解析编辑器消息 - type:', typeStr, 'content长度:', contentStr.length.toString())
 		}
 		
 		// 处理消息
@@ -1426,16 +1433,8 @@ watch(formLineType, () => {
 /* #ifndef H5 */
 /* APP端导航栏样式 */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	width: 750rpx;
-	background-color: #ffffff;
-	border-bottom-width: 1rpx;
-	border-bottom-style: solid;
-	border-bottom-color: #eeeeee;
-	z-index: 1000;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -1486,7 +1485,7 @@ watch(formLineType, () => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 /* #endif */
 
@@ -1498,7 +1497,7 @@ watch(formLineType, () => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 /* #endif */
 
@@ -1507,6 +1506,9 @@ watch(formLineType, () => {
 	padding-bottom: 60rpx;
 	background-color: #ffffff;
 	flex-direction: column;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	margin-top: 20rpx;
 }
 
 .form-item {

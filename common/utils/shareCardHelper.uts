@@ -721,7 +721,7 @@ export function getNavigationUrl(cardType: string, targetId: string): string {
         } else if (cardType == CARD_TYPE_DYNAMIC) {
         return '/pagesBusiness/trendsDetail/index?kid=' + targetId
         } else if (cardType == CARD_TYPE_CUSTOM) {
-        return '/pagesBusiness/routeInfo/index?kid=' + targetId
+        return '/pagesBusiness/routeInfo/index?lineKid=' + targetId
         } else if (cardType == CARD_TYPE_ORDER) {
         return '/pagesTrade/orderDetails/index?orderKid=' + targetId
         }

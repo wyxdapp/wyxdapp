@@ -12,13 +12,11 @@
 	<!-- #ifndef MP-WEIXIN -->
 	<!-- 非小程序端：保留自定义导航栏和其他 UI 组件 -->
 	<view class="webview-page">
-		<!-- APP端状态栏占位 -->
+		<!-- 渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
-		<view class="status-bar-placeholder" :style="{ height: statusBarHeight + 'px' }"></view>
-		<!-- #endif -->
-		
 		<!-- 自定义导航栏 -->
-		<view class="nav-bar">
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
 			<view class="nav-back" @click="handleBack">
 				<uni-icons type="left" :size="22" color="#333333"></uni-icons>
 			</view>
@@ -27,6 +25,7 @@
 				<uni-icons type="redo" :size="22" color="#333333"></uni-icons>
 			</view>
 		</view>
+		<!-- #endif -->
 		
 		<!-- 加载进度条 - 位于导航栏下方 -->
 		<view v-if="isLoading == true" class="loading-bar">
@@ -69,6 +68,7 @@ import {
 import SharePopup from '@/components/common/SharePopup.uvue'
 import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 import { handleSilentError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -256,22 +256,35 @@ onUnmounted(() => {
 /* 状态栏占位 */
 .status-bar-placeholder {
 	width: 750rpx;
-	background-color: #ffffff;
+	background-color: transparent;
+}
+
+/* 渐变背景 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	width: 750rpx;
+	height: 392rpx;
 }
 
 /* 自定义导航栏 */
 .nav-bar {
+	position: relative;
+	z-index: 10;
 	width: 750rpx;
 	height: 88rpx;
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
-	background-color: #ffffff;
 	padding-left: 24rpx;
 	padding-right: 24rpx;
-	border-bottom-width: 1rpx;
-	border-bottom-style: solid;
-	border-bottom-color: #eeeeee;
 }
 
 .nav-back {

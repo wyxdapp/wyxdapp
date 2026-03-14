@@ -1,6 +1,20 @@
 <template>
 	<!-- #ifndef MP-WEIXIN -->
-	<view class="withdraw-page" :style="{ paddingTop: (pageStatusBarHeight + 20) + 'px' }">
+	<view class="withdraw-page">
+		<!-- 渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="goBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">提现</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
 		<!-- 提现方式选择 -->
 		<view class="withdraw-method">
 			<view class="section-title">选择提现方式</view>
@@ -229,6 +243,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { getUserId } from '@/stores/user.uts'
 import { 
 	checkUserLoginReliable, 
@@ -255,6 +270,11 @@ import { isAppPlatform, isH5Platform } from '@/common/utils/utsSafe.uts'
 import { getWechatAuthCode, isWeChatInstalled } from '@/pagesUser/services/wechatLogin/wechatLoginApp.uts'
 import { getUrlParams, safeRedirect } from '@/common/utils/security/urlValidator.uts'
 import { WITHDRAW_METHOD_WECHAT, WITHDRAW_METHOD_ALIPAY } from '@/common/config/businessCodes.uts'
+
+// 返回上一页
+const goBack = () => {
+	uni.navigateBack()
+}
 
 // 获取基础URL的辅助函数 - 必须在使用前定义
 const getBaseUrl = (): string => {
@@ -1652,9 +1672,59 @@ const handleWithdraw = () => {
 .withdraw-page {
 	flex: 1;
 	background-color: #f5f5f5;
-	padding: 20rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
 	padding-bottom: 200rpx;
-	/* padding-top 通过 :style 动态设置，使用 pageStatusBarHeight */
+}
+
+/* 渐变背景 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	width: 750rpx;
+	height: 392rpx;
+}
+
+/* 导航栏 */
+.nav-bar {
+	position: relative;
+	z-index: 10;
+	width: 750rpx;
+	margin-left: -20rpx;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 24rpx;
+	padding-right: 24rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-placeholder {
+	width: 80rpx;
 }
 
 .withdraw-method {

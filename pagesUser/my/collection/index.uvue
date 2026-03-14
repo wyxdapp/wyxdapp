@@ -121,7 +121,7 @@ const goToGuiderDetail = (item: UTSJSONObject) => {
 
 const goToRouteDetail = (item: UTSJSONObject) => {
 	uni.navigateTo({
-		url: `/pagesBusiness/routeInfo/index?id=${item.id}`
+		url: `/pagesBusiness/routeInfo/index?lineKid=${item.id}`
 	})
 }
 </script>

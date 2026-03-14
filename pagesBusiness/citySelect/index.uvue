@@ -1,5 +1,7 @@
 <template>
 	<view class="page">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- 自定义导航栏（H5端隐藏） -->
 		<!-- #ifndef H5 -->
 		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
@@ -14,7 +16,7 @@
 		<!-- #endif -->
 		
 		<!-- 搜索框 -->
-		<view class="search-wrapper" :style="{ marginTop: navBarHeight + 'px' }">
+		<view class="search-wrapper">
 			<view class="search-box">
 				<image class="search-icon" src="https://jiasu.wyxdapp.com/iconimages/n_index_search.png" mode="aspectFit"></image>
 				<input 
@@ -31,33 +33,20 @@
 		</view>
 		
 		<!-- 加载状态 -->
-		<view v-if="loading == true" class="loading-wrapper" :style="{ marginTop: (navBarHeight + 56) + 'px' }">
+		<view v-if="loading == true" class="loading-wrapper">
 			<text class="loading-text">加载中...</text>
 		</view>
 		
 		<!-- 滚动区域 -->
-		<!-- #ifdef H5 -->
 		<scroll-view 
 			v-if="loading == false"
 			class="scroll-area"
-			:style="{ marginTop: (navBarHeight + 56) + 'px', height: contentHeight + 'px' }"
+			:style="{ height: contentHeight + 'px' }"
 			scroll-y="true"
 			:scroll-into-view="scrollIntoView"
 			:show-scrollbar="false"
 			scroll-with-animation="true"
 		>
-		<!-- #endif -->
-		<!-- #ifndef H5 -->
-		<scroll-view 
-			v-if="loading == false"
-			class="scroll-area"
-			:style="{ marginTop: (navBarHeight + 56) + 'px', height: contentHeight + 'px' }"
-			scroll-y="true"
-			:scroll-into-view="scrollIntoView"
-			:show-scrollbar="false"
-			scroll-with-animation="true"
-		>
-		<!-- #endif -->
 			<!-- 城市定位 -->
 			<view class="section" id="area_section">
 				<text class="section-title">当前定位</text>
@@ -174,6 +163,7 @@ import {
 import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 import { handleSilentError } from '@/common/utils/errorHandler.uts'
 import { currentTheme } from '@/stores/theme.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 const statusBarHeight = ref<number>(0)
 const navBarHeight = ref<number>(44)
 const contentHeight = ref<number>(600)
@@ -597,15 +587,31 @@ onMounted(() => {
 	background-color: #F5F6F8;
 }
 
-/* ==================== 导航栏 ==================== */
-.nav-bar {
-	position: fixed;
+.hear-bg {
+	position: absolute;
 	top: 0;
 	left: 0;
 	width: 750rpx;
-	background-color: #FFFFFF;
-	z-index: 100;
+	height: 392rpx;
+	z-index: 0;
 }
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+/* ==================== 导航栏 ==================== */
+/* #ifndef H5 */
+.nav-bar {
+	position: relative;
+	z-index: 10;
+}
+/* #endif */
 
 .nav-content {
 	flex-direction: row;

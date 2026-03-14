@@ -1,7 +1,11 @@
 <template>
 	<view class="page">
+		<!-- 背景图片 -->
+		<view class="hear-bg" :style="headerGradientOuter()">
+			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
+		</view>
 		<!-- #ifndef H5 -->
-		<!-- APP端导航栏 -->
+		<!-- APP端导航栏（流式布局） -->
 		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
 			<view class="nav-content">
 				<view class="nav-back" @click="handleBack">
@@ -12,15 +16,7 @@
 			</view>
 		</view>
 		<!-- #endif -->
-		<view class="hear-bg" :style="headerGradientOuter()">
-			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
-		</view>
-		<!-- #ifndef H5 -->
-		<view class="driver-page" :style="{ marginTop: (pageStatusBarHeight + 44) + 'px' }">
-		<!-- #endif -->
-		<!-- #ifdef H5 -->
 		<view class="driver-page">
-		<!-- #endif -->
 			<view v-if="isApproved" class="success-page">
 				<view class="success-content">
 					<view class="success-icon-wrapper">
@@ -113,38 +109,40 @@
 					</view>
 				</view>
 			</view>
-			<view v-if="isEditable" class="footer-section">
-				<view class="submit-btn" :class="{ disabled: !canSubmit || submitting }" @click="handleSubmit">
-					<text class="btn-text">{{ submitting ? '提交中...' : (isRejected ? '重新提交' : '提交') }}</text>
+			
+		</view>
+		
+		<!-- 底部提交按钮（流式布局，参考 addTrends 发布按钮） -->
+		<view v-if="isEditable" class="submit-section">
+			<view class="submit-btn" :style="{ backgroundColor: (canSubmit && !submitting) ? '#37B1F2' : '#F0F0F0' }" @click="handleSubmit">
+				<text class="btn-text" :style="{ color: (canSubmit && !submitting) ? '#FFFFFF' : '#CCCCCC' }">{{ submitting ? '提交中...' : (isRejected ? '重新提交' : '提交') }}</text>
+			</view>
+		</view>
+		
+		<!-- 驾驶证号码输入弹窗 -->
+		<view v-if="showLicenseInput" class="popup-mask" @click="closeLicenseInput">
+			<view class="popup-container" @click.stop="">
+				<view class="popup-header">
+					<text class="popup-title">编辑驾驶证号码</text>
+				</view>
+				<view class="popup-content">
+					<input
+						class="edit-input"
+						v-model="tempLicenseNum"
+						placeholder="请输入驾驶证号码"
+						:maxlength="20"
+						:focus="showLicenseInput"
+					/>
+				</view>
+				<view class="popup-actions">
+					<view class="action-btn cancel-btn" @click="closeLicenseInput">
+						<text class="cancel-btn-text">取消</text>
+					</view>
+					<view class="action-btn confirm-btn" @click="confirmLicenseNum">
+						<text class="confirm-btn-text">确认</text>
+					</view>
 				</view>
 			</view>
-			<!-- 驾驶证号码输入弹窗 -->
-			<view v-if="showLicenseInput" class="popup-mask" @click="closeLicenseInput">
-				<view class="popup-container" @click.stop="">
-					<view class="popup-header">
-						<text class="popup-title">编辑驾驶证号码</text>
-					</view>
-					<view class="popup-content">
-						<input
-							class="edit-input"
-							:value="tempLicenseNum"
-							placeholder="请输入驾驶证号码"
-							:maxlength="20"
-							:focus="showLicenseInput"
-							@input="onLicenseNumInput"
-						/>
-					</view>
-					<view class="popup-actions">
-						<view class="action-btn cancel-btn" @click="closeLicenseInput">
-							<text class="cancel-btn-text">取消</text>
-						</view>
-						<view class="action-btn confirm-btn" @click="confirmLicenseNum">
-							<text class="confirm-btn-text">确认</text>
-						</view>
-					</view>
-				</view>
-			</view>
-
 		</view>
 	</view>
 </template>
@@ -581,7 +579,7 @@ const closeLicenseInput = () => {
 
 const confirmLicenseNum = () => {
 	const value = tempLicenseNum.value.trim()
-	if (value == null) {
+	if (value == null || value == '') {
 		uni.showToast({ title: '请输入驾驶证号码', icon: 'none' })
 		return
 	}
@@ -816,18 +814,14 @@ onUnmounted(() => {
 	width: 750rpx;
 	height: 100%;
 	background-color: #F5F5F5;
-	padding-bottom: 150rpx;
+	padding-bottom: 40rpx;
 }
 
 /* #ifndef H5 */
-/* APP端导航栏样式 */
+/* APP端导航栏样式（流式布局） */
 .nav-bar {
-	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	background-color: #ffffff;
-	z-index: 100;
+	position: relative;
+	z-index: 10;
 	flex-direction: column;
 }
 
@@ -1188,19 +1182,19 @@ onUnmounted(() => {
 }
 
 .footer-section {
-	position: fixed;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	padding: 24rpx 32rpx;
-	background-color: #FFFFFF;
-	border-top: 2rpx solid #F0F0F0;
-	box-shadow: 0 -4rpx 16rpx rgba(0, 0, 0, 0.1);
-	z-index: 20;
+	padding: 40rpx 32rpx;
+	flex-direction: column;
+	align-items: center;
+}
+
+.submit-section {
+	padding: 40rpx 32rpx;
+	flex-direction: column;
+	align-items: center;
 }
 
 .submit-btn {
-	width: 100%;
+	width: 654rpx;
 	height: 88rpx;
 	border-radius: 44rpx;
 	background-color: #37B1F2;

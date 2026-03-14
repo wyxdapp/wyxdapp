@@ -1089,7 +1089,7 @@ const handleRouteClick = (item: UTSJSONObject) => {
 	const kid = getStringProp(item, 'kid')
 	if (kid != '') {
 		uni.navigateTo({
-			url: '/pagesBusiness/routeInfo/index?id=' + kid
+			url: '/pagesBusiness/routeInfo/index?lineKid=' + kid
 		})
 	}
 }

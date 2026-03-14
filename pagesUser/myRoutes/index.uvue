@@ -4,11 +4,11 @@
 		<view class="hear-bg" :style="headerGradientOuter()">
 			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
 		</view>
-		<!-- 顶部导航栏 -->
 		<!-- #ifndef H5 -->
-		<view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
-			<view class="nav-bar">
-				<view class="back-btn" @click="handleBack">
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: statusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
 					<uni-icons type="left" size="22" color="#333333"></uni-icons>
 				</view>
 				<text class="nav-title">我的定制</text>
@@ -482,7 +482,7 @@ const handleItemClick = (item: UTSJSONObject | null) => {
 	if (lineStatu == 10 || lineStatu == 40 || lineStatu == 50 || lineStatu == 80) {
 		uni.navigateTo({ url: '/pages/index/components/addRoute?kid=' + kid })
 	} else {
-		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?kid=' + kid })
+		uni.navigateTo({ url: '/pagesBusiness/routeInfo/index?lineKid=' + kid })
 	}
 }
 
@@ -509,7 +509,7 @@ const buildShareData = (item: UTSJSONObject | null): UTSJSONObject => {
 		imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
 	}
 
-	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/routeInfo/index?kid=' + kid
+	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/routeInfo/index?lineKid=' + kid
 
 	return {
 		title: title,
@@ -805,15 +805,13 @@ onShow(() => {
 }
 
 /* 顶部导航栏 */
-.header {
-	flex-direction: column;
-	width: 750rpx;
-	background-color: #FFFFFF;
+.nav-bar {
 	position: relative;
-	z-index: 1;
+	z-index: 10;
+	width: 750rpx;
 }
 
-.nav-bar {
+.nav-content {
 	flex-direction: row;
 	align-items: center;
 	justify-content: space-between;
@@ -822,22 +820,16 @@ onShow(() => {
 	padding-right: 24rpx;
 }
 
-.back-btn {
-	width: 60rpx;
-	height: 60rpx;
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
 	flex-direction: row;
 	align-items: center;
-	justify-content: center;
-}
-
-.back-icon {
-	font-size: 48rpx;
-	color: #333333;
-	font-weight: bold;
+	justify-content: flex-start;
 }
 
 .nav-title {
-	font-size: 36rpx;
+	font-size: 34rpx;
 	font-weight: bold;
 	color: #333333;
 }
@@ -855,7 +847,7 @@ onShow(() => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 /* #endif */
 
@@ -865,7 +857,7 @@ onShow(() => {
 	width: 750rpx;
 	position: relative;
 	z-index: 1;
-	background-color: #F5F5F5;
+	background-color: transparent;
 }
 /* #endif */
 
