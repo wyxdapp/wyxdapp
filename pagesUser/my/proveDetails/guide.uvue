@@ -298,6 +298,15 @@ const isApproved = computed(() => authStatus.value === 30)
 const isRejected = computed(() => authStatus.value === 40)
 const isEditable = computed(() => authStatus.value === 10 || authStatus.value === 40)
 
+// 直接读取独立 ref，不再需要 JSON 序列化（必须在 computed 引用之前定义，UTS 不支持 const 提升）
+const getAuthGuideNum = (): string => { return authGuideNumVal.value }
+const getAuthExpiryDate = (): string => { return authExpiryVal.value }
+const getAuthGuideImage = (): string => { return authGuideImageVal.value }
+const getFormGuideNum = (): string => { return formGuideNumVal.value }
+const getFormExpiry = (): string => { return formExpiryVal.value }
+const getFormGuideImage = (): string => { return formGuideImageVal.value }
+const setFormExpiry = (value: string): void => { formExpiryVal.value = value }
+
 const canSubmit = computed((): boolean => {
 	try {
 		if (isEditable.value == null || isEditable.value == false) return false
@@ -322,15 +331,6 @@ const maskedGuideNum = computed((): string => {
 	} catch (e) {}
 	return '--'
 })
-
-// 直接读取独立 ref，不再需要 JSON 序列化
-const getAuthGuideNum = (): string => { return authGuideNumVal.value }
-const getAuthExpiryDate = (): string => { return authExpiryVal.value }
-const getAuthGuideImage = (): string => { return authGuideImageVal.value }
-const getFormGuideNum = (): string => { return formGuideNumVal.value }
-const getFormExpiry = (): string => { return formExpiryVal.value }
-const getFormGuideImage = (): string => { return formGuideImageVal.value }
-const setFormExpiry = (value: string): void => { formExpiryVal.value = value }
 
 const authGuideNum = computed((): string => { return authGuideNumVal.value })
 const pendingHasGuideImage = computed((): boolean => { return authGuideImageVal.value != '' })

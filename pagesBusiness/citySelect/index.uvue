@@ -37,9 +37,17 @@
 			<text class="loading-text">加载中...</text>
 		</view>
 		
+		<!-- 加载失败 -->
+		<view v-if="loadError == true && loading == false" class="loading-wrapper">
+			<text class="loading-text">加载城市数据失败</text>
+			<view class="retry-btn" @click="loadCityData">
+				<text class="retry-text">点击重试</text>
+			</view>
+		</view>
+		
 		<!-- 滚动区域 -->
 		<scroll-view 
-			v-if="loading == false"
+			v-if="loading == false && loadError == false"
 			class="scroll-area"
 			:style="{ height: contentHeight + 'px' }"
 			scroll-y="true"
@@ -48,7 +56,7 @@
 			scroll-with-animation="true"
 		>
 			<!-- 城市定位 -->
-			<view class="section" id="area_section">
+			<view class="section section-first" id="area_section">
 				<text class="section-title">当前定位</text>
 				<view class="city-grid">
 					<view 
@@ -95,7 +103,7 @@
 			<view 
 				v-for="(group, groupIndex) in displayCityGroups" 
 				:key="'group_' + groupIndex" 
-				class="section" 
+				class="section letter-section" 
 				:id="'letter_' + getGroupLetter(group)"
 			>
 				<view class="letter-header">
@@ -125,14 +133,14 @@
 				:class="{ 'alphabet-item-active': currentLetter == 'area' }"
 				@click="scrollToLetter('area')"
 			>
-				<text class="alphabet-text">☆</text>
+				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == 'area' }">☆</text>
 			</view>
 			<view 
 				class="alphabet-item"
 				:class="{ 'alphabet-item-active': currentLetter == 'hot' }"
 				@click="scrollToLetter('hot')"
 			>
-				<text class="alphabet-text">热</text>
+				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == 'hot' }">热</text>
 			</view>
 			<view 
 				v-for="(letter, index) in alphabetList" 
@@ -141,7 +149,7 @@
 				:class="{ 'alphabet-item-active': currentLetter == letter }"
 				@click="scrollToLetter(letter)"
 			>
-				<text class="alphabet-text">{{ letter }}</text>
+				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == letter }">{{ letter }}</text>
 			</view>
 		</view>
 	</view>
@@ -164,6 +172,8 @@ import uniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvu
 import { handleSilentError } from '@/common/utils/errorHandler.uts'
 import { currentTheme } from '@/stores/theme.uts'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
+
+// ==================== 布局状态 ====================
 const statusBarHeight = ref<number>(0)
 const navBarHeight = ref<number>(44)
 const contentHeight = ref<number>(600)
@@ -171,6 +181,7 @@ const alphabetBarTop = ref<number>(150)
 
 // ==================== 数据状态 ====================
 const loading = ref<boolean>(false)
+const loadError = ref<boolean>(false)
 const keyword = ref<string>('')
 const currentCity = ref<string>('')
 const locationCity = ref<string>('')
@@ -182,7 +193,7 @@ const hotCityList = ref<Array<string>>([])
 const allCityGroups = ref<Array<UTSJSONObject>>([])
 
 // 缓存配置
-const CITY_CACHE_KEY = 'city_select_cache'
+const CITY_CACHE_KEY = 'city_select_cache_v2'
 const CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000  // 24小时
 
 // ==================== 计算属性 ====================
@@ -210,8 +221,6 @@ const displayCityGroups = computed((): Array<UTSJSONObject> => {
 	if (kw == '') {
 		return allCityGroups.value
 	}
-	
-	// 过滤城市
 	const filtered: Array<UTSJSONObject> = []
 	const groups = allCityGroups.value
 	for (let i = 0; i < groups.length; i = i + 1) {
@@ -220,11 +229,9 @@ const displayCityGroups = computed((): Array<UTSJSONObject> => {
 			const groupObj = JSON.parse(JSON.stringify(group)) as UTSJSONObject
 			const letterVal = groupObj.get('letter')
 			const citiesVal = groupObj.get('cities')
-			
 			if (letterVal != null && citiesVal != null && Array.isArray(citiesVal) == true) {
 				const cities = citiesVal as Array<string>
 				const matchedCities: Array<string> = []
-				
 				for (let j = 0; j < cities.length; j = j + 1) {
 					const city = cities[j]
 					if (city != null) {
@@ -234,17 +241,12 @@ const displayCityGroups = computed((): Array<UTSJSONObject> => {
 						}
 					}
 				}
-				
 				if (matchedCities.length > 0) {
-					filtered.push({
-						letter: letterVal.toString(),
-						cities: matchedCities
-					})
+					filtered.push({ letter: letterVal.toString(), cities: matchedCities })
 				}
 			}
 		}
 	}
-	
 	return filtered
 })
 
@@ -288,42 +290,6 @@ const getGroupCities = (group: UTSJSONObject | null): Array<string> => {
 	return []
 }
 
-// ==================== 静态数据降级 ====================
-
-const useStaticCityData = () => {
-	// 热门城市
-	hotCityList.value = [
-		'北京市', '上海市', '广州市', '深圳市',
-		'武汉市', '成都市', '杭州市', '西安市',
-		'重庆市', '苏州市', '南京市', '长沙市'
-	]
-	
-	// 静态城市分组数据
-	allCityGroups.value = [
-		{ letter: 'A', cities: ['阿坝藏族羌族自治州', '安康市', '安庆市', '鞍山市', '安顺市', '安阳市'] },
-		{ letter: 'B', cities: ['白城市', '百色市', '蚌埠市', '保定市', '宝鸡市', '包头市', '北海市', '北京市', '本溪市', '滨州市'] },
-		{ letter: 'C', cities: ['沧州市', '常德市', '常州市', '潮州市', '承德市', '成都市', '郴州市', '赤峰市', '重庆市'] },
-		{ letter: 'D', cities: ['大连市', '丹东市', '大庆市', '大同市', '达州市', '德阳市', '德州市', '东莞市', '东营市'] },
-		{ letter: 'F', cities: ['佛山市', '抚顺市', '阜阳市', '福州市'] },
-		{ letter: 'G', cities: ['赣州市', '广安市', '广元市', '广州市', '贵港市', '桂林市', '贵阳市'] },
-		{ letter: 'H', cities: ['哈尔滨市', '海口市', '邯郸市', '杭州市', '合肥市', '衡阳市', '呼和浩特市', '惠州市', '湖州市'] },
-		{ letter: 'J', cities: ['济南市', '吉林市', '金华市', '济宁市', '九江市'] },
-		{ letter: 'K', cities: ['开封市', '昆明市'] },
-		{ letter: 'L', cities: ['兰州市', '拉萨市', '乐山市', '连云港市', '临沂市', '柳州市', '洛阳市', '泸州市'] },
-		{ letter: 'M', cities: ['马鞍山市', '茂名市', '绵阳市', '牡丹江市'] },
-		{ letter: 'N', cities: ['南昌市', '南充市', '南京市', '南宁市', '南通市', '南阳市', '宁波市'] },
-		{ letter: 'P', cities: ['盘锦市', '攀枝花市', '平顶山市', '莆田市'] },
-		{ letter: 'Q', cities: ['青岛市', '清远市', '秦皇岛市', '泉州市', '曲靖市', '衢州市'] },
-		{ letter: 'R', cities: ['日照市'] },
-		{ letter: 'S', cities: ['三亚市', '厦门市', '上海市', '汕头市', '韶关市', '绍兴市', '沈阳市', '深圳市', '石家庄市', '苏州市'] },
-		{ letter: 'T', cities: ['泰安市', '太原市', '台州市', '唐山市', '天津市'] },
-		{ letter: 'W', cities: ['威海市', '潍坊市', '温州市', '芜湖市', '乌鲁木齐市', '无锡市', '武汉市'] },
-		{ letter: 'X', cities: ['西安市', '湘潭市', '襄阳市', '咸阳市', '西宁市', '徐州市'] },
-		{ letter: 'Y', cities: ['烟台市', '延安市', '盐城市', '扬州市', '宜宾市', '宜昌市', '银川市', '岳阳市', '运城市'] },
-		{ letter: 'Z', cities: ['枣庄市', '张家口市', '漳州市', '肇庆市', '镇江市', '郑州市', '中山市', '珠海市', '株洲市', '淄博市', '遵义市'] }
-	]
-}
-
 // ==================== 数据解析 ====================
 
 const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
@@ -351,6 +317,7 @@ const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 			const allCityObj = JSON.parse(JSON.stringify(allCityListVal)) as UTSJSONObject
 			const letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
 			const groups: Array<UTSJSONObject> = []
+			let totalCities = 0
 			
 			for (let i = 0; i < letters.length; i = i + 1) {
 				const letter = letters[i]
@@ -365,15 +332,17 @@ const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 					}
 					if (cities.length > 0) {
 						groups.push({ letter: letter, cities: cities })
+						totalCities = totalCities + cities.length
 					}
 				}
 			}
 			
 			allCityGroups.value = groups
+			console.log('📊 [CitySelect] 城市数据解析完成，分组数:', groups.length, '城市总数:', totalCities)
 		}
 	} catch (e) {
 		handleSilentError(e, '解析城市数据')
-		useStaticCityData()
+		loadError.value = true
 	}
 }
 
@@ -402,7 +371,6 @@ const loadFromCache = (): boolean => {
 		} else {
 			jsonStr = JSON.stringify(cacheStr)
 		}
-		
 		if (jsonStr == '') return false
 		
 		const cache = JSON.parse(jsonStr) as UTSJSONObject
@@ -425,7 +393,6 @@ const loadFromCache = (): boolean => {
 			parseAndSetCityData(dataVal as UTSJSONObject)
 			return true
 		}
-		
 		return false
 	} catch (e) {
 		handleSilentError(e, '读取城市缓存')
@@ -445,29 +412,32 @@ const fetchCityDataFromApi = (showLoading: boolean) => {
 			if (dataObj != null) {
 				parseAndSetCityData(dataObj)
 				saveCityCache(dataObj)
+				loadError.value = false
+			} else {
+				loadError.value = true
 			}
 		} else {
-			// API失败，使用静态数据
-			useStaticCityData()
+			loadError.value = true
 		}
 		loading.value = false
 	}).catch((error) => {
 		if (error != null) {
 			handleSilentError(error, '加载城市列表')
 		}
-		useStaticCityData()
+		loadError.value = true
 		loading.value = false
 	})
 }
 
 const loadCityData = () => {
 	loading.value = true
+	loadError.value = false
 	
 	// 先尝试从缓存加载
 	const cached = loadFromCache()
 	if (cached == true) {
 		loading.value = false
-		// 后台更新数据
+		// 后台静默更新数据
 		fetchCityDataFromApi(false)
 		return
 	}
@@ -479,7 +449,7 @@ const loadCityData = () => {
 // ==================== 事件处理 ====================
 
 const handleSearch = () => {
-	// 搜索逻辑在 computed 中处理
+	// displayCityGroups 是 computed，会自动根据 keyword 过滤
 }
 
 const clearSearch = () => {
@@ -493,17 +463,17 @@ const scrollToLetter = (letter: string) => {
 	} else if (letter == 'hot') {
 		scrollIntoView.value = 'hot_section'
 	} else {
-		scrollIntoView.value = 'letter_' + letter
+		scrollIntoView.value = ''
+		setTimeout(() => {
+			scrollIntoView.value = 'letter_' + letter
+		}, 50)
+		return
 	}
 }
 
 const selectCity = (city: string) => {
 	currentCity.value = city
-	
-	// 通过全局事件返回数据（替代 eventChannel，UTS 不支持 getOpenerEventChannel）
 	uni.$emit('onCitySelected', { city: city })
-	
-	// 返回上一页
 	uni.navigateBack()
 }
 
@@ -514,33 +484,25 @@ const goBack = () => {
 // ==================== 页面初始化 ====================
 
 const initPage = () => {
-	// 获取状态栏高度（H5 端返回 0，APP 端返回实际高度）
 	statusBarHeight.value = getStatusBarHeight()
 	
 	// #ifdef H5
-	// H5 端隐藏导航栏，navBarHeight 为 0
 	navBarHeight.value = 0
 	// #endif
 	
 	// #ifndef H5
-	// APP 端导航栏高度 = 状态栏 + 44px（标题栏）
 	navBarHeight.value = statusBarHeight.value + 44
 	// #endif
 	
-	// 搜索框区域高度约 56px
-	const searchHeight = 56
-	
-	// 内容高度 = 窗口高度 - 导航栏高度 - 搜索框高度
+	const searchHeight = 52  // 搜索框实际高度（8+76+8 rpx ≈ 46px，留点余量）
 	const windowHeight = getWindowHeight()
 	contentHeight.value = windowHeight - navBarHeight.value - searchHeight
 	
-	// 确保内容高度有效
 	if (contentHeight.value < 200) {
 		contentHeight.value = windowHeight - 100
 	}
 	
-	// 字母索引栏顶部位置
-	alphabetBarTop.value = navBarHeight.value + searchHeight + 10
+	alphabetBarTop.value = navBarHeight.value + searchHeight + 5
 	
 	console.log('📐 [CitySelect] 布局初始化:', {
 		statusBarHeight: statusBarHeight.value,
@@ -549,7 +511,6 @@ const initPage = () => {
 		contentHeight: contentHeight.value
 	})
 	
-	// 加载城市数据
 	loadCityData()
 }
 
@@ -584,6 +545,7 @@ onMounted(() => {
 .page {
 	flex-direction: column;
 	width: 750rpx;
+	height: 100%;
 	background-color: #F5F6F8;
 }
 
@@ -630,11 +592,6 @@ onMounted(() => {
 	justify-content: center;
 }
 
-.back-icon {
-	width: 44rpx;
-	height: 44rpx;
-}
-
 .nav-title {
 	font-size: 36rpx;
 	font-weight: bold;
@@ -648,15 +605,13 @@ onMounted(() => {
 
 /* ==================== 搜索框 ==================== */
 .search-wrapper {
-	position: fixed;
-	left: 0;
+	position: relative;
 	width: 750rpx;
-	padding-top: 16rpx;
-	padding-bottom: 16rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
 	padding-left: 28rpx;
 	padding-right: 28rpx;
-	background-color: #FFFFFF;
-	z-index: 99;
+	z-index: 10;
 }
 
 .search-box {
@@ -714,6 +669,21 @@ onMounted(() => {
 	color: #999999;
 }
 
+.retry-btn {
+	margin-top: 30rpx;
+	padding-left: 40rpx;
+	padding-right: 40rpx;
+	padding-top: 16rpx;
+	padding-bottom: 16rpx;
+	background-color: #37B1F2;
+	border-radius: 34rpx;
+}
+
+.retry-text {
+	font-size: 28rpx;
+	color: #FFFFFF;
+}
+
 /* ==================== 滚动区域 ==================== */
 .scroll-area {
 	flex-direction: column;
@@ -729,13 +699,12 @@ onMounted(() => {
 	background-color: #FFFFFF;
 	margin-left: 20rpx;
 	margin-right: 20rpx;
-	margin-bottom: 24rpx;
+	margin-bottom: 16rpx;
 	border-radius: 24rpx;
 }
 
-/* 第一个区块（当前定位）增加顶部间距 */
-.section:first-child {
-	margin-top: 24rpx;
+.section-first {
+	margin-top: 12rpx;
 }
 
 .section-title {
@@ -792,16 +761,19 @@ onMounted(() => {
 	font-weight: bold;
 }
 
+/* 字母分组区块 */
+.letter-section {
+	padding-left: 0;
+	padding-right: 0;
+}
+
 /* ==================== 字母标题 ==================== */
 .letter-header {
 	flex-direction: row;
 	align-items: center;
 	height: 56rpx;
 	background-color: #F5F6F8;
-	margin-left: -28rpx;
-	margin-right: -28rpx;
 	padding-left: 28rpx;
-	border-radius: 0;
 }
 
 .letter-title {
@@ -813,6 +785,8 @@ onMounted(() => {
 /* ==================== 城市列表 ==================== */
 .city-list {
 	flex-direction: column;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
 }
 
 .city-list-item {
@@ -889,7 +863,7 @@ onMounted(() => {
 	color: #666666;
 }
 
-.alphabet-item-active .alphabet-text {
+.alphabet-text-active {
 	color: #FFFFFF;
 	font-weight: bold;
 }

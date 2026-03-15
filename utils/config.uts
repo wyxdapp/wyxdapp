@@ -18,7 +18,7 @@ const isDev = process.env.NODE_ENV === 'development'
 
 // open用户 wyxdkey - 二次开发时修改为您的 wyxdkey（从开放平台获取）
 // 留空表示使用默认平台（后端自动使用默认演示密钥）
-export const wyxdkey = 'P679252D0RB7IYBR'
+export const wyxdkey = 'NSR8NVUB7G6RYU86AWZ'
 
 // 腾讯地图密钥 - 用于定位和地图展示，前往 https://lbs.qq.com 申请
 export const MAP_KEY = 'URTBZ-N3HKD-CRC4M-P6ET7-5HORV-V3FFU'
