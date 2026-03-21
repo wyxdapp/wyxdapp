@@ -145,6 +145,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow, onLoad } from '@dcloudio/uni-app'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import UniIcons from '@/components/base/UniIcons.uvue'
 import LotteryResult from '@/components/lottery/LotteryResult.uvue'
 import GiftBox from '@/components/lottery/GiftBox.uvue'
@@ -313,7 +314,7 @@ const shareData = computed(() => {
 		title: '网约向导趣游玩 - 幸运抽奖',
 		desc: '每天免费抽奖，赢取礼物和现金红包！',
 		summary: '每天免费抽奖，赢取礼物和现金红包！',
-		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/lottery_share.png',
+		imageUrl: DEFAULT_SHARE_IMAGE,
 		url: '/pagesUser/my/proveDetails/lottery',
 		link: 'https://m.wyxdapp.com/#/pagesUser/my/proveDetails/lottery',
 		userId: userKid

@@ -1,10 +1,22 @@
 <template>
-	<view class="page bg-white" v-if="initFinish == true">
+	<view class="page" v-if="initFinish == true">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
-		<!-- APP端状态栏占位 -->
-		<view class="status-bar-placeholder" :style="{ height: pageStatusBarHeight + 'px' }"></view>
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<uni-icons type="left" size="22" color="#333333"></uni-icons>
+				</view>
+				<text class="nav-title">动态详情</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
 		<!-- #endif -->
 		
+		<!-- 内容区域 -->
+		<view class="content-area">
 		<!-- 动态详情 - 直接使用 DynamicItem 组件 -->
 		<DynamicItem 
 			v-if="hasInfo == true"
@@ -111,6 +123,7 @@
 				</view>
 			</view>
 		</view>
+		</view>
 		
 		<!-- 输入框 -->
 		<view class="footer-box">
@@ -180,6 +193,8 @@ import {
 	handleShowQrcode as handleShowQrcodeFn
 } from '@/common/composables/useShareUi.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 let timerHandles: number[] = []
 
 function safeSetTimeout(callback: () => void, ms: number): number {
@@ -576,6 +591,17 @@ const handleInputBlur = () => {
 }
 
 // ==================== 业务函数 ====================
+
+// 返回按钮处理
+const handleBack = () => {
+	uni.navigateBack({
+		delta: 1,
+		fail: () => {
+			uni.switchTab({ url: '/pages/discover/index' })
+		}
+	})
+}
+
 const checkLogin = () => {
 	if (isUserLoggedIn() == false) {
 		uni.showToast({
@@ -767,7 +793,7 @@ const handleMoreOptions = async () => {
 		}
 		
 		// 获取分享图片
-		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		let imageStr = DEFAULT_SHARE_IMAGE
 		const insertType = info.value.insertType
 		
 		if (insertType == 1) {
@@ -856,7 +882,7 @@ const handleMoreOptions = async () => {
 			desc: '发现精彩动态，一起来看看吧！',
 			link: 'https://m.wyxdapp.com',
 			url: 'https://m.wyxdapp.com',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE,
 			userId: '',
 			referrerShortKid: ''
 		}
@@ -1639,17 +1665,72 @@ onUnmounted(() => {
 .page {
 	width: 100%;
 	padding-bottom: 256rpx;
-	background-color: #ffffff;
+	background-color: #F5F5F5;
 }
 
-/* APP端状态栏占位 */
-.status-bar-placeholder {
+/* 顶部渐变背景 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
 	width: 750rpx;
-	background-color: #ffffff;
+	height: 392rpx;
+	z-index: 0;
 }
 
-.bg-white {
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 750rpx;
+	height: 392rpx;
+	z-index: 0;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏样式 */
+.nav-bar {
+	position: relative;
+	z-index: 10;
+	flex-direction: column;
+}
+
+.nav-content {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 88rpx;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	color: #333333;
+	font-weight: bold;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
+.content-area {
+	flex-direction: column;
+	position: relative;
+	z-index: 1;
 	background-color: #ffffff;
+	margin-top: 20rpx;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
 }
 
 .divider-line {
@@ -1958,6 +2039,7 @@ onUnmounted(() => {
 	padding-bottom: 48rpx;
 	flex-direction: row;
 	align-items: center;
+	z-index: 100;
 }
 
 .input-box {

@@ -1,5 +1,19 @@
 <template>
-	<view class="tags-page">
+	<scroll-view class="tags-page" scroll-y="true">
+		<!-- 顶部渐变背景 -->
+		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
+		<!-- #ifndef H5 -->
+		<!-- APP端导航栏 -->
+		<view class="nav-bar" :style="{ paddingTop: pageStatusBarHeight + 'px' }">
+			<view class="nav-content">
+				<view class="nav-back" @click="handleBack">
+					<UniIcons type="back" :size="44" color="#333333" />
+				</view>
+				<text class="nav-title">个人标签</text>
+				<view class="nav-placeholder"></view>
+			</view>
+		</view>
+		<!-- #endif -->
 		<view class="section-card">
 			<view class="section-header">
 				<text class="section-icon">🌏</text>
@@ -8,13 +22,13 @@
 					<text class="section-subtitle">最多选择4种语言</text>
 				</view>
 				<view v-if="selectedLanguages.length" class="section-badge">
-					<text>{{ selectedLanguages.length }}/4</text>
+					<text class="section-badge-text">{{ selectedLanguages.length }}/4</text>
 				</view>
 			</view>
 			
 			<view class="tags-container">
-				<view v-if="loading" class="tag-loading">加载中...</view>
-				<view v-else-if="languageOptions.length == 0" class="empty-tip">暂无语言数据</view>
+				<text v-if="loading" class="tag-loading">加载中...</text>
+				<text v-else-if="languageOptions.length == 0" class="empty-tip">暂无语言数据</text>
 				<template v-else>
 					<view
 						v-for="item in languageListDisplay"
@@ -56,13 +70,13 @@
 					<text class="section-subtitle">最多选择5种标签</text>
 				</view>
 				<view v-if="selectedLabels.length" class="section-badge">
-					<text>{{ selectedLabels.length }}/5</text>
+					<text class="section-badge-text">{{ selectedLabels.length }}/5</text>
 				</view>
 			</view>
 
 			<view class="tags-container">
-				<view v-if="loading" class="tag-loading">加载中...</view>
-				<view v-else-if="labelOptions.length == 0" class="empty-tip">暂无标签数据</view>
+				<text v-if="loading" class="tag-loading">加载中...</text>
+				<text v-else-if="labelOptions.length == 0" class="empty-tip">暂无标签数据</text>
 				<template v-else>
 					<view
 						v-for="item in labelListDisplay"
@@ -101,6 +115,9 @@
 				保存设置
 			</Button>
 		</view>
+		
+		<!-- 底部安全区域 -->
+		<view class="safe-bottom"></view>
 
 		<Popup :show="showAddDialog" position="center" @close="closeDialog">
 			<view class="add-dialog">
@@ -116,7 +133,7 @@
 				</view>
 			</view>
 		</Popup>
-	</view>
+	</scroll-view>
 </template>
 
 <script setup lang="uts">
@@ -139,6 +156,11 @@ import {
 	getIsLoginFromData
 } from '@/common/utils/loginHelper.uts'
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
+import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
+import { 
+	pageStatusBarHeight, 
+	initPageLayout 
+} from '@/common/composables/usePageLayout.uts'
 import {
 	queryAllSpeciality,
 	addCustomLanguage,
@@ -178,39 +200,12 @@ const MAX_LABEL = 5
 
 const userStore = useUserStore()
 const currentUserKid = computed((): string => {
-	try {
-		const getUserKidSafe = (): string => {
-			try {
-				const storeObj = toJsonObj(userStore)
-				if (storeObj == null) return ''
-
-				let userInfoValAny: string | number | boolean | UTSJSONObject | null = null
-				try {
-					userInfoValAny = storeObj.get('userInfo')
-				} catch (e) {}
-
-				if (userInfoValAny == null || userInfoValAny == '') return ''
-				const userInfoJson = JSON.stringify(userInfoValAny)
-				if (userInfoJson == null || userInfoJson == '') return ''
-
-				const userInfoObj = JSON.parse(userInfoJson) as UTSJSONObject
-				if (userInfoObj == null) return ''
-
-				let kidValAny: string | number | boolean | UTSJSONObject | null = null
-				try {
-					kidValAny = userInfoObj.get('kid')
-				} catch (e) {}
-
-				if (kidValAny == null) return ''
-				const kidStr = kidValAny.toString()
-				return (kidStr != null && kidStr != '') ? kidStr : ''
-			} catch (e) {}
-			return ''
-		}
-		return getUserKidSafe()
-	} catch (e) {}
-	return ''
+	return getCurrentUserIdReliable()
 })
+
+const handleBack = () => {
+	uni.navigateBack()
+}
 
 const loading = ref(false)
 const saving = ref(false)
@@ -360,10 +355,9 @@ const loadSpecialities = async () => {
 	if (loginOk1 == null || loginOk1 == false) return
 	loading.value = true
 	try {
-		// 构造参数：使用 JSON 序列化/反序列化避免匿名对象字面量导致的 UTS 参数类型错误
-		const paramsJson = JSON.stringify({ userKid: currentUserKid.value })
-		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-		const params = paramsParsed as QueryAllSpecialityParams
+		// 直接获取用户ID，不依赖 computed
+		const params = new QueryAllSpecialityParams()
+		params.userKid = getCurrentUserIdReliable()
 
 		const res = await queryAllSpeciality(params)
 		// 使用 JSON 序列化/反序列化安全读取返回值，避免直接点访问触发 error18
@@ -429,19 +423,41 @@ const loadSpecialities = async () => {
 }
 
 const toggleLanguage = (item: TagOption) => {
-	if (!item.isSelected && selectedLanguages.value.length >= MAX_LANGUAGE) {
+	if (item.isSelected == false && selectedLanguages.value.length >= MAX_LANGUAGE) {
 		uni.showToast({ title: `最多选择${MAX_LANGUAGE}种语言`, icon: 'none' })
 		return
 	}
-	item.isSelected = !item.isSelected
+	// 创建新数组触发响应式更新
+	const list = languageOptions.value
+	const newList: TagOption[] = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const cur = list[i]
+		if (cur.kid == item.kid) {
+			newList.push(new TagOption(cur.kid, cur.name, cur.type, !cur.isSelected, cur.isCustomized))
+		} else {
+			newList.push(cur)
+		}
+	}
+	languageOptions.value = newList
 }
 
 const toggleLabel = (item: TagOption) => {
-	if (!item.isSelected && selectedLabels.value.length >= MAX_LABEL) {
+	if (item.isSelected == false && selectedLabels.value.length >= MAX_LABEL) {
 		uni.showToast({ title: `最多选择${MAX_LABEL}种标签`, icon: 'none' })
 		return
 	}
-	item.isSelected = !item.isSelected
+	// 创建新数组触发响应式更新
+	const list = labelOptions.value
+	const newList: TagOption[] = []
+	for (let i = 0; i < list.length; i = i + 1) {
+		const cur = list[i]
+		if (cur.kid == item.kid) {
+			newList.push(new TagOption(cur.kid, cur.name, cur.type, !cur.isSelected, cur.isCustomized))
+		} else {
+			newList.push(cur)
+		}
+	}
+	labelOptions.value = newList
 }
 
 const openAddDialog = (type: TagKind) => {
@@ -457,7 +473,7 @@ const closeDialog = () => {
 
 const handleAddCustom = async () => {
 	const value = customInput.value.trim()
-	if (value == null) {
+	if (value == null || value == '') {
 		uni.showToast({ title: '请输入内容', icon: 'none' })
 		return
 	}
@@ -466,15 +482,15 @@ const handleAddCustom = async () => {
 
 	try {
 		if (dialogType.value === 'language') {
-			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, languageName: value })
-			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-			const params = paramsParsed as AddCustomLanguageParams
-			await addCustomLanguage(params)
+			const p = new AddCustomLanguageParams()
+			p.userKid = getCurrentUserIdReliable()
+			p.languageName = value
+			await addCustomLanguage(p)
 		} else {
-			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, labelName: value })
-			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-			const params = paramsParsed as AddCustomLabelParams
-			await addCustomLabel(params)
+			const p = new AddCustomLabelParams()
+			p.userKid = getCurrentUserIdReliable()
+			p.labelName = value
+			await addCustomLabel(p)
 		}
 		uni.showToast({ title: '添加成功', icon: 'success' })
 		closeDialog()
@@ -499,14 +515,14 @@ const handleDelete = async (item: TagOption) => {
 	if (confirmRes == null) return
 	try {
 		if (item.type === 'language') {
-			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, languageKid: item.kid })
-			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-			const params = paramsParsed as DeleteUserLanguageParams
+			const params = new DeleteUserLanguageParams()
+			params.userKid = getCurrentUserIdReliable()
+			params.languageKid = item.kid
 			await deleteUserLanguage(params)
 		} else {
-			const paramsJson = JSON.stringify({ userKid: currentUserKid.value, labelKid: item.kid })
-			const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-			const params = paramsParsed as DeleteUserLabelParams
+			const params = new DeleteUserLabelParams()
+			params.userKid = getCurrentUserIdReliable()
+			params.labelKid = item.kid
 			await deleteUserLabel(params)
 		}
 		uni.showToast({ title: '删除成功', icon: 'success' })
@@ -527,14 +543,11 @@ const handleSave = async () => {
 	}
 	saving.value = true
 	try {
-		const paramsJson = JSON.stringify({
-			userKid: currentUserKid.value,
-			languageKids: selectedLanguages.value.map(item => item.kid),
-			labelKids: selectedLabels.value.map(item => item.kid)
-		})
-		const paramsParsed = (paramsJson != null && paramsJson != '') ? JSON.parse(paramsJson) as UTSJSONObject : {}
-		const params = paramsParsed as AddUserSpecialityParams
-		await addUserSpeciality(params)
+		const p = new AddUserSpecialityParams()
+		p.userKid = getCurrentUserIdReliable()
+		p.languageKids = selectedLanguages.value.map((item: TagOption): string => item.kid)
+		p.labelKids = selectedLabels.value.map((item: TagOption): string => item.kid)
+		await addUserSpeciality(p)
 		uni.showToast({ title: '保存成功', icon: 'success' })
 		setTimeout(() => { uni.navigateBack() }, 1200)
 	} catch (error) {
@@ -545,22 +558,84 @@ const handleSave = async () => {
 }
 
 onMounted(() => {
+	initPageLayout()
 	loadSpecialities()
 })
 </script>
 
 <style scoped>
 .tags-page {
-	background: #f5f5f5;
-	padding: 24rpx 20rpx 60rpx;
+	flex: 1;
+	flex-direction: column;
+	background-color: #f5f5f5;
+	padding-top: 0;
+	padding-bottom: 0;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
 }
 
+/* 顶部渐变背景 */
+.hear-bg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 400rpx;
+	z-index: 0;
+}
+
+.hear-bg-mask {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+}
+
+/* #ifndef H5 */
+/* APP端导航栏 */
+.nav-bar {
+	position: relative;
+	z-index: 10;
+}
+
+.nav-content {
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 20rpx;
+	padding-right: 20rpx;
+}
+
+.nav-back {
+	width: 80rpx;
+	height: 88rpx;
+	flex-direction: row;
+	align-items: center;
+}
+
+.nav-title {
+	font-size: 34rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.nav-placeholder {
+	width: 80rpx;
+}
+/* #endif */
+
 .section-card {
+	position: relative;
+	z-index: 1;
 	background: #ffffff;
 	border-radius: 24rpx;
-	padding: 28rpx;
+	padding-top: 28rpx;
+	padding-bottom: 28rpx;
+	padding-left: 28rpx;
+	padding-right: 28rpx;
 	margin-bottom: 24rpx;
-	box-shadow: 0 12rpx 30rpx rgba(32, 118, 189, 0.05);
 }
 
 .section-header {
@@ -591,10 +666,18 @@ onMounted(() => {
 
 .section-badge {
 	min-width: 96rpx;
-	text-align: center;
-	padding: 8rpx 16rpx;
+	padding-top: 8rpx;
+	padding-bottom: 8rpx;
+	padding-left: 16rpx;
+	padding-right: 16rpx;
 	border-radius: 999rpx;
 	background: #2eacf2;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.section-badge-text {
 	color: #fff;
 	font-size: 24rpx;
 }
@@ -626,8 +709,6 @@ onMounted(() => {
 	align-items: center;
 	justify-content: center;
 	box-shadow: 0 6rpx 18rpx rgba(46, 172, 242, 0.15);
-	color: #2294e4;
-	font-size: 26rpx;
 	flex: none;
 	width: auto;
 	max-width: 600rpx;
@@ -639,12 +720,21 @@ onMounted(() => {
 
 .tag-item.selected {
 	background: #2eacf2;
-	color: #fff;
 	box-shadow: 0 12rpx 24rpx rgba(46, 172, 242, 0.35);
 }
 
 .tag-text {
 	white-space: nowrap;
+	font-size: 26rpx;
+	color: #2294e4;
+}
+
+.tag-item.selected .tag-text {
+	color: #fff;
+}
+
+.tag-item.add-tag .tag-text {
+	color: #8c9aa9;
 }
 
 .tag-close {
@@ -686,7 +776,6 @@ onMounted(() => {
 .tag-item.add-tag {
 	padding-right: 36rpx;
 	background: #f2f2f2;
-	color: #8c9aa9;
 	box-shadow: none;
 }
 
@@ -702,7 +791,17 @@ onMounted(() => {
 }
 
 .save-section {
+	position: relative;
+	z-index: 1;
 	margin-top: 20rpx;
+	padding-left: 0;
+	padding-right: 0;
+}
+
+/* 底部安全区域 */
+.safe-bottom {
+	width: 750rpx;
+	height: 60rpx;
 }
 
 .add-dialog {

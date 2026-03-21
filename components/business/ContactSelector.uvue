@@ -24,19 +24,24 @@
 						</view>
 						<text class="contact-phone-text">{{ contact.phone }}</text>
 					</view>
-					<view class="contact-check">
-						<uni-icons 
-							v-if="contact.kid == selectedContactId" 
-							type="checkbox-filled" 
-							:size="24" 
-							color="#2EAEF2"
-						/>
-						<uni-icons 
-							v-else 
-							type="circle" 
-							:size="24" 
-							color="#CCCCCC"
-						/>
+					<view class="contact-actions">
+						<view class="delete-icon-btn" @click.stop="handleDelete(index)">
+							<text class="delete-icon-text">删除</text>
+						</view>
+						<view class="contact-check">
+							<uni-icons 
+								v-if="contact.kid == selectedContactId" 
+								type="checkbox-filled" 
+								:size="24" 
+								color="#2EAEF2"
+							/>
+							<uni-icons 
+								v-else 
+								type="circle" 
+								:size="24" 
+								color="#CCCCCC"
+							/>
+						</view>
 					</view>
 				</view>
 				
@@ -229,6 +234,28 @@ const handleSelectByIndex = (index: number) => {
 const handleAdd = () => {
 	emit('add')
 }
+
+// 删除联系人
+const handleDelete = (index: number) => {
+	if (index < 0 || index >= displayList.value.length) return
+	const contact = displayList.value[index]
+	uni.showModal({
+		title: '确认删除',
+		content: '确定删除联系人 ' + contact.name + ' 吗？',
+		confirmText: '删除',
+		confirmColor: '#E64340',
+		success: (res: UniShowModalResult) => {
+			if (res.confirm == true) {
+				// 获取原始数据
+				const sourceList = props.contactList as Array<any>
+				if (index < sourceList.length) {
+					const originalContact = sourceList[index]
+					emit('delete', originalContact)
+				}
+			}
+		}
+	})
+}
 </script>
 
 <style scoped>
@@ -342,6 +369,22 @@ const handleAdd = () => {
 .contact-phone-text {
 	font-size: 26rpx;
 	color: #666666;
+}
+
+.contact-actions {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+}
+
+.delete-icon-btn {
+	padding: 8rpx 16rpx;
+	margin-right: 16rpx;
+}
+
+.delete-icon-text {
+	font-size: 24rpx;
+	color: #E64340;
 }
 
 .contact-check {

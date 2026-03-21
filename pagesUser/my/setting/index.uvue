@@ -511,6 +511,9 @@ const showH5DownloadGuide = () => {
 						if (ua.indexOf('iphone') >= 0 || ua.indexOf('ipad') >= 0) {
 							// iOS 设备
 							safeRedirect(IOS_APPSTORE_URL)
+						} else if (ua.indexOf('hmos') >= 0 || ua.indexOf('harmonyos') >= 0 || ua.indexOf('huawei') >= 0) {
+							// 鸿蒙设备 - 跳转 Android 下载（鸿蒙兼容 APK）
+							safeRedirect(ANDROID_DOWNLOAD_URL)
 						} else {
 							// Android 或其他设备
 							safeRedirect(ANDROID_DOWNLOAD_URL)

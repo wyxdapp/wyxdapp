@@ -1,0 +1,24 @@
+/**
+ * 计数相关 API（浏览量、点赞数等）
+ * 对应后端接口: /support/count/addCount
+ */
+
+import request from '@/utils/request'
+
+/**
+ * 增加资源计数（浏览量、点赞数等）
+ * POST /support/count/addCount
+ * @param countModule 计数模块（20=路线）
+ * @param countType 计数类型（40=浏览量, 70=点赞数）
+ * @param resourceKid 资源ID
+ * @param resourceCount 增加数量
+ */
+export const addCount = (countModule: number, countType: number, resourceKid: string, resourceCount: number): Promise<UTSJSONObject> => {
+	const payload = {
+		countModule: countModule,
+		countType: countType,
+		resourceKid: resourceKid,
+		resourceCount: resourceCount
+	} as UTSJSONObject
+	return request.post('/support/count/addCount', payload, false)
+}

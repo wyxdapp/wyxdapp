@@ -47,7 +47,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 const props = defineProps({
 	src: { type: String, default: '' },
 	placeholder: { type: String, default: '' },
-	errorImage: { type: String, default: '/static/images/default-image.png' },
+	errorImage: { type: String, default: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png' },
 	mode: { type: String, default: 'aspectFill' },
 	width: { type: String, default: '100%' },
 	height: { type: String, default: '100%' },

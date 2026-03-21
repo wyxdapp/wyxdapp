@@ -124,12 +124,12 @@ const getLineTitle = (): string => {
 }
 
 const coverImage = computed((): string => {
-	// 先尝试从homePics获取
-	const homePicUrl = getCoverImageFromHomePics()
-	if (homePicUrl != '') return homePicUrl
-	
-	// 尝试多个可能的字段名
+	// 优先使用直接字段，避免不必要的 JSON 序列化/反序列化
+	// 取值优先级：picUrl → lineCover → coverImage → image → lineImage
 	let img = getDataProp('picUrl')
+	if (img != '') return img
+	
+	img = getDataProp('lineCover')
 	if (img != '') return img
 	
 	img = getDataProp('coverImage')
@@ -140,6 +140,10 @@ const coverImage = computed((): string => {
 	
 	img = getDataProp('lineImage')
 	if (img != '') return img
+	
+	// 最后 fallback：兼容详情页等场景中 homePics 数组取值
+	const homePicUrl = getCoverImageFromHomePics()
+	if (homePicUrl != '') return homePicUrl
 	
 	return ''
 })

@@ -77,10 +77,8 @@
 										:nickname="u.nickname != '' ? u.nickname : getShortUserKid(u.userKid)"
 										:vipType="getVipType(u)"
 										:giftLevel="u.giftLevel"
-										:targetUserKid="u.userKid"
 										size="medium"
 										@vipClick="handleVipClick"
-										@giftClick="handleGiftIconClick"
 									/>
 									<text class="fs-sm color-text mt-8">{{ u.mutual == true ? '互相关注' : '' }}</text>
 								</view>
@@ -134,10 +132,8 @@
 										:nickname="u.nickname != '' ? u.nickname : getShortUserKid(u.userKid)"
 										:vipType="getVipType(u)"
 										:giftLevel="u.giftLevel"
-										:targetUserKid="u.userKid"
 										size="medium"
 										@vipClick="handleVipClick"
-										@giftClick="handleGiftIconClick"
 									/>
 									<text class="fs-sm gray mt-8">{{ u.mutual == true ? '互相关注' : '' }}</text>
 								</view>
@@ -156,14 +152,6 @@
 			</swiper-item>
 		</swiper>
 		
-		<!-- 礼物选择弹窗 -->
-		<GiftSelector
-			:show="showGiftSelector"
-			:userKid="currentUserId"
-			:receiveUserKid="selectedUserKid"
-			@close="showGiftSelector = false"
-			@selectGift="handleSelectGift"
-		/>
 	</view>
 </template>
 
@@ -180,8 +168,6 @@ import FollowButton from '@/components/base/FollowButton.uvue'
 import Avatar from '@/components/base/Avatar.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
-import GiftSelector from '@/components/lottery/GiftSelector.uvue'
-import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { requireLoginReliable } from '@/common/utils/loginHelper.uts'
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
 import { toJsonObj } from '@/common/utils/utsSafe.uts'
@@ -307,10 +293,6 @@ const users = ref<Array<UserItemData>>([])
 const loading = ref<boolean>(false)
 const refreshing = ref<boolean>(false)
 const defaultAvatar = 'https://qyimage-' + COS_BUCKET_ID + '.cos.ap-chengdu.myqcloud.com/iconImages/default_avatar.png'
-
-// 🎯 礼物选择弹窗相关
-const showGiftSelector = ref<boolean>(false)
-const selectedUserKid = ref<string>('')
 
 // 当前用户ID（用于礼物发送）
 const currentUserId = computed((): string => {
@@ -516,44 +498,6 @@ const handleVipClick = () => {
 	uni.navigateTo({
 		url: '/pagesUser/my/proveDetails/vip'
 	})
-}
-
-// 礼物图标点击 - 打开礼物选择面板
-const handleGiftIconClick = (targetUserKid: string) => {
-	if (requireLoginReliable(true, '/pages/news/fans/index') == false) return
-	selectedUserKid.value = targetUserKid
-	showGiftSelector.value = true
-}
-
-// 处理选择礼物
-const handleSelectGift = (gift: UTSJSONObject | null) => {
-	showGiftSelector.value = false
-	if (gift != null) {
-		const giftObj = toJsonObj(gift)
-		if (giftObj != null) {
-			const giftIdVal = giftObj.get('id')
-			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
-			if (giftId != '' && selectedUserKid.value != '') {
-				const userId = currentUserId.value
-				const sendParams = {
-					userKid: userId,
-					receiveUserKid: selectedUserKid.value,
-					lotteryRecordKid: giftId
-				} as UTSJSONObject
-				sendGiftFromBag(sendParams).then(() => {
-					uni.showToast({
-						title: '礼物发送成功',
-						icon: 'success'
-					})
-				}).catch((error): void => {
-					uni.showToast({
-						title: '发送失败',
-						icon: 'none'
-					})
-				})
-			}
-		}
-	}
 }
 
 // 跳转用户主页

@@ -119,7 +119,7 @@
 						<text class="system-notification-text">{{ getSystemMessageText() }}</text>
 					</view>
 					<view class="system-notification-footer">
-						<text class="system-notification-link">查看详情 ></text>
+						<text class="system-notification-link">查看详情 ›</text>
 					</view>
 				</view>
 				

@@ -11,8 +11,7 @@
     "fix:px:all": "node scripts/auto-fix-px.js --all",
     "optimize:check": "node scripts/project-optimization.js --check",
     "optimize:fix": "node scripts/project-optimization.js --fix",
-    "test": "vitest --run",
-    "test:watch": "vitest"
+    "optimize:fix": "node scripts/project-optimization.js --fix"
   },
   "dependencies": {
     "pinia": "^2.1.7",
@@ -20,8 +19,6 @@
   },
   "devDependencies": {
     "@dcloudio/types": "^3.4.0",
-    "fast-check": "^4.5.3",
-    "typescript": "^5.0.0",
-    "vitest": "^4.0.18"
+    "typescript": "^5.0.0"
   }
 }

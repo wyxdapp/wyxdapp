@@ -15,12 +15,12 @@ export const DEFAULT_AVATAR_LOCAL = CDN_BASE_URL + '/iconimages/default_avatar.p
 /**
  * 默认动态图片（本地）
  */
-export const DEFAULT_DYNAMIC_IMAGE_LOCAL = '/static/images/default_dynamic.png'
+export const DEFAULT_DYNAMIC_IMAGE_LOCAL = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
 
 /**
  * 默认定制图片（本地）
  */
-export const DEFAULT_CUSTOM_IMAGE_LOCAL = '/static/images/default_custom.png'
+export const DEFAULT_CUSTOM_IMAGE_LOCAL = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
 
 // ==================== COS 默认图片（备用） ====================
 
@@ -41,10 +41,23 @@ export const DEFAULT_LOGO_COS = COS_CONFIG.domain.toString() + '/default/logo.pn
 // ==================== CDN 默认图片 ====================
 
 /**
- * 默认分享图片
- * 用于分享服务、微信分享、DeepLink 分享等场景
+ * 默认分享图片（网络地址）
+ * 用于 H5 微信分享、DeepLink 分享等需要网络地址的场景
  */
-export const DEFAULT_SHARE_IMAGE = CDN_BASE_URL + '/iconimages/share_default.png'
+export const DEFAULT_SHARE_IMAGE = 'https://m.wyxdapp.com/static/images/icon/logo.png'
+
+/**
+ * 默认分享图片（本地路径）
+ * 用于小程序、APP 端分享缩略图（支持本地路径）
+ */
+export const DEFAULT_SHARE_IMAGE_LOCAL = '/static/images/icon/logo.png'
+
+/**
+ * 首页分享封面图（本地路径）
+ * 用于微信小程序首页分享的专属封面图（推荐 5:4 比例，如 500x400）
+ * TODO: 替换为专属设计的首页分享封面图
+ */
+export const HOME_SHARE_IMAGE_LOCAL = '/static/images/icon/logo.png'
 
 /**
  * 默认礼物图片
@@ -56,7 +69,7 @@ export const DEFAULT_GIFT_IMAGE = CDN_BASE_URL + '/iconimages/gift.png'
  * 默认订单图片
  * 用于订单分享卡片的默认图片
  */
-export const DEFAULT_ORDER_IMAGE = CDN_BASE_URL + '/iconimages/order_default.png'
+export const DEFAULT_ORDER_IMAGE = 'https://m.wyxdapp.com/static/images/icon/logo.png'
 
 // ==================== 工具函数 ====================
 

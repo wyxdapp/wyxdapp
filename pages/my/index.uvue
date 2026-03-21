@@ -33,10 +33,8 @@
 					:nickname="nicknameText"
 					:vipType="userVipType"
 					:giftLevel="userGiftLevel"
-					:targetUserKid="userKid"
 					size="large"
 					@vipClick="handleVipClick"
-					@giftClick="handleGiftIconClick"
 				/>
 				<!-- 短ID展示 -->
 				<view v-if="displayShortId != null && displayShortId != ''" class="extension-box" @click.stop="copyShortId">
@@ -111,14 +109,6 @@
 			</view>
 		</view>
 		
-		<!-- 礼物选择弹窗 -->
-		<GiftSelector
-			:show="showGiftSelector"
-			:userKid="currentUserId"
-			:receiveUserKid="selectedUserKid"
-			@close="showGiftSelector = false"
-			@selectGift="handleSelectGift"
-		/>
 	</view>
 </template>
 
@@ -134,8 +124,6 @@ import { currentTheme } from '@/stores/theme.uts'
 import Avatar from '@/components/base/Avatar.uvue'
 import UniIcons from '@/uni_modules/uni-icons/components/uni-icons/uni-icons.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
-import GiftSelector from '@/components/lottery/GiftSelector.uvue'
-import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { getSystemSettings } from '@/api/config.uts'
 import { VIP_NOT_ACTIVATED, VIP_ACTIVATED, VIP_TYPE_YEARLY } from '@/common/config/businessCodes.uts'
 import { LOGIN_BOX_TOP_MY, HEAD_BOX_TOP_DEFAULT, HEAD_BOX_OFFSET } from '@/common/config/uiConfig.uts'
@@ -270,10 +258,6 @@ const userVipTypeNum = ref<number>(0)  // VIP_TYPE_MONTHLY 月卡, VIP_TYPE_YEAR
 
 // 🎯 礼物等级响应式数据（用于礼物图标显示）
 const userGiftLevelNum = ref<number>(0)
-
-// 🎯 礼物选择弹窗相关
-const showGiftSelector = ref<boolean>(false)
-const selectedUserKid = ref<string>('')
 
 // 🎯 第三方卡片显示开关（默认隐藏）
 const showThirdPartyCard = ref<boolean>(false)
@@ -949,43 +933,6 @@ const handleVipClick = () => {
 	uni.navigateTo({
 		url: '/pagesUser/my/proveDetails/vip'
 	})
-}
-
-// 礼物图标点击 - 打开礼物选择面板
-const handleGiftIconClick = (targetUserKid: string) => {
-	if (requireLoginReliable(true, '/pages/my/index') == false) return
-	selectedUserKid.value = targetUserKid
-	showGiftSelector.value = true
-}
-
-// 处理选择礼物
-const handleSelectGift = (gift: UTSJSONObject | null) => {
-	showGiftSelector.value = false
-	if (gift != null) {
-		const giftObj = toJsonObj(gift)
-		if (giftObj != null) {
-			const giftIdVal = giftObj.get('id')
-			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
-			if (giftId != '' && selectedUserKid.value != '') {
-				const userId = currentUserId.value
-				const sendParams = {
-					userKid: userId,
-					receiveUserKid: selectedUserKid.value,
-					lotteryRecordKid: giftId
-				} as UTSJSONObject
-				sendGiftFromBag(sendParams).then(() => {
-					uni.showToast({
-						title: '礼物发送成功',
-						icon: 'success'
-					})
-				}).catch((error: any | null): void => {
-					if (!isAuthError(error as any)) {
-						handlePageError(error as any, '发送礼物', null)
-					}
-				})
-			}
-		}
-	}
 }
 
 const goToPersonPage = () => {

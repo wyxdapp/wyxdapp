@@ -1,6 +1,6 @@
 <template>
 	<!-- #ifndef MP-WEIXIN -->
-	<view class="withdraw-page">
+	<scroll-view class="withdraw-page" direction="vertical">
 		<!-- 渐变背景 -->
 		<view class="hear-bg" :style="headerGradientOuter()"><view class="hear-bg-mask" :style="headerGradientMask()"></view></view>
 		<!-- #ifndef H5 -->
@@ -228,7 +228,7 @@
 			@cancel="closePasswordDialog"
 			@update:show="updatePasswordDialogShow"
 		/>
-	</view>
+	</scroll-view>
 	<!-- #endif -->
 	
 	<!-- #ifdef MP-WEIXIN -->

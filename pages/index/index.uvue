@@ -159,7 +159,7 @@
 									<text class="order-price-value">{{ getGrabOrderPrice(item) }}</text>
 								</view>
 								<view class="order-btn order-btn-primary" @click="handleGrabOrder(item)">
-									<text class="order-btn-primary-text">立即抢单</text>
+									<text class="order-btn-primary-text">立即接单</text>
 								</view>
 							</view>
 						</view>
@@ -212,6 +212,9 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
+// #endif
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import GuiderCard from '@/components/guider-card/index.uvue'
@@ -252,7 +255,7 @@ import {
 	getOnlineStatusDirect, 
 	setOnlineStatusDirect 
 } from '@/stores/onlineStatus.uts'
-import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { DEFAULT_AVATAR_LOCAL, DEFAULT_SHARE_IMAGE_LOCAL, HOME_SHARE_IMAGE_LOCAL } from '@/common/config/defaultImages.uts'
 import { getCurrentUserIdReliable } from '@/common/utils/loginHelper.uts'
 import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
 import { 
@@ -802,7 +805,7 @@ const handleGrabOrderShare = async (item: UTSJSONObject) => {
 			desc: shareDesc,
 			link: shareLink,
 			url: shareLink,
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE_LOCAL,
 			userId: '',
 			referrerShortKid: referrerShortKid,
 			orderKid: kid
@@ -819,7 +822,7 @@ const handleGrabOrderShare = async (item: UTSJSONObject) => {
 			desc: '精彩订单，等你来抢！',
 			link: 'https://m.wyxdapp.com',
 			url: 'https://m.wyxdapp.com',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/order_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE_LOCAL,
 			userId: '',
 			referrerShortKid: ''
 		}
@@ -1307,6 +1310,25 @@ onShow(() => {
 		}, 500)
 	}
 })
+
+// ==================== 微信小程序分享钩子 ====================
+// #ifdef MP-WEIXIN
+onShareAppMessage((): UTSJSONObject => {
+	return {
+		title: '网约向导 - 找向导、做向导、网约向导趣游玩',
+		path: '/pages/index/index',
+		imageUrl: HOME_SHARE_IMAGE_LOCAL
+	}
+})
+
+onShareTimeline((): UTSJSONObject => {
+	return {
+		title: '网约向导 - 找向导、做向导、网约向导趣游玩',
+		query: '',
+		imageUrl: HOME_SHARE_IMAGE_LOCAL
+	}
+})
+// #endif
 </script>
 
 

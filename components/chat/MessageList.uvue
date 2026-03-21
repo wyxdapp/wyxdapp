@@ -269,7 +269,7 @@ defineExpose({
 .message-list {
 	flex-direction: column;
 	padding: 20rpx 28rpx;
-	background-color: #f5f5f5;
+	background-color: transparent;
 	overflow-y: auto;
 }
 /* #endif */

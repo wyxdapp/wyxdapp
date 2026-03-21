@@ -73,12 +73,10 @@
 		<view v-if="loading == true" class="wy-button__loading">
 			<text class="loading-icon">⏳</text>
 		</view>
-		<view v-if="icon != '' && loading == false" class="wy-button__icon">
-			<text>{{ icon }}</text>
-		</view>
-		<view class="wy-button__text">
+		<text v-if="icon != '' && loading == false" class="wy-button__icon">{{ icon }}</text>
+		<text class="wy-button__text">
 			<slot></slot>
-		</view>
+		</text>
 	</view>
 </template>
 
@@ -163,36 +161,30 @@ const handleBlueClick = () => {
 /* 尺寸 */
 .wy-button--large {
 	height: 88rpx;
-	font-size: 32rpx;
 	padding: 0 80rpx;
 }
 
 .wy-button--normal {
 	height: 72rpx;
-	font-size: 28rpx;
 }
 
 .wy-button--small {
 	height: 60rpx;
-	font-size: 26rpx;
 	padding: 0 48rpx;
 }
 
 .wy-button--mini {
 	height: 48rpx;
-	font-size: 24rpx;
 	padding: 0 40rpx;
 }
 
 /* 类型 - Primary */
 .wy-button--primary {
 	background-color: #37B1F2;
-	color: #ffffff;
 }
 
 .wy-button--primary.wy-button--plain {
 	background-color: #ffffff;
-	color: #37B1F2;
 	border-color: #37B1F2;
 }
 
@@ -208,12 +200,10 @@ const handleBlueClick = () => {
 /* 类型 - Success */
 .wy-button--success {
 	background-color: #4CAF50;
-	color: #ffffff;
 }
 
 .wy-button--success.wy-button--plain {
 	background-color: #ffffff;
-	color: #4CAF50;
 	border-color: #4CAF50;
 }
 
@@ -224,12 +214,10 @@ const handleBlueClick = () => {
 /* 类型 - Warning */
 .wy-button--warning {
 	background-color: #FF9800;
-	color: #ffffff;
 }
 
 .wy-button--warning.wy-button--plain {
 	background-color: #ffffff;
-	color: #FF9800;
 	border-color: #FF9800;
 }
 
@@ -240,12 +228,10 @@ const handleBlueClick = () => {
 /* 类型 - Danger */
 .wy-button--danger {
 	background-color: #F44336;
-	color: #ffffff;
 }
 
 .wy-button--danger.wy-button--plain {
 	background-color: #ffffff;
-	color: #F44336;
 	border-color: #F44336;
 }
 
@@ -256,19 +242,16 @@ const handleBlueClick = () => {
 /* 类型 - Info */
 .wy-button--info {
 	background-color: #909399;
-	color: #ffffff;
 }
 
 .wy-button--info.wy-button--plain {
 	background-color: #ffffff;
-	color: #909399;
 	border-color: #909399;
 }
 
 /* 类型 - Default */
 .wy-button--default {
 	background-color: #ffffff;
-	color: #333333;
 	border-color: #DCDFE6;
 }
 
@@ -322,8 +305,6 @@ const handleBlueClick = () => {
 }
 
 .wy-button__text {
-	flex-direction: row;
-	align-items: center;
 	font-size: 28rpx;
 	color: #333333;
 	line-height: 1;
@@ -373,8 +354,6 @@ const handleBlueClick = () => {
 	align-items: center;
 	justify-content: center;
 	transition: all 0.3s ease;
-	font-size: 32rpx;
-	color: #ffffff;
 }
 
 .wy-button-standard--single.wy-button-standard--active {
@@ -417,7 +396,6 @@ const handleBlueClick = () => {
 	align-items: center;
 	justify-content: center;
 	transition: all 0.3s ease;
-	font-size: 32rpx;
 }
 
 .wy-button-standard--secondary.wy-button-standard--active {
@@ -440,8 +418,6 @@ const handleBlueClick = () => {
 	align-items: center;
 	justify-content: center;
 	transition: all 0.3s ease;
-	font-size: 32rpx;
-	color: #ffffff;
 }
 
 .wy-button-standard--primary.wy-button-standard--active {
@@ -476,7 +452,6 @@ const handleBlueClick = () => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
-	font-size: 28rpx;
 	padding-left: 48rpx;
 	padding-right: 48rpx;
 	box-sizing: border-box;
@@ -504,7 +479,6 @@ const handleBlueClick = () => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: center;
-	font-size: 28rpx;
 	padding-left: 48rpx;
 	padding-right: 48rpx;
 	box-sizing: border-box;

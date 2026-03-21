@@ -49,38 +49,6 @@
 					</view>
 				</view>
 
-				<!-- 投保人信息 -->
-				<view class="card">
-					<view class="card-header">
-						<view class="card-title-line"></view>
-						<text class="card-title">投保人信息</text>
-					</view>
-					<view class="info-row">
-						<text class="info-label">姓名</text>
-						<text class="info-value">{{ holderName }}</text>
-					</view>
-					<view class="info-row">
-						<text class="info-label">证件类型</text>
-						<text class="info-value">{{ holderCardTypeText }}</text>
-					</view>
-					<view class="info-row">
-						<text class="info-label">证件号码</text>
-						<text class="info-value">{{ holderCardNo }}</text>
-					</view>
-					<view class="info-row">
-						<text class="info-label">性别</text>
-						<text class="info-value">{{ holderSexText }}</text>
-					</view>
-					<view class="info-row">
-						<text class="info-label">出生日期</text>
-						<text class="info-value">{{ holderBirthDay }}</text>
-					</view>
-					<view class="info-row" v-if="holderMobile != ''">
-						<text class="info-label">手机号码</text>
-						<text class="info-value">{{ holderMobile }}</text>
-					</view>
-				</view>
-
 				<!-- 被保人信息 -->
 				<view class="card">
 					<view class="card-header">
@@ -242,28 +210,12 @@ const auditStatus = ref<number>(0)
 const rejectReason = ref<string>('')
 const errorMsg = ref<string>('')
 
-// 投保人信息
-const holderName = ref<string>('')
-const holderCardType = ref<number>(1)
-const holderCardNo = ref<string>('')
-const holderSex = ref<string>('')
-const holderBirthDay = ref<string>('')
-const holderMobile = ref<string>('')
-
 // 被保人列表
 const insuredsList = ref<UTSJSONObject[]>([])
 
 // ==================== 计算属性 ====================
 const insuredsLength = computed(() : number => {
 	return insuredsList.value.length
-})
-
-const holderCardTypeText = computed(() : string => {
-	return getCardTypeText(holderCardType.value)
-})
-
-const holderSexText = computed(() : string => {
-	return getSexText(holderSex.value)
 })
 
 const orderStatusText = computed(() : string => {
@@ -295,28 +247,6 @@ const auditStatusText = computed(() : string => {
 // ==================== 页面方法 ====================
 const goBack = () => {
 	uni.navigateBack()
-}
-
-// 解析投保人JSON
-const parsePolicyHolder = (holderStr : string) => {
-	if (holderStr == '') return
-	try {
-		const parsed = JSON.parse(holderStr)
-		if (parsed != null) {
-			const holderObj = toJsonObj(parsed)
-			if (holderObj != null) {
-				holderName.value = getObjString(holderObj, 'cName')
-				holderCardType.value = getObjNumber(holderObj, 'cardType')
-				if (holderCardType.value == 0) holderCardType.value = 1
-				holderCardNo.value = getObjString(holderObj, 'cardNo')
-				holderSex.value = getObjString(holderObj, 'sex')
-				holderBirthDay.value = getObjString(holderObj, 'birthDay')
-				holderMobile.value = getObjString(holderObj, 'mobile')
-			}
-		}
-	} catch (e) {
-		console.error('解析投保人信息失败:', e)
-	}
 }
 
 // 解析被保人JSON
@@ -372,8 +302,7 @@ const loadDetail = (orderKid : string) => {
 							rejectReason.value = getObjString(data, 'rejectReason')
 							errorMsg.value = getObjString(data, 'errorMsg')
 
-							// 解析投保人和被保人
-							parsePolicyHolder(getObjString(data, 'policyHolder'))
+							// 解析被保人
 							parseInsureds(getObjString(data, 'insureds'))
 						}
 					}

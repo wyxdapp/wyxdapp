@@ -359,7 +359,7 @@ const getGiftProp = (gift: any, key: string): string => {
 	if (gift == null) {
 		console.log('🎁 [getGiftProp] gift为null, key:', key)
 		if (key == 'rewardImage' || key == 'giftImage') {
-			return '/static/images/liwu/xiaoxinxin.png'
+			return 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 		}
 		if (key == 'count') {
 			return '1'
@@ -382,7 +382,7 @@ const getGiftProp = (gift: any, key: string): string => {
 				}
 				// 返回默认值
 				if (key == 'rewardImage' || key == 'giftImage') {
-					return '/static/images/liwu/xiaoxinxin.png'
+					return 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 				}
 				if (key == 'giftValue') {
 					return '0'
@@ -400,7 +400,7 @@ const getGiftProp = (gift: any, key: string): string => {
 	}
 	// 最终兜底默认值
 	if (key == 'rewardImage' || key == 'giftImage') {
-		return '/static/images/liwu/xiaoxinxin.png'
+		return 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 	}
 	if (key == 'count') {
 		return '1'

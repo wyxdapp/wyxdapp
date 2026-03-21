@@ -42,14 +42,13 @@
       @click.stop="handleVipClick"
     />
 
-    <!-- 礼物等级图标 - 与VIP图标使用相同的尺寸类 -->
+    <!-- 礼物等级图标 - 纯展示，无点击事件 -->
     <image
       v-if="giftIcon != ''"
       :src="giftIcon"
       class="gift-badge"
       :class="badgeSizeClass"
       mode="heightFix"
-      @click.stop="handleGiftClick"
     />
   </view>
 </template>
@@ -66,27 +65,23 @@ const props = defineProps({
   giftLevel: { type: Number, default: 0 },
 
   // 样式
-  size: { type: String, default: 'medium' },
-
-  // 交互属性
-  targetUserKid: { type: String, default: '' }  // 目标用户ID，用于礼物发送
+  size: { type: String, default: 'medium' }
 })
 
 // ==================== Emits 定义 ====================
 
 const emit = defineEmits<{
   vipClick: []                           // VIP图标点击事件
-  giftClick: [targetUserKid: string]     // 礼物图标点击事件，携带目标用户ID
 }>()
 
 // ==================== 常量定义 ====================
 
-// VIP图标路径（已移除）
+// VIP图标路径（暂未上线，设为空字符串，v-if="vipIcon != ''" 保护不会渲染）
 const VIP_NORMAL_ICON = ''
 const VIP_YEAR_ICON = ''
 
-// 礼物等级图标前缀（已移除）
-const GIFT_BADGE_PREFIX = ''
+// 礼物等级图标前缀（CDN 地址）
+const GIFT_BADGE_PREFIX = 'https://jiasu.wyxdapp.com/iconimages/badge_medal_'
 
 // 礼物等级图标最大等级（1-50 的图标文件都已存在）
 const MAX_GIFT_LEVEL = 50
@@ -138,10 +133,7 @@ const handleVipClick = () => {
   emit('vipClick')
 }
 
-// 礼物图标点击处理
-const handleGiftClick = () => {
-  emit('giftClick', props.targetUserKid)
-}
+
 </script>
 
 <style scoped>

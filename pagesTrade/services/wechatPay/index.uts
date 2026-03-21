@@ -70,7 +70,7 @@ export function getCurrentPlatform(): string {
 
 export function isAppPlatform(): boolean {
 	const platform = getCurrentPlatform()
-	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios'
+	return platform == 'app' || platform == 'app-plus' || platform == 'app-android' || platform == 'app-ios' || platform == 'app-harmony'
 }
 
 export function isH5Platform(): boolean {
@@ -104,7 +104,9 @@ export function isPaymentAvailable(): boolean {
 		try {
 			if (typeof window != 'undefined') {
 				const ua = (window as any).navigator.userAgent.toLowerCase()
+				// 兼容鸿蒙系统微信浏览器
 				return ua.indexOf('micromessenger') != -1
+					|| (ua.indexOf('hmos') != -1 && ua.indexOf('wechat') != -1)
 			}
 		} catch (e) {}
 		// #endif

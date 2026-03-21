@@ -119,7 +119,8 @@ export const isMobileBrowser = (): boolean => {
 	try {
 		if (typeof navigator != 'undefined' && navigator.userAgent != null) {
 			const ua = navigator.userAgent.toLowerCase()
-			const mobileKeywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'windows phone']
+			// 兼容鸿蒙系统移动设备
+			const mobileKeywords = ['mobile', 'android', 'iphone', 'ipad', 'ipod', 'windows phone', 'hmos', 'harmonyos', 'huawei']
 			for (let i = 0; i < mobileKeywords.length; i = i + 1) {
 				if (ua.indexOf(mobileKeywords[i]) >= 0) {
 					return true

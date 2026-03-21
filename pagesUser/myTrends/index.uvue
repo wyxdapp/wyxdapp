@@ -134,6 +134,7 @@ import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import DynamicItem from '@/components/business/DynamicItem.uvue'
 import LoadMore from '@/components/base/LoadMore.uvue'
 import { 
@@ -417,7 +418,7 @@ const buildShareData = (item: UTSJSONObject | null): UTSJSONObject => {
 	}
 
 	// 图片：取 picList 第一张，无则用默认图
-	let imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	let imageUrl = DEFAULT_SHARE_IMAGE
 	const picList = getArrayProp(item as any, 'picList')
 	if (picList.length > 0) {
 		const firstPic = picList[0]
@@ -572,8 +573,8 @@ const onShareToChat = (data: UTSJSONObject | null) => {
 	}
 	
 	if (dynamicInfo.image == '') {
-		dynamicInfo.image = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
-		dynamicInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+		dynamicInfo.image = DEFAULT_SHARE_IMAGE
+		dynamicInfo.coverImage = DEFAULT_SHARE_IMAGE
 	}
 	
 	handleShareToChatFn(data as any, dynamicInfo as any)

@@ -45,111 +45,91 @@
 			</view>
 		</view>
 		
-		<!-- 滚动区域 -->
+		<!-- 主内容区 -->
 		<scroll-view 
 			v-if="loading == false && loadError == false"
 			class="scroll-area"
 			:style="{ height: contentHeight + 'px' }"
 			scroll-y="true"
-			:scroll-into-view="scrollIntoView"
 			:show-scrollbar="false"
-			scroll-with-animation="true"
 		>
-			<!-- 城市定位 -->
-			<view class="section section-first" id="area_section">
+			<!-- 当前定位 -->
+			<view class="section section-first">
 				<text class="section-title">当前定位</text>
 				<view class="city-grid">
 					<view 
-						class="city-item"
-						:class="{ 'city-item-active': currentCity == '全部' }"
+						class="city-tag"
+						:class="{ 'city-tag-active': currentCity == '全部' }"
 						@click="selectCity('全部')"
 					>
-						<text class="city-text" :class="{ 'city-text-active': currentCity == '全部' }">全国</text>
+						<text class="city-tag-text" :class="{ 'city-tag-text-active': currentCity == '全部' }">全国</text>
 					</view>
 					<view 
 						v-if="locationCity != '' && locationCity != '中国'"
-						class="city-item location-item"
-						:class="{ 'city-item-active': currentCity == locationCity }"
+						class="city-tag location-tag"
+						:class="{ 'city-tag-active': currentCity == locationCity }"
 						@click="selectCity(locationCity)"
 					>
 						<uni-icons type="location-filled" :size="16" :color="currentCity == locationCity ? currentTheme.primaryColor : '#666666'" class="location-icon"></uni-icons>
-						<text class="city-text" :class="{ 'city-text-active': currentCity == locationCity }">{{ locationCity }}</text>
+						<text class="city-tag-text" :class="{ 'city-tag-text-active': currentCity == locationCity }">{{ locationCity }}</text>
 					</view>
 				</view>
 			</view>
 			
 			<!-- 热门城市 -->
-			<view class="section" id="hot_section">
+			<view class="section">
 				<text class="section-title">热门城市</text>
 				<view class="city-grid">
 					<view 
 						v-for="(city, index) in hotCityList" 
 						:key="'hot_' + index"
-						class="city-item"
-						:class="{ 'city-item-active': currentCity == city }"
+						class="city-tag"
+						:class="{ 'city-tag-active': currentCity == city }"
 						@click="selectCity(city)"
 					>
-						<text class="city-text" :class="{ 'city-text-active': currentCity == city }">{{ city }}</text>
+						<text class="city-tag-text" :class="{ 'city-tag-text-active': currentCity == city }">{{ city }}</text>
 					</view>
 				</view>
 			</view>
-			
+
 			<!-- 搜索结果为空 -->
 			<view v-if="showEmptyResult == true" class="empty-result">
 				<text class="empty-text">未找到匹配城市</text>
 			</view>
 			
-			<!-- 字母分组城市 -->
-			<view 
-				v-for="(group, groupIndex) in displayCityGroups" 
-				:key="'group_' + groupIndex" 
-				class="section letter-section" 
-				:id="'letter_' + getGroupLetter(group)"
-			>
+			<!-- 当前选中字母的城市列表（只渲染一个分组） -->
+			<view v-if="showEmptyResult == false && currentGroupCities.length > 0" class="section letter-section">
 				<view class="letter-header">
-					<text class="letter-title">{{ getGroupLetter(group) }}</text>
+					<text class="letter-title">{{ activeLetter }}</text>
 				</view>
 				<view class="city-list">
 					<view 
-						v-for="(city, cityIndex) in getGroupCities(group)" 
-						:key="'city_' + groupIndex + '_' + cityIndex"
-						class="city-list-item"
-						:class="{ 'city-list-item-active': currentCity == city }"
+						v-for="(city, ci) in currentGroupCities" 
+						:key="'c_' + ci"
+						class="city-row"
 						@click="selectCity(city)"
 					>
-						<text class="city-list-text" :class="{ 'city-list-text-active': currentCity == city }">{{ city }}</text>
+						<text class="city-row-text">{{ city }}</text>
 					</view>
 				</view>
 			</view>
 			
-			<!-- 底部安全区域 -->
 			<view class="safe-bottom"></view>
 		</scroll-view>
 		
-		<!-- 字母索引栏 -->
+		<!-- 右侧字母索引栏 -->
 		<view class="alphabet-bar" :style="{ top: alphabetBarTop + 'px' }">
-			<view 
-				class="alphabet-item"
-				:class="{ 'alphabet-item-active': currentLetter == 'area' }"
-				@click="scrollToLetter('area')"
-			>
-				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == 'area' }">☆</text>
-			</view>
-			<view 
-				class="alphabet-item"
-				:class="{ 'alphabet-item-active': currentLetter == 'hot' }"
-				@click="scrollToLetter('hot')"
-			>
-				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == 'hot' }">热</text>
+			<view class="alpha-item" :class="{ 'alpha-item-active': activeLetter == '☆' }" @click="switchLetter('☆')">
+				<text class="alpha-text" :class="{ 'alpha-text-active': activeLetter == '☆' }">☆</text>
 			</view>
 			<view 
 				v-for="(letter, index) in alphabetList" 
-				:key="'alpha_' + index"
-				class="alphabet-item"
-				:class="{ 'alphabet-item-active': currentLetter == letter }"
-				@click="scrollToLetter(letter)"
+				:key="'al_' + index"
+				class="alpha-item"
+				:class="{ 'alpha-item-active': activeLetter == letter }"
+				@click="switchLetter(letter)"
 			>
-				<text class="alphabet-text" :class="{ 'alphabet-text-active': currentLetter == letter }">{{ letter }}</text>
+				<text class="alpha-text" :class="{ 'alpha-text-active': activeLetter == letter }">{{ letter }}</text>
 			</view>
 		</view>
 	</view>
@@ -185,8 +165,7 @@ const loadError = ref<boolean>(false)
 const keyword = ref<string>('')
 const currentCity = ref<string>('')
 const locationCity = ref<string>('')
-const scrollIntoView = ref<string>('')
-const currentLetter = ref<string>('area')
+const activeLetter = ref<string>('A')  // 当前选中的字母，默认显示A
 
 // 城市数据
 const hotCityList = ref<Array<string>>([])
@@ -194,11 +173,11 @@ const allCityGroups = ref<Array<UTSJSONObject>>([])
 
 // 缓存配置
 const CITY_CACHE_KEY = 'city_select_cache_v2'
-const CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000  // 24小时
+const CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000
 
 // ==================== 计算属性 ====================
 
-// 字母列表
+// 可用字母列表
 const alphabetList = computed((): Array<string> => {
 	const letters: Array<string> = []
 	const groups = allCityGroups.value
@@ -215,90 +194,78 @@ const alphabetList = computed((): Array<string> => {
 	return letters
 })
 
-// 显示的城市分组（根据搜索过滤）
-const displayCityGroups = computed((): Array<UTSJSONObject> => {
+// 当前字母下的城市列表（搜索时搜全部，非搜索时只显示选中字母）
+const currentGroupCities = computed((): Array<string> => {
 	const kw = keyword.value.trim()
-	if (kw == '') {
-		return allCityGroups.value
+	
+	// 搜索模式：搜索所有分组
+	if (kw != '') {
+		const result: Array<string> = []
+		const groups = allCityGroups.value
+		for (let i = 0; i < groups.length; i = i + 1) {
+			const group = groups[i]
+			if (group != null) {
+				const groupObj = JSON.parse(JSON.stringify(group)) as UTSJSONObject
+				const citiesVal = groupObj.get('cities')
+				if (citiesVal != null && Array.isArray(citiesVal) == true) {
+					const arr = citiesVal as Array<string>
+					for (let j = 0; j < arr.length; j = j + 1) {
+						if (arr[j] != null) {
+							const cityStr = arr[j].toString()
+							if (cityStr.indexOf(kw) >= 0) {
+								result.push(cityStr)
+							}
+						}
+					}
+				}
+			}
+		}
+		return result
 	}
-	const filtered: Array<UTSJSONObject> = []
+	
+	// 非搜索模式：☆ 表示只看定位+热门，不显示字母城市列表
+	if (activeLetter.value == '☆') {
+		return []
+	}
+	
+	// 查找对应字母的城市
 	const groups = allCityGroups.value
 	for (let i = 0; i < groups.length; i = i + 1) {
 		const group = groups[i]
 		if (group != null) {
 			const groupObj = JSON.parse(JSON.stringify(group)) as UTSJSONObject
 			const letterVal = groupObj.get('letter')
-			const citiesVal = groupObj.get('cities')
-			if (letterVal != null && citiesVal != null && Array.isArray(citiesVal) == true) {
-				const cities = citiesVal as Array<string>
-				const matchedCities: Array<string> = []
-				for (let j = 0; j < cities.length; j = j + 1) {
-					const city = cities[j]
-					if (city != null) {
-						const cityStr = city.toString()
-						if (cityStr.indexOf(kw) >= 0) {
-							matchedCities.push(cityStr)
+			if (letterVal != null && letterVal.toString() == activeLetter.value) {
+				const citiesVal = groupObj.get('cities')
+				if (citiesVal != null && Array.isArray(citiesVal) == true) {
+					const cities: Array<string> = []
+					const arr = citiesVal as Array<string>
+					for (let j = 0; j < arr.length; j = j + 1) {
+						if (arr[j] != null) {
+							cities.push(arr[j].toString())
 						}
 					}
-				}
-				if (matchedCities.length > 0) {
-					filtered.push({ letter: letterVal.toString(), cities: matchedCities })
+					return cities
 				}
 			}
 		}
 	}
-	return filtered
+	return []
 })
 
-// 是否显示空结果
+// 搜索无结果
 const showEmptyResult = computed((): boolean => {
 	const kw = keyword.value.trim()
 	if (kw == '') return false
-	return displayCityGroups.value.length == 0
+	return currentGroupCities.value.length == 0
 })
-
-// ==================== 辅助函数 ====================
-
-const getGroupLetter = (group: UTSJSONObject | null): string => {
-	if (group == null) return ''
-	try {
-		const groupObj = JSON.parse(JSON.stringify(group)) as UTSJSONObject
-		const letterVal = groupObj.get('letter')
-		if (letterVal != null) {
-			return letterVal.toString()
-		}
-	} catch (e) {}
-	return ''
-}
-
-const getGroupCities = (group: UTSJSONObject | null): Array<string> => {
-	if (group == null) return []
-	try {
-		const groupObj = JSON.parse(JSON.stringify(group)) as UTSJSONObject
-		const citiesVal = groupObj.get('cities')
-		if (citiesVal != null && Array.isArray(citiesVal) == true) {
-			const cities: Array<string> = []
-			const arr = citiesVal as Array<string>
-			for (let i = 0; i < arr.length; i = i + 1) {
-				if (arr[i] != null) {
-					cities.push(arr[i].toString())
-				}
-			}
-			return cities
-		}
-	} catch (e) {}
-	return []
-}
 
 // ==================== 数据解析 ====================
 
 const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 	if (dataObj == null) return
-	
 	try {
 		const data = JSON.parse(JSON.stringify(dataObj)) as UTSJSONObject
-		
-		// 解析热门城市
 		const hotCityListVal = data.get('hotCityList')
 		if (hotCityListVal != null && Array.isArray(hotCityListVal) == true) {
 			const hotCities: Array<string> = []
@@ -310,15 +277,12 @@ const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 			}
 			hotCityList.value = hotCities
 		}
-		
-		// 解析所有城市分组
 		const allCityListVal = data.get('allCityList')
 		if (allCityListVal != null) {
 			const allCityObj = JSON.parse(JSON.stringify(allCityListVal)) as UTSJSONObject
 			const letters = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
 			const groups: Array<UTSJSONObject> = []
 			let totalCities = 0
-			
 			for (let i = 0; i < letters.length; i = i + 1) {
 				const letter = letters[i]
 				const citiesVal = allCityObj.get(letter)
@@ -336,7 +300,6 @@ const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 					}
 				}
 			}
-			
 			allCityGroups.value = groups
 			console.log('📊 [CitySelect] 城市数据解析完成，分组数:', groups.length, '城市总数:', totalCities)
 		}
@@ -350,10 +313,7 @@ const parseAndSetCityData = (dataObj: UTSJSONObject | null) => {
 
 const saveCityCache = (dataObj: UTSJSONObject | null) => {
 	try {
-		const cache = {
-			timestamp: Date.now(),
-			data: dataObj
-		}
+		const cache = { timestamp: Date.now(), data: dataObj }
 		uni.setStorageSync(CITY_CACHE_KEY, JSON.stringify(cache))
 	} catch (e) {
 		handleSilentError(e, '保存城市缓存')
@@ -364,7 +324,6 @@ const loadFromCache = (): boolean => {
 	try {
 		const cacheStr = uni.getStorageSync(CITY_CACHE_KEY)
 		if (cacheStr == null || cacheStr == '') return false
-		
 		let jsonStr = ''
 		if (typeof cacheStr === 'string') {
 			jsonStr = cacheStr as string
@@ -372,22 +331,14 @@ const loadFromCache = (): boolean => {
 			jsonStr = JSON.stringify(cacheStr)
 		}
 		if (jsonStr == '') return false
-		
 		const cache = JSON.parse(jsonStr) as UTSJSONObject
-		
-		// 检查缓存是否过期
 		const timestampVal = cache.get('timestamp')
 		if (timestampVal != null) {
 			const timestamp = parseInt(timestampVal.toString())
-			const now = Date.now()
-			if (now - timestamp > CACHE_EXPIRE_TIME) {
-				return false
-			}
+			if (Date.now() - timestamp > CACHE_EXPIRE_TIME) return false
 		} else {
 			return false
 		}
-		
-		// 解析缓存数据
 		const dataVal = cache.get('data')
 		if (dataVal != null) {
 			parseAndSetCityData(dataVal as UTSJSONObject)
@@ -404,7 +355,6 @@ const loadFromCache = (): boolean => {
 
 const fetchCityDataFromApi = (showLoading: boolean) => {
 	const params = new GetCityListParams()
-	
 	getCityList(params).then((res: UTSJSONObject) => {
 		const code = getResponseCode(res)
 		if (code == 200) {
@@ -413,17 +363,11 @@ const fetchCityDataFromApi = (showLoading: boolean) => {
 				parseAndSetCityData(dataObj)
 				saveCityCache(dataObj)
 				loadError.value = false
-			} else {
-				loadError.value = true
-			}
-		} else {
-			loadError.value = true
-		}
+			} else { loadError.value = true }
+		} else { loadError.value = true }
 		loading.value = false
 	}).catch((error) => {
-		if (error != null) {
-			handleSilentError(error, '加载城市列表')
-		}
+		if (error != null) { handleSilentError(error, '加载城市列表') }
 		loadError.value = true
 		loading.value = false
 	})
@@ -432,43 +376,23 @@ const fetchCityDataFromApi = (showLoading: boolean) => {
 const loadCityData = () => {
 	loading.value = true
 	loadError.value = false
-	
-	// 先尝试从缓存加载
 	const cached = loadFromCache()
 	if (cached == true) {
 		loading.value = false
-		// 后台静默更新数据
 		fetchCityDataFromApi(false)
 		return
 	}
-	
-	// 从API加载
 	fetchCityDataFromApi(true)
 }
 
 // ==================== 事件处理 ====================
 
-const handleSearch = () => {
-	// displayCityGroups 是 computed，会自动根据 keyword 过滤
-}
+const handleSearch = () => {}
+const clearSearch = () => { keyword.value = '' }
 
-const clearSearch = () => {
+const switchLetter = (letter: string) => {
+	activeLetter.value = letter
 	keyword.value = ''
-}
-
-const scrollToLetter = (letter: string) => {
-	currentLetter.value = letter
-	if (letter == 'area') {
-		scrollIntoView.value = 'area_section'
-	} else if (letter == 'hot') {
-		scrollIntoView.value = 'hot_section'
-	} else {
-		scrollIntoView.value = ''
-		setTimeout(() => {
-			scrollIntoView.value = 'letter_' + letter
-		}, 50)
-		return
-	}
 }
 
 const selectCity = (city: string) => {
@@ -477,399 +401,178 @@ const selectCity = (city: string) => {
 	uni.navigateBack()
 }
 
-const goBack = () => {
-	uni.navigateBack()
-}
+const goBack = () => { uni.navigateBack() }
 
 // ==================== 页面初始化 ====================
 
 const initPage = () => {
 	statusBarHeight.value = getStatusBarHeight()
-	
 	// #ifdef H5
 	navBarHeight.value = 0
 	// #endif
-	
 	// #ifndef H5
 	navBarHeight.value = statusBarHeight.value + 44
 	// #endif
-	
-	const searchHeight = 52  // 搜索框实际高度（8+76+8 rpx ≈ 46px，留点余量）
+	const searchHeight = 52
 	const windowHeight = getWindowHeight()
 	contentHeight.value = windowHeight - navBarHeight.value - searchHeight
-	
 	if (contentHeight.value < 200) {
 		contentHeight.value = windowHeight - 100
 	}
-	
 	alphabetBarTop.value = navBarHeight.value + searchHeight + 5
-	
 	console.log('📐 [CitySelect] 布局初始化:', {
 		statusBarHeight: statusBarHeight.value,
 		navBarHeight: navBarHeight.value,
 		windowHeight: windowHeight,
 		contentHeight: contentHeight.value
 	})
-	
 	loadCityData()
 }
-
-// ==================== 生命周期 ====================
 
 onLoad((options: OnLoadOptions) => {
 	if (options != null) {
 		const optionsObj = JSON.parse(JSON.stringify(options)) as UTSJSONObject
-		
 		const currentCityVal = optionsObj.get('currentCity')
 		if (currentCityVal != null && currentCityVal.toString() != '') {
 			currentCity.value = decodeURIComponent(currentCityVal.toString()) ?? ''
 		}
-		
 		const locationCityVal = optionsObj.get('locationCity')
 		if (locationCityVal != null && locationCityVal.toString() != '') {
 			locationCity.value = decodeURIComponent(locationCityVal.toString()) ?? ''
 		}
 	}
-	
 	initPage()
 })
 
-onMounted(() => {
-	// 同步初始化
-})
+onMounted(() => {})
 </script>
 
 
 <style>
-/* ==================== 页面容器 ==================== */
 .page {
 	flex-direction: column;
 	width: 750rpx;
 	height: 100%;
 	background-color: #F5F6F8;
 }
-
 .hear-bg {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 750rpx;
-	height: 392rpx;
-	z-index: 0;
+	position: absolute; top: 0; left: 0;
+	width: 750rpx; height: 392rpx; z-index: 0;
 }
-
 .hear-bg-mask {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 750rpx;
-	height: 392rpx;
-	z-index: 0;
+	position: absolute; top: 0; left: 0;
+	width: 750rpx; height: 392rpx; z-index: 0;
 }
-
-/* ==================== 导航栏 ==================== */
 /* #ifndef H5 */
-.nav-bar {
-	position: relative;
-	z-index: 10;
-}
+.nav-bar { position: relative; z-index: 10; }
 /* #endif */
-
 .nav-content {
-	flex-direction: row;
-	align-items: center;
-	justify-content: space-between;
-	height: 88rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
+	flex-direction: row; align-items: center; justify-content: space-between;
+	height: 88rpx; padding-left: 28rpx; padding-right: 28rpx;
 }
-
 .back-btn {
-	width: 72rpx;
-	height: 72rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
+	width: 72rpx; height: 72rpx;
+	flex-direction: row; align-items: center; justify-content: center;
 }
-
-.nav-title {
-	font-size: 36rpx;
-	font-weight: bold;
-	color: #1A1A1A;
-}
-
-.nav-right {
-	width: 72rpx;
-	height: 72rpx;
-}
-
-/* ==================== 搜索框 ==================== */
+.nav-title { font-size: 36rpx; font-weight: bold; color: #1A1A1A; }
+.nav-right { width: 72rpx; height: 72rpx; }
 .search-wrapper {
-	position: relative;
-	width: 750rpx;
-	padding-top: 8rpx;
-	padding-bottom: 8rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
-	z-index: 10;
+	position: relative; width: 750rpx; z-index: 10;
+	padding-top: 8rpx; padding-bottom: 8rpx; padding-left: 28rpx; padding-right: 28rpx;
 }
-
 .search-box {
-	flex-direction: row;
-	align-items: center;
-	height: 76rpx;
-	background-color: #F5F6F8;
-	border-radius: 38rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
+	flex-direction: row; align-items: center; height: 76rpx;
+	background-color: #F5F6F8; border-radius: 38rpx;
+	padding-left: 28rpx; padding-right: 28rpx;
 }
-
-.search-icon {
-	width: 36rpx;
-	height: 36rpx;
-	margin-right: 16rpx;
-}
-
-.search-input {
-	flex: 1;
-	font-size: 28rpx;
-	color: #1A1A1A;
-}
-
-.search-placeholder {
-	color: #AAAAAA;
-}
-
+.search-icon { width: 36rpx; height: 36rpx; margin-right: 16rpx; }
+.search-input { flex: 1; font-size: 28rpx; color: #1A1A1A; }
+.search-placeholder { color: #AAAAAA; }
 .clear-btn {
-	width: 44rpx;
-	height: 44rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	background-color: #CCCCCC;
-	border-radius: 22rpx;
+	width: 44rpx; height: 44rpx;
+	flex-direction: row; align-items: center; justify-content: center;
+	background-color: #CCCCCC; border-radius: 22rpx;
 }
+.clear-text { font-size: 32rpx; color: #FFFFFF; font-weight: bold; }
 
-.clear-text {
-	font-size: 32rpx;
-	color: #FFFFFF;
-	font-weight: bold;
-}
-
-/* ==================== 加载状态 ==================== */
 .loading-wrapper {
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	padding-top: 200rpx;
+	flex-direction: column; align-items: center; justify-content: center; padding-top: 200rpx;
 }
-
-.loading-text {
-	font-size: 28rpx;
-	color: #999999;
-}
-
+.loading-text { font-size: 28rpx; color: #999999; }
 .retry-btn {
-	margin-top: 30rpx;
-	padding-left: 40rpx;
-	padding-right: 40rpx;
-	padding-top: 16rpx;
-	padding-bottom: 16rpx;
-	background-color: #37B1F2;
-	border-radius: 34rpx;
+	margin-top: 30rpx; padding-left: 40rpx; padding-right: 40rpx;
+	padding-top: 16rpx; padding-bottom: 16rpx;
+	background-color: #37B1F2; border-radius: 34rpx;
 }
-
-.retry-text {
-	font-size: 28rpx;
-	color: #FFFFFF;
-}
-
-/* ==================== 滚动区域 ==================== */
+.retry-text { font-size: 28rpx; color: #FFFFFF; }
 .scroll-area {
-	flex-direction: column;
-	width: 750rpx;
-	padding-right: 56rpx;
+	flex-direction: column; width: 750rpx; padding-right: 76rpx;
 }
-
-/* ==================== 区块卡片 ==================== */
 .section {
-	flex-direction: column;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
-	background-color: #FFFFFF;
-	margin-left: 20rpx;
-	margin-right: 20rpx;
-	margin-bottom: 16rpx;
-	border-radius: 24rpx;
+	flex-direction: column; padding-left: 28rpx; padding-right: 28rpx;
+	background-color: #FFFFFF; margin-left: 20rpx; margin-right: 20rpx;
+	margin-bottom: 16rpx; border-radius: 24rpx;
 }
-
-.section-first {
-	margin-top: 12rpx;
-}
-
+.section-first { margin-top: 12rpx; }
 .section-title {
-	font-size: 26rpx;
-	color: #888888;
-	padding-top: 28rpx;
-	padding-bottom: 20rpx;
-	font-weight: normal;
+	font-size: 26rpx; color: #888888;
+	padding-top: 28rpx; padding-bottom: 20rpx; font-weight: normal;
 }
-
-/* ==================== 城市网格 ==================== */
 .city-grid {
-	flex-direction: row;
-	flex-wrap: wrap;
-	padding-bottom: 20rpx;
+	flex-direction: row; flex-wrap: wrap; padding-bottom: 20rpx;
 }
-
-.city-item {
-	min-width: 150rpx;
-	height: 68rpx;
-	background-color: #F5F6F8;
-	border-radius: 34rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	margin-right: 16rpx;
-	margin-bottom: 16rpx;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
+.city-tag {
+	min-width: 150rpx; height: 68rpx; background-color: #F5F6F8;
+	border-radius: 34rpx; flex-direction: row; align-items: center;
+	justify-content: center; margin-right: 16rpx; margin-bottom: 16rpx;
+	padding-left: 28rpx; padding-right: 28rpx;
 }
-
-.location-item {
-	padding-left: 20rpx;
-}
-
-.location-icon {
-	margin-right: 6rpx;
-}
-
-.city-item-active {
+.location-tag { padding-left: 20rpx; }
+.location-icon { margin-right: 6rpx; }
+.city-tag-active {
 	background-color: #E6F9F7;
-	border-width: 2rpx;
-	border-style: solid;
-	border-color: #37B1F2;
+	border-width: 2rpx; border-style: solid; border-color: #37B1F2;
 }
+.city-tag-text { font-size: 28rpx; color: #333333; }
+.city-tag-text-active { color: #37B1F2; font-weight: bold; }
 
-.city-text {
-	font-size: 28rpx;
-	color: #333333;
-}
-
-.city-text-active {
-	color: #37B1F2;
-	font-weight: bold;
-}
-
-/* 字母分组区块 */
 .letter-section {
-	padding-left: 0;
-	padding-right: 0;
+	padding-left: 0; padding-right: 0;
 }
-
-/* ==================== 字母标题 ==================== */
 .letter-header {
-	flex-direction: row;
-	align-items: center;
-	height: 56rpx;
-	background-color: #F5F6F8;
-	padding-left: 28rpx;
+	flex-direction: row; align-items: center; height: 56rpx;
+	background-color: #F5F6F8; padding-left: 28rpx;
 }
-
-.letter-title {
-	font-size: 30rpx;
-	color: #37B1F2;
-	font-weight: bold;
-}
-
-/* ==================== 城市列表 ==================== */
+.letter-title { font-size: 30rpx; color: #37B1F2; font-weight: bold; }
 .city-list {
-	flex-direction: column;
-	padding-left: 28rpx;
-	padding-right: 28rpx;
+	flex-direction: column; padding-left: 28rpx; padding-right: 28rpx;
 }
-
-.city-list-item {
-	flex-direction: row;
-	align-items: center;
-	height: 96rpx;
-	border-bottom-width: 1rpx;
-	border-bottom-style: solid;
-	border-bottom-color: #F0F0F0;
+.city-row {
+	flex-direction: row; align-items: center; height: 96rpx;
+	border-bottom-width: 1rpx; border-bottom-style: solid; border-bottom-color: #F0F0F0;
 	padding-left: 8rpx;
 }
-
-.city-list-item-active {
-	background-color: #F5F6F8;
-}
-
-.city-list-text {
-	font-size: 30rpx;
-	color: #333333;
-}
-
-.city-list-text-active {
-	color: #37B1F2;
-	font-weight: bold;
-}
-
-/* ==================== 空结果 ==================== */
+.city-row-text { font-size: 30rpx; color: #333333; }
 .empty-result {
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	padding-top: 120rpx;
-	padding-bottom: 120rpx;
-	background-color: #FFFFFF;
-	margin-left: 20rpx;
-	margin-right: 20rpx;
+	flex-direction: column; align-items: center; justify-content: center;
+	padding-top: 120rpx; padding-bottom: 120rpx;
+	background-color: #FFFFFF; margin-left: 20rpx; margin-right: 20rpx;
 	border-radius: 24rpx;
 }
-
-.empty-text {
-	font-size: 28rpx;
-	color: #AAAAAA;
-}
-
-/* ==================== 字母索引栏 ==================== */
+.empty-text { font-size: 28rpx; color: #AAAAAA; }
 .alphabet-bar {
-	position: fixed;
-	right: 4rpx;
-	width: 52rpx;
-	flex-direction: column;
-	align-items: center;
-	z-index: 100;
-	background-color: rgba(255, 255, 255, 0.9);
+	position: fixed; right: 4rpx; width: 72rpx;
+	flex-direction: column; align-items: center; z-index: 100;
+	background-color: rgba(255, 255, 255, 0.92); border-radius: 36rpx;
+	padding-top: 12rpx; padding-bottom: 12rpx;
+}
+.alpha-item {
+	width: 60rpx; height: 52rpx;
+	flex-direction: row; align-items: center; justify-content: center;
 	border-radius: 26rpx;
-	padding-top: 8rpx;
-	padding-bottom: 8rpx;
 }
-
-.alphabet-item {
-	width: 44rpx;
-	height: 40rpx;
-	flex-direction: row;
-	align-items: center;
-	justify-content: center;
-	border-radius: 20rpx;
-}
-
-.alphabet-item-active {
-	background-color: #37B1F2;
-}
-
-.alphabet-text {
-	font-size: 20rpx;
-	color: #666666;
-}
-
-.alphabet-text-active {
-	color: #FFFFFF;
-	font-weight: bold;
-}
-
-/* ==================== 底部安全区域 ==================== */
-.safe-bottom {
-	height: 120rpx;
-}
+.alpha-item-active { background-color: #37B1F2; }
+.alpha-text { font-size: 24rpx; color: #666666; }
+.alpha-text-active { color: #FFFFFF; font-weight: bold; }
+.safe-bottom { height: 120rpx; }
 </style>

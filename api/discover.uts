@@ -72,34 +72,34 @@ export interface PublishTrendParams {
 }
 
 // 用户添加语言和标签参数接口
-export interface AddUserSpecialityParams {
-	userKid: string
-	labelKids?: string[]
-	languageKids?: string[]
+export class AddUserSpecialityParams {
+	userKid: string = ''
+	labelKids: string[] | null = null
+	languageKids: string[] | null = null
 }
 
 // 添加/更新用户擅长标签参数接口
-export interface AddUserForteParams {
-	userKid: string
-	forteKids: string[]
+export class AddUserForteParams {
+	userKid: string = ''
+	forteKids: string[] = []
 }
 
 // 删除用户擅长标签参数接口
-export interface DeleteUserForteParams {
-	userKid: string
-	forteKid: string
+export class DeleteUserForteParams {
+	userKid: string = ''
+	forteKid: string = ''
 }
 
 // 添加自定义标签参数接口
-export interface AddCustomLabelParams {
-	userKid: string
-	labelName: string
+export class AddCustomLabelParams {
+	userKid: string = ''
+	labelName: string = ''
 }
 
 // 添加自定义语言参数接口
-export interface AddCustomLanguageParams {
-	userKid: string
-	languageName: string
+export class AddCustomLanguageParams {
+	userKid: string = ''
+	languageName: string = ''
 }
 
 /**

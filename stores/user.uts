@@ -881,6 +881,13 @@ export const getUserNickname = (): string => {
 	return userInfo.nickname != null ? userInfo.nickname : ''
 }
 
+// 导出获取用户Kid的函数（直接从响应式ref取值，避免快照时序问题）
+export const getUserKidDirect = (): string => {
+	const userInfo = userInfoRef.value
+	if (userInfo == null) return ''
+	return userInfo.kid != null ? userInfo.kid : ''
+}
+
 // 导出获取用户短号的函数
 export const getUserShortKid = (): string => {
 	const userInfo = userInfoRef.value

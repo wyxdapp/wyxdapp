@@ -293,7 +293,7 @@ const optimizedAvatar = computed((): string => {
 	}
 	
 	if (url == '') {
-		return '/static/images/default-avatar.png'
+		return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
 	}
 	
 	if (url.indexOf('cos.') >= 0 || url.indexOf('myqcloud.com') >= 0) {

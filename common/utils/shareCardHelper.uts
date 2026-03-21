@@ -46,9 +46,9 @@ export const CARD_TYPE_ORDER = 'order'       // 订单
 
 // ==================== 默认值常量 ====================
 
-const DEFAULT_PROFILE_IMAGE = '/static/images/default_avatar.png'
-const DEFAULT_DYNAMIC_IMAGE = '/static/images/default_dynamic.png'
-const DEFAULT_CUSTOM_IMAGE = '/static/images/default_custom.png'
+const DEFAULT_PROFILE_IMAGE = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+const DEFAULT_DYNAMIC_IMAGE = 'https://jiasu.wyxdapp.com/iconimages/default_dynamic.png'
+const DEFAULT_CUSTOM_IMAGE = 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
 // DEFAULT_ORDER_IMAGE is imported from defaultImages.uts
 
 const DEFAULT_PROFILE_TITLE = '用户主页'

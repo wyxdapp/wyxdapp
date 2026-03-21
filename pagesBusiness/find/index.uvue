@@ -196,6 +196,7 @@ import {
 import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
 import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
 
 // ==================== 类定义 ====================
@@ -528,7 +529,6 @@ const fetchTrendsList = async (isRefresh: boolean) => {
 const loadRouteList = async (refresh: boolean) => {
 	if (refresh == true) {
 		routePage.value = 1
-		routeList.value = []
 	}
 	
 	if (routeLoading.value == true) return
@@ -562,6 +562,7 @@ const loadRouteList = async (refresh: boolean) => {
 			}
 			
 			if (refresh == true) {
+				// 刷新时用新数据替换旧数据（不提前清空，避免iOS闪跳）
 				routeList.value = typedItems
 			} else {
 				for (let i = 0; i < typedItems.length; i = i + 1) {
@@ -577,7 +578,6 @@ const loadRouteList = async (refresh: boolean) => {
 		}
 	} finally {
 		routeLoading.value = false
-		routeRefreshing.value = false
 	}
 }
 
@@ -791,7 +791,7 @@ const handleMoreOptions = async (item: UTSJSONObject) => {
 		}
 		
 		// 获取分享图片
-		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		let imageStr = DEFAULT_SHARE_IMAGE
 		const insertType = getItemNumberProp(item, 'insertType')
 		
 		if (insertType == 1) {
@@ -913,7 +913,7 @@ const handleMoreOptions = async (item: UTSJSONObject) => {
 			desc: '发现精彩动态，一起来看看吧！',
 			link: 'https://m.wyxdapp.com',
 			url: 'https://m.wyxdapp.com',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE,
 			userId: '',
 			referrerShortKid: ''
 		}

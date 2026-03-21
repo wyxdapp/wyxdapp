@@ -490,7 +490,7 @@ class Request {
 			throw new Error('登录已过期，请重新登录')
 		}
 		
-		// 其他业务错误
+		// 其他业务错误 — 不弹 Toast，由调用方 handleError/handlePageError 统一处理
 		let errorMsg = '请求失败'
 		const msgVal = dataObj.getString('msg')
 		const messageVal = dataObj.getString('message')
@@ -499,12 +499,6 @@ class Request {
 		} else if (messageVal != null && messageVal != '') {
 			errorMsg = messageVal
 		}
-		
-		uni.showToast({
-			title: errorMsg,
-			icon: 'none',
-			duration: TOAST_DURATION_DEFAULT
-		})
 		
 		throw new Error(errorMsg)
 	}

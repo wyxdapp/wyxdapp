@@ -176,6 +176,7 @@ import { getChatList, getChatListRef } from '@/common/composables/useChatAndShar
 import { toJsonObj, countArrayItems, isAppPlatform, isH5Platform } from '@/common/utils/utsSafe.uts'
 import { useUserStore, initUserInfoAction } from '@/stores/user.uts'
 import { COMPLAINT_TYPE_DEFAULT } from '@/common/config/businessCodes.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import { delay } from '@/common/utils/delay.uts'
 
 // 定时器生命周期管理
@@ -229,7 +230,7 @@ const props = defineProps({
 			title: '网约向导趣游玩',
 			desc: '发现专业向导，定制专属行程',
 			summary: '发现专业向导，定制专属行程',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE,
 			url: '',
 			link: '',
 			userId: ''

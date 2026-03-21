@@ -71,8 +71,8 @@
 			<text class="route-title">{{ routeInfoTitle }}</text>
 			<!-- 第三行：标签 -->
 			<view class="route-tags">
-				<view v-for="(tag, index) in routeInfoTags" :key="index" class="tag">
-					<text>{{ tag }}</text>
+				<view v-for="(tag, index) in routeInfoTags" :key="index" class="card-tag-blue">
+					<text class="card-tag-blue-text">{{ tag }}</text>
 				</view>
 			</view>
 			<!-- 第四行：出发时间 -->
@@ -172,26 +172,26 @@
 			<!-- 路线详情（优先显示 routeDetail） -->
 			<view v-if="routeDetailHtml != ''">
 				<text class="section-title">路线详情</text>
-				<rich-text :nodes="routeDetailHtml"></rich-text>
+				<rich-text :nodes="processRichTextImages(routeDetailHtml)"></rich-text>
 			</view>
 			
 			<!-- 定制特色 -->
 			<view v-else-if="featureHtml != ''">
 				<text class="section-title">定制特色</text>
-				<rich-text :nodes="featureHtml"></rich-text>
+				<rich-text :nodes="processRichTextImages(featureHtml)"></rich-text>
 			</view>
 			
 			<!-- 行程安排 -->
 			<view v-if="planHtml != '' && routeDetailHtml == ''">
 				<text class="section-title" v-if="featureHtml != ''">行程安排</text>
 				<text class="section-title" v-else>行程安排</text>
-				<rich-text :nodes="planHtml"></rich-text>
+				<rich-text :nodes="processRichTextImages(planHtml)"></rich-text>
 			</view>
 			
 			<!-- 费用须知 -->
 			<view v-if="noticeHtml != '' && routeDetailHtml == ''">
 				<text class="section-title">费用须知</text>
-				<rich-text :nodes="noticeHtml"></rich-text>
+				<rich-text :nodes="processRichTextImages(noticeHtml)"></rich-text>
 			</view>
 			
 			<!-- 无内容时显示行程列表 -->
@@ -270,6 +270,7 @@ import H5TopBar from '@/components/base/H5TopBar.uvue'
 import SharePopup from '@/components/common/SharePopup.uvue'
 import { getTravelDetail, GetTravelDetailParams } from '@/api/travel.uts'
 import { addVisitor } from '@/api/behavior.uts'
+import { addCount } from '@/api/count.uts'
 import { AddVisitorParams } from '@/api/types/behaviorTypes.uts'
 import SubmitOrder from '@/components/common/SubmitOrder.uvue'
 import { isWechatBrowser, isPC, isAndroid, isIOS } from '@/common/utils/systemInfo'
@@ -298,6 +299,7 @@ import {
 } from '@/common/composables/useShareUi.uts'
 import { useUserStore, getUserShortKid, updateUserInfoAction } from '@/stores/user.uts'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import { getCachedProfile } from '@/common/composables/useUserProfileCache.uts'
 let timerHandles: number[] = []
 
@@ -506,7 +508,7 @@ const guideOptimizedAvatar = computed((): string => {
 	let url = guideInfoUserImage.value
 	
 	if (url == '') {
-		return '/static/images/default-avatar.png'
+		return 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
 	}
 	
 	if (url.indexOf('cos.') >= 0 || url.indexOf('myqcloud.com') >= 0) {
@@ -596,6 +598,16 @@ const getObjArray = (obj: UTSJSONObject | null, key: string): Array<UTSJSONObjec
 // 辅助函数：获取技能名称
 const getGuideForteName = (forte: UTSJSONObject): string => {
 	return safeGetStringProp(forte, 'labelName')
+}
+
+/**
+ * 富文本图片宽度自适应预处理
+ * 为 HTML 字符串中的所有 <img> 标签注入 max-width:100% 和 height:auto 样式
+ * 如果图片原始宽度小于容器宽度，保持原始尺寸（通过 max-width 而非 width 实现）
+ */
+const processRichTextImages = (html: string): string => {
+	if (html == '') return ''
+	return html.replace(/<img/gi, '<img style="max-width:100%;height:auto;"')
 }
 
 // 辅助函数：将数据转为 UTSJSONObject（接受可空类型）
@@ -932,6 +944,9 @@ const loadRouteInfo = async () => {
 			featureHtml.value = getObjString(lineData, 'newFeature')
 			planHtml.value = getObjString(lineData, 'newPlan')
 			noticeHtml.value = getObjString(lineData, 'newNotice')
+			
+			// 增加浏览量计数（静默调用，失败不影响页面展示）
+			addCount(20, 40, routeId.value, 1).catch((_e: any | null) => {})
 		} else {
 			let msg = getObjString(resObj, 'msg')
 			if (msg == '') {
@@ -1103,7 +1118,7 @@ const handleShare = async () => {
 		}
 		
 		// 获取分享图片
-		let imageStr = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		let imageStr = DEFAULT_SHARE_IMAGE
 		if (routeInfoImages.value.length > 0) {
 			imageStr = routeInfoImages.value[0]
 		}
@@ -1191,7 +1206,7 @@ const handleShare = async () => {
 			desc: '发现专业向导，定制专属行程',
 			link: 'https://m.wyxdapp.com/',
 			url: 'https://m.wyxdapp.com/',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+			imageUrl: DEFAULT_SHARE_IMAGE,
 			userId: '',
 			referrerShortKid: ''
 		}
@@ -1513,27 +1528,27 @@ onUnmounted(() => {
 }
 
 .price-value-top {
-	font-size: 48rpx;
+	font-size: 40rpx;
 	color: #FF6B6B;
 	font-weight: bold;
 	line-height: 1;
 }
 
 .price-unit-top {
-	font-size: 24rpx;
+	font-size: 22rpx;
 	color: #999999;
 	margin-left: 6rpx;
 	line-height: 1;
 }
 
 .sale-text-top {
-	font-size: 24rpx;
+	font-size: 22rpx;
 	color: #999999;
 	line-height: 1;
 }
 
 .route-title {
-	font-size: 36rpx;
+	font-size: 32rpx;
 	color: #333333;
 	font-weight: bold;
 	margin-bottom: 16rpx;
@@ -1543,17 +1558,6 @@ onUnmounted(() => {
 	flex-direction: row;
 	flex-wrap: wrap;
 	margin-bottom: 16rpx;
-}
-
-.tag {
-	padding-top: 6rpx;
-	padding-bottom: 6rpx;
-	padding-left: 16rpx;
-	padding-right: 16rpx;
-	background-color: #E3F2FD;
-	border-radius: 20rpx;
-	margin-right: 12rpx;
-	margin-bottom: 8rpx;
 }
 
 .departure-row {
@@ -1875,7 +1879,6 @@ onUnmounted(() => {
 
 .btn-chat {
 	background-color: #37B1F2;
-	margin-left: 16rpx;
 }
 
 .btn-chat-text {

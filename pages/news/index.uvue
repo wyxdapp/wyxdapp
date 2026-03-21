@@ -107,10 +107,8 @@
 								:nickname="getDisplayName(item.targetUserName, item.targetUserId)"
 								:vipType="getVipTypeString(item.vip, item.vipType)"
 								:giftLevel="item.giftLevel"
-								:targetUserKid="item.targetUserId"
 								size="medium"
 								@vipClick="handleVipClick"
-								@giftClick="handleGiftIconClick"
 							/>
 							<text class="time">{{ formatTime(item.lastMessageTime) }}</text>
 						</view>
@@ -139,14 +137,6 @@
 			</view>
 		</view>
 		
-		<!-- 礼物选择弹窗 -->
-		<GiftSelector
-			:show="showGiftSelector"
-			:userKid="currentUserId"
-			:receiveUserKid="selectedUserKid"
-			@close="showGiftSelector = false"
-			@selectGift="handleSelectGift"
-		/>
 		
 
 	</view>
@@ -178,11 +168,9 @@ import {
 	initPageLayout as initPageLayoutComposable 
 } from '@/common/composables/usePageLayout.uts'
 import Button from '@/components/base/Button.uvue'
-import GiftSelector from '@/components/lottery/GiftSelector.uvue'
 import Avatar from '@/components/base/Avatar.uvue'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
-import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { isMemberFeatureEnabled, parseBooleanConfig } from '@/common/composables/useFeatureToggles.uts'
 import { BADGE_COUNT_MAX_DISPLAY } from '@/common/config/uiConfig.uts'
 // 🔧 新增：导入统一的登录状态管理工具
@@ -348,7 +336,6 @@ const quickFuncs = ref<Array<QuickFuncItem>>([
 const conversations = ref<Array<ConversationItem>>([])
 const loading = ref<boolean>(false)
 const hasMore = ref<boolean>(true)
-const showGiftSelector = ref<boolean>(false)
 const selectedUserKid = ref<string>('')
 const page = ref<number>(1)
 
@@ -1900,47 +1887,9 @@ const handleVipClick = () => {
 	})
 }
 
-// 礼物图标点击 - 打开礼物选择面板
-const handleGiftIconClick = (targetUserKid: string) => {
-	if (requireLogin(true) == false) return
-	selectedUserKid.value = targetUserKid
-	showGiftSelector.value = true
-}
-
 const handleSendGiftToUser = (item: ConversationItem) => {
 	if (requireLogin(true) == false) return
 	selectedUserKid.value = item.targetUserId
-	showGiftSelector.value = true
-}
-
-// 处理选择礼物
-const handleSelectGift = async (gift: UTSJSONObject | null) => {
-	showGiftSelector.value = false
-	if (gift != null) {
-		const giftObj = toJsonObj(gift)
-		if (giftObj != null) {
-			const giftId = getObjString(giftObj, 'id')
-			if (giftId != '' && selectedUserKid.value != '') {
-				try {
-					const userId = currentUserId.value
-					const sendParams = {
-						userKid: userId,
-						receiveUserKid: selectedUserKid.value,
-						lotteryRecordKid: giftId
-					} as UTSJSONObject
-					await sendGiftFromBag(sendParams)
-					uni.showToast({
-						title: '礼物发送成功',
-						icon: 'success'
-					})
-				} catch (error) {
-					if (!isAuthError(error)) {
-						handlePageError(error, '发送礼物', null)
-					}
-				}
-			}
-		}
-	}
 }
 </script>
 

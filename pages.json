@@ -473,7 +473,8 @@
                                               "path":  "orderDetails/index",
                                               "style":  {
                                                             "navigationBarTitleText":  "订单详情",
-                                                            "navigationStyle":  "custom"
+                                                            "navigationStyle":  "custom",
+                                                            "backgroundColor":  "#F5F5F5"
                                                         }
                                           },
                                           {

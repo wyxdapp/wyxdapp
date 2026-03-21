@@ -93,7 +93,7 @@ const props = defineProps({
 	// 是否显示空状态图标
 	showEmptyIcon: { type: Boolean, default: false },
 	// 空状态图标
-	emptyIcon: { type: String, default: '/static/images/empty.png' }
+	emptyIcon: { type: String, default: '' }
 })
 
 // ==================== Emits ====================

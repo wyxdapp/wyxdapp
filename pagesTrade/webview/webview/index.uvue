@@ -61,6 +61,7 @@
 <script setup lang="uts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import { 
 	pageStatusBarHeight, 
 	initPageLayout as initPageLayoutComposable 
@@ -99,7 +100,7 @@ const showSharePopup = ref<boolean>(false)
 const shareData = ref<UTSJSONObject>({
 	title: '网约向导趣游玩',
 	desc: '发现专业向导，定制专属行程',
-	imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+	imageUrl: DEFAULT_SHARE_IMAGE,
 	url: ''
 } as UTSJSONObject)
 
@@ -172,7 +173,7 @@ const handleShare = () => {
 	shareData.value = {
 		title: pageTitle.value,
 		desc: '来自网约向导的推荐',
-		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		imageUrl: DEFAULT_SHARE_IMAGE,
 		url: url.value
 	} as UTSJSONObject
 	showSharePopup.value = true

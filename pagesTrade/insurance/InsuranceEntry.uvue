@@ -69,12 +69,10 @@
 						</view>
 						<view class="form-item">
 							<text class="form-label">证件类型 <text class="required">*</text></text>
-							<picker :range="cardTypeOptions" :value="insured.cardType - 1" @change="onInsuredCardTypeChange($event as UTSJSONObject, iIdx)">
-								<view class="picker-value">
-									<text class="picker-text">{{ cardTypeOptions[insured.cardType - 1] }}</text>
-									<text class="picker-arrow">›</text>
-								</view>
-							</picker>
+							<view class="picker-value" @click="showCardTypePicker(iIdx)">
+								<text class="picker-text">{{ cardTypeOptions[insured.cardType - 1] }}</text>
+								<text class="picker-arrow">›</text>
+							</view>
 						</view>
 						<view class="form-item">
 							<text class="form-label">证件号码 <text class="required">*</text></text>
@@ -82,21 +80,17 @@
 						</view>
 						<view class="form-item">
 							<text class="form-label">性别 <text class="required">*</text></text>
-							<picker :range="genderOptions" :value="insured.sex == '1' ? 0 : 1" @change="onInsuredGenderChange($event as UTSJSONObject, iIdx)">
-								<view class="picker-value">
-									<text class="picker-text">{{ insured.sex == '1' ? '男' : (insured.sex == '0' ? '女' : '请选择') }}</text>
-									<text class="picker-arrow">›</text>
-								</view>
-							</picker>
+							<view class="picker-value" @click="showGenderPicker(iIdx)">
+								<text class="picker-text">{{ insured.sex == '1' ? '男' : (insured.sex == '0' ? '女' : '请选择') }}</text>
+								<text class="picker-arrow">›</text>
+							</view>
 						</view>
 						<view class="form-item">
 							<text class="form-label">出生日期 <text class="required">*</text></text>
-							<picker mode="date" :value="insured.birthDay" @change="onInsuredBirthDayChange($event as UTSJSONObject, iIdx)">
-								<view class="picker-value">
-									<text class="picker-text" :class="insured.birthDay == '' ? 'placeholder-text' : ''">{{ insured.birthDay != '' ? insured.birthDay : '请选择出生日期' }}</text>
-									<text class="picker-arrow">›</text>
-								</view>
-							</picker>
+							<view class="picker-value" @click="showBirthDayPicker(iIdx)">
+								<text class="picker-text" :class="insured.birthDay == '' ? 'placeholder-text' : ''">{{ insured.birthDay != '' ? insured.birthDay : '请选择出生日期' }}</text>
+								<text class="picker-arrow">›</text>
+							</view>
 						</view>
 					</view>
 				</view>
@@ -109,27 +103,17 @@
 					</view>
 					<view class="form-item">
 						<text class="form-label">开始时间</text>
-						<view v-if="currentBillingType == 10">
-							<text class="form-value">{{ startTime }}</text>
+						<view class="picker-value" @click="showStartTimePicker">
+							<text class="picker-text" :class="startTime == '' ? 'placeholder-text' : ''">{{ startTime != '' ? startTime : '请选择开始时间' }}</text>
+							<text class="picker-arrow">›</text>
 						</view>
-						<picker v-else mode="date" :value="startTime" @change="onStartTimeChange">
-							<view class="picker-value">
-								<text class="picker-text" :class="startTime == '' ? 'placeholder-text' : ''">{{ startTime != '' ? startTime : '请选择开始时间' }}</text>
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
 					</view>
 					<view class="form-item">
 						<text class="form-label">结束时间</text>
-						<view v-if="currentBillingType == 20">
-							<text class="form-value">{{ endTime }}</text>
+						<view class="picker-value" @click="showEndTimePicker">
+							<text class="picker-text" :class="endTime == '' ? 'placeholder-text' : ''">{{ endTime != '' ? endTime : '请选择结束时间' }}</text>
+							<text class="picker-arrow">›</text>
 						</view>
-						<picker v-else mode="date" :value="endTime" :start="startTime" @change="onEndTimeChange">
-							<view class="picker-value">
-								<text class="picker-text" :class="endTime == '' ? 'placeholder-text' : ''">{{ endTime != '' ? endTime : '请选择结束时间' }}</text>
-								<text class="picker-arrow">›</text>
-							</view>
-						</picker>
 					</view>
 				</view>
 
@@ -158,7 +142,35 @@
 		<!-- 底部提交按钮 -->
 		<view class="footer-box">
 			<view class="submit-btn" :class="submitting == true ? 'submit-btn-disabled' : ''" @click="doSubmit">
-				<text class="submit-btn-text">{{ submitting == true ? '提交中...' : '确认提交' }}</text>
+				<text class="submit-btn-text">{{ submitButtonText }}</text>
+			</view>
+		</view>
+
+		<!-- 日期选择弹窗 -->
+		<view v-if="showDatePicker == true" class="dp-mask" @click="closeDatePicker">
+			<view class="dp-popup" @click.stop="">
+				<view class="dp-header">
+					<text class="dp-cancel" @click="closeDatePicker">取消</text>
+					<text class="dp-title">选择日期</text>
+					<text class="dp-confirm" @click="confirmDatePicker">确定</text>
+				</view>
+				<view class="dp-body">
+					<scroll-view class="dp-column" :scroll-y="true" :scroll-into-view="dpYearScrollId">
+						<view v-for="(year, yIndex) in (dpYearList as Array<number>)" :key="yIndex" :id="'dpy-' + year.toString()" class="dp-item" :class="{ 'dp-item-active': dpTempYear == year }" @click="dpSelectYear(year)">
+							<text class="dp-item-text" :class="{ 'dp-item-text-active': dpTempYear == year }">{{ year }}年</text>
+						</view>
+					</scroll-view>
+					<scroll-view class="dp-column" :scroll-y="true" :scroll-into-view="dpMonthScrollId">
+						<view v-for="(month, mIndex) in (dpMonthList as Array<number>)" :key="mIndex" :id="'dpm-' + month.toString()" class="dp-item" :class="{ 'dp-item-active': dpTempMonth == month }" @click="dpSelectMonth(month)">
+							<text class="dp-item-text" :class="{ 'dp-item-text-active': dpTempMonth == month }">{{ month }}月</text>
+						</view>
+					</scroll-view>
+					<scroll-view class="dp-column" :scroll-y="true" :scroll-into-view="dpDayScrollId">
+						<view v-for="(day, dIndex) in (dpDayList as Array<number>)" :key="dIndex" :id="'dpd-' + day.toString()" class="dp-item" :class="{ 'dp-item-active': dpTempDay == day }" @click="dpSelectDay(day)">
+							<text class="dp-item-text" :class="{ 'dp-item-text-active': dpTempDay == day }">{{ day }}日</text>
+						</view>
+					</scroll-view>
+				</view>
 			</view>
 		</view>
 	</view>
@@ -171,9 +183,11 @@ import {
 	getInsuranceProducts,
 	trialInsurancePrice,
 	submitInsuranceOrder,
+	createInsurancePayOrder,
 	getPolicyholder,
 	TrialPriceParams,
 	SubmitInsuranceOrderParams,
+	InsurancePayParams,
 	PolicyHolderParams,
 	InsuredItemParams
 } from '@/api/insurance.uts'
@@ -184,6 +198,7 @@ import {
 } from '@/common/composables/usePageLayout.uts'
 import { handlePageError, isAuthError } from '@/common/utils/errorHandler.uts'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
+import { checkBalancePayEnabled } from '@/utils/paymentRouter'
 
 // ==================== 辅助函数 ====================
 const getObjString = (obj : UTSJSONObject | null, key : string) : string => {
@@ -300,6 +315,7 @@ const submitting = ref<boolean>(false)
 // 页面参数
 const tripOrderKid = ref<string>('')
 const travelDate = ref<string>('')
+const serviceDays = ref<number>(0)
 
 // 产品列表
 const products = ref<UTSJSONObject[]>([])
@@ -328,6 +344,9 @@ const endTime = ref<string>('')
 // 保费金额
 const premiumAmount = ref<string>('')
 
+// 保费承担方式：10=商户承担，20=用户自费，默认用户自费
+const premiumBearer = ref<number>(20)
+
 // ==================== 计算属性 ====================
 const productsLength = computed(() : number => {
 	return products.value.length
@@ -343,6 +362,13 @@ const currentBillingType = computed(() : number => {
 	if (selectedProductIndex.value >= products.value.length) return 10
 	const product = products.value[selectedProductIndex.value]
 	return getObjNumber(product, 'billingType')
+})
+
+// 提交按钮文案：根据保费承担方式动态显示
+const submitButtonText = computed(() : string => {
+	if (submitting.value == true) return '提交中...'
+	if (premiumBearer.value == 20) return '支付并提交'
+	return '确认提交'
 })
 
 // ==================== 产品辅助方法 ====================
@@ -402,13 +428,37 @@ const goBack = () => {
 	uni.navigateBack()
 }
 
+// 计算日期+N天
+const addDays = (dateStr : string, days : number) : string => {
+	if (dateStr == '' || days <= 0) return ''
+	const parts = dateStr.split('-')
+	if (parts.length != 3) return ''
+	const year = parseInt(parts[0])
+	const month = parseInt(parts[1])
+	const day = parseInt(parts[2])
+	if (isNaN(year) == true || isNaN(month) == true || isNaN(day) == true) return ''
+	const d = new Date(year, month - 1, day)
+	d.setDate(d.getDate() + days - 1)
+	const ny = d.getFullYear()
+	const nm = d.getMonth() + 1
+	const nd = d.getDate()
+	const ms = nm < 10 ? '0' + nm.toString() : nm.toString()
+	const ds = nd < 10 ? '0' + nd.toString() : nd.toString()
+	return ny.toString() + '-' + ms + '-' + ds
+}
+
 // 根据产品类型设置日期
 const setupDates = () => {
 	const billingType = currentBillingType.value
 	if (billingType == 10) {
-		// 按天产品：开始时间从行程出发日期，结束时间用户选择
+		// 按天产品：开始时间从行程出发日期
 		startTime.value = travelDate.value
-		endTime.value = ''
+		// 如果有服务天数，自动计算结束时间
+		if (serviceDays.value > 0 && travelDate.value != '') {
+			endTime.value = addDays(travelDate.value, serviceDays.value)
+		} else {
+			endTime.value = ''
+		}
 	} else {
 		// 按年产品：用户选择开始时间，结束时间自动+1年
 		startTime.value = ''
@@ -416,9 +466,23 @@ const setupDates = () => {
 	}
 }
 
+// 从产品数据中读取 premiumBearer 字段
+const updatePremiumBearer = (index : number) => {
+	if (index >= 0 && index < products.value.length) {
+		const product = products.value[index]
+		const bearer = getObjNumber(product, 'premiumBearer')
+		// 仅接受有效值 10 或 20，否则默认商户承担
+		premiumBearer.value = (bearer == 20) ? 20 : 10
+	} else {
+		premiumBearer.value = 10
+	}
+}
+
 const selectProduct = (index : number) => {
 	selectedProductIndex.value = index
 	premiumAmount.value = ''
+	// 读取当前产品的保费承担方式，默认商户承担(10)
+	updatePremiumBearer(index)
 	// 重新设置时间
 	setupDates()
 }
@@ -454,9 +518,9 @@ const onInsuredNameInput = (e : UniInputEvent, index : number) => {
 	}
 }
 
-const onInsuredCardTypeChange = (e : UTSJSONObject | null, index : number) => {
+const onInsuredCardTypeChange = (index : number, cardTypeIdx : number) => {
 	if (index >= 0 && index < insureds.value.length) {
-		insureds.value[index].cardType = getPickerValue(e) + 1
+		insureds.value[index].cardType = cardTypeIdx + 1
 	}
 }
 
@@ -466,30 +530,181 @@ const onInsuredCardNoInput = (e : UniInputEvent, index : number) => {
 	}
 }
 
-const onInsuredGenderChange = (e : UTSJSONObject | null, index : number) => {
+const onInsuredGenderChange = (index : number, genderIdx : number) => {
 	if (index >= 0 && index < insureds.value.length) {
-		const pickerIdx = getPickerValue(e)
-		insureds.value[index].sex = pickerIdx == 0 ? '1' : '0'
+		insureds.value[index].sex = genderIdx == 0 ? '1' : '0'
 	}
 }
 
-const onInsuredBirthDayChange = (e : UTSJSONObject | null, index : number) => {
+const onInsuredBirthDayChange = (index : number, dateStr : string) => {
 	if (index >= 0 && index < insureds.value.length) {
-		insureds.value[index].birthDay = getDatePickerValue(e)
+		insureds.value[index].birthDay = dateStr
 	}
 }
 
-// ==================== 保险时间 ====================
-const onStartTimeChange = (e : UTSJSONObject | null) => {
-	startTime.value = getDatePickerValue(e)
-	// 按年产品：自动设置结束时间为开始时间+1年
-	if (currentBillingType.value == 20 && startTime.value != '') {
-		endTime.value = addOneYear(startTime.value)
+// ==================== ActionSheet 选择器 ====================
+const showCardTypePicker = (index : number) => {
+	uni.showActionSheet({
+		itemList: cardTypeOptions,
+		success: (res) => {
+			onInsuredCardTypeChange(index, res.tapIndex)
+		}
+	})
+}
+
+const showGenderPicker = (index : number) => {
+	uni.showActionSheet({
+		itemList: genderOptions,
+		success: (res) => {
+			onInsuredGenderChange(index, res.tapIndex)
+		}
+	})
+}
+
+// ==================== 日期选择弹窗 ====================
+const showDatePicker = ref<boolean>(false)
+const dpYearList = ref<Array<number>>([])
+const dpMonthList = ref<Array<number>>([])
+const dpDayList = ref<Array<number>>([])
+const dpTempYear = ref<number>(1990)
+const dpTempMonth = ref<number>(1)
+const dpTempDay = ref<number>(1)
+const dpYearScrollId = ref<string>('')
+const dpMonthScrollId = ref<string>('')
+const dpDayScrollId = ref<string>('')
+// 日期选择回调类型：'birthDay' | 'startTime' | 'endTime'
+const dpCallbackType = ref<string>('')
+const dpCallbackIndex = ref<number>(-1)
+
+const dpGetDaysInMonth = (year : number, month : number) : number => {
+	const date = new Date(year, month, 0)
+	return date.getDate()
+}
+
+const dpInitDayList = () => {
+	const days : Array<number> = []
+	const daysInMonth = dpGetDaysInMonth(dpTempYear.value, dpTempMonth.value)
+	let i = 1
+	while (i <= daysInMonth) {
+		days.push(i)
+		i = i + 1
+	}
+	dpDayList.value = days
+}
+
+const openDatePicker = (currentValue : string, callbackType : string, callbackIndex : number) => {
+	// 初始化年份列表
+	const years : Array<number> = []
+	const currentYear = new Date().getFullYear()
+	const startYear = (callbackType == 'birthDay') ? 1920 : currentYear
+	const endYear = currentYear + 5
+	let y = startYear
+	while (y <= endYear) {
+		years.push(y)
+		y = y + 1
+	}
+	dpYearList.value = years
+
+	// 初始化月份列表
+	const months : Array<number> = []
+	let m = 1
+	while (m <= 12) {
+		months.push(m)
+		m = m + 1
+	}
+	dpMonthList.value = months
+
+	// 解析当前日期
+	if (currentValue != '') {
+		const parts = currentValue.split('-')
+		if (parts.length >= 3) {
+			const yVal = parseInt(parts[0])
+			if (isNaN(yVal) == false) dpTempYear.value = yVal
+			const mVal = parseInt(parts[1])
+			if (isNaN(mVal) == false) dpTempMonth.value = mVal
+			const dVal = parseInt(parts[2])
+			if (isNaN(dVal) == false) dpTempDay.value = dVal
+		}
+	} else {
+		if (callbackType == 'birthDay') {
+			dpTempYear.value = 1990
+		} else {
+			dpTempYear.value = currentYear
+		}
+		dpTempMonth.value = 1
+		dpTempDay.value = 1
+	}
+
+	dpInitDayList()
+	dpCallbackType.value = callbackType
+	dpCallbackIndex.value = callbackIndex
+
+	// 设置滚动定位
+	dpYearScrollId.value = 'dpy-' + dpTempYear.value.toString()
+	dpMonthScrollId.value = 'dpm-' + dpTempMonth.value.toString()
+	dpDayScrollId.value = 'dpd-' + dpTempDay.value.toString()
+
+	showDatePicker.value = true
+}
+
+const closeDatePicker = () => {
+	showDatePicker.value = false
+}
+
+const dpSelectYear = (year : number) => {
+	dpTempYear.value = year
+	dpInitDayList()
+	if (dpTempDay.value > dpDayList.value.length) {
+		dpTempDay.value = dpDayList.value.length
 	}
 }
 
-const onEndTimeChange = (e : UTSJSONObject | null) => {
-	endTime.value = getDatePickerValue(e)
+const dpSelectMonth = (month : number) => {
+	dpTempMonth.value = month
+	dpInitDayList()
+	if (dpTempDay.value > dpDayList.value.length) {
+		dpTempDay.value = dpDayList.value.length
+	}
+}
+
+const dpSelectDay = (day : number) => {
+	dpTempDay.value = day
+}
+
+const confirmDatePicker = () => {
+	const monthStr = (dpTempMonth.value < 10) ? ('0' + dpTempMonth.value.toString()) : dpTempMonth.value.toString()
+	const dayStr = (dpTempDay.value < 10) ? ('0' + dpTempDay.value.toString()) : dpTempDay.value.toString()
+	const dateValue = dpTempYear.value.toString() + '-' + monthStr + '-' + dayStr
+
+	showDatePicker.value = false
+
+	if (dpCallbackType.value == 'birthDay') {
+		onInsuredBirthDayChange(dpCallbackIndex.value, dateValue)
+	} else if (dpCallbackType.value == 'startTime') {
+		startTime.value = dateValue
+		// 按年产品：自动+1年；按天产品：有服务天数则自动计算
+		if (currentBillingType.value == 20 && startTime.value != '') {
+			endTime.value = addOneYear(startTime.value)
+		} else if (currentBillingType.value == 10 && startTime.value != '' && serviceDays.value > 0) {
+			endTime.value = addDays(startTime.value, serviceDays.value)
+		}
+	} else if (dpCallbackType.value == 'endTime') {
+		endTime.value = dateValue
+	}
+}
+
+// 触发日期选择
+const showBirthDayPicker = (index : number) => {
+	const currentValue = (index >= 0 && index < insureds.value.length) ? insureds.value[index].birthDay : ''
+	openDatePicker(currentValue, 'birthDay', index)
+}
+
+const showStartTimePicker = () => {
+	openDatePicker(startTime.value, 'startTime', -1)
+}
+
+const showEndTimePicker = () => {
+	openDatePicker(endTime.value, 'endTime', -1)
 }
 
 // ==================== 表单验证 ====================
@@ -594,6 +809,20 @@ const doTrialPrice = () => {
 }
 
 // ==================== 提交订单 ====================
+
+// 构建投保人参数
+const buildPolicyHolder = () : PolicyHolderParams => {
+	const holder = new PolicyHolderParams()
+	holder.cName = holderName.value
+	holder.cardType = holderCardTypeIndex.value + 1
+	holder.cardNo = holderCardNo.value
+	holder.sex = holderGenderIndex.value == 0 ? '1' : '0'
+	holder.birthDay = holderBirthDay.value
+	holder.mobile = holderMobile.value
+	return holder
+}
+
+// 商户承担模式：直接提交订单
 const executeSubmit = () => {
 	submitting.value = true
 	uni.showLoading({ title: '提交中...' })
@@ -605,18 +834,7 @@ const executeSubmit = () => {
 	params.rateCode = getSelectedRateCode()
 	params.startTime = startTime.value
 	params.endTime = endTime.value
-
-	// 投保人
-	const holder = new PolicyHolderParams()
-	holder.cName = holderName.value
-	holder.cardType = holderCardTypeIndex.value + 1
-	holder.cardNo = holderCardNo.value
-	holder.sex = holderGenderIndex.value == 0 ? '1' : '0'
-	holder.birthDay = holderBirthDay.value
-	holder.mobile = holderMobile.value
-	params.policyHolder = holder
-
-	// 被保人
+	params.policyHolder = buildPolicyHolder()
 	params.insureds = buildInsuredsList()
 
 	submitInsuranceOrder(params).then((res : UTSJSONObject | null) => {
@@ -646,25 +864,101 @@ const executeSubmit = () => {
 	})
 }
 
+// 跳转到支付页面
+const navigateToPayOrder = (orderKid : string, totalMoney : string) => {
+	// 异步检查零钱支付资格
+	checkBalancePayEnabled('', '', 60).then((balanceResult) : void => {
+		const balancePayFlag = balanceResult.balancePayEnabled
+		const payUrl = '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid
+			+ '&totalMoney=' + totalMoney
+			+ '&balancePayEnabled=' + (balancePayFlag ? '1' : '0')
+		uni.navigateTo({ url: payUrl })
+	}).catch((_ : any | null) : void => {
+		// 零钱支付资格检查失败，降级不显示零钱支付
+		const payUrl = '/pagesTrade/payment/payOrder/index?orderKid=' + orderKid
+			+ '&totalMoney=' + totalMoney
+			+ '&balancePayEnabled=0'
+		uni.navigateTo({ url: payUrl })
+	})
+}
+
+// 用户自费模式：创建支付订单 → 跳转到支付页面
+const executePayAndSubmit = () => {
+	submitting.value = true
+	uni.showLoading({ title: '创建支付订单...' })
+
+	const params = new InsurancePayParams()
+	params.tripOrderKid = tripOrderKid.value
+	params.productGuid = getSelectedProductGuid()
+	params.planGuid = getSelectedPlanGuid()
+	params.rateCode = getSelectedRateCode()
+	params.startTime = startTime.value
+	params.endTime = endTime.value
+	params.policyHolder = buildPolicyHolder()
+	params.insureds = buildInsuredsList()
+
+	createInsurancePayOrder(params).then((res : UTSJSONObject | null) => {
+		uni.hideLoading()
+		submitting.value = false
+		if (res != null) {
+			const resObj = toJsonObj(res)
+			if (resObj != null) {
+				const code = getObjNumber(resObj, 'code')
+				if (code == 200) {
+					const dataVal = resObj.get('data')
+					if (dataVal != null) {
+						const data = toJsonObj(dataVal)
+						if (data != null) {
+							const orderKidVal = getObjString(data, 'orderKid')
+							const totalMoneyVal = getObjString(data, 'totalMoney')
+							if (orderKidVal != '') {
+								// 检查零钱支付资格后跳转到支付页面
+								navigateToPayOrder(orderKidVal, totalMoneyVal)
+							} else {
+								uni.showToast({ title: '创建支付订单失败', icon: 'none' })
+							}
+						}
+					}
+				} else {
+					const msg = getObjString(resObj, 'msg')
+					uni.showToast({ title: msg != '' ? msg : '创建支付订单失败', icon: 'none' })
+				}
+			}
+		}
+	}).catch((error : any | null) : void => {
+		uni.hideLoading()
+		submitting.value = false
+		if (!isAuthError(error as any)) {
+			handlePageError(error as any, '创建保险支付订单', submitting)
+		}
+	})
+}
+
 const doSubmit = () => {
 	if (validateForm() == false) return
 	if (submitting.value == true) return
-	if (premiumAmount.value == '') {
-		uni.showToast({ title: '请先试算保费', icon: 'none' })
-		return
-	}
 
-	uni.showModal({
-		title: '确认提交',
-		content: '保费金额：¥' + premiumAmount.value + '，确认提交投保申请？',
-		confirmText: '确认提交',
-		confirmColor: '#2EAEF2',
-		success: (modalRes : UniShowModalResult) => {
-			if (modalRes.confirm == true) {
-				executeSubmit()
-			}
+	if (premiumBearer.value == 20) {
+		// 用户自费模式：创建支付订单 → 跳转到支付页面
+		executePayAndSubmit()
+	} else {
+		// 商户承担模式：保持现有逻辑，先试算再确认提交
+		if (premiumAmount.value == '') {
+			uni.showToast({ title: '请先试算保费', icon: 'none' })
+			return
 		}
-	})
+		uni.showModal({
+			title: '确认提交',
+			content: '保费金额：¥' + premiumAmount.value + '，确认提交投保申请？',
+			confirmText: '确认提交',
+			confirmColor: '#2EAEF2',
+			success: (modalRes : UniShowModalResult) => {
+				if (modalRes.confirm == true) {
+					executeSubmit()
+				}
+			}
+		})
+	}
 }
 
 // ==================== 加载投保人信息 ====================
@@ -726,6 +1020,7 @@ const loadProducts = () => {
 						products.value = productList
 						if (productList.length > 0) {
 							selectedProductIndex.value = 0
+							updatePremiumBearer(0)
 							setupDates()
 						}
 					}
@@ -757,6 +1052,13 @@ onLoad((options : OnLoadOptions) => {
 		const travelDateVal = optionsObj.get('travelDate')
 		if (travelDateVal != null && travelDateVal.toString() != '') {
 			travelDate.value = travelDateVal.toString()
+		}
+		const serviceDaysVal = optionsObj.get('serviceDays')
+		if (serviceDaysVal != null && serviceDaysVal.toString() != '') {
+			const parsed = parseInt(serviceDaysVal.toString())
+			if (isNaN(parsed) == false) {
+				serviceDays.value = parsed
+			}
 		}
 	}
 
@@ -975,6 +1277,7 @@ onLoad((options : OnLoadOptions) => {
 	flex-direction: row;
 	align-items: center;
 	justify-content: flex-end;
+	min-height: 48rpx;
 }
 
 .picker-text {
@@ -1128,5 +1431,88 @@ onLoad((options : OnLoadOptions) => {
 	font-size: 32rpx;
 	font-weight: bold;
 	color: #ffffff;
+}
+
+/* 日期选择弹窗 */
+.dp-mask {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgba(0, 0, 0, 0.5);
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+}
+
+.dp-popup {
+	width: 750rpx;
+	background-color: #ffffff;
+	border-top-left-radius: 24rpx;
+	border-top-right-radius: 24rpx;
+	flex-direction: column;
+}
+
+.dp-header {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding-left: 32rpx;
+	padding-right: 32rpx;
+	padding-top: 32rpx;
+	padding-bottom: 32rpx;
+	border-bottom-width: 1rpx;
+	border-bottom-style: solid;
+	border-bottom-color: #EEEEEE;
+}
+
+.dp-cancel {
+	font-size: 30rpx;
+	color: #999999;
+}
+
+.dp-title {
+	font-size: 32rpx;
+	font-weight: bold;
+	color: #333333;
+}
+
+.dp-confirm {
+	font-size: 30rpx;
+	color: #37B1F2;
+	font-weight: bold;
+}
+
+.dp-body {
+	flex-direction: row;
+	height: 400rpx;
+}
+
+.dp-column {
+	flex: 1;
+	height: 400rpx;
+}
+
+.dp-item {
+	height: 80rpx;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.dp-item-active {
+	background-color: #E6F7FF;
+}
+
+.dp-item-text {
+	font-size: 30rpx;
+	color: #333333;
+}
+
+.dp-item-text-active {
+	color: #37B1F2;
+	font-weight: bold;
 }
 </style>

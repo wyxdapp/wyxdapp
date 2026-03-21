@@ -1,5 +1,5 @@
 <template>
-	<view class="page">
+	<scroll-view class="page" direction="vertical">
 		<!-- 背景图片 -->
 		<view class="hear-bg" :style="headerGradientOuter()">
 			<view class="hear-bg-mask" :style="headerGradientMask()"></view>
@@ -96,7 +96,7 @@
 			<text class="load-text" @click="loadMore">加载更多</text>
 		</view>
 		</view>
-	</view>
+	</scroll-view>
 </template>
 
 <script setup lang="uts">
@@ -861,9 +861,9 @@ const viewTransactionDetail = async (item: TransactionItemData | null) => {
 /* #endif */
 
 .wallet-container {
-	flex: 1;
 	background-color: transparent;
 	padding: 20rpx;
+	padding-bottom: 40rpx;
 	position: relative;
 	z-index: 1;
 }

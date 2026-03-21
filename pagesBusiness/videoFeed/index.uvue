@@ -111,6 +111,7 @@ import VideoCommentPanel from '@/components/business/VideoCommentPanel.uvue'
 import SharePopup from '@/components/common/SharePopup.uvue'
 import request from '@/utils/request'
 import { handlePageError, handleSilentError, isAuthError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import { getPageHeight as calcPageHeight, SystemInfo } from './videoFeedUtils.uts'
 const getItemStringProp = (item: UTSJSONObject, key: string): string => {
 	return safeGetStringProp(item, key)
@@ -134,7 +135,7 @@ const shareData = ref<UTSJSONObject>({
 	title: '网约向导趣游玩',
 	desc: '发现专业向导，定制专属行程',
 	summary: '发现专业向导，定制专属行程',
-	imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+	imageUrl: DEFAULT_SHARE_IMAGE,
 	url: '',
 	link: '',
 	userId: ''
@@ -591,7 +592,7 @@ const onShare = (item: UTSJSONObject) => {
 		title: (videoTitle != '') ? videoTitle : (nickname + '的精彩视频'),
 		desc: '来网约向导看精彩视频',
 		summary: '来网约向导看精彩视频',
-		imageUrl: (videoCover != '') ? videoCover : 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		imageUrl: (videoCover != '') ? videoCover : DEFAULT_SHARE_IMAGE,
 		url: shareLink,
 		link: shareLink,
 		userId: userKid

@@ -220,13 +220,17 @@ const borderRadius = computed((): number => {
 // 显示的 URL（优先级：url > data 提取 > 默认头像）
 const displayUrl = computed((): string => {
   // 优先使用 url 属性
-  if (props.url != '') return props.url
+  if (props.url != '') {
+    // 过滤无效的 blob URL（微信小程序不支持）
+    if (props.url.indexOf('blob:') == 0) return DEFAULT_AVATAR
+    return props.url
+  }
   
   // 其次从 data 提取
   const dataVal = props.data
   if (dataVal != null) {
     const extracted = extractAvatarUrl(dataVal, props.avatarKey)
-    if (extracted != '') return extracted
+    if (extracted != '' && extracted.indexOf('blob:') != 0) return extracted
   }
   
   // 最后使用默认头像

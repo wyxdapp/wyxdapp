@@ -1919,6 +1919,11 @@ onUnmounted(() => {
 	height: 392rpx;
 	z-index: 0;
 }
+/* #ifdef H5 */
+.hear-bg {
+	width: 100%;
+}
+/* #endif */
 
 .hear-bg-mask {
 	position: absolute;
@@ -1928,6 +1933,11 @@ onUnmounted(() => {
 	height: 392rpx;
 	z-index: 0;
 }
+/* #ifdef H5 */
+.hear-bg-mask {
+	width: 100%;
+}
+/* #endif */
 
 .connection-status {
 	background-color: #fff3cd;

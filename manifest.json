@@ -2,8 +2,8 @@
 	"name": "网约向导",
 	"appid": "__UNI__0B0B4BB",
 	"description": "专业的当地向导服务平台",
-	"versionName": "2.2.9",
-	"versionCode": "229",
+	"versionName": "2.3.0",
+	"versionCode": "230",
 	"uni-app-x": {
 		"compatible": {
 			"runtime": "3.0"

@@ -155,9 +155,13 @@ export const loadUserTrends = async (
 		params.pageNumber = pageInfo.pageNumber
 		params.pageSize = pageInfo.pageSize
 		
-		// 添加当前用户 ID
+		// 添加当前用户 ID（优先从 Storage 获取，回退使用 pageInfo.userKid）
 		try {
-			const currentUserKid = getCurrentUserKid()
+			let currentUserKid = getCurrentUserKid()
+			// APP 端 Storage 可能读不到，回退使用已确认的 userKid
+			if (currentUserKid == null || currentUserKid == '') {
+				currentUserKid = pageInfo.userKid
+			}
 			if (currentUserKid != null && currentUserKid != '') {
 				params.currentUserKid = currentUserKid
 			}

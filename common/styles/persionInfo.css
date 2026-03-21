@@ -649,6 +649,12 @@
 	padding-top: 8rpx;
 }
 
+/* 服务信息文本自动换行（介绍、擅长等多行内容） */
+.service-text-wrap {
+	flex: 1;
+	word-break: break-all;
+}
+
 .border-line {
 	height: 20rpx;
 }

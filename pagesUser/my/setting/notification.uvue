@@ -140,7 +140,7 @@ const chatPushEnabled = ref<boolean>(true)
 
 // 扩展通知开关
 const smsNotificationEnabled = ref<boolean>(false)
-const wechatNotificationEnabled = ref<boolean>(false)
+const wechatNotificationEnabled = ref<boolean>(true)
 const miniProgramNotificationEnabled = ref<boolean>(false)
 
 // 资格状态
@@ -410,19 +410,10 @@ const onSmsSwitchClick = (e: UTSJSONObject | null) => {
 const onWechatNotificationChange = (e: UTSJSONObject | null) => {
 	const newValue = getSwitchValue(e)
 	
-	// 如果要开启，先检查资格
+	// 如果要开启，检查是否有公众号 OpenId
 	if (newValue == true) {
 		if (wechatBound.value == false) {
-			// 未绑定微信，阻止开启并提示
-			wechatNotificationEnabled.value = false
-			uni.showToast({
-				title: '请先绑定微信公众号',
-				icon: 'none'
-			})
-			return
-		}
-		if (wechatSubscribed.value == false) {
-			// 未关注公众号，阻止开启并提示
+			// 没有公众号 OpenId，提示关注
 			wechatNotificationEnabled.value = false
 			uni.showToast({
 				title: '请先关注公众号',

@@ -72,7 +72,7 @@ export const unlikeTrend = (params: UnlikeTrendParams) => {
 /**
  * 抢单操作
  * 后端接口: POST /order/guide/grabOrder
- * 将订单状态从5(待抢单)改为10(待付款)
+ * 将订单状态从5(待接单)改为10(待付款)
  */
 export const grabOrder = (params: GrabOrderParams) => {
   return request.post('/order/guide/grabOrder', params, false)

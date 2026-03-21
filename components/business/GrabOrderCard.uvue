@@ -10,7 +10,7 @@
 		</view>
 		<view class="grab-order-footer">
 			<view class="grab-btn" @click.stop="handleGrab">
-				<text class="grab-btn-text">立即抢单</text>
+				<text class="grab-btn-text">立即接单</text>
 			</view>
 		</view>
 	</view>

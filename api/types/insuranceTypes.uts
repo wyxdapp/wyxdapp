@@ -80,6 +80,28 @@ export class SubmitInsuranceOrderParams {
 	endTime: string = ''
 }
 
+// ============ 保费支付相关 ============
+
+// 保险保费支付参数（用户自费模式，创建待支付订单）
+export class InsurancePayParams {
+	/** 关联行程订单kid */
+	tripOrderKid: string = ''
+	/** 产品Guid */
+	productGuid: string = ''
+	/** 计划Guid */
+	planGuid: string = ''
+	/** 费率代码（BY开头） */
+	rateCode: string = ''
+	/** 投保人信息 */
+	policyHolder: PolicyHolderParams = new PolicyHolderParams()
+	/** 被保人信息列表 */
+	insureds: Array<InsuredItemParams> = []
+	/** 保险开始时间，格式yyyy-MM-dd */
+	startTime: string = ''
+	/** 保险结束时间，格式yyyy-MM-dd */
+	endTime: string = ''
+}
+
 // ============ 保单查询相关 ============
 
 // 保单详情请求参数

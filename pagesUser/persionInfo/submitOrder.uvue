@@ -203,6 +203,7 @@ import {
 import { secureLog } from '@/common/utils/security/secureLogger.uts'
 import { checkBalancePayEnabled } from '@/utils/paymentRouter'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 
 // 定时器生命周期管理
 let timerHandles: number[] = []
@@ -427,7 +428,7 @@ const shareData = computed((): UTSJSONObject => {
 		title: '预约向导 - 网约向导趣游玩',
 		desc: '发现专业向导，定制专属行程',
 		summary: '发现专业向导，定制专属行程',
-		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		imageUrl: DEFAULT_SHARE_IMAGE,
 		url: 'https://m.wyxdapp.com/#/pagesUser/persionInfo/submitOrder',
 		link: 'https://m.wyxdapp.com/#/pagesUser/persionInfo/submitOrder'
 	} as UTSJSONObject

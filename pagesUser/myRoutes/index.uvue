@@ -166,6 +166,7 @@ import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { handlePageError, handleSilentError } from '@/common/utils/errorHandler.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 import ListStatus from '@/components/base/ListStatus.uvue'
 import { 
 	getStringProp, 
@@ -506,7 +507,7 @@ const buildShareData = (item: UTSJSONObject | null): UTSJSONObject => {
 	// 封面图
 	let imageUrl = getCoverImage(item)
 	if (imageUrl == '') {
-		imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		imageUrl = DEFAULT_SHARE_IMAGE
 	}
 
 	const shareUrl = 'https://m.wyxdapp.com/#/pagesBusiness/routeInfo/index?lineKid=' + kid
@@ -604,8 +605,8 @@ const onShareToChat = (data: UTSJSONObject | null) => {
 	}
 	
 	if (routeInfo.image == '') {
-		routeInfo.image = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
-		routeInfo.coverImage = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+		routeInfo.image = DEFAULT_SHARE_IMAGE
+		routeInfo.coverImage = DEFAULT_SHARE_IMAGE
 	}
 	
 	handleShareToChatFn(data as any, routeInfo as any)

@@ -37,6 +37,8 @@ export const ERR_MSG_SERVER_504 = '服务器响应超时，请稍后重试'
 export const ERR_MSG_PARSE = '数据加载异常，请重试'
 /** 上传失败 */
 export const ERR_MSG_UPLOAD = '上传失败，请重试'
+/** 资源不存在 */
+export const ERR_MSG_NOT_FOUND = '该信息已不存在或已被删除'
 /** 定位失败 */
 export const ERR_MSG_LOCATION = '定位失败，请检查定位权限'
 /** 默认错误消息 */
@@ -117,11 +119,16 @@ export function mapErrorToFriendlyMessage(error: any): string {
     return ERR_MSG_PARSE
   }
 
-  // 9. 登录过期/认证错误 — 返回空字符串，由 Request 模块统一处理
+  // 9. 资源不存在
+  if (msg.indexOf('不存在') !== -1) {
+    return ERR_MSG_NOT_FOUND
+  }
+
+  // 10. 登录过期/认证错误 — 返回空字符串，由 Request 模块统一处理
   if (msg.indexOf('登录已过期') !== -1 || lowerMsg.indexOf('401') !== -1 || lowerMsg.indexOf('403') !== -1) {
     return ''
   }
 
-  // 10. 默认消息
+  // 11. 默认消息
   return ERR_MSG_DEFAULT
 }

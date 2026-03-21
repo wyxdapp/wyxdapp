@@ -136,7 +136,7 @@ const handleClose = () => {
 const getGiftProp = (gift: any, key: string): string => {
 	if (gift == null) {
 		if (key === 'rewardImage') {
-			return '/static/images/liwu/xiaoxinxin.png'
+			return 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 		}
 		return ''
 	}
@@ -149,7 +149,7 @@ const getGiftProp = (gift: any, key: string): string => {
 				// 使用 UTSJSONObject.get() 方法安全访问属性
 				if (key === 'rewardImage') {
 					const val = giftObj.get('rewardImage')
-					return (val != null && val.toString() != '') ? val.toString() : '/static/images/liwu/xiaoxinxin.png'
+					return (val != null && val.toString() != '') ? val.toString() : 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 				} else if (key === 'rewardName') {
 					const val = giftObj.get('rewardName')
 					return (val != null && val.toString() != '') ? val.toString() : ''
@@ -172,7 +172,7 @@ const getGiftProp = (gift: any, key: string): string => {
 		console.error('getGiftProp error:', e)
 	}
 	if (key === 'rewardImage') {
-		return '/static/images/liwu/xiaoxinxin.png'
+		return 'https://jiasu.wyxdapp.com/iconimages/gift.png'
 	}
 	return ''
 }

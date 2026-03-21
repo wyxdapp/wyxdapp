@@ -189,9 +189,12 @@
 <script setup lang="uts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+// #ifdef MP-WEIXIN
+import { onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
+// #endif
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
 import { useUserStore, initUserInfoAction, getUserAvatar, getUserNickname, getUserVipStatus, getUserVipExpireTime, getUserNumberProp, updateUserInfoAction } from '@/stores/user.uts'
-import { DEFAULT_AVATAR_LOCAL } from '@/common/config/defaultImages.uts'
+import { DEFAULT_AVATAR_LOCAL, DEFAULT_SHARE_IMAGE_LOCAL } from '@/common/config/defaultImages.uts'
 import { 
 	pageStatusBarHeight, 
 	initPageLayout as initPageLayoutComposable 
@@ -1509,6 +1512,25 @@ const confirmPurchase = () => {
 }
 
 // （已在上方定义 createVipOrderHandler）
+
+// ==================== 微信小程序分享钩子 ====================
+// #ifdef MP-WEIXIN
+onShareAppMessage((): UTSJSONObject => {
+	return {
+		title: '网约向导 - 开通会员，尊享专属特权',
+		path: '/pagesUser/my/proveDetails/vip',
+		imageUrl: DEFAULT_SHARE_IMAGE_LOCAL
+	}
+})
+
+onShareTimeline((): UTSJSONObject => {
+	return {
+		title: '网约向导 - 开通会员，尊享专属特权',
+		query: '',
+		imageUrl: DEFAULT_SHARE_IMAGE_LOCAL
+	}
+})
+// #endif
 </script>
 
 <style lang="scss" scoped>

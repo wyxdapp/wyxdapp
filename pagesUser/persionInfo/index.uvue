@@ -84,10 +84,8 @@
 							:nickname="infoNickname"
 							:vipType="infoVipType"
 							:giftLevel="infoGiftLevel"
-							:targetUserKid="infoKid"
 							size="large"
 							@vipClick="handleVipClick"
-							@giftClick="handleGiftIconClick"
 						/>
 						<!-- 访问自己的主页：显示编辑按钮 -->
 						<view 
@@ -188,7 +186,7 @@
 			<view class="flex-row ptb-12 align-start">
 				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_deal.png" mode="aspectFit"></image>
 				<text class="ml-16 fs-sm" color-title special>擅长</text>
-				<text class="color-text fs-sm">　{{ userFortesText }}</text>
+				<text class="color-text fs-sm service-text-wrap">　{{ userFortesText }}</text>
 			</view>
 			<view class="flex-row ptb-12 align-center">
 				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_score.png" mode="aspectFit"></image>
@@ -199,7 +197,7 @@
 			<view class="flex-row ptb-12 align-start">
 				<image class="service-icon" src="https://jiasu.wyxdapp.com/iconimages/n_icon_introduce.png" mode="aspectFit"></image>
 				<text class="ml-16 fs-sm" color-title special>介绍</text>
-				<text class="color-text fs-sm">　{{ (infoServiceFeature != '') ? infoServiceFeature : '这个导游很懒,什么也没留下' }}</text>
+				<text class="color-text fs-sm service-text-wrap">　{{ (infoServiceFeature != '') ? infoServiceFeature : '这个导游很懒,什么也没留下' }}</text>
 			</view>
 			<view class="flex-row ptb-12 align-center space-between">
 				<view class="flex-row align-center">
@@ -351,14 +349,6 @@
 			@show-qrcode="handleShowQrcode">
 		</SharePopup>
 		
-		<!-- 礼物选择弹窗 -->
-		<GiftSelector
-			:show="showGiftSelector"
-			:userKid="currentUserId"
-			:receiveUserKid="selectedUserKid"
-			@close="showGiftSelector = false"
-			@selectGift="handleSelectGift"
-		/>
 	</view>
 </template>
 
@@ -376,8 +366,7 @@ import {
 	getStringProp, 
 	getNumberProp, 
 	getArrayProp,
-	getItemKey,
-	goToHome
+	getItemKey
 } from '@/common/utils/utsSafe.uts'
 import { 
 	checkUserLoginReliable, 
@@ -485,9 +474,8 @@ import Button from '@/components/base/Button.uvue'
 import H5TopBar from '@/components/base/H5TopBar.uvue'
 import Avatar from '@/components/base/Avatar.uvue'
 import NicknameWithBadges from '@/components/base/NicknameWithBadges.uvue'
-import GiftSelector from '@/components/lottery/GiftSelector.uvue'
-import { sendGiftFromBag } from '@/common/services/lotteryService.uts'
 import { isMemberFeatureEnabled } from '@/common/composables/useFeatureToggles.uts'
+import { DEFAULT_SHARE_IMAGE, DEFAULT_SHARE_IMAGE_LOCAL } from '@/common/config/defaultImages.uts'
 import { checkMemberGuard } from '@/common/composables/useMemberGuard.uts'
 import { deleteTrends, setTrendsTop, setTrendsPrivate } from '@/common/services/trendsService.uts'
 import { TEXT_PREVIEW_LENGTH } from '@/common/config/uiConfig.uts'
@@ -537,10 +525,6 @@ const showSharePopup = ref<boolean>(false)
 // 提前准备一个临时会话列表，确保在打开 SharePopup 时能立即传入已解析的数组，避免时序问题
 const shareChatList = ref<Array<UTSJSONObject>>([])
 const scrollViewHeight = ref<number>(0)
-
-// 🎯 礼物选择弹窗相关
-const showGiftSelector = ref<boolean>(false)
-const selectedUserKid = ref<string>('')
 
 // 🎯 动态操作菜单相关（仅自己主页）
 const showTrendsActionSheet = ref<boolean>(false)
@@ -665,7 +649,7 @@ const buildMpShareData = (): UTSJSONObject => {
 
 		// 头像：为空时使用默认头像，http 自动转 https
 		const imageVal = infoVal.get('image')
-		let imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		let imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : DEFAULT_SHARE_IMAGE
 		if (imageStr.indexOf('http://') == 0) {
 			imageStr = imageStr.replace('http://', 'https://')
 		}
@@ -702,7 +686,7 @@ const buildMpShareData = (): UTSJSONObject => {
 		handleSilentError(e, '[MP-SHARE] buildMpShareData 构建')
 		result.set('title', '网约向导 - 个人主页')
 		result.set('path', '/pagesUser/persionInfo/index')
-		result.set('imageUrl', 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png')
+		result.set('imageUrl', DEFAULT_SHARE_IMAGE_LOCAL)
 		result.set('desc', '发现有趣的向导，欢迎关注！')
 	}
 	return result
@@ -1722,7 +1706,7 @@ const handleTrendsShare = async () => {
 	}
 	
 	// 图片：取 picList 第一张，无则用默认图
-	let imageUrl = 'https://jiasu.wyxdapp.com/iconimages/share_default.png'
+	let imageUrl = DEFAULT_SHARE_IMAGE
 	const picList = getArrayProp(item, 'picList')
 	if (picList.length > 0) {
 		const firstPic = picList[0]
@@ -1937,16 +1921,20 @@ const handlePageBack = () => {
 		const prevPage = pages[pages.length - 2]
 		const prevRoute = prevPage.route ?? ''
 		if (prevRoute.indexOf('persionInfo') != -1) {
-			goToHome()
+			// 上一页也是个人主页，直接回首页避免循环
+			uni.switchTab({ url: '/pages/index/index' })
 			return
 		}
+		uni.navigateBack({
+			delta: 1,
+			fail: () => {
+				uni.switchTab({ url: '/pages/index/index' })
+			}
+		})
+	} else {
+		// 没有上一页（外部链接直接进入等场景），直接跳首页兜底
+		uni.switchTab({ url: '/pages/index/index' })
 	}
-	uni.navigateBack({
-		delta: 1,
-		fail: () => {
-			goToHome()
-		}
-	})
 }
 
 /**
@@ -1981,7 +1969,7 @@ const handleShare = async () => {
 		const sexStr = (sexVal != null) ? sexVal.toString() : ''
 		
 		const imageVal = infoVal.get('image')
-		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		const imageStr = (imageVal != null && imageVal.toString() != '') ? imageVal.toString() : DEFAULT_SHARE_IMAGE
 		
 		// 构建分享标题：昵称的个人主页
 		const shareTitle = nicknameStr + '的个人主页'
@@ -2078,7 +2066,7 @@ const handleShare = async () => {
 			desc: '发现有趣的向导',
 			link: 'https://m.wyxdapp.com/',
 			url: 'https://m.wyxdapp.com/',
-			imageUrl: 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png',
+			imageUrl: DEFAULT_SHARE_IMAGE,
 			userId: '',
 			referrerShortKid: ''
 		}
@@ -2300,48 +2288,6 @@ const handleVipClick = () => {
 	})
 }
 
-/**
- * 礼物图标点击 - 打开礼物选择面板
- */
-const handleGiftIconClick = (targetUserKid: string) => {
-	if (requireLoginReliable(true, '/pagesUser/persionInfo/index') == false) return
-	selectedUserKid.value = targetUserKid
-	showGiftSelector.value = true
-}
-
-/**
- * 处理选择礼物
- */
-const handleSelectGift = (gift: UTSJSONObject | null) => {
-	showGiftSelector.value = false
-	if (gift != null) {
-		const giftObj = toJsonObj(gift)
-		if (giftObj != null) {
-			const giftIdVal = giftObj.get('id')
-			const giftId = (giftIdVal != null) ? giftIdVal.toString() : ''
-			if (giftId != '' && selectedUserKid.value != '') {
-				const userId = currentUserId.value
-				const sendParams = {
-					userKid: userId,
-					receiveUserKid: selectedUserKid.value,
-					lotteryRecordKid: giftId
-				} as UTSJSONObject
-				sendGiftFromBag(sendParams).then(() => {
-					uni.showToast({
-						title: '礼物发送成功',
-						icon: 'success'
-					})
-				}, (error: Error | null) => {
-					uni.showToast({
-						title: '发送失败',
-						icon: 'none'
-					})
-				})
-			}
-		}
-	}
-}
-
 // ==================== 生命周期 ====================
 
 // ==================== 微信小程序分享钩子 ====================
@@ -2354,7 +2300,7 @@ onShareAppMessage((): UTSJSONObject => {
 	return {
 		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
 		path: (path != null) ? path.toString() : '/pagesUser/persionInfo/index',
-		imageUrl: (imageUrl != null) ? imageUrl.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		imageUrl: (imageUrl != null) ? imageUrl.toString() : DEFAULT_SHARE_IMAGE_LOCAL
 	}
 })
 
@@ -2370,7 +2316,7 @@ onShareTimeline((): UTSJSONObject => {
 	return {
 		title: (title != null) ? title.toString() : '网约向导 - 个人主页',
 		query: queryStr,
-		imageUrl: (imageUrl != null) ? imageUrl.toString() : 'https://jiasu.wyxdapp.com/iconimages/default_avatar.png'
+		imageUrl: (imageUrl != null) ? imageUrl.toString() : DEFAULT_SHARE_IMAGE_LOCAL
 	}
 })
 // #endif

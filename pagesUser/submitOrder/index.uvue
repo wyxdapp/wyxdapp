@@ -111,10 +111,10 @@
 					<input 
 						class="budget-input"
 						type="number"
-						v-model="formTotalMoneyStr" 
+						:value="formTotalMoneyStr" 
 						placeholder="请输入金额"
 						placeholder-class="placeholder"
-						@input="handleBudgetInput" />
+						@input="handleBudgetInput($event as UniInputEvent)" />
 				</view>
 			</view>
 		</scroll-view>
@@ -142,6 +142,7 @@
 			@close="closeContactSelector"
 			@select="handleContactSelect"
 			@add="openAddContactPopup"
+			@delete="handleDeleteContactFromSelector"
 			@update:show="closeContactSelector"
 		/>
 		
@@ -225,6 +226,7 @@ import {
 	getGuiderOrderInfo,
 	GetContactListParams,
 	AddTravelUserParams,
+	DelTravelUserParams,
 	UpdateGrabOrderParams,
 	OrderDetailsParams,
 	CreateGrabOrderParams
@@ -232,6 +234,7 @@ import {
 import { checkPaymentRoute } from '@/utils/paymentRouter'
 import { partnerWechatAppPay, partnerAlipayAppPay } from '@/api/openPlatform'
 import { headerGradientOuter, headerGradientMask } from '@/common/utils/themeHelper.uts'
+import { DEFAULT_SHARE_IMAGE } from '@/common/config/defaultImages.uts'
 
 // 状态栏高度
 const statusBarHeight = ref<number>(44)
@@ -271,8 +274,8 @@ const formServiceHours = ref<number>(1)
 const formOrderRemarks = ref<string>('')
 const formPhone = ref<string>('')
 const formRealname = ref<string>('')
-const formTotalMoney = ref<number>(1)
-const formTotalMoneyStr = ref<string>('1')  // 用于 input v-model 绑定
+const formTotalMoney = ref<number>(0)
+const formTotalMoneyStr = ref<string>('')  // 用于 input v-model 绑定
 const formOrderLocation = ref<string>('')
 
 // 兼容旧代码的 formData 对象
@@ -512,7 +515,7 @@ const shareData = computed((): UTSJSONObject => {
 		title: '找向导 - 网约向导趣游玩',
 		desc: '发现专业向导，定制专属行程',
 		summary: '发现专业向导，定制专属行程',
-		imageUrl: 'https://jiasu.wyxdapp.com/iconimages/share_default.png',
+		imageUrl: DEFAULT_SHARE_IMAGE,
 		url: 'https://m.wyxdapp.com/#/pagesUser/submitOrder/index',
 		link: 'https://m.wyxdapp.com/#/pagesUser/submitOrder/index'
 	} as UTSJSONObject
@@ -821,8 +824,8 @@ const initPageData = () => {
 	formOrderRemarks.value = ''
 	formPhone.value = ''
 	formRealname.value = ''
-	formTotalMoney.value = 1
-	formTotalMoneyStr.value = '1'
+	formTotalMoney.value = 0
+	formTotalMoneyStr.value = ''
 	formOrderLocation.value = ''
 	cityName.value = '长沙市'
 	initMinDate()
@@ -991,8 +994,9 @@ const doDeleteContact = async () => {
 	if (userIdVal == '') return
 	
 	try {
-		// 使用 UTSJSONObject 类型避免 Android ClassCastException
-		const delParams = { userKid: userIdVal, kid: contactId.value } as UTSJSONObject
+		const delParams = new DelTravelUserParams()
+		delParams.userKid = userIdVal
+		delParams.kid = contactId.value
 		await delTravelUser(delParams)
 		
 		// 更新本地列表
@@ -1019,6 +1023,67 @@ const doDeleteContact = async () => {
 			formRealname.value = first.name
 			formPhone.value = first.phone
 			contactId.value = first.kid
+		}
+		
+		uni.showToast({
+			title: '删除成功',
+			icon: 'success'
+		})
+	} catch (error) {
+		handlePageError(error, '删除联系人', null)
+	}
+}
+
+// 从联系人选择弹窗中删除联系人
+const handleDeleteContactFromSelector = async (contact: any) => {
+	const userIdVal = getCurrentUserKid()
+	if (userIdVal == '') return
+	
+	// 获取要删除的联系人kid
+	let deleteKid = ''
+	try {
+		const contactStr = JSON.stringify(contact)
+		const contactObj = JSON.parse(contactStr) as UTSJSONObject
+		const kidVal = contactObj.get('kid')
+		if (kidVal != null) {
+			deleteKid = kidVal.toString()
+		}
+	} catch (e) {}
+	
+	if (deleteKid == '') return
+	
+	try {
+		const delParams = new DelTravelUserParams()
+		delParams.userKid = userIdVal
+		delParams.kid = deleteKid
+		await delTravelUser(delParams)
+		
+		// 更新本地列表
+		const newList: Array<ContactItemData> = []
+		const listLen = contactList.value.length
+		let i = 0
+		while (i < listLen) {
+			const item = contactList.value[i]
+			if (item.kid != deleteKid) {
+				newList.push(item)
+			}
+			i = i + 1
+		}
+		contactList.value = newList
+		
+		// 如果删除的是当前选中的联系人，清空选择
+		if (contactId.value == deleteKid) {
+			formPhone.value = ''
+			formRealname.value = ''
+			contactId.value = ''
+			
+			// 自动选择第一个
+			if (contactList.value.length > 0) {
+				const first = contactList.value[0]
+				formRealname.value = first.name
+				formPhone.value = first.phone
+				contactId.value = first.kid
+			}
 		}
 		
 		uni.showToast({
@@ -1191,20 +1256,11 @@ const openEditContact = () => {
 }
 
 // 费用预算输入
-const handleBudgetInput = (e: UTSJSONObject) => {
+const handleBudgetInput = (e: UniInputEvent) => {
 	let value = '0'
-	if (e != null) {
-		const eStr = JSON.stringify(e)
-		const eObj = JSON.parse(eStr) as UTSJSONObject
-		const detailVal = eObj.get('detail')
-		if (detailVal != null) {
-			const detailStr = JSON.stringify(detailVal)
-			const detailObj = JSON.parse(detailStr) as UTSJSONObject
-			const valueVal = detailObj.get('value')
-			if (valueVal != null && valueVal.toString() != '') {
-				value = valueVal.toString()
-			}
-		}
+	const inputValue = e.detail.value
+	if (inputValue != '') {
+		value = inputValue
 	}
 	const parseFloatVal = parseFloat(value)
 	if (isNaN(parseFloatVal) == false && parseFloatVal > 0) {
@@ -1212,7 +1268,7 @@ const handleBudgetInput = (e: UTSJSONObject) => {
 		formTotalMoneyStr.value = value
 	} else {
 		formTotalMoney.value = 0
-		formTotalMoneyStr.value = '0'
+		formTotalMoneyStr.value = ''
 	}
 }
 
@@ -1259,6 +1315,15 @@ const handleSubmitOrder = async () => {
 	if (chooseDate.value == '') {
 		uni.showToast({
 			title: '请选择出发时间',
+			icon: 'none'
+		})
+		return
+	}
+
+	// 验证预算金额
+	if (formTotalMoney.value <= 0) {
+		uni.showToast({
+			title: '请输入预算金额',
 			icon: 'none'
 		})
 		return
